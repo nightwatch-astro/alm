@@ -47,7 +47,7 @@ export function Lock({ reason, decorative, className, ...rest }: LockProps) {
   // row's "Protected" pill still marks the state in text.
   if (decorative) {
     return (
-      <span className={cls} aria-hidden="true" {...rest}>
+      <span className={cls} aria-hidden="true" data-testid="lock-glyph" {...rest}>
         &#x1F512;
       </span>
     );

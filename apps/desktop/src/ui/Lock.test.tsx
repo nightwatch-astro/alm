@@ -52,7 +52,7 @@ describe('Lock accessibility', () => {
 
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
 
-    const glyph = container.querySelector('.pv-lock');
+    const glyph = container.querySelector('[data-testid="lock-glyph"]');
     expect(glyph).not.toBeNull();
     expect(glyph).toHaveAttribute('aria-hidden', 'true');
     expect(glyph).not.toHaveAttribute('tabindex');
@@ -60,6 +60,6 @@ describe('Lock accessibility', () => {
 
   it('decorative locks still render the padlock glyph', () => {
     const { container } = render(<Lock decorative />);
-    expect(container.querySelector('.pv-lock')?.textContent).toBe('\u{1F512}');
+    expect(container.querySelector('[data-testid="lock-glyph"]')?.textContent).toBe('\u{1F512}');
   });
 });

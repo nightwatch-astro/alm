@@ -155,7 +155,7 @@ describe('CommandPalette debounce contract', () => {
     // with the component.
     await openPalette();
     const input = assertDefined(
-      document.querySelector<HTMLInputElement>('.pv-palette__input'),
+      document.querySelector<HTMLInputElement>('[data-testid="palette-input"]'),
       'command palette search input',
     );
     vi.mocked(commands.searchGlobal).mockClear();
@@ -338,26 +338,26 @@ async function openPalette() {
   render(<CommandPalette />);
   fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
   await waitFor(() => {
-    expect(document.querySelector('.pv-palette')).not.toBeNull();
+    expect(document.querySelector('[data-testid="command-palette"]')).not.toBeNull();
   });
 }
 
 describe('CommandPalette rendered smoke (#581)', () => {
   it('opens on Ctrl+K with the expected pv-palette* class structure', async () => {
     await openPalette();
-    expect(document.querySelector('.pv-palette-backdrop')).not.toBeNull();
-    expect(document.querySelector('.pv-palette__input')).not.toBeNull();
-    expect(document.querySelector('.pv-palette__list')).not.toBeNull();
+    expect(document.querySelector('[data-testid="command-palette-backdrop"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="palette-input"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="palette-list"]')).not.toBeNull();
     // Pages + Actions groups render without a query; each must carry the
     // styled class (the review blocker: cmdk only sets cmdk-group="",
     // so .pv-palette__group CSS was dead without an explicit className).
-    const groups = document.querySelectorAll('.pv-palette__group');
+    const groups = document.querySelectorAll('[data-testid="palette-group"]');
     expect(groups.length).toBeGreaterThanOrEqual(2);
     for (const group of groups) {
       expect(group.querySelector('[cmdk-group-heading]')).not.toBeNull();
     }
     expect(
-      document.querySelectorAll('.pv-palette__item').length,
+      document.querySelectorAll('[data-testid="palette-item"]').length,
     ).toBeGreaterThan(0);
   });
 
@@ -366,7 +366,7 @@ describe('CommandPalette rendered smoke (#581)', () => {
     // The focus race left focus on the popup container, which silenced all
     // of cmdk's input-keydown plumbing (arrow keys, Enter, selection).
     const input = assertDefined(
-      document.querySelector<HTMLInputElement>('.pv-palette__input'),
+      document.querySelector<HTMLInputElement>('[data-testid="palette-input"]'),
       'command palette search input',
     );
     await waitFor(() => {
@@ -377,7 +377,7 @@ describe('CommandPalette rendered smoke (#581)', () => {
   it('navigates via ArrowDown + Enter (cmdk keyboard nav reaches the input)', async () => {
     await openPalette();
     const input = assertDefined(
-      document.querySelector<HTMLInputElement>('.pv-palette__input'),
+      document.querySelector<HTMLInputElement>('[data-testid="palette-input"]'),
       'command palette search input',
     );
     fireEvent.keyDown(input, { key: 'ArrowDown', code: 'ArrowDown' });
@@ -392,7 +392,7 @@ describe('CommandPalette rendered smoke (#581)', () => {
   it('navigates when an item is clicked (click-to-select)', async () => {
     await openPalette();
     const item = assertDefined(
-      document.querySelector('.pv-palette__item'),
+      document.querySelector('[data-testid="palette-item"]'),
       'first command palette item',
     );
     // cmdk selects on pointer events, not plain click.
@@ -431,7 +431,7 @@ describe('CommandPalette targetList cache TTL', () => {
     fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
     fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
     await waitFor(() => {
-      expect(document.querySelector('.pv-palette')).not.toBeNull();
+      expect(document.querySelector('[data-testid="command-palette"]')).not.toBeNull();
     });
     expect(commands.targetList).toHaveBeenCalledTimes(1);
   });
