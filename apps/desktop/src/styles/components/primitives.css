@@ -1,162 +1,22 @@
-/* === TOOLTIP ===
- * Popup for the shared base-ui Tooltip (Tooltip.tsx). Caps width so hover
- * help can't span the viewport; overflow-wrap guards a long unbroken token
- * (e.g. a path) from overflowing the cap. */
-.pv-tooltip {
-  max-width: 280px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-
-  /* The popup renders in a PORTAL, so it inherits nothing from the surface it
-     floats over. Without its own background/border it drew as bare text on top
-     of whatever was underneath — unreadable over tables and panels. It carries
-     a full surface of its own, all token-driven so the four themes track it. */
-  background: var(--pv-surface-raised);
-  color: var(--pv-text);
-  border: 1px solid var(--pv-rule);
-  border-radius: var(--pv-radius-md);
-  padding: var(--pv-sp-2) var(--pv-sp-3);
-  font-size: var(--pv-text-xs);
-  line-height: 1.5;
-  box-shadow: var(--pv-shadow-sm);
-  z-index: 60;
-}
-
-/* === PILL === */
-.pv-pill {
-  display: inline-flex; align-items: center;
-  padding: 1px var(--pv-sp-2); border-radius: 99px;
-  font-size: var(--pv-text-xs); font-weight: var(--pv-weight-medium);
-  line-height: 1.6; white-space: nowrap;
-  border: 1px solid transparent;
-  /* Pills are labels/placeholders, never data values: stay sans even when
-     rendered inside a mono value cell (e.g. UnresolvedChip in PropertyTable
-     or calibration list columns). */
-  font-family: var(--pv-font-sans);
-}
-.pv-pill--neutral { background: var(--pv-chip); color: var(--pv-text-secondary); border-color: var(--pv-rule); }
-.pv-pill--ghost { background: transparent; color: var(--pv-text-muted); border-color: var(--pv-rule); }
-.pv-pill--ok { background: var(--pv-ok-bg); color: var(--pv-ok); border-color: var(--pv-ok-border); }
-.pv-pill--warn { background: var(--pv-warn-bg); color: var(--pv-warn); border-color: var(--pv-warn-border); }
-.pv-pill--danger { background: var(--pv-danger-bg); color: var(--pv-danger); border-color: var(--pv-danger-border); }
-.pv-pill--info { background: var(--pv-info-bg); color: var(--pv-info); border-color: var(--pv-info-border); }
-.pv-pill--accent { background: var(--pv-accent-bg); color: var(--pv-accent-text); border-color: var(--pv-info-border); }
-
-/* === BUTTON === */
-.pv-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  gap: var(--pv-sp-1); height: var(--pv-control-h);
-  padding: 0 var(--pv-sp-3);
-  font-size: var(--pv-text-xs); font-weight: var(--pv-weight-medium);
-
-  border: 1px solid var(--pv-border);
-  border-radius: var(--pv-radius-sm);
-  background: var(--pv-bg); color: var(--pv-text-secondary);
-  cursor: pointer; white-space: nowrap;
-  transition: all var(--pv-transition-fast);
-}
-.pv-btn:hover { border-color: var(--pv-ink3); color: var(--pv-text); }
-/* #628: disabled must read as unambiguously inert — lower opacity than
-   hover/active states use anywhere else, and strip the primary/danger fill so
-   a disabled CTA never still reads as "the" accent-colored action. */
-.pv-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.pv-btn:disabled:hover { border-color: var(--pv-border); color: var(--pv-text-secondary); }
-/* Primary = theme accent. Was var(--pv-ink), which inverts to a light button
-   in dark themes (ink is the light text color there). Accent stays correct in
-   every theme; the former separate `accent` variant was byte-identical to
-   `primary` (#627) and was removed rather than kept as a same-looking alias. */
-.pv-btn--primary { background: var(--pv-accent); color: var(--pv-on-accent); border-color: var(--pv-accent); }
-.pv-btn--primary:hover { background: var(--pv-accent-hover); border-color: var(--pv-accent-hover); }
-.pv-btn--danger { background: var(--pv-danger-bg); color: var(--pv-danger); border-color: var(--pv-danger-border); }
-.pv-btn--danger:hover { background: var(--pv-danger-bg-hover); }
-.pv-btn--primary:disabled,
-.pv-btn--danger:disabled {
-  background: var(--pv-bg);
-  color: var(--pv-text-secondary);
-  border-color: var(--pv-border);
-}
-
-/* Destructive — the one red used for actions that actually remove/overwrite
-   data (delete, trash, archive-apply, permanent removal), distinct from the
-   softer `--pv-danger` reserved for status/validation. Deliberately louder
-   than `.pv-btn--danger` (thicker border + glow) so it reads as unmistakably
-   different from the amber/teal primary action next to it (handoff 06).
-   Geometry (height, base font-size, gap, radius) stays the shared `.pv-btn`
-   scale so it still lines up with sibling buttons in the same row — only the
-   color identity, border weight, and glow are spec-exact. */
-.pv-btn--destructive {
-  color: var(--pv-destructive);
-  background: var(--pv-destructive-bg);
-  border-color: var(--pv-destructive);
-  border-width: 1.5px;
-  box-shadow: 0 2px 10px -3px color-mix(in oklab, var(--pv-destructive) 42%, transparent);
-}
-.pv-btn--destructive:hover {
-  background: var(--pv-destructive-bg-hover);
-  border-color: var(--pv-destructive);
-  color: var(--pv-destructive);
-  box-shadow: 0 3px 13px -3px color-mix(in oklab, var(--pv-destructive) 55%, transparent);
-}
-.pv-btn--destructive:active {
-  background: var(--pv-destructive-bg-hover);
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.22);
-}
-.pv-btn--destructive:disabled {
-  background: var(--pv-destructive-bg);
-  color: var(--pv-destructive);
-  border-color: var(--pv-destructive);
-  opacity: 0.4;
-  box-shadow: none;
-}
-/* Leading 13x13 alert glyph. The app has no icon library/sprite (grepped:
-   only plain Unicode glyphs like Lock's padlock); a mask-image keeps the
-   glyph a single flat shape tinted via `currentColor`, so it tracks
-   `--pv-destructive` in every theme without an emoji-rendering risk. */
-.pv-btn--destructive::before {
-  content: '';
-  flex: none;
-  width: 13px;
-  height: 13px;
-  background-color: currentColor;
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1L15 14H1L8 1Z'/%3E%3Crect x='7.25' y='6' width='1.5' height='4' rx='0.5'/%3E%3Crect x='7.25' y='11' width='1.5' height='1.5' rx='0.5'/%3E%3C/svg%3E");
-  mask-repeat: no-repeat;
-  mask-size: contain;
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1L15 14H1L8 1Z'/%3E%3Crect x='7.25' y='6' width='1.5' height='4' rx='0.5'/%3E%3Crect x='7.25' y='11' width='1.5' height='1.5' rx='0.5'/%3E%3C/svg%3E");
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size: contain;
-}
-.pv-btn--sm { height: var(--pv-control-h-sm); padding: 0 var(--pv-sp-2); font-size: var(--pv-text-xs); }
-/* --xs / --ghost were used in markup (log panel chips, dev call list,
-   ProcessingTools) but had no rule anywhere, so those controls silently fell
-   back to full-size bordered buttons (#734). Defined once here rather than
-   per-feature. */
-.pv-btn--xs { height: var(--pv-control-h-xs); padding: 0 var(--pv-sp-2); font-size: var(--pv-text-xs); }
-.pv-btn--ghost {
-  background: transparent;
-  border-color: transparent;
-  color: var(--pv-text-muted);
-}
-.pv-btn--ghost:hover { background: var(--pv-hover-bg); border-color: transparent; color: var(--pv-text); }
-
-/* === SECTION === */
-.pv-section { margin-bottom: var(--pv-sp-4); }
-.pv-section__header {
-  display: flex; align-items: center; gap: var(--pv-sp-2);
-  padding-bottom: var(--pv-sp-2);
-  border-bottom: 1px solid var(--pv-border-subtle);
-  margin-bottom: var(--pv-sp-3);
-  cursor: pointer; user-select: none;
-}
-.pv-section__toggle {
-  font-size: var(--pv-text-xs); color: var(--pv-text-faint);
-  width: 14px; text-align: center; flex-shrink: 0;
-}
-.pv-section__title {
-  font-size: var(--pv-text-sm); font-weight: var(--pv-weight-semibold);
-  color: var(--pv-text);
-}
-.pv-section__count { font-size: var(--pv-text-xs); color: var(--pv-text-muted); }
-.pv-section__right { margin-left: auto; }
+/* primitives.css — global utilities and shared layout helpers.
+ *
+ * Per-widget rules have been migrated to VE:
+ *   .pv-tooltip     → src/ui/Tooltip.css.ts
+ *   .pv-pill        → src/ui/Pill.css.ts
+ *   .pv-btn         → src/ui/Btn.css.ts
+ *   .pv-section     → src/ui/Section.css.ts
+ *   .pv-box         → src/ui/Box.css.ts
+ *   .pv-table       → src/ui/Table.css.ts
+ *   .pv-kv          → src/ui/KV.css.ts
+ *   .pv-coverage    → src/ui/CoverageBar.css.ts
+ *   .pv-banner      → src/ui/Banner.css.ts
+ *   .pv-info-tip    → src/ui/InfoTip.css.ts
+ *   .pv-lock        → src/ui/Lock.css.ts
+ *
+ * Remaining: global utilities (multi-consumer; Phase 3 ratchet will migrate
+ * or enforce removal), detail-layout (MetricLine/DetailPane/SourceViewsSection),
+ * and property-table (PropertyTable component).
+ */
 
 /* === DETAIL v4: METRIC LINE + DASHBOARD GRID + UNIFIED RAIL === */
 /* Quiet summary-stat row (not hero numbers): value and label share the same
@@ -233,294 +93,30 @@
   margin-bottom: var(--pv-sp-2);
 }
 
-/* === BOX / CARD === */
-.pv-box {
-  border: 1px solid var(--pv-border);
-  border-radius: var(--pv-radius-md);
-  background: var(--pv-bg);
-  overflow: hidden;
-}
-.pv-box__header {
-  padding: var(--pv-sp-2) var(--pv-sp-3);
-  background: var(--pv-surface);
-  border-bottom: 1px solid var(--pv-border-subtle);
-  font-size: var(--pv-text-xs); font-weight: var(--pv-weight-semibold);
-  text-transform: uppercase; letter-spacing: var(--pv-tracking-normal);
-  color: var(--pv-text-muted);
-}
-.pv-box__body { padding: var(--pv-sp-3); }
-
-/* === TABLE === */
-.pv-table { width: 100%; border-collapse: collapse; }
-.pv-table th {
-  text-align: left; font-size: var(--pv-text-xs);
-  font-weight: var(--pv-weight-medium);
-  color: var(--pv-text-muted); text-transform: uppercase;
-  letter-spacing: var(--pv-tracking-normal);
-  padding: var(--pv-sp-2) var(--pv-sp-3);
-  border-bottom: 1px solid var(--pv-border);
-  background: var(--pv-surface);
-  white-space: nowrap;
-  /* Fixed-layout columns: truncate the header instead of clipping it mid-glyph
-     or letting it spill. Columns carry a title= tooltip with the full label. */
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pv-table td {
-  padding: var(--pv-sp-2) var(--pv-sp-3);
-  border-bottom: 1px solid var(--pv-border-subtle);
-  font-size: var(--pv-text-sm);
-  vertical-align: middle;
-  /* Keep cell content within its column box: with table-layout:fixed an
-     un-clipped cell (e.g. a Type pill) visually overflows into the next column
-     and wide content can push the last column off-screen. Clip + ellipsis.
-     Cells that must wrap (e.g. the Targets filter-badge strip) opt back in via
-     `white-space: normal` on their own class. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pv-table td.mono { font-family: var(--pv-font-mono); font-size: var(--pv-text-xs); }
-.pv-table td.num { font-variant-numeric: tabular-nums; text-align: right; }
-.pv-table td.muted { color: var(--pv-text-muted); }
-
-/* Group-header rows (sessions/calibration/projects/inbox/targets grouping): the
-   expand/label button sits in the FIRST cell with NO colspan and intentionally
-   overflows across the empty adjacent cells to show the full "label · count".
-   Exempt these cells from the global clip above — otherwise the group label is
-   chopped to the first column's width (looks like a boxed/truncated chip). */
-.pv-table tr[class*="__group"] > td {
-  overflow: visible;
-}
-
-/* Group-header cell button: reset the native <button> chrome (UA outset border +
-   grey background) and lay out caret + label + count inline with spacing. Only
-   the inbox table had this; sessions/calibration/projects/targets rendered the
-   default button box with the count jammed against the label. Unified globally. */
-.pv-table [class*="__group-cell"] {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--pv-sp-2);
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  font-size: var(--pv-text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--pv-tracking-normal);
-  font-weight: var(--pv-weight-semibold);
-  color: var(--pv-text-muted);
-}
-
-/* Selectable rows (`_onClick`): pointer affordance + a keyboard focus ring.
-   `--pv-focus-ring` is a box-shadow triple that does not render on a
-   border-collapsed <tr>, so the ring is drawn with an inset outline (the accent
-   token) which paints on table rows in both WebKit and Chromium webviews. */
-.pv-table__row--clickable {
-  cursor: pointer;
-}
-.pv-table__row--clickable:focus-visible {
-  outline: 2px solid var(--pv-accent);
-  outline-offset: -2px;
-}
-
-/* Grouped/nested rows (`_indent`): the per-row `--pv-row-indent` variable set
-   on the <tr> pads the first cell's content (group-header button or leaf label),
-   replacing the per-table inline paddingLeft clones. */
-.pv-table__row--indented > td:first-child > :first-child {
-  padding-left: var(--pv-row-indent, 0);
-}
-
-/* Cell content that is a Pill (or several) sitting next to its label: without a
-   flex gap the pill butts straight against the text, since adjacent JSX nodes
-   emit no whitespace. Wrap the cell's children in this to space them. Replaces
-   the per-feature clones of the same three declarations (calibration masters,
-   setup scan). `flex-wrap` matters where a row carries two pills plus a label.
-   Note `.pv-table td` clips with an ellipsis; an inline-flex box is atomic and
-   clips rather than ellipsizing, which is the long-standing behaviour here. */
-.pv-table__cell-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--pv-sp-2);
-  flex-wrap: wrap;
-}
-
-/* Virtualized Table (opt-in `virtualized` prop): own scroll container + sticky
-   header + zero-chrome sentinel spacer rows (padding-spacer windowing). */
-.pv-table__scroll {
-  min-height: 0;
-  overflow: auto;
-}
-.pv-table__scroll thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-.pv-table__spacer td {
-  padding: 0;
-  border: 0;
-}
-
-/* === KV ROW === */
-.pv-kv { display: flex; padding: var(--pv-sp-1) 0; gap: var(--pv-sp-3); }
-.pv-kv__label {
-  width: 120px; flex-shrink: 0;
-  font-size: var(--pv-text-xs); color: var(--pv-text-muted);
-  text-transform: uppercase; letter-spacing: var(--pv-tracking-tight);
-  font-weight: var(--pv-weight-medium);
-}
-.pv-kv__value { font-size: var(--pv-text-sm); }
-.pv-kv__provenance {
-  font-size: var(--pv-text-xs); color: var(--pv-text-faint);
-  margin-left: var(--pv-sp-1);
-}
-
-/* === COVERAGE BAR === */
-.pv-coverage { display: flex; align-items: center; gap: var(--pv-sp-2); }
-.pv-coverage__label {
-  width: 32px; font-size: var(--pv-text-xs); font-weight: var(--pv-weight-medium);
-  text-align: right; flex-shrink: 0;
-}
-.pv-coverage__bar {
-  flex: 1; height: 6px; background: var(--pv-rule2);
-  border-radius: 3px; overflow: hidden;
-}
-.pv-coverage__fill {
-  height: 100%; border-radius: 3px;
-  background: var(--pv-accent);
-  transition: width var(--pv-transition-slow);
-}
-.pv-coverage__fill--low { background: var(--pv-warn); }
-.pv-coverage__fill--ok { background: var(--pv-ok); }
-.pv-coverage__value {
-  width: 36px; font-size: var(--pv-text-xs); color: var(--pv-text-muted);
-  text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums;
-}
-
-/* === BANNER === */
-.pv-banner {
-  padding: var(--pv-sp-2) var(--pv-sp-3);
-  border-radius: var(--pv-radius-sm);
-  font-size: var(--pv-text-xs);
-  display: flex; align-items: center; gap: var(--pv-sp-2);
-}
-.pv-banner--warn { background: var(--pv-warn-bg); color: var(--pv-warn); border: 1px solid var(--pv-warn-border); }
-.pv-banner--danger { background: var(--pv-danger-bg); color: var(--pv-danger); border: 1px solid var(--pv-danger-border); }
-.pv-banner--info { background: var(--pv-info-bg); color: var(--pv-info); border: 1px solid var(--pv-info-border); }
-/* Optional inline call-to-action link inside a banner (e.g. "no site" -> Settings). */
-.pv-banner__action-link { color: inherit; font-weight: var(--pv-weight-medium); text-decoration: underline; white-space: nowrap; }
-
-/* === PROPERTY TABLE === */
-.pv-prop-table { width: 100%; }
-.pv-prop-table__row {
-  display: flex; border-bottom: 1px solid var(--pv-border-subtle);
-  padding: var(--pv-sp-2) 0;
-}
-.pv-prop-table__label {
-  width: 140px; flex-shrink: 0;
-  font-size: var(--pv-text-xs); color: var(--pv-text-muted);
-  font-weight: var(--pv-weight-medium);
-}
-.pv-prop-table__value {
-  flex: 1; font-size: var(--pv-text-sm);
-  display: flex; align-items: center; gap: var(--pv-sp-2);
-}
-.pv-prop-table__source {
-  font-size: var(--pv-text-xs); color: var(--pv-text-faint);
-  margin-left: auto;
-}
-.pv-prop-table__row--conflict { background: var(--pv-warn-bg); }
-
 /* === GLOBAL UTILITIES ===
  * Shared presentational classes extracted from duplicated component rules.
- * Reuse these instead of adding another per-feature clone (css-dup-sniff:
- * the flex-column/gap-1 group alone had 11 identical members).
+ * Reuse these instead of adding another per-feature clone.
+ * Phase 3 ratchet will enforce no raw pv-* in .css.ts files.
  */
 
-/* Vertical stack with the tightest standard gap (label-above-control fields,
-   short lists). Canonical form of the duplicated
-   `display:flex; flex-direction:column; gap:var(--pv-sp-1)` rule. */
 .pv-stack-1 {
   display: flex;
   flex-direction: column;
   gap: var(--pv-sp-1);
 }
 
-/* Atomic text utilities — replace the removed Tailwind `text-sm` / `text-xs` /
-   `text-muted` no-ops with token-only classes. Compose (e.g.
-   `pv-text-sm pv-text-muted`) instead of cloning per-feature muted-text
-   rules. */
 .pv-text-sm { font-size: var(--pv-text-sm); }
 .pv-text-xs { font-size: var(--pv-text-xs); }
 .pv-text-muted { color: var(--pv-text-muted); }
 
-/* Shared monospace surface (spec 055 T022): filesystem paths, source-view
- * IDs, manifest paths, dev-tools contract names, RA/Dec coordinate values.
- * Referenced by ~40 call sites across features/*; was a no-op while the
- * blanket `* { font-family !important }` reset overrode it (reset.css). */
 .pv-mono { font-family: var(--pv-font-mono); }
 
 /* === TOOLTIP TRIGGER GLYPHS (InfoTip ⓘ, Lock 🔒) ============================
- * Both render a focusable span (role="note" + tabIndex=0) whose tooltip states
- * something shown nowhere else on screen, so both are keyboard destinations and
- * both need a visible focus indicator (WCAG 2.4.7, 2.4.11).
- *
- * The indicator is the `--pv-focus-ring` box-shadow and NOTHING ELSE may use it
- * here: hover is signalled by the accent recolour alone. Conveying focus with
- * that same recolour — as `.pv-info-tip` did while it shared one declaration
- * block with `:hover` — leaves keyboard focus visually identical to pointer
- * hover, which is the defect this section exists to prevent. Keep the two
- * states' declarations disjoint; `primitives.focus-vs-hover.test.ts` asserts it.
- *
- * The ring is a 2px perimeter drawn outside the border box, which is exactly
- * 2.4.11's minimum indicator area, and `--pv-accent` clears 3:1 against every
- * theme's backgrounds (worst case 3.63:1, warm-clay on `--pv-bg3`). */
-.pv-info-tip,
-.pv-lock {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  flex: none;
-  position: relative;
-  cursor: help;
-  user-select: none;
-}
+ * The .pv-info-tip and .pv-lock base layout rules are now in VE.
+ * Only the global-selector rules that cross component boundaries stay here
+ * for Phase 3 cleanup. */
 
-.pv-info-tip {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid var(--pv-text-faint);
-  color: var(--pv-text-muted);
-  font-size: var(--pv-text-xs);
-  font-weight: var(--pv-weight-semibold);
-  font-style: normal;
-}
-
-/* The padlock is an emoji, so it paints in the colour font's own palette and
-   cannot carry the accent recolour the ⓘ uses; a radius is still needed so the
-   focus ring hugs the glyph instead of boxing it. */
-.pv-lock {
-  border-radius: var(--pv-radius-sm);
-  font-size: var(--pv-text-xs);
-}
-
-.pv-info-tip:hover {
-  border-color: var(--pv-accent);
-  color: var(--pv-accent);
-}
-
-.pv-info-tip:focus-visible,
-.pv-lock:focus-visible {
-  outline: none;
-  box-shadow: var(--pv-focus-ring);
-}
-
-/* Screen-reader-only utility — visually hides content while keeping it in
- * the a11y tree (live regions, labels, legend elements). */
+/* Screen-reader-only utility */
 .pv-visually-hidden {
   position: absolute;
   width: 1px;

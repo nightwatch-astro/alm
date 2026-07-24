@@ -3,6 +3,8 @@
 
 import { forwardRef } from 'react';
 import type { ReactNode, HTMLAttributes } from 'react';
+import * as kv from './KV.css';
+import { uvars, vars } from '@/styles/themes.css';
 
 export interface KVProps extends HTMLAttributes<HTMLDivElement> {
   label: string;
@@ -15,17 +17,22 @@ export const KV = forwardRef<HTMLDivElement, KVProps>(function KV(
   { label, value, provenance, mono, className, ...rest },
   ref,
 ) {
-  const cls = ['pv-kv', className].filter(Boolean).join(' ');
+  const cls = [kv.row, className].filter(Boolean).join(' ');
   return (
     <div ref={ref} className={cls} {...rest}>
-      <span className="pv-kv__label">{label}</span>
+      <span className={kv.label}>{label}</span>
       <span
-        className={`pv-kv__value${mono ? ' pv-mono' : ''}`}
-        // eslint-disable-next-line no-restricted-syntax -- dynamic: conditional compact-size passthrough (caller-supplied prop). Family comes from the shared `.pv-mono` utility (spec 055), not an inline override.
-        style={mono ? { fontSize: 'var(--pv-text-xs)' } : undefined}
+        className={kv.value}
+        // mono: override font to xs and switch to monospace — still
+        // token-driven via uvars, just conditional on the prop.
+        style={
+          mono
+            ? { fontFamily: vars.fontMono, fontSize: uvars.textXs }
+            : undefined
+        }
       >
         {value}
-        {provenance && <span className="pv-kv__provenance">{provenance}</span>}
+        {provenance && <span className={kv.provenance}>{provenance}</span>}
       </span>
     </div>
   );

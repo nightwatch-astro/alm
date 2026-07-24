@@ -3,6 +3,7 @@
 
 import { forwardRef } from 'react';
 import type { ReactNode, HTMLAttributes } from 'react';
+import { variantStyles } from './Pill.css';
 
 export type PillVariant =
   | 'neutral'
@@ -21,9 +22,7 @@ export const Pill = forwardRef<HTMLSpanElement, PillProps>(function Pill(
   { variant = 'neutral', className, children, ...rest },
   ref,
 ) {
-  const cls = ['pv-pill', `pv-pill--${variant}`, className]
-    .filter(Boolean)
-    .join(' ');
+  const cls = [variantStyles[variant], className].filter(Boolean).join(' ');
   return (
     <span ref={ref} className={cls} data-testid="pill" {...rest}>
       {children}

@@ -3,6 +3,7 @@
 
 import { forwardRef } from 'react';
 import type { ReactNode, HTMLAttributes } from 'react';
+import { variantStyles } from './Banner.css';
 
 export type BannerVariant = 'warn' | 'danger' | 'info';
 export interface BannerProps extends HTMLAttributes<HTMLDivElement> {
@@ -21,9 +22,7 @@ export const Banner = forwardRef<HTMLDivElement, BannerProps>(function Banner(
   },
   ref,
 ) {
-  const cls = ['pv-banner', `pv-banner--${variant}`, className]
-    .filter(Boolean)
-    .join(' ');
+  const cls = [variantStyles[variant], className].filter(Boolean).join(' ');
   const defaultRole =
     variant === 'danger' ? 'alert' : variant === 'warn' ? 'status' : undefined;
   return (

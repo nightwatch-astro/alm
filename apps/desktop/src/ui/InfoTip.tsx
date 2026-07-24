@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { Tooltip } from './Tooltip';
+import { infoTip as infoTipCls } from './InfoTip.css';
 import { m } from '@/lib/i18n';
 
 export interface InfoTipProps {
@@ -40,7 +41,7 @@ export function InfoTip({
   label = m.infotip_more_information(),
   className,
 }: InfoTipProps) {
-  const cls = ['pv-info-tip', className].filter(Boolean).join(' ');
+  const cls = [infoTipCls, className].filter(Boolean).join(' ');
   return (
     <Tooltip
       content={tip}

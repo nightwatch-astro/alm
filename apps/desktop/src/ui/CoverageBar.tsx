@@ -3,6 +3,7 @@
 
 import { forwardRef } from 'react';
 import type { HTMLAttributes } from 'react';
+import * as cb from './CoverageBar.css';
 
 export interface CoverageBarProps extends HTMLAttributes<HTMLDivElement> {
   label: string;
@@ -23,22 +24,22 @@ export const CoverageBar = forwardRef<HTMLDivElement, CoverageBarProps>(
     ref,
   ) {
     const pct = Math.min(100, (value / max) * 100);
-    const cls = pct < 40 ? '--low' : pct >= 80 ? '--ok' : '';
-    const rootCls = ['pv-coverage', className].filter(Boolean).join(' ');
+    const fillKey = pct < 40 ? 'low' : pct >= 80 ? 'ok' : 'default';
+    const rootCls = [cb.root, className].filter(Boolean).join(' ');
     const valueLabel = formatLabel
       ? formatLabel(value, max)
       : `${value}${unit}`;
     return (
       <div ref={ref} className={rootCls} {...rest}>
-        <span className="pv-coverage__label">{label}</span>
-        <div className="pv-coverage__bar">
+        <span className={cb.label}>{label}</span>
+        <div className={cb.bar}>
           <div
-            className={`pv-coverage__fill${cls ? ` pv-coverage__fill${cls}` : ''}`}
+            className={cb.fillVariants[fillKey]}
             // eslint-disable-next-line no-restricted-syntax -- dynamic: coverage bar fill width %
             style={{ width: `${pct}%` }}
           />
         </div>
-        <span className="pv-coverage__value">{valueLabel}</span>
+        <span className={cb.value}>{valueLabel}</span>
       </div>
     );
   },

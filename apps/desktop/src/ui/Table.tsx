@@ -10,6 +10,7 @@ import type {
   MouseEvent,
   KeyboardEvent,
 } from 'react';
+import * as tbl from './Table.css';
 
 /** Base left padding (px) + per-depth step for indented (grouped) table rows. */
 const INDENT_BASE = 8;
@@ -171,7 +172,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
   },
   ref,
 ) {
-  const cls = ['pv-table', className].filter(Boolean).join(' ');
+  const cls = [tbl.root, className].filter(Boolean).join(' ');
 
   // The scroll viewport the virtualizer measures against (virtualized mode).
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
@@ -206,8 +207,8 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
     const className =
       [
         row._rowClassName,
-        clickable ? 'pv-table__row--clickable' : null,
-        row._indent != null ? 'pv-table__row--indented' : null,
+        clickable ? tbl.rowClickable : null,
+        row._indent != null ? tbl.rowIndented : null,
       ]
         .filter(Boolean)
         .join(' ') || undefined;
@@ -353,9 +354,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
   return (
     <div
       ref={scrollRef}
-      className={['pv-table__scroll', scrollClassName]
-        .filter(Boolean)
-        .join(' ')}
+      className={[tbl.scroll, scrollClassName].filter(Boolean).join(' ')}
       data-testid={scrollTestId}
       data-virtual-scroll="true"
     >
@@ -365,7 +364,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
           {windowed ? (
             <>
               {paddingBefore > 0 && (
-                <tr aria-hidden="true" className="pv-table__spacer">
+                <tr aria-hidden="true" className={tbl.spacerRow}>
                   {/* eslint-disable-next-line jsx-a11y/control-has-associated-label -- decorative spacer in aria-hidden row, no label needed */}
                   <td
                     colSpan={colCount}
@@ -378,7 +377,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
                 renderRow(rows[vi.index], vi.index, handleVirtNav),
               )}
               {paddingAfter > 0 && (
-                <tr aria-hidden="true" className="pv-table__spacer">
+                <tr aria-hidden="true" className={tbl.spacerRow}>
                   {/* eslint-disable-next-line jsx-a11y/control-has-associated-label -- decorative spacer in aria-hidden row, no label needed */}
                   <td
                     colSpan={colCount}

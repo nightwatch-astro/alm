@@ -3,32 +3,32 @@
 
 import { forwardRef } from 'react';
 import type { ReactNode, ButtonHTMLAttributes } from 'react';
+import { sizeVariants, variantStyles } from './Btn.css';
 
 export type BtnVariant = 'primary' | 'danger' | 'destructive' | 'ghost';
-export type BtnSize = 'sm' | 'md';
+export type BtnSize = 'xs' | 'sm' | 'md';
 export interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: BtnVariant;
   size?: BtnSize;
   children: ReactNode;
 }
 
-export const Btn = forwardRef<HTMLButtonElement, BtnProps>(
-  // Omitting `variant` yields the base `.pv-btn`; `md` is the base size and
-  // emits no modifier so callers passing no size render exactly as before.
-  function Btn({ variant, size = 'md', className, children, ...rest }, ref) {
-    const cls = [
-      'pv-btn',
-      variant && `pv-btn--${variant}`,
-      size !== 'md' && `pv-btn--${size}`,
-      className,
-    ]
-      .filter(Boolean)
-      .join(' ');
-    return (
-      <button ref={ref} className={cls} {...rest}>
-        {children}
-      </button>
-    );
-  },
-);
+export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
+  { variant, size = 'md', className, children, ...rest },
+  ref,
+) {
+  const sizeKey = size === 'md' ? 'default' : size;
+  const cls = [
+    sizeVariants[sizeKey],
+    variant ? variantStyles[variant] : undefined,
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <button ref={ref} className={cls} {...rest}>
+      {children}
+    </button>
+  );
+});
 Btn.displayName = 'Btn';

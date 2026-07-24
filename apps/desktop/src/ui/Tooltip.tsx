@@ -3,6 +3,7 @@
 
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import { Tooltip as BaseTooltip } from '@base-ui-components/react/tooltip';
+import './Tooltip.css';
 
 export interface TooltipProps
   extends Omit<ComponentPropsWithoutRef<'span'>, 'content'> {
