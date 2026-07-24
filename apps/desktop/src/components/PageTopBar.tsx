@@ -26,6 +26,7 @@
 
 import type { ReactNode } from 'react';
 import { pageBar } from '@/ui/page-layout.css';
+import * as ptb from './PageTopBar.css';
 
 export interface PageTopBarProps {
   /** Heading / breadcrumb node (primary, left). */
@@ -45,17 +46,15 @@ export function PageTopBar({
   actions,
 }: PageTopBarProps) {
   return (
-    <div className={`${pageBar} pv-topbar`} data-testid="topbar">
+    <div className={`${pageBar} ${ptb.root}`} data-testid="topbar">
       {(title != null || summary != null) && (
-        <div className="pv-topbar__lead">
-          {title != null && <div className="pv-topbar__title">{title}</div>}
-          {summary != null && (
-            <div className="pv-topbar__summary">{summary}</div>
-          )}
+        <div className={ptb.lead}>
+          {title != null && <div className={ptb.title}>{title}</div>}
+          {summary != null && <div className={ptb.summary}>{summary}</div>}
         </div>
       )}
-      {filters != null && <div className="pv-topbar__filters">{filters}</div>}
-      {actions != null && <div className="pv-topbar__actions">{actions}</div>}
+      {filters != null && <div className={ptb.filters}>{filters}</div>}
+      {actions != null && <div className={ptb.actions}>{actions}</div>}
     </div>
   );
 }

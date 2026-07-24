@@ -25,6 +25,7 @@
  */
 
 import { Wand2, PanelBottom, PanelRight } from 'lucide-react';
+import { dockPlacementControl } from './ListPageLayout.css';
 import { SegControl } from '@/ui';
 import type { DockPlacement } from '@/ui';
 import { m } from '@/lib/i18n';
@@ -51,9 +52,7 @@ export function DetailDockPlacementControl({
 }: DetailDockPlacementControlProps) {
   return (
     <SegControl
-      className={['pv-dock-placement-control', className]
-        .filter(Boolean)
-        .join(' ')}
+      className={[dockPlacementControl, className].filter(Boolean).join(' ')}
       data-testid="dock-placement-control"
       aria-label={m.detail_dock_placement_aria()}
       options={[
