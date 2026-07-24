@@ -18,7 +18,8 @@
 
 use app_core::errors::db_err;
 use contracts_core::audit::{
-    AuditActor, AuditEntry, AuditExportResponse, AuditListResponse, AuditOutcome,
+    AuditActor, AuditEntry, AuditExportResponse, AuditListResponse, AuditOutcome, EntityNameRef,
+    EntityNamesResponse,
 };
 use contracts_core::ContractError;
 use persistence_lifecycle::repositories::audit::{
@@ -338,4 +339,27 @@ pub async fn audit_export(
         .map_err(|e| ContractError::internal(format!("rename error: {e}")))?;
 
     Ok(AuditExportResponse { file_path: dest.to_string_lossy().into_owned(), count, bytes })
+}
+
+// ── entity.names ─────────────────────────────────────────────────────────────
+
+/// `entity.names` — batch display-name lookup for `(entityType, entityId)` refs.
+///
+/// Resolves project, plan, and target refs in three IN-clause DB queries instead
+/// of one IPC round-trip per unseen ref.  Session names are not included —
+/// callers read those from the inventory-sources query that is already in the
+/// session store.
+///
+/// Absent ids (not in the DB) are simply omitted from the response map; the
+/// frontend hook treats absence as "unresolved".
+///
+/// # Errors
+/// Returns `Err(ContractError)` with code `internal.database` on query failure.
+#[tauri::command]
+#[specta::specta]
+pub async fn entity_names(
+    state: State<'_, AppState>,
+    refs: Vec<EntityNameRef>,
+) -> Result<EntityNamesResponse, ContractError> {
+    app_core::entity_names::entity_names(state.repo.pool(), refs).await
 }
