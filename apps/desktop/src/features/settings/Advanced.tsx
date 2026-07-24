@@ -36,6 +36,7 @@ import {
   getRunningVersion,
 } from '@/data/updateSubscription';
 import { selectBase } from '@/styles/select.css';
+import { controlCol, controlRow } from './advanced.css';
 
 const ADVANCED_KEYS = ['logLevel', 'rememberFollowLogs', 'devMode'];
 
@@ -224,13 +225,13 @@ export function Advanced({ save }: AdvancedProps) {
           label={m.settings_advanced_firstrun_restart_label()}
           info={m.settings_advanced_firstrun_restart_desc()}
         >
-          <div className="pv-adv-settings__control-col">
+          <div className={controlCol}>
             {firstRunConfirming ? (
               <div className="pv-adv-settings__danger-box">
                 <p className="pv-adv-settings__danger-desc">
                   {m.settings_advanced_firstrun_restart_confirm_desc()}
                 </p>
-                <div className="pv-adv-settings__control-row">
+                <div className={controlRow}>
                   <Btn
                     size="sm"
                     variant="danger"
@@ -275,7 +276,7 @@ export function Advanced({ save }: AdvancedProps) {
       {/* Signed auto-update — staged flow (spec 051 US10, #888/#869/#873) */}
       <SettingsSection title={m.settings_advanced_updates_title()}>
         <SettingsRow label={m.settings_advanced_updates_title()}>
-          <div className="pv-adv-settings__control-col">
+          <div className={controlCol}>
             {runningVersion && (
               <p
                 className="pv-adv-settings__control-desc"
@@ -388,7 +389,7 @@ export function Advanced({ save }: AdvancedProps) {
               <p className="pv-adv-settings__danger-desc">
                 {m.settings_advanced_danger_confirm_desc()}
               </p>
-              <div className="pv-adv-settings__control-row">
+              <div className={controlRow}>
                 <Btn
                   size="sm"
                   variant="destructive"

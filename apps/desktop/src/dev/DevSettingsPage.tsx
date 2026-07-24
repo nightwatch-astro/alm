@@ -27,6 +27,13 @@ import { getSettings, updateSettings } from '@/features/settings/settingsIpc';
 import { SettingsSection, SettingsRow } from '@/features/settings/SettingsKit';
 import { Toggle } from '@/ui';
 import { m } from '@/lib/i18n';
+import {
+  pageBody,
+  pageTitle,
+  pageExportResult,
+  pageError,
+  pageLoading,
+} from './dev.css';
 
 export function DevSettingsPage() {
   const [devMode, setDevModeState] = useState<boolean | null>(null);
@@ -68,16 +75,12 @@ export function DevSettingsPage() {
     <PageShell>
       {/* Reuses the dev/ContractsPage body/title/error/loading classes (shared
           component / no cloned CSS — see dev.css "DEV CONTRACTS PAGE"). */}
-      <div className="pv-page__scroll pv-dev-contracts-page__body">
-        <h1 className="pv-dev-contracts-page__title">
-          {m.dev_settings_title()}
-        </h1>
-        <p className="pv-dev-contracts-page__export-result">
-          {m.dev_settings_intro()}
-        </p>
+      <div className={`pv-page__scroll ${pageBody}`}>
+        <h1 className={pageTitle}>{m.dev_settings_title()}</h1>
+        <p className={pageExportResult}>{m.dev_settings_intro()}</p>
 
         {error && (
-          <div role="alert" className="pv-dev-contracts-page__error">
+          <div role="alert" className={pageError}>
             {m.dev_settings_error({ message: error })}
           </div>
         )}
@@ -88,9 +91,7 @@ export function DevSettingsPage() {
             info={m.dev_settings_toggle_info()}
           >
             {devMode === null ? (
-              <span className="pv-dev-contracts-page__loading">
-                {m.common_loading()}
-              </span>
+              <span className={pageLoading}>{m.common_loading()}</span>
             ) : (
               <Toggle
                 aria-label={m.dev_settings_toggle_label()}
@@ -101,17 +102,11 @@ export function DevSettingsPage() {
             )}
           </SettingsRow>
           {devMode === true && (
-            <p className="pv-dev-contracts-page__export-result">
-              {m.dev_settings_restart_hint()}
-            </p>
+            <p className={pageExportResult}>{m.dev_settings_restart_hint()}</p>
           )}
         </SettingsSection>
 
-        {saving && (
-          <p className="pv-dev-contracts-page__export-result">
-            {m.common_saving()}
-          </p>
-        )}
+        {saving && <p className={pageExportResult}>{m.common_saving()}</p>}
       </div>
     </PageShell>
   );

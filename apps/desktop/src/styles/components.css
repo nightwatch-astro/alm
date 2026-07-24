@@ -27,7 +27,7 @@
 @import './components/wizard-steps.css';
 @import './components/settings-detail.css';
 @import './components/feature-lists.css';
-@import './components/dev.css';
+/* dev.css migrated to VE: src/dev/dev.css.ts (dev-tools surfaces), src/features/settings/advanced.css.ts (adv-settings layout) */
 @import './components/redesign-detail.css';
 @import './components/tables-lists.css';
 @import './components/projects.css';

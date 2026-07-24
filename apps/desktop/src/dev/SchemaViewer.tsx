@@ -13,6 +13,20 @@
 import { useState, useEffect } from 'react';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
+import {
+  schemaOverlay,
+  schemaPanel,
+  schemaHeader,
+  schemaName,
+  schemaVersion,
+  schemaActions,
+  schemaBody,
+  schemaMissing,
+  schemaMissingPath,
+  schemaMissingCode,
+  schemaLoading,
+  schemaPre,
+} from './dev.css';
 
 interface SchemaViewerProps {
   /** Absolute path to the JSON Schema file. */
@@ -74,15 +88,15 @@ export function SchemaViewer({
     <div
       role="dialog"
       aria-label={`Schema viewer: ${contractName} v${contractVersion}`}
-      className="pv-dev-schema__overlay"
+      className={schemaOverlay}
     >
-      <div className="pv-dev-schema__panel">
-        <div className="pv-dev-schema__header">
+      <div className={schemaPanel}>
+        <div className={schemaHeader}>
           <div>
-            <span className="pv-dev-schema__name">{contractName}</span>
-            <span className="pv-dev-schema__version">v{contractVersion}</span>
+            <span className={schemaName}>{contractName}</span>
+            <span className={schemaVersion}>v{contractVersion}</span>
           </div>
-          <div className="pv-dev-schema__actions">
+          <div className={schemaActions}>
             <button
               type="button"
               className="pv-btn pv-btn--sm"
@@ -103,25 +117,25 @@ export function SchemaViewer({
           </div>
         </div>
 
-        <div className="pv-dev-schema__body">
+        <div className={schemaBody}>
           {missing ? (
             <div
               role="alert"
               data-testid="schema-missing"
-              className="pv-dev-schema__missing"
+              className={schemaMissing}
             >
               <strong>schema.missing</strong>
-              <p className="pv-dev-schema__missing-path">
+              <p className={schemaMissingPath}>
                 Schema file not found at:{' '}
-                <code className="pv-dev-schema__missing-code">
+                <code className={schemaMissingCode}>
                   {schemaPath || '(no path)'}
                 </code>
               </p>
             </div>
           ) : content === null ? (
-            <div className="pv-dev-schema__loading">Loading schema…</div>
+            <div className={schemaLoading}>Loading schema…</div>
           ) : (
-            <pre data-testid="schema-content" className="pv-dev-schema__pre">
+            <pre data-testid="schema-content" className={schemaPre}>
               {content}
             </pre>
           )}

@@ -9,6 +9,21 @@
  */
 
 import type { ContractCall, ContractMeta } from '@/bindings/index';
+import {
+  callsEmpty,
+  callsTable,
+  callsTheadRow,
+  callsTh,
+  callsRow,
+  callsTd,
+  callsTdId,
+  callsTdContract,
+  callsTdStarted,
+  callsTdActions,
+  callsTruncated,
+  callsOutcomeVariants,
+  callsReplayBtnVariants,
+} from './dev.css';
 
 interface CallListProps {
   calls: ContractCall[];
@@ -40,23 +55,23 @@ export function CallList({
 }: CallListProps) {
   if (calls.length === 0) {
     return (
-      <p className="pv-dev-calls__empty">
+      <p className={callsEmpty}>
         No calls recorded yet. Make some API calls with devMode on.
       </p>
     );
   }
 
   return (
-    <table className="pv-dev-calls__table" aria-label="Recent contract calls">
+    <table className={callsTable} aria-label="Recent contract calls">
       <thead>
-        <tr className="pv-dev-calls__thead-row">
-          <th className="pv-dev-calls__th">ID</th>
-          <th className="pv-dev-calls__th">Contract</th>
-          <th className="pv-dev-calls__th">Version</th>
-          <th className="pv-dev-calls__th">Started</th>
-          <th className="pv-dev-calls__th">Duration</th>
-          <th className="pv-dev-calls__th">Outcome</th>
-          <th className="pv-dev-calls__th">Actions</th>
+        <tr className={callsTheadRow}>
+          <th className={callsTh}>ID</th>
+          <th className={callsTh}>Contract</th>
+          <th className={callsTh}>Version</th>
+          <th className={callsTh}>Started</th>
+          <th className={callsTh}>Duration</th>
+          <th className={callsTh}>Outcome</th>
+          <th className={callsTh}>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -68,41 +83,39 @@ export function CallList({
           return (
             <tr
               key={call.id}
-              className="pv-dev-calls__row"
+              className={callsRow}
               data-testid={`call-row-${call.id}`}
             >
-              <td className="pv-dev-calls__td--id">{call.id}</td>
-              <td className="pv-dev-calls__td--contract">
+              <td className={callsTdId}>{call.id}</td>
+              <td className={callsTdContract}>
                 {call.contract}
                 {call.payloadTruncated && (
                   <span
                     title="Payload was truncated (exceeded 64 KB)"
-                    className="pv-dev-calls__truncated"
+                    className={callsTruncated}
                   >
                     ⚠T
                   </span>
                 )}
               </td>
-              <td className="pv-dev-calls__td">{call.contractVersion}</td>
-              <td className="pv-dev-calls__td--started">
+              <td className={callsTd}>{call.contractVersion}</td>
+              <td className={callsTdStarted}>
                 {formatStarted(call.startedAt)}
               </td>
-              <td className="pv-dev-calls__td">
-                {formatDuration(call.durationMs)}
-              </td>
-              <td className="pv-dev-calls__td">
+              <td className={callsTd}>{formatDuration(call.durationMs)}</td>
+              <td className={callsTd}>
                 {isError ? (
                   <span
-                    className="pv-dev-calls__outcome--error"
+                    className={callsOutcomeVariants.error}
                     title={call.error?.message}
                   >
                     error: {call.error?.code}
                   </span>
                 ) : (
-                  <span className="pv-dev-calls__outcome--ok">ok</span>
+                  <span className={callsOutcomeVariants.ok}>ok</span>
                 )}
               </td>
-              <td className="pv-dev-calls__td--actions">
+              <td className={callsTdActions}>
                 <button
                   type="button"
                   className="pv-btn pv-btn--xs"
@@ -113,12 +126,7 @@ export function CallList({
                 </button>
                 <button
                   type="button"
-                  className={
-                    'pv-btn pv-btn--xs' +
-                    (isReplaySafe
-                      ? ' pv-dev-calls__replay-btn--safe'
-                      : ' pv-dev-calls__replay-btn--unsafe')
-                  }
+                  className={`pv-btn pv-btn--xs ${isReplaySafe ? callsReplayBtnVariants.safe : callsReplayBtnVariants.unsafe}`}
                   onClick={() => onReplay(call)}
                   disabled={!isReplaySafe}
                   title={
