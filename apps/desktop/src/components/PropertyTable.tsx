@@ -30,6 +30,7 @@ import {
   type FieldApplicability,
   type ValueSource,
 } from './RenderValue';
+import { selectBase } from '@/styles/select.css';
 
 export interface PropertyDef {
   key: string;
@@ -82,10 +83,7 @@ function PropertyValueEditor({ prop }: { prop: PropertyDef }) {
           if (v !== null) onChange?.(v);
         }}
       >
-        <Select.Trigger
-          className="pv-select pv-select--sm"
-          aria-label={prop.label}
-        >
+        <Select.Trigger className={selectBase} aria-label={prop.label}>
           <Select.Value />
           <Select.Icon className="pv-select__icon" />
         </Select.Trigger>

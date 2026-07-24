@@ -26,6 +26,7 @@ import {
   SettingsRow,
   RestoreDefaultsBtn,
 } from './SettingsKit';
+import { selectBase } from '@/styles/select.css';
 
 const SOURCE_VIEWS_KEYS = [
   'sourceViewLinkKindIntraDrive',
@@ -107,7 +108,7 @@ export function SourceViews({ save }: SourceViewsProps) {
         info={m.settings_source_views_intra_drive_info()}
       >
         <select
-          className="pv-select"
+          className={selectBase}
           value={intraDrive}
           aria-label={m.settings_source_views_intra_drive_label()}
           data-testid="source-views-intra-drive-select"
@@ -131,7 +132,7 @@ export function SourceViews({ save }: SourceViewsProps) {
         info={m.settings_source_views_cross_drive_info()}
       >
         <select
-          className="pv-select"
+          className={selectBase}
           value={crossDrive}
           aria-label={m.settings_source_views_cross_drive_label()}
           data-testid="source-views-cross-drive-select"

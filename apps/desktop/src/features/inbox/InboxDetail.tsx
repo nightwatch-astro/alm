@@ -54,6 +54,7 @@ import {
   humanizeKey,
   resolveInboxRevealPath,
 } from './inboxDetailHelpers';
+import { selectBase } from '@/styles/select.css';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -253,7 +254,7 @@ export function InboxDetail({
         onChange={(e) => handleOverrideChange(filePath, e.target.value)}
         aria-label={m.inbox_override_frame_type_aria({ file: filePath })}
         data-testid={`override-select-${filePath}`}
-        className="pv-select pv-select--sm"
+        className={selectBase}
       >
         <option value="">{m.inbox_pick_type_placeholder()}</option>
         {FRAME_TYPE_OPTIONS.map((t) => (
@@ -312,7 +313,7 @@ export function InboxDetail({
             {m.inbox_dest_root_label()}
           </span>
           <select
-            className="pv-select pv-select--sm"
+            className={selectBase}
             value={selectedRootId ?? ''}
             onChange={(e) => onSelectRoot?.(e.target.value)}
             aria-label={m.inbox_dest_root_aria()}

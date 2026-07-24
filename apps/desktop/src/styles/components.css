@@ -20,7 +20,7 @@
 @import './components/app-shell.css';
 @import './components/primitives.css';
 @import './components/settings.css';
-@import './components/wizard-base.css';
+/* wizard-base.css migrated to VE: src/styles/select.css.ts, src/components/lifecycle.css.ts, src/ui/wizard-shell.css.ts */
 @import './components/target-search.css';
 @import './components/detail-panes.css';
 @import './components/plan-panel.css';

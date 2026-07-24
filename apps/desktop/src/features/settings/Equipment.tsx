@@ -41,6 +41,7 @@ import {
   type PassbandChoice,
 } from './equipment-helpers';
 import { useEquipment } from './useEquipment';
+import { selectBase } from '@/styles/select.css';
 
 interface EquipmentProps {
   save: (scope: string, values: Record<string, unknown>) => void;
@@ -236,7 +237,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
               </label>
               <select
                 id="equipment-train-camera"
-                className="pv-select"
+                className={selectBase}
                 value={trainForm.cameraId}
                 onChange={(e) =>
                   setTrainForm({ ...trainForm, cameraId: e.target.value })
@@ -259,7 +260,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
               </label>
               <select
                 id="equipment-train-telescope"
-                className="pv-select"
+                className={selectBase}
                 value={trainForm.telescopeId}
                 onChange={(e) =>
                   setTrainForm({ ...trainForm, telescopeId: e.target.value })
@@ -796,7 +797,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
               </label>
               <select
                 id="equipment-filter-category"
-                className="pv-select"
+                className={selectBase}
                 value={filterForm.category}
                 onChange={(e) =>
                   setFilterForm({

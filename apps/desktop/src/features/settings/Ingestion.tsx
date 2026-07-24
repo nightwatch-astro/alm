@@ -45,6 +45,7 @@ import {
   type IngestionSettings,
   type UpdateIngestionSettings,
 } from './settingsIpc';
+import { selectBase } from '@/styles/select.css';
 
 interface IngestionProps {
   /** Unused in this pane — ingestion settings use their own IPC commands
@@ -160,7 +161,7 @@ export function Ingestion(_props: IngestionProps) {
           info={m.settings_ingestion_hashing_info()}
         >
           <select
-            className="pv-select"
+            className={selectBase}
             aria-label={m.settings_ingestion_hashing_mode()}
             disabled
             value={settings.hashingMode}

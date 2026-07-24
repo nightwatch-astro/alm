@@ -16,6 +16,7 @@ import { errMessage } from '@/lib/errors';
 import { formatDateTime, toEpochMs } from '@/lib/datetime';
 import { m } from '@/lib/i18n';
 import { SettingsSection } from './SettingsKit';
+import { selectBase } from '@/styles/select.css';
 
 /** All `AuditOutcome` values, for the structured outcome filter (#749). */
 const OUTCOME_VALUES: AuditOutcome[] = [
@@ -360,7 +361,7 @@ export function AuditLog() {
           {/* eslint-disable-next-line jsx-a11y/control-has-associated-label -- labelled by the wrapping <label> (htmlFor + id + visible text); rule misses the wrapping-label association */}
           <select
             id={outcomeFilterId}
-            className="pv-select pv-audit-log__date-input"
+            className={`${selectBase} pv-audit-log__date-input`}
             value={outcomeFilter}
             onChange={(e) => {
               setOutcomeFilter(e.target.value as AuditOutcome | '');
@@ -383,7 +384,7 @@ export function AuditLog() {
           {/* eslint-disable-next-line jsx-a11y/control-has-associated-label -- labelled by the wrapping <label> (htmlFor + id + visible text); rule misses the wrapping-label association */}
           <select
             id={entityTypeFilterId}
-            className="pv-select pv-audit-log__date-input"
+            className={`${selectBase} pv-audit-log__date-input`}
             value={entityTypeFilter}
             onChange={(e) => {
               setEntityTypeFilter(e.target.value);

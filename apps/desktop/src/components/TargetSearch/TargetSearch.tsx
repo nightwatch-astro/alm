@@ -83,6 +83,7 @@ import {
 } from './objectType';
 import { DEFAULT_LIMIT, MIN_RESOLVE_LEN } from './helpers';
 import { useTargetSearch } from './useTargetSearch';
+import { selectBase } from '@/styles/select.css';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -272,7 +273,7 @@ export function TargetSearch({
               {m.cmp_target_search_type_label()}
               <select
                 id={typeFilterId}
-                className="pv-select pv-target-search__filter-select"
+                className={`${selectBase} pv-target-search__filter-select`}
                 value={typeSel}
                 onChange={(e) =>
                   setTypeSel(e.target.value as TargetObjectType | '')
@@ -293,7 +294,7 @@ export function TargetSearch({
               {m.cmp_target_search_catalogue_label()}
               <select
                 id={catalogFilterId}
-                className="pv-select pv-target-search__filter-select"
+                className={`${selectBase} pv-target-search__filter-select`}
                 value={catalogSel}
                 onChange={(e) =>
                   setCatalogSel(e.target.value as TargetCatalogId | '')

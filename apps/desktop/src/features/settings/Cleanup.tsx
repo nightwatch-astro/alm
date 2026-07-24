@@ -26,6 +26,7 @@ import {
   SettingsRow,
   RestoreDefaultsBtn,
 } from './SettingsKit';
+import { selectBase } from '@/styles/select.css';
 
 const CLEANUP_KEYS = [
   'blockPermanentDelete',
@@ -225,7 +226,7 @@ export function Cleanup({ save }: CleanupProps) {
           info={m.settings_cleanup_protection_info()}
         >
           <select
-            className="pv-select pv-cleanup__protection-select"
+            className={`${selectBase} pv-cleanup__protection-select`}
             value={defaultProtection}
             onChange={(e) => {
               editedRef.current = true;

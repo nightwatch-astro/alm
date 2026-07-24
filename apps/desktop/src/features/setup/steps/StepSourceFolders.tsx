@@ -20,6 +20,7 @@ import {
   SOURCE_KIND_LABELS,
   REQUIRED_KINDS,
 } from '../sources-store';
+import { selectBase } from '@/styles/select.css';
 
 export interface StepSourceFoldersProps {
   entries: SourceEntry[];
@@ -333,7 +334,8 @@ function SourceRow({
         {!isInbox && (
           <>
             <select
-              className="pv-select pv-step-sources__org-select"
+              className={`${selectBase} pv-step-sources__org-select`}
+              data-testid={`org-select-${entry.kind}`}
               value={entry.organizationState}
               onChange={(e) =>
                 onOrganizationStateChange(e.target.value as OrganizationState)

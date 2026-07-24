@@ -17,6 +17,7 @@ import { m } from '@/lib/i18n';
 import type { Density } from '@/bindings/types';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
+import { selectBase } from '@/styles/select.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 //
@@ -88,7 +89,7 @@ function DefaultProtectionControl() {
 
   return (
     <select
-      className="pv-select"
+      className={selectBase}
       value={value}
       aria-label={m.setup_config_default_protection_title()}
       onChange={(e) => onChange(e.target.value as DefaultProtection)}
@@ -109,7 +110,7 @@ function DensityControl() {
   const [density, setDensity] = usePreference('density');
   return (
     <select
-      className="pv-select"
+      className={selectBase}
       value={density}
       aria-label={m.settings_density_legend()}
       onChange={(e) => setDensity(e.target.value as Density)}

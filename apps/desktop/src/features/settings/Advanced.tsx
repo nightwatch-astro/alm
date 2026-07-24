@@ -35,6 +35,7 @@ import {
   restartPendingUpdate,
   getRunningVersion,
 } from '@/data/updateSubscription';
+import { selectBase } from '@/styles/select.css';
 
 const ADVANCED_KEYS = ['logLevel', 'rememberFollowLogs', 'devMode'];
 
@@ -199,7 +200,7 @@ export function Advanced({ save }: AdvancedProps) {
           info={m.settings_advanced_loglevel_info()}
         >
           <select
-            className="pv-select pv-adv-settings__log-select"
+            className={`${selectBase} pv-adv-settings__log-select`}
             value={logLevel}
             onChange={(e) => {
               const v = e.target.value as LogLevel;

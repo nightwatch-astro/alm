@@ -21,6 +21,7 @@ import { sourceProtectionGet, sourceProtectionSet } from './settingsIpc';
 import type { ProtectionLevel } from './settingsIpc';
 import { protectionLabel } from '@/lib/protection-label';
 import { m } from '@/lib/i18n';
+import { selectBase } from '@/styles/select.css';
 
 interface SourceProtectionOverrideProps {
   /** Real source UUID from the backend. */
@@ -160,7 +161,7 @@ export function SourceProtectionOverride({
             </label>
             <select
               id={`protection-level-${sourceId}`}
-              className="pv-select pv-source-protect__select"
+              className={`${selectBase} pv-source-protect__select`}
               value={pendingLevel}
               onChange={(e) =>
                 setPendingLevel(e.target.value as ProtectionLevel)

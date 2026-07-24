@@ -18,6 +18,7 @@ import {
   ianaTimezones,
 } from '@/features/targets/observing-sites/iana-timezones';
 import type { Twilight } from '@/features/targets/observing-sites/observer-site';
+import { selectBase } from '@/styles/select.css';
 
 // Leaflet is ~240 KB raw. Lazy-load so it splits to its own chunk and does
 // not inflate the setup-wizard bundle parsed on first run.
@@ -251,7 +252,7 @@ export function StepSite({ state, onChange }: StepSiteProps) {
           </label>
           <select
             id="setup-site-tz"
-            className="pv-select"
+            className={selectBase}
             aria-label={m.settings_observing_sites_field_timezone()}
             value={state.timezone}
             onChange={(e) => onChange({ ...state, timezone: e.target.value })}
