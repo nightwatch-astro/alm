@@ -541,7 +541,7 @@ impl GroupAccumulator {
             // `CircularMean::mean` returns `None` only on empty — `max(1)` above
             // means `sum_dec / count` is well-defined, and the same invariant
             // guarantees at least one push occurred, so `ra_mean.mean()` is `Some`.
-            ra_deg: self.ra_mean.mean().map_or(0.0, |a| a.degrees()),
+            ra_deg: self.ra_mean.mean().map_or(0.0, skymath::Angle::degrees),
             dec_deg: self.sum_dec / count,
         }
     }
@@ -605,7 +605,7 @@ pub fn circular_mean_deg<I: IntoIterator<Item = f64>>(angles: I) -> f64 {
     for deg in angles {
         acc.push(skymath::Angle::from_degrees(deg));
     }
-    acc.mean().map_or(0.0, |a| a.degrees())
+    acc.mean().map_or(0.0, skymath::Angle::degrees)
 }
 
 #[cfg(test)]

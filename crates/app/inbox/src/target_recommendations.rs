@@ -57,7 +57,7 @@ use contracts_core::inbox::{
 use contracts_core::{ContractError, ErrorSeverity};
 use target_match::skymath as tm_skymath;
 use target_match::{rank, Constraint, SkyObject};
-use targeting::coords::{self, Pointing};
+use targeting::coords;
 use targeting_resolver::cache;
 
 /// Default fixed search radius (degrees) used when a FOV-aware radius cannot be
