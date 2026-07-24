@@ -741,10 +741,9 @@ describe('TargetDetailV2', () => {
         screen.getAllByText('Old Horsehead').length,
       ).toBeGreaterThanOrEqual(1),
     );
-    const tag = screen.getAllByText('Archived')[0];
-    // Reuses the shared tone token rather than a per-feature style (#739).
-    expect(tag).toHaveClass('pv-status-tag');
-    expect(tag).toHaveClass('pv-status-tag--ok');
+    // StatusTag renders the label text with a data-component attribute.
+    const tagEl = screen.getAllByText('Archived')[0].closest('[data-component="status-tag"]');
+    expect(tagEl).toHaveAttribute('data-variant', 'ok');
   });
 
   it('25. (US3) clicking project row navigates to /projects with selected=id (mid-page link row)', async () => {

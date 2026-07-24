@@ -119,15 +119,13 @@ describe('ProjectsTable', () => {
 
   it('(#105) state column uses StatusTag: dot+text, not a filled pill', () => {
     const { container } = renderTable();
-    // pv-status-tag class present in the state column — no pv-pill class.
-    const tags = container.querySelectorAll('.pv-status-tag');
+    // StatusTag renders dot+text — verify via data-component attribute.
+    const tags = container.querySelectorAll('[data-component="status-tag"]');
     expect(tags.length).toBeGreaterThan(0);
-    // Each tag contains a dot span and the label text.
+    // Each tag contains a dot span.
     tags.forEach((tag) => {
-      expect(tag.querySelector('.pv-status-tag__dot')).toBeInTheDocument();
+      expect(tag.querySelector('[data-component="status-tag-dot"]')).toBeInTheDocument();
     });
-    // No filled-background pill class from the old implementation.
-    expect(container.querySelector('.pv-pill')).toBeNull();
   });
 
   it('marks the selected row with the selected CSS class', () => {

@@ -9,9 +9,9 @@
  *
  * Verifies the dot+text replacement for the status Pill badge:
  *   1. Renders the label text.
- *   2. Carries the correct variant modifier class.
+ *   2. Carries the correct variant data attribute.
  *   3. Has a dot span (aria-hidden).
- *   4. Does not render a filled-background pill class.
+ *   4. Does not render a Pill component.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -24,28 +24,28 @@ describe('StatusTag', () => {
     expect(screen.getByText('Completed')).toBeInTheDocument();
   });
 
-  it('applies the correct variant modifier class', () => {
+  it('applies the correct variant via data-variant attribute', () => {
     const { container } = render(
       <StatusTag variant="danger">Blocked</StatusTag>,
     );
-    const tag = container.querySelector('.pv-status-tag');
-    expect(tag).toHaveClass('pv-status-tag--danger');
+    const tag = container.querySelector('[data-component="status-tag"]');
+    expect(tag).toHaveAttribute('data-variant', 'danger');
   });
 
   it('renders a dot span that is aria-hidden', () => {
     const { container } = render(
       <StatusTag variant="info">Processing</StatusTag>,
     );
-    const dot = container.querySelector('.pv-status-tag__dot');
+    const dot = container.querySelector('[data-component="status-tag-dot"]');
     expect(dot).toBeInTheDocument();
     expect(dot).toHaveAttribute('aria-hidden', 'true');
   });
 
-  it('does not use the pv-pill class', () => {
+  it('does not use a Pill component (no data-component="pill")', () => {
     const { container } = render(
       <StatusTag variant="neutral">Ready</StatusTag>,
     );
-    expect(container.querySelector('.pv-pill')).toBeNull();
+    expect(container.querySelector('[data-component="pill"]')).toBeNull();
   });
 
   it('renders all PillVariant-equivalent states without throwing', () => {
