@@ -13,6 +13,7 @@
 import { Banner, Btn } from '@/ui';
 import { m } from '@/lib/i18n';
 import type { PlanApplyProgress } from '@/features/plans/usePlanApplyProgress';
+import * as pp from './plan-panel.css';
 import type { InboxOpenPlan } from './store';
 import {
   basename,
@@ -97,14 +98,14 @@ export function PlanGroupRow({
 
   return (
     <section
-      className="pv-plan-panel__group"
+      className={pp.group}
       data-testid={`plan-group-${plan.inboxItemId}`}
     >
       {/* Group header — an aligned grid row (shares its column template
           with the list head so every plan's columns line up). */}
-      <div className="pv-plan-panel__group-header">
+      <div className={pp.groupHeader}>
         {/* Col 1: select + expand */}
-        <span className="pv-plan-panel__group-lead">
+        <span className={pp.groupLead}>
           <input
             type="checkbox"
             checked={checked}
@@ -125,13 +126,11 @@ export function PlanGroupRow({
                 : m.inbox_show_files_aria({ name: plan.itemName })
             }
             data-testid={`plan-group-toggle-${plan.inboxItemId}`}
-            className="pv-plan-panel__expand"
+            className={pp.expand}
           >
             <span
               className={
-                isExpanded
-                  ? 'pv-plan-panel__chevron pv-plan-panel__chevron--open'
-                  : 'pv-plan-panel__chevron'
+                isExpanded ? `${pp.chevron} ${pp.chevronOpen}` : pp.chevron
               }
               aria-hidden="true"
             >
@@ -142,7 +141,7 @@ export function PlanGroupRow({
 
         {/* Col 2: plan / source folder ("(root)" for the library root) */}
         <span
-          className="pv-plan-panel__group-name"
+          className={pp.groupName}
           title={plan.itemName || m.inbox_list_root_label()}
         >
           {plan.itemName || m.inbox_list_root_label()}
@@ -150,7 +149,7 @@ export function PlanGroupRow({
 
         {/* Col 3: composition breakdown (aligned). */}
         <span
-          className="pv-plan-panel__group-breakdown"
+          className={pp.groupBreakdown}
           data-testid={`plan-group-summary-${plan.inboxItemId}`}
         >
           {(breakdownEntries.length > 0
@@ -171,25 +170,22 @@ export function PlanGroupRow({
               entry.count,
             );
             return (
-              <span key={entry.key} className="pv-plan-panel__summary-type">
+              <span
+                key={entry.key}
+                className={pp.summaryType}
+                data-testid="plan-summary-type"
+              >
                 {i > 0 && (
-                  <span
-                    className="pv-plan-panel__summary-sep"
-                    aria-hidden="true"
-                  >
+                  <span className={pp.summarySep} aria-hidden="true">
                     ·{' '}
                   </span>
                 )}
                 {knownLabel !== null ? (
-                  <span className="pv-plan-panel__summary-type-name">
-                    {knownLabel}
-                  </span>
+                  <span className={pp.summaryTypeName}>{knownLabel}</span>
                 ) : (
                   <>
-                    <span className="pv-plan-panel__summary-type-count">
-                      {entry.count}
-                    </span>{' '}
-                    <span className="pv-plan-panel__summary-type-name">
+                    <span className={pp.summaryTypeCount}>{entry.count}</span>{' '}
+                    <span className={pp.summaryTypeName}>
                       {pluralLabel(entry.frameType, entry.count)}
                     </span>
                   </>
@@ -201,17 +197,20 @@ export function PlanGroupRow({
 
         {/* Col 4: destination (aligned across all plans). In-place
             catalogues read "In place · <folder>"; moves read "→ <dest>". */}
-        <span className="pv-plan-panel__group-dest">
+        <span
+          className={pp.groupDest}
+          data-testid={`plan-group-dest-${plan.inboxItemId}`}
+        >
           {allInPlace ? (
             <>
               <span
-                className="pv-plan-panel__inplace"
+                className={pp.inplace}
                 data-testid="plan-panel-inplace"
               >
                 {m.inbox_inplace_label()}
               </span>
               <code
-                className="pv-plan-panel__summary-dest"
+                className={pp.summaryDest}
                 title={breakdownDest?.full ?? plan.itemName}
               >
                 {breakdownDest?.short ?? plan.itemName}
@@ -220,14 +219,14 @@ export function PlanGroupRow({
           ) : (
             <>
               <span
-                className="pv-plan-panel__summary-arrow"
+                className={pp.summaryArrow}
                 data-testid="plan-panel-summary-arrow"
                 aria-hidden="true"
               >
                 →
               </span>
               <code
-                className="pv-plan-panel__summary-dest"
+                className={pp.summaryDest}
                 title={
                   breakdownDest?.full ?? summaryLines[0]?.destinationFull ?? ''
                 }
@@ -242,7 +241,7 @@ export function PlanGroupRow({
 
         {/* Col 5: file count (+ move/in-place split in the tooltip). */}
         <span
-          className="pv-plan-panel__group-count"
+          className={pp.groupCount}
           title={
             moveCount > 0
               ? m.inbox_plan_file_count_tooltip_mixed({
@@ -258,10 +257,10 @@ export function PlanGroupRow({
         </span>
 
         {/* Col 6: stale badge + per-group apply (live progress) + discard */}
-        <span className="pv-plan-panel__group-actions">
+        <span className={pp.groupActions}>
           {plan.stale && (
             <span
-              className="pv-plan-panel__stale-badge"
+              className={pp.staleBadge}
               data-testid={`plan-stale-${plan.inboxItemId}`}
             >
               {m.inbox_stale()}
@@ -304,7 +303,7 @@ export function PlanGroupRow({
           the OperationEvent channel (spec 042 US16 / FR-021). */}
       {progress && progressPlanId === plan.planId && (
         <div
-          className="pv-plan-panel__progress"
+          className={pp.progress}
           data-testid={`plan-progress-${plan.inboxItemId}`}
           role="status"
           aria-live="polite"
@@ -346,7 +345,7 @@ export function PlanGroupRow({
       )}
 
       {plan.stale && (
-        <Banner variant="danger" className="pv-plan-panel__stale-banner">
+        <Banner variant="danger" className={pp.staleBanner}>
           {m.inbox_stale_plan_warning()}
         </Banner>
       )}
@@ -356,7 +355,7 @@ export function PlanGroupRow({
           "Composition", and the destination under "Destination". Hidden
           until expanded. */}
       {isExpanded && (
-        <div className="pv-plan-panel__file-rows" id={rowsId}>
+        <div className={pp.fileRows} id={rowsId}>
           {plan.actions.map((a, actionPos) => {
             const rowIdx = rowOffset + actionPos;
             // FR-031: prefer the absolute destination path from the last
@@ -367,12 +366,16 @@ export function PlanGroupRow({
             const inPlace =
               a.action === 'catalogue' || a.destinationPreview === a.fromPath;
             return (
-              <div key={a.index} className="pv-plan-panel__file-row">
+              <div
+                key={a.index}
+                className={pp.fileRow}
+                data-testid={`plan-file-row-${rowOffset + a.index}`}
+              >
                 <span aria-hidden="true" />
-                <span className="pv-plan-panel__file-name" title={a.fromPath}>
+                <span className={pp.fileName} title={a.fromPath}>
                   {basename(a.fromPath)}
                 </span>
-                <span className="pv-plan-panel__file-action">
+                <span className={pp.fileAction}>
                   {/* Per-file frame type (composition), inferred from the
                       path / item hint — not the repetitive action kind. */}
                   {frameTypeLabel(
@@ -381,7 +384,7 @@ export function PlanGroupRow({
                     frameTypeByItemId?.[plan.inboxItemId],
                   )}
                   {a.requiresDestructiveConfirm && (
-                    <span className="pv-plan-panel__file-flag">
+                    <span className={pp.fileFlag}>
                       {m.inbox_destructive_flag()}
                     </span>
                   )}
@@ -394,9 +397,9 @@ export function PlanGroupRow({
                     PlanReviewOverlay's From/To columns. In-place catalogue
                     actions have no second side — the single path is the
                     item's current (and final) location. */}
-                <span className="pv-plan-panel__file-dest">
+                <span className={pp.fileDest}>
                   <code
-                    className="pv-plan-panel__path"
+                    className={pp.path}
                     data-testid={`inbox-source-absolute-${rowIdx}`}
                     title={`${m.plans_review_col_from()}: ${a.fromPath}`}
                   >
@@ -404,22 +407,19 @@ export function PlanGroupRow({
                   </code>
                   {inPlace ? (
                     <span
-                      className="pv-plan-panel__inplace"
+                      className={pp.inplace}
                       data-testid="plan-panel-inplace"
                     >
                       {m.inbox_inplace_label()}
                     </span>
                   ) : (
                     <>
-                      <span
-                        className="pv-plan-panel__summary-arrow"
-                        aria-hidden="true"
-                      >
+                      <span className={pp.summaryArrow} aria-hidden="true">
                         {' '}
                         →{' '}
                       </span>
                       <code
-                        className="pv-plan-panel__path"
+                        className={pp.path}
                         data-testid={`inbox-dest-absolute-${rowIdx}`}
                         title={`${m.plans_review_col_to()}: ${destText}`}
                       >

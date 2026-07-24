@@ -31,6 +31,7 @@ import { m } from '@/lib/i18n';
 import { PlanRootPicker } from './PlanRootPicker';
 import { PlanGroupRow } from './PlanGroupRow';
 import { PlanDestructiveControl } from './PlanDestructiveControl';
+import * as pp from './plan-panel.css';
 
 export { buildBreakdownFromActions } from './planPanelHelpers';
 
@@ -289,7 +290,7 @@ export function PlanPanel({
   // pick (the latter can occur with zero open plans — the plan wasn't created).
   if (plans.length === 0) {
     return pendingRootPick ? (
-      <div className="pv-plan-panel" data-testid="plan-panel">
+      <div className={pp.root} data-testid="plan-panel">
         <PlanRootPicker
           pendingRootPick={pendingRootPick}
           onPickDestinationRoot={onPickDestinationRoot}
@@ -308,7 +309,7 @@ export function PlanPanel({
     busy || plans.length === 0 || !allDestructiveConfirmed;
 
   return (
-    <div className="pv-plan-panel" data-testid="plan-panel">
+    <div className={pp.root} data-testid="plan-panel">
       {/* ── Destination-root picker (FR-029): blocks apply until chosen ── */}
       {pendingRootPick && (
         <PlanRootPicker
@@ -319,10 +320,10 @@ export function PlanPanel({
       )}
 
       {/* ── Pinned header: counts + select-all + apply controls ── */}
-      <div className="pv-plan-panel__bar" data-testid="plan-panel-bar">
-        <div className="pv-plan-panel__bar-left">
+      <div className={pp.bar} data-testid="plan-panel-bar">
+        <div className={pp.barLeft}>
           {}
-          <label className="pv-plan-panel__select-all">
+          <label className={pp.selectAll}>
             <input
               type="checkbox"
               checked={allSelectableSelected}
@@ -331,19 +332,14 @@ export function PlanPanel({
               aria-label={m.inbox_select_all_plans_aria()}
               data-testid="plan-select-all"
             />
-            <span className="pv-plan-panel__select-all-label">
-              {m.common_select_all()}
-            </span>
+            <span className={pp.selectAllLabel}>{m.common_select_all()}</span>
           </label>
-          <span
-            className="pv-plan-panel__count-summary"
-            data-testid="plan-total-count"
-          >
+          <span className={pp.countSummary} data-testid="plan-total-count">
             {m.plan_count_label({ count: plans.length })} ·{' '}
             {m.action_count_label({ count: totalActions })}
           </span>
         </div>
-        <div className="pv-plan-panel__bar-actions">
+        <div className={pp.barActions}>
           <Btn
             variant="primary"
             data-guide-anchor="inbox.apply-plan-cta"
@@ -369,10 +365,10 @@ export function PlanPanel({
       </div>
 
       {/* ── Scrollable group list ── */}
-      <div className="pv-plan-panel__scroll" data-testid="plan-panel-scroll">
+      <div className={pp.scroll} data-testid="plan-panel-scroll">
         {/* Column header — aligns with each plan's group-header grid. */}
-        <div className="pv-plan-panel__list-head" aria-hidden="true">
-          <span className="pv-plan-panel__group-lead" />
+        <div className={pp.listHead} aria-hidden="true">
+          <span className={pp.groupLead} />
           <span>{m.inbox_plan_col_plan()}</span>
           <span>{m.inbox_plan_col_composition()}</span>
           <span>{m.inbox_col_destination()}</span>

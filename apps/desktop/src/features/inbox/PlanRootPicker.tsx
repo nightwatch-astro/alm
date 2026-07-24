@@ -10,6 +10,7 @@
 import { Btn } from '@/ui';
 import { m } from '@/lib/i18n';
 import type { PendingRootPick } from './PlanPanel';
+import * as pp from './plan-panel.css';
 
 export interface PlanRootPickerProps {
   pendingRootPick: PendingRootPick;
@@ -23,14 +24,14 @@ export function PlanRootPicker({
   rootPickBusy,
 }: PlanRootPickerProps) {
   return (
-    <div className="pv-plan-panel__root-picker" data-testid="inbox-root-picker">
-      <div className="pv-plan-panel__root-picker-title">
+    <div className={pp.rootPicker} data-testid="inbox-root-picker">
+      <div className={pp.rootPickerTitle}>
         {m.inbox_choose_dest_root_title()}
       </div>
-      <div className="pv-plan-panel__root-picker-desc">
+      <div className={pp.rootPickerDesc}>
         {m.inbox_choose_dest_root_body({ category: pendingRootPick.category })}
       </div>
-      <div className="pv-plan-panel__root-picker-options">
+      <div className={pp.rootPickerOptions}>
         {pendingRootPick.candidates.map((c) => (
           <Btn
             key={c.rootId}
@@ -39,11 +40,11 @@ export function PlanRootPicker({
             disabled={rootPickBusy}
             data-testid={`inbox-root-option-${c.rootId}`}
             aria-label={m.inbox_use_as_destination_root_aria({ path: c.path })}
-            className="pv-plan-panel__root-option"
+            className={pp.rootOption}
           >
-            <span className="pv-plan-panel__root-option-inner">
-              <code className="pv-plan-panel__root-option-path">{c.path}</code>
-              <span className="pv-plan-panel__root-option-kind">{c.kind}</span>
+            <span className={pp.rootOptionInner}>
+              <code className={pp.rootOptionPath}>{c.path}</code>
+              <span className={pp.rootOptionKind}>{c.kind}</span>
             </span>
           </Btn>
         ))}

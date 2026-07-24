@@ -238,7 +238,7 @@ describe('PlanPanel (aggregate surface)', { timeout: 15_000 }, () => {
     const summary = screen.getByTestId('plan-group-summary-g1');
     expect(summary).toHaveTextContent('2 darks');
     const group = screen.getByTestId('plan-group-g1');
-    expect(group.querySelector('.pv-plan-panel__group-dest')).toHaveTextContent(
+    expect(screen.getByTestId('plan-group-dest-g1')).toHaveTextContent(
       'masters/darks',
     );
   });
@@ -360,7 +360,7 @@ describe('PlanPanel (aggregate surface)', { timeout: 15_000 }, () => {
     expect(summary).toHaveTextContent('light');
     // It is a SINGLE composition cell (all types inline), not per-type rows.
     expect(
-      summary.querySelectorAll('.pv-plan-panel__summary-type'),
+      summary.querySelectorAll('[data-testid="plan-summary-type"]'),
     ).toHaveLength(3);
 
     // The ▸ toggle expands the per-file rows on demand.
@@ -424,7 +424,7 @@ describe('PlanPanel (aggregate surface)', { timeout: 15_000 }, () => {
     expect(summary).not.toHaveTextContent('catalogue');
     // SINGLE collapsed composition cell with the three aligned type tokens.
     expect(
-      summary.querySelectorAll('.pv-plan-panel__summary-type'),
+      summary.querySelectorAll('[data-testid="plan-summary-type"]'),
     ).toHaveLength(3);
   });
 
