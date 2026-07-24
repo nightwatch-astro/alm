@@ -13,6 +13,7 @@ use domain_core::settings::{SettingsState, SourceOverride};
 use patterns::{default_pattern, validate_pattern_str, FrameTypeClass};
 use serde_json::Value;
 use sqlx::types::Json;
+use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 
 use persistence_core::{DbError, DbResult};
@@ -58,6 +59,34 @@ pub async fn set_raw(pool: &SqlitePool, key: &str, value: &Value) -> DbResult<()
     .bind(Json(value))
     .bind(&now)
     .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Write (upsert) a raw JSON value for a single key on an existing connection.
+///
+/// Accepts a bare `SqliteConnection` so callers can participate in an
+/// open transaction without needing a pool.
+///
+/// # Errors
+///
+/// Returns [`DbError::Database`] on query failure.
+pub async fn set_raw_with_conn(
+    conn: &mut SqliteConnection,
+    key: &str,
+    value: &Value,
+) -> DbResult<()> {
+    let now = Timestamp::now_iso();
+
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    )
+    .bind(key)
+    .bind(Json(value))
+    .bind(&now)
+    .execute(conn)
     .await?;
 
     Ok(())

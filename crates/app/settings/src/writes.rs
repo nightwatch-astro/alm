@@ -284,9 +284,17 @@ pub async fn restore_defaults(
         req.keys.clone()
     };
 
-    let mut restored = Vec::new();
+    // Read current values outside the transaction — reads are cheap and
+    // non-destructive; only the writes must be atomic.
+    struct PendingWrite {
+        key: String,
+        current_val: Value,
+        default_val: Value,
+        is_protection_default: bool,
+    }
+
+    let mut pending: Vec<PendingWrite> = Vec::new();
     let mut already_at_default = Vec::new();
-    let mut restored_protection_default = false;
 
     for key in &keys_to_restore {
         let default_val = default_value_for_key(key);
@@ -302,37 +310,52 @@ pub async fn restore_defaults(
 
         if settings_value_eq(&current_val, &default_val) {
             already_at_default.push(key.clone());
-            continue;
-        }
-
-        // Write the default value.
-        if is_protection_default {
-            protection_repo::set_protection_default(
-                pool,
-                GLOBAL_PROTECTION_DEFAULT_SCOPE,
-                key,
-                &default_val,
-            )
-            .await
-            .map_err(db_err)?;
         } else {
-            repo::set_raw(pool, key, &default_val).await.map_err(db_err)?;
+            pending.push(PendingWrite { key: key.clone(), current_val, default_val, is_protection_default });
         }
+    }
 
+    // Write all defaults in a single transaction — all-or-nothing.
+    if !pending.is_empty() {
+        let mut tx = pool.begin().await.map_err(|e| db_err(e.into()))?;
+        for pw in &pending {
+            if pw.is_protection_default {
+                protection_repo::set_protection_default_with_conn(
+                    &mut *tx,
+                    GLOBAL_PROTECTION_DEFAULT_SCOPE,
+                    &pw.key,
+                    &pw.default_val,
+                )
+                .await
+                .map_err(db_err)?;
+            } else {
+                repo::set_raw_with_conn(&mut *tx, &pw.key, &pw.default_val)
+                    .await
+                    .map_err(db_err)?;
+            }
+        }
+        tx.commit().await.map_err(|e| db_err(e.into()))?;
+    }
+
+    // Emit audit events after the commit (T027, FR-130).
+    let mut restored = Vec::new();
+    let mut restored_protection_default = false;
+
+    for pw in pending {
         // Write durable audit row + live event (even for noisy keys — restore
         // is an explicit action, FR-130).
         write_settings_applied_audit(
             bus,
-            is_protection_default,
+            pw.is_protection_default,
             "settings.restore_defaults",
-            key,
-            &current_val,
-            &default_val,
+            &pw.key,
+            &pw.current_val,
+            &pw.default_val,
         )
         .await?;
 
-        restored.push(key.clone());
-        if is_protection_default {
+        restored.push(pw.key);
+        if pw.is_protection_default {
             restored_protection_default = true;
         }
     }

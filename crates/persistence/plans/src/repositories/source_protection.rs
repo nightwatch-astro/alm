@@ -10,6 +10,7 @@
 use domain_core::ids::Timestamp;
 use serde_json::Value;
 use sqlx::types::Json;
+use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 
 use persistence_core::{DbError, DbResult};
@@ -259,6 +260,37 @@ pub async fn set_protection_default(
     .bind(Json(value))
     .bind(&now)
     .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Write (upsert) a protection default on an existing connection.
+///
+/// Accepts a bare `SqliteConnection` so callers can participate in an
+/// open transaction without needing a pool.
+///
+/// # Errors
+///
+/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`]
+/// on JSON encoding failure.
+pub async fn set_protection_default_with_conn(
+    conn: &mut SqliteConnection,
+    scope: &str,
+    key: &str,
+    value: &serde_json::Value,
+) -> DbResult<()> {
+    let now = Timestamp::now_iso();
+
+    sqlx::query(
+        "INSERT INTO protection_defaults (scope, key, value, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    )
+    .bind(scope)
+    .bind(key)
+    .bind(Json(value))
+    .bind(&now)
+    .execute(conn)
     .await?;
 
     Ok(())
