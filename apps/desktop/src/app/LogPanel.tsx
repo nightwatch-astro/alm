@@ -52,7 +52,7 @@ import {
   events,
   empty,
 } from './logpanel.css';
-import { virtualInner, virtualScroll } from '@/styles/app-shell.css';
+import { virtualInner, virtualScroll } from '@/ui/page-layout.css';
 
 // ── LogPanel component ────────────────────────────────────────────────────────
 

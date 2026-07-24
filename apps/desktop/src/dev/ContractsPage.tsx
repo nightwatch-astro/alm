@@ -24,19 +24,19 @@ import { SchemaViewer } from './SchemaViewer';
 import { pickDirectory } from '@/shared/native/picker';
 import { getCallSnapshot, subscribeRecorder } from './recorder';
 import {
-  pageStubBody,
-  pageStubHeading,
-  pageStubText,
-  pageLoading,
+  stubBody as pageStubBody,
+  stubHeading as pageStubHeading,
+  stubText as pageStubText,
+  loading as pageLoading,
   pageBody,
   pageHeader,
   pageTitle,
   pageActions,
-  pageError,
-  pageExportResult,
-  pageSectionHeading,
-} from './dev.css';
-import { pageScroll } from '@/styles/app-shell.css';
+  error as pageError,
+  exportResult as pageExportResult,
+  sectionHeading as pageSectionHeading,
+} from './contracts-page.css';
+import { pageScroll } from '@/ui/page-layout.css';
 
 // ── Disabled stub ─────────────────────────────────────────────────────────────
 

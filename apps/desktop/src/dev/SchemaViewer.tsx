@@ -14,19 +14,19 @@ import { useState, useEffect } from 'react';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
 import {
-  schemaOverlay,
-  schemaPanel,
-  schemaHeader,
-  schemaName,
-  schemaVersion,
-  schemaActions,
-  schemaBody,
-  schemaMissing,
-  schemaMissingPath,
-  schemaMissingCode,
-  schemaLoading,
-  schemaPre,
-} from './dev.css';
+  overlay as schemaOverlay,
+  panel as schemaPanel,
+  header as schemaHeader,
+  name as schemaName,
+  ver as schemaVersion,
+  actions as schemaActions,
+  body as schemaBody,
+  missing as schemaMissing,
+  missingPath as schemaMissingPath,
+  missingCode as schemaMissingCode,
+  loading as schemaLoading,
+  pre as schemaPre,
+} from './schema-viewer.css';
 
 interface SchemaViewerProps {
   /** Absolute path to the JSON Schema file. */

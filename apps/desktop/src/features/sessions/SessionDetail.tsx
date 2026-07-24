@@ -47,6 +47,15 @@ import { sessionDisplayName } from './displayName';
 import { integrationSeconds } from './integration';
 import { formatIntegration } from '@/lib/format';
 import { connectivityLabel, connectivityVariant } from './connectivity';
+import {
+  linkedList,
+  calibRow,
+  calibNote,
+  actions as actionsCls,
+  head,
+  link,
+  muted as mutedCls,
+} from '@/components/two-col-detail-layout.css';
 
 /** `SessionCalibrationMatch.kind` is the wider `CalibrationKind` (adds
  * `dark_flat`/`bad_pixel_map`, neither assignable per FR-001), while
@@ -108,26 +117,20 @@ function CalibrationLinkage({
   }
   return (
     <>
-      <div
-        className="pv-session-detail2__linked-list"
-        data-testid="session-calib-list"
-      >
+      <div className={linkedList} data-testid="session-calib-list">
         {matches.map((match) => (
-          <div
-            key={`${match.kind}-${match.masterId}`}
-            className="pv-session-detail2__calib-row"
-          >
+          <div key={`${match.kind}-${match.masterId}`} className={calibRow}>
             <Pill variant="info">{match.kind}</Pill>
             <span className="pv-mono">{match.masterId}</span>
             {match.score != null && (
-              <span className="pv-session-detail2__calib-note">
+              <span className={calibNote}>
                 {m.sessions_calib_score({
                   pct: Math.round(match.score * 100),
                 })}
               </span>
             )}
             {match.softMismatches.length > 0 && (
-              <span className="pv-session-detail2__calib-note">
+              <span className={calibNote}>
                 {m.sessions_calib_soft_mismatch({
                   dims: match.softMismatches.join(', '),
                 })}
@@ -326,7 +329,7 @@ export function SessionDetail({
   // button apart. Spec 041 FR-051 (T076): the review actions that used to
   // share this row (Confirm/Re-open/Reject/Ignore) are removed.
   const actionButtons = (
-    <span className="pv-session-detail2__actions">
+    <span className={actionsCls}>
       {/* Backing-source connectivity (#889): a session on a missing/disabled/
           reconnect-required root is not "healthy" — surface the reason
           file-touching actions like Reveal are unavailable. */}
@@ -362,16 +365,14 @@ export function SessionDetail({
         colB={<PropertyTable mode="view" showSource properties={colB} />}
         linked={
           <>
-            <div className="pv-session-detail2__head">
-              {m.sessions_linked_projects_heading()}
-            </div>
+            <div className={head}>{m.sessions_linked_projects_heading()}</div>
             {isLinked ? (
-              <div className="pv-session-detail2__linked-list">
+              <div className={linkedList}>
                 {session.linked?.projects?.map((p) => (
                   <button
                     key={p.id}
                     type="button"
-                    className="pv-session-detail2__link"
+                    className={link}
                     onClick={() => onOpenProject?.(p.id)}
                   >
                     {p.name}
@@ -379,9 +380,7 @@ export function SessionDetail({
                 ))}
               </div>
             ) : (
-              <span className="pv-session-detail2__muted">
-                {m.common_none()}
-              </span>
+              <span className={mutedCls}>{m.common_none()}</span>
             )}
           </>
         }

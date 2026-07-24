@@ -25,7 +25,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { pageBar } from '@/styles/app-shell.css';
+import { pageBar } from '@/ui/page-layout.css';
 
 export interface PageTopBarProps {
   /** Heading / breadcrumb node (primary, left). */

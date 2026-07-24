@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { checkFirstRunComplete } from '@/app/first-run';
 import { m } from '@/lib/i18n';
 import { SetupWizard } from './SetupWizard';
-import { page } from '@/styles/app-shell.css';
+import { page } from '@/ui/page-layout.css';
 
 export function SetupPage() {
   const [setupCompleted] = usePreference('setupCompleted');

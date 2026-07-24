@@ -3,11 +3,11 @@
 
 import type { ReactNode } from 'react';
 import {
-  detailActions,
-  detailHeader,
-  detailHeaderContent,
-  detailTitle,
-} from '@/styles/app-shell.css';
+  header as detailHeader,
+  content as detailHeaderContent,
+  title as detailTitle,
+  actions as detailActions,
+} from './DetailHeader.css';
 
 export interface DetailHeaderProps {
   title: ReactNode;

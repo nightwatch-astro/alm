@@ -347,7 +347,7 @@ describe('InboxDetail — FR-032: missing-attribute banner', () => {
     const trigger = screen.getByTestId('inbox-files-popover-trigger');
     // Same `.pv-session-detail2__col` ancestor as the Files trigger — i.e.
     // the banner is NOT its own separate trailing column.
-    const filesCol = trigger.closest('.pv-session-detail2__col');
+    const filesCol = trigger.closest('[data-testid="detail-col"]');
     expect(filesCol).not.toBeNull();
     expect(filesCol?.contains(banner)).toBe(true);
   });
@@ -465,7 +465,7 @@ describe('InboxDetail — compact layout: detection col + popover trigger', () =
         fileMetadata={fileMetadataFixture}
       />,
     );
-    expect(container.querySelector('.pv-session-detail2')).not.toBeNull();
+    expect(screen.queryByTestId('two-col-detail')).not.toBeNull();
     // No old 3-zone wrappers.
     expect(container.querySelector('.pv-detailpanel__facts')).toBeNull();
     expect(container.querySelector('.pv-detailpanel__aux')).toBeNull();
@@ -491,9 +491,7 @@ describe('InboxDetail — compact layout: detection col + popover trigger', () =
     );
     const scroll = container.querySelector('.pv-inbox-detail__scroll');
     expect(scroll).not.toBeNull();
-    expect(
-      scroll?.contains(container.querySelector('.pv-session-detail2')),
-    ).toBe(true);
+    expect(scroll?.contains(screen.queryByTestId('two-col-detail'))).toBe(true);
   });
 
   it('renders detection facts spread across multiple property columns', () => {
@@ -507,12 +505,14 @@ describe('InboxDetail — compact layout: detection col + popover trigger', () =
     );
     // Left-packed multi-column body (Sessions convention): ≥2 columns.
     expect(
-      container.querySelectorAll('.pv-session-detail2__col').length,
+      screen
+        .getByTestId('two-col-detail')
+        .querySelectorAll('[data-testid="detail-col"]').length,
     ).toBeGreaterThanOrEqual(2);
     // The Files column carries a head label (scoped to the head element —
     // "Files" also appears as a PropertyTable row label).
-    const heads = [...container.querySelectorAll('.pv-session-detail2__head')];
-    expect(heads.some((h) => h.textContent === 'Files')).toBe(true);
+    // The Files column has a head label 'Files' visible in the DOM.
+    expect(screen.getByText('Files', { selector: 'div' })).toBeInTheDocument();
     // 'light' from frameType appears in the PropertyTable value.
     expect(screen.getAllByText(/light/).length).toBeGreaterThan(0);
   });
@@ -526,7 +526,7 @@ describe('InboxDetail — compact layout: detection col + popover trigger', () =
         fileMetadata={fileMetadataFixture}
       />,
     );
-    const cols = [...container.querySelectorAll('.pv-session-detail2__col')];
+    const cols = [...document.querySelectorAll('[data-testid="detail-col"]')];
     expect(
       cols.some(
         (c) =>

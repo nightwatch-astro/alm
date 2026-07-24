@@ -52,7 +52,7 @@ import {
 } from './sources-store';
 import { saveSites } from '@/features/targets/observing-sites/site-store';
 import type { ObserverSite } from '@/features/targets/observing-sites/observer-site';
-import { page } from '@/styles/app-shell.css';
+import { page } from '@/ui/page-layout.css';
 
 // Registers the custom-almSettings Paraglide strategy as soon as this module
 // loads — before StepLanguage's first `useLocale()` render. Idempotent, so

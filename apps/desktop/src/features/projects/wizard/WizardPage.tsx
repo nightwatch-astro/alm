@@ -25,7 +25,7 @@ import {
   projectCreateErrorField,
   type ProjectCreateErrorField,
 } from '@/features/projects/projectCreateErrors';
-import { page, pageBar } from '@/styles/app-shell.css';
+import { page, pageBar } from '@/ui/page-layout.css';
 
 const STORAGE_KEY = 'alm-project-wizard-draft';
 

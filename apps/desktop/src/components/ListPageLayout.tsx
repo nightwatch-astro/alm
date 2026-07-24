@@ -64,7 +64,7 @@ import { PageTopBar, type PageTopBarProps } from './PageTopBar';
 import { DetailDockPlacementControl } from './DetailDockPlacementControl';
 import { m } from '@/lib/i18n';
 import { useAdaptiveDock, ResizeHandle } from '@/ui';
-import { page } from '@/styles/app-shell.css';
+import { page } from '@/ui/page-layout.css';
 
 export interface ListPageLayoutProps {
   /** A ready top-bar node. Mutually exclusive with `topBarProps`. */

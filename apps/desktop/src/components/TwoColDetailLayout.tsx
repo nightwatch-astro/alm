@@ -2,6 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
+import {
+  wrapper,
+  col as colCls,
+  linked as linkedCls,
+  head,
+  muted as mutedCls,
+} from './two-col-detail-layout.css';
 
 export interface TwoColDetailLayoutProps {
   /** Left property column (typically a `PropertyTable` half). */
@@ -47,23 +54,31 @@ export function TwoColDetailLayout({
   linked,
   linkedClassName,
 }: TwoColDetailLayoutProps) {
-  const linkedCls = ['pv-session-detail2__linked', linkedClassName]
-    .filter(Boolean)
-    .join(' ');
+  const finalLinkedCls = [linkedCls, linkedClassName].filter(Boolean).join(' ');
   return (
-    <div className="pv-session-detail2">
-      <div className="pv-session-detail2__col">{colA}</div>
-      {colB != null && <div className="pv-session-detail2__col">{colB}</div>}
-      {(extraCols ?? []).map((col, i) =>
-        col == null ? null : (
+    <div className={wrapper} data-testid="two-col-detail">
+      <div className={colCls} data-testid="detail-col">
+        {colA}
+      </div>
+      {colB != null && (
+        <div className={colCls} data-testid="detail-col">
+          {colB}
+        </div>
+      )}
+      {(extraCols ?? []).map((item, i) =>
+        item == null ? null : (
           // Positional slots: a caller passes a fixed-length array whose
           // entries may be null, so the index IS the stable identity here.
-          <div className="pv-session-detail2__col" key={i}>
-            {col}
+          <div className={colCls} data-testid="detail-col" key={i}>
+            {item}
           </div>
         ),
       )}
-      {linked != null && <div className={linkedCls}>{linked}</div>}
+      {linked != null && (
+        <div className={finalLinkedCls} data-testid="detail-linked">
+          {linked}
+        </div>
+      )}
     </div>
   );
 }
@@ -93,12 +108,10 @@ export function DetailLinkedGroup({
 }: DetailLinkedGroupProps) {
   return (
     <div>
-      <div className="pv-session-detail2__head">{label}</div>
-      {empty ? (
-        <span className="pv-session-detail2__muted">{emptyLabel}</span>
-      ) : (
-        children
-      )}
+      <div className={head} data-testid="detail-group-head">
+        {label}
+      </div>
+      {empty ? <span className={mutedCls}>{emptyLabel}</span> : children}
     </div>
   );
 }

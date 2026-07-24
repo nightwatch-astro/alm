@@ -55,6 +55,7 @@ import {
   resolveInboxRevealPath,
 } from './inboxDetailHelpers';
 import { selectBase } from '@/styles/select.css';
+import { actions as inboxActionsCls } from '@/components/two-col-detail-layout.css';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -281,7 +282,7 @@ export function InboxDetail({
   // ── Inline header actions ─────────────────────────────────────────────────
 
   const titleActions = (
-    <span className="pv-session-detail2__actions">
+    <span className={inboxActionsCls}>
       <Pill variant={classificationVariant(classType)}>
         {classType === 'single_type'
           ? (classification?.frameType ?? m.inbox_detail_single_fallback())

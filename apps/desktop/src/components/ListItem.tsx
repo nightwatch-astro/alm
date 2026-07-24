@@ -4,11 +4,10 @@
 import type { ReactNode } from 'react';
 import {
   listItem,
-  listItemMeta,
-  listItemMuted,
   listItemSelected,
-  listItemTitle,
-} from '@/styles/app-shell.css';
+  title as listItemTitle,
+  meta as listItemMeta,
+} from './ListItem.css';
 
 export interface ListItemProps {
   selected?: boolean;

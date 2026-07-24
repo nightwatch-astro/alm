@@ -28,13 +28,13 @@ import { SettingsSection, SettingsRow } from '@/features/settings/SettingsKit';
 import { Toggle } from '@/ui';
 import { m } from '@/lib/i18n';
 import {
-  pageBody,
-  pageTitle,
-  pageExportResult,
-  pageError,
-  pageLoading,
-} from './dev.css';
-import { pageScroll } from '@/styles/app-shell.css';
+  body as pageBody,
+  title as pageTitle,
+  exportResult as pageExportResult,
+  error as pageError,
+  loading as pageLoading,
+} from './dev-settings-page.css';
+import { pageScroll } from '@/ui/page-layout.css';
 
 export function DevSettingsPage() {
   const [devMode, setDevModeState] = useState<boolean | null>(null);

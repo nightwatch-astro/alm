@@ -9,16 +9,16 @@ import { usePageStatus } from './PageStatusContext';
 import { useStatusSummary } from './useStatusSummary';
 import {
   statusBar,
-  statusBarIdle,
-  statusBarLogToggle,
-  statusBarMeter,
-  statusBarOp,
-  statusBarRight,
-  statusBarSep,
-  statusBarSpinner,
-  statusBarVol,
-  statusBarVolWarn,
-} from '@/styles/app-shell.css';
+  sep as statusBarSep,
+  right as statusBarRight,
+  op as statusBarOp,
+  idle as statusBarIdle,
+  spinner as statusBarSpinner,
+  vol as statusBarVol,
+  volWarn as statusBarVolWarn,
+  meter as statusBarMeter,
+  logToggle as statusBarLogToggle,
+} from './statusbar.css';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

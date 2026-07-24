@@ -3,7 +3,7 @@
 
 import { forwardRef } from 'react';
 import type { ReactNode, HTMLAttributes } from 'react';
-import { emptyDesc, emptyTitle } from '@/styles/app-shell.css';
+import { title as emptyTitle, desc as emptyDesc } from './EmptyState.css';
 
 export interface EmptyStateProps extends HTMLAttributes<HTMLDivElement> {
   title: string;

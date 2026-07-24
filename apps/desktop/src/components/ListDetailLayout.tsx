@@ -3,13 +3,13 @@
 
 import type { ReactNode } from 'react';
 import {
-  pageBar,
+  twoPane,
+  twoPaneDetail,
   threePane,
   threePaneContent,
   threePaneSidebar,
-  twoPane,
-  twoPaneDetail,
-} from '@/styles/app-shell.css';
+} from './ListDetailLayout.css';
+import { pageBar } from '@/ui/page-layout.css';
 
 export interface ListDetailLayoutProps {
   topBar?: ReactNode;

@@ -26,7 +26,7 @@ import {
   startUpdateSubscription,
   stopUpdateSubscription,
 } from '@/data/updateSubscription';
-import { frame, frameBody, frameMain } from '@/styles/app-shell.css';
+import { frame, frameBody, frameMain } from './shell.css';
 
 // react-joyride is large (~100 kB gz). The lazy chunk loads only when
 // walkReady is true — i.e. never for users who finished the walk and haven't

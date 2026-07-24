@@ -8,12 +8,8 @@ import { ListSidebar } from '@/components';
 import { Pill, SegControl } from '@/ui';
 import { m } from '@/lib/i18n';
 import { objectTypeLabel } from '@/components/TargetSearch/objectType';
-import {
-  listItem,
-  listItemSelected,
-  virtualInner,
-  virtualScroll,
-} from '@/styles/app-shell.css';
+import { virtualInner } from '@/ui/page-layout.css';
+import { listItem, listItemSelected } from '@/components/ListItem.css';
 
 /**
  * Estimated row height (px) for the virtualizer's initial measurement.

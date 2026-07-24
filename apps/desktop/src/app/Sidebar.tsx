@@ -20,27 +20,25 @@ import { usePreference } from '@/data/preferences';
 import { useStatusSummary, type StatusSummary } from './useStatusSummary';
 import { useVisibleOnboardingState } from '@/features/onboarding/store';
 import {
-  sidebarBrand,
-  sidebarBrandLabel,
-  sidebarBrandName,
-  sidebarCollapse,
-  sidebarCollapsed,
-  sidebarFooter,
-  sidebarGroup,
-  sidebarGroupLabel,
-  sidebarHeader,
-  sidebarItem,
-  sidebarItemActive,
-  sidebarItemBadge,
-  sidebarItemBadgeAlert,
-  sidebarItemIcon,
-  sidebarItemLabel,
-  sidebarMark,
-  sidebarNav,
-  sidebarSettings,
   sidebar as sidebarCls,
-  sidebarVersion,
-} from '@/styles/app-shell.css';
+  sidebarCollapsed,
+  header as sidebarHeader,
+  brandName as sidebarBrandName,
+  collapseBtn as sidebarCollapse,
+  nav as sidebarNav,
+  item as sidebarItem,
+  itemActive as sidebarItemActive,
+  itemIcon as sidebarItemIcon,
+  itemLabel as sidebarItemLabel,
+  itemBadge as sidebarItemBadge,
+  itemBadgeAlert as sidebarItemBadgeAlert,
+  footer as sidebarFooter,
+  mark as sidebarMark,
+  version as sidebarVersion,
+  group as sidebarGroup,
+  groupLabel as sidebarGroupLabel,
+  settings as sidebarSettings,
+} from './sidebar.css';
 
 // ChecklistPopover → ChecklistSection → FindSpotlight → joyrideAdapter →
 // react-joyride. Lazy-load this subtree so joyride is not in the boot chunk;

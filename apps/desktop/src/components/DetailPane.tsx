@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
-import { detail } from '@/styles/app-shell.css';
+import { detail } from './DetailPane.css';
 
 export interface DetailPaneProps {
   children: ReactNode;

@@ -84,7 +84,7 @@ import {
 import { DEFAULT_LIMIT, MIN_RESOLVE_LEN } from './helpers';
 import { useTargetSearch } from './useTargetSearch';
 import { selectBase } from '@/styles/select.css';
-import { virtualInner, virtualScroll } from '@/styles/app-shell.css';
+import { virtualInner, virtualScroll } from '@/ui/page-layout.css';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 

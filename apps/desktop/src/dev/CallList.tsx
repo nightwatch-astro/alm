@@ -10,20 +10,20 @@
 
 import type { ContractCall, ContractMeta } from '@/bindings/index';
 import {
-  callsEmpty,
-  callsTable,
-  callsTheadRow,
-  callsTh,
-  callsRow,
-  callsTd,
-  callsTdId,
-  callsTdContract,
-  callsTdStarted,
-  callsTdActions,
-  callsTruncated,
-  callsOutcomeVariants,
-  callsReplayBtnVariants,
-} from './dev.css';
+  empty as callsEmpty,
+  table as callsTable,
+  theadRow as callsTheadRow,
+  th as callsTh,
+  row as callsRow,
+  td as callsTd,
+  tdId as callsTdId,
+  tdContract as callsTdContract,
+  tdStarted as callsTdStarted,
+  tdActions as callsTdActions,
+  truncated as callsTruncated,
+  outcomeVariants as callsOutcomeVariants,
+  replayBtnVariants as callsReplayBtnVariants,
+} from './call-list.css';
 
 interface CallListProps {
   calls: ContractCall[];

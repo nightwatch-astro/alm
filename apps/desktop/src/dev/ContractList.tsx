@@ -10,20 +10,20 @@
 
 import type { ContractMeta } from '@/bindings/index';
 import {
-  contractsListEmpty,
-  contractsListTable,
-  contractsListTheadRow,
-  contractsListTh,
-  contractsListRow,
-  contractsListTd,
-  contractsListTdName,
-  contractsListTdMuted,
-  contractsListTdCenter,
-  contractsListTdSchema,
-  contractsListMismatchIcon,
-  contractsListReplayOk,
-  contractsListReplayNa,
-} from './dev.css';
+  empty as contractsListEmpty,
+  table as contractsListTable,
+  theadRow as contractsListTheadRow,
+  th as contractsListTh,
+  row as contractsListRow,
+  td as contractsListTd,
+  tdName as contractsListTdName,
+  tdMuted as contractsListTdMuted,
+  tdCenter as contractsListTdCenter,
+  tdSchema as contractsListTdSchema,
+  mismatchIcon as contractsListMismatchIcon,
+  replayOk as contractsListReplayOk,
+  replayNa as contractsListReplayNa,
+} from './contract-list.css';
 
 interface ContractListProps {
   contracts: ContractMeta[];

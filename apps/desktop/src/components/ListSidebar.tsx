@@ -5,12 +5,12 @@ import type { ReactNode, Ref } from 'react';
 import { m } from '@/lib/i18n';
 import {
   listSidebar,
-  listSidebarControls,
-  listSidebarFooter,
-  listSidebarList,
-  listSidebarSearch,
-  virtualScroll,
-} from '@/styles/app-shell.css';
+  search as listSidebarSearch,
+  controls as listSidebarControls,
+  list as listSidebarList,
+  footer as listSidebarFooter,
+} from './ListSidebar.css';
+import { virtualScroll } from '@/ui/page-layout.css';
 
 export interface ListSidebarProps {
   placeholder?: string;

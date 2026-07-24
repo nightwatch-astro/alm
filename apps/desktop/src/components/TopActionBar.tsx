@@ -4,11 +4,11 @@
 import type { ReactNode } from 'react';
 import {
   actionBar,
-  actionBarActions,
-  actionBarSpacer,
-  actionBarSubtitle,
-  actionBarTitle,
-} from '@/styles/app-shell.css';
+  title as actionBarTitle,
+  subtitle as actionBarSubtitle,
+  spacer as actionBarSpacer,
+  actions as actionBarActions,
+} from './TopActionBar.css';
 
 export interface TopActionBarProps {
   title: string;
