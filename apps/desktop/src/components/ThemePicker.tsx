@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { clsx } from 'clsx';
+import * as tp from './ThemePicker.css';
 import {
   resolveTheme,
   THEMES,
@@ -102,42 +103,39 @@ export function ThemePicker({
       <button
         key={theme.id}
         type="button"
-        className={clsx(
-          'pv-theme-swatch',
-          isActive && 'pv-theme-swatch--active',
-        )}
+        className={clsx(tp.swatch, isActive && tp.swatchActive)}
         data-testid="theme-swatch"
         onClick={() => setChoice(theme.id)}
         aria-pressed={isActive}
         aria-label={themeAccessibleLabel(theme, modeLabel)}
       >
         {isActive && (
-          <span className="pv-theme-swatch__selected" aria-hidden="true">
+          <span className={tp.swatchSelected} aria-hidden="true">
             ✓
           </span>
         )}
-        <span className="pv-theme-swatch__prev" data-theme={previewTheme}>
+        <span className={tp.swatchPrev} data-theme={previewTheme}>
           <i className="pv-theme-swatch__bg" />
           <i className="pv-theme-swatch__surface" />
           <i className="pv-theme-swatch__accent" />
         </span>
-        <span className="pv-theme-swatch__name">{theme.label()}</span>
-        <span className="pv-theme-swatch__mode">{modeLabel}</span>
+        <span className={tp.swatchName}>{theme.label()}</span>
+        <span className={tp.swatchMode}>{modeLabel}</span>
       </button>
     );
   };
 
   return (
     <div
-      className={clsx('pv-theme-picker', className)}
+      className={clsx(tp.picker, className)}
       data-testid="theme-picker"
       role="group"
       aria-label={m.settings_general_theme()}
     >
-      <div className="pv-theme-swatches">{renderChoice(systemChoice)}</div>
+      <div className={tp.swatches}>{renderChoice(systemChoice)}</div>
 
       <section
-        className="pv-theme-picker__group"
+        className={tp.pickerGroup}
         aria-labelledby="theme-picker-warm-heading"
       >
         <div
@@ -147,11 +145,11 @@ export function ThemePicker({
         >
           {m.settings_general_theme_group_warm()}
         </div>
-        <div className="pv-theme-swatches">{warmChoices.map(renderChoice)}</div>
+        <div className={tp.swatches}>{warmChoices.map(renderChoice)}</div>
       </section>
 
       <section
-        className="pv-theme-picker__group"
+        className={tp.pickerGroup}
         aria-labelledby="theme-picker-cool-heading"
       >
         <div
@@ -161,7 +159,7 @@ export function ThemePicker({
         >
           {m.settings_general_theme_group_cool()}
         </div>
-        <div className="pv-theme-swatches">{coolChoices.map(renderChoice)}</div>
+        <div className={tp.swatches}>{coolChoices.map(renderChoice)}</div>
       </section>
     </div>
   );

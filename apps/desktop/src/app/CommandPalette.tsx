@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { m } from '@/lib/i18n';
+import * as cp from './command-palette.css';
 import { Dialog } from '@base-ui-components/react/dialog';
 import { Command } from 'cmdk';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
@@ -279,84 +280,82 @@ export function CommandPalette() {
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="pv-palette-backdrop" />
+        <Dialog.Backdrop className={cp.backdrop} />
         <Dialog.Popup
-          className="pv-palette"
+          className={cp.palette}
           aria-label={m.cmdk_aria_label()}
           initialFocus={inputRef}
         >
           <Command shouldFilter={false}>
             <Command.Input
               ref={inputRef}
-              className="pv-palette__input"
+              className={cp.paletteInput}
               placeholder={m.cmdk_placeholder()}
               value={query}
               onValueChange={setQuery}
             />
-            <Command.List className="pv-palette__list">
+            <Command.List className={cp.paletteList}>
               {query.trim() && results.length === 0 && (
-                <Command.Empty className="pv-palette__empty">
+                <Command.Empty className={cp.paletteEmpty}>
                   {m.cmdk_no_results({ query: query.trim() })}
                 </Command.Empty>
               )}
               {results.length > 0 && (
                 <Command.Group
-                  className="pv-palette__group"
+                  className={cp.paletteGroup}
                   heading={m.cmdk_group_results()}
                 >
                   {results.map((r) => (
                     <Command.Item
                       key={r.id}
-                      className="pv-palette__item"
+                      className={cp.paletteItem}
                       onSelect={() => select(r.route)}
                     >
-                      <span className="pv-palette__item-kind">{r.kind}</span>
-                      <span className="pv-palette__item-label">{r.label}</span>
+                      <span className={cp.paletteItemKind}>{r.kind}</span>
+                      <span className={cp.paletteItemLabel}>{r.label}</span>
                       {r.sublabel && (
-                        <span className="pv-palette__item-sub">
-                          {r.sublabel}
-                        </span>
+                        <span className={cp.paletteItemSub}>{r.sublabel}</span>
                       )}
                     </Command.Item>
                   ))}
                 </Command.Group>
               )}
               <Command.Group
-                className="pv-palette__group"
+                className={cp.paletteGroup}
                 heading={m.cmdk_group_pages()}
               >
                 {visiblePages.map((p) => (
                   <Command.Item
                     key={p.route}
-                    className="pv-palette__item"
+                    className={cp.paletteItem}
                     onSelect={() => select(p.route)}
                   >
-                    <span className="pv-palette__item-label">{p.label()}</span>
+                    <span className={cp.paletteItemLabel}>{p.label()}</span>
                   </Command.Item>
                 ))}
               </Command.Group>
               <Command.Group
-                className="pv-palette__group"
+                className={cp.paletteGroup}
                 heading={m.cmdk_group_actions()}
               >
                 {ALL_ACTIONS.map((a) => (
                   <Command.Item
                     key={a.label()}
-                    className="pv-palette__item"
+                    className={cp.paletteItem}
                     onSelect={() => selectAction(a)}
                   >
-                    <span className="pv-palette__item-label">{a.label()}</span>
+                    <span className={cp.paletteItemLabel}>{a.label()}</span>
                   </Command.Item>
                 ))}
                 <Command.Item
-                  className="pv-palette__item"
+                  className={cp.paletteItem}
                   onSelect={() => {
                     setOpen(false);
                     setQuery('');
                     void openInNewWindow(currentHref);
                   }}
                 >
-                  <span className="pv-palette__item-label">
+                  <span className={cp.paletteItemLabel}>
                     {m.cmdk_open_new_window()}
                   </span>
                 </Command.Item>

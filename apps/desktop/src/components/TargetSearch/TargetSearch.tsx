@@ -75,6 +75,8 @@ import type { TargetSuggestion } from '@/bindings/aliases';
 import type { TargetCatalogId, TargetObjectType } from '@/bindings/index';
 import { Pill } from '@/ui';
 import { m } from '@/lib/i18n';
+import * as ts from './target-search.css';
+import { input as fieldInput } from '@/ui/field.css';
 import {
   objectTypeLabel,
   catalogLabel,
@@ -189,7 +191,7 @@ export function TargetSearch({
   const virtualItems = virtualizer.getVirtualItems();
 
   return (
-    <div className="pv-target-search" data-testid="target-search">
+    <div className={ts.root} data-testid="target-search">
       <Combobox.Root<TargetSuggestion>
         items={suggestions}
         // Selection stays uncontrolled: we react via `onValueChange` and keep
@@ -227,7 +229,7 @@ export function TargetSearch({
         <Combobox.Input
           ref={inputRef}
           id={id}
-          className="pv-input pv-target-search__input"
+          className={fieldInput}
           data-testid="target-search-input"
           autoComplete="off"
           spellCheck={false}
@@ -263,14 +265,11 @@ export function TargetSearch({
 
         {showFilters && (
           <div
-            className="pv-target-search__filters"
+            className={ts.filters}
             role="group"
             aria-label={m.cmp_target_search_filters_aria()}
           >
-            <label
-              className="pv-target-search__filter-label"
-              htmlFor={typeFilterId}
-            >
+            <label className={ts.filterLabel} htmlFor={typeFilterId}>
               {m.cmp_target_search_type_label()}
               <select
                 id={typeFilterId}
@@ -288,10 +287,7 @@ export function TargetSearch({
                 ))}
               </select>
             </label>
-            <label
-              className="pv-target-search__filter-label"
-              htmlFor={catalogFilterId}
-            >
+            <label className={ts.filterLabel} htmlFor={catalogFilterId}>
               {m.cmp_target_search_catalogue_label()}
               <select
                 id={catalogFilterId}
@@ -349,11 +345,11 @@ export function TargetSearch({
          */}
         <Combobox.Portal keepMounted>
           <Combobox.Positioner
-            className="pv-target-search__positioner"
+            className={ts.positioner}
             sideOffset={4}
             align="start"
           >
-            <Combobox.Popup className="pv-target-search__popup">
+            <Combobox.Popup className={ts.popup}>
               <Combobox.List
                 ref={scrollRef}
                 className={`pv-target-search__list ${virtualScroll}`}
@@ -362,7 +358,7 @@ export function TargetSearch({
               >
                 {loading && suggestions.length === 0 && (
                   <Combobox.Status
-                    className="pv-target-search__status"
+                    className={ts.status}
                     data-testid="target-search-status"
                   >
                     {m.cmp_target_search_searching()}
@@ -379,7 +375,7 @@ export function TargetSearch({
                   suggestions.length === 0 &&
                   query.trim().length < MIN_RESOLVE_LEN && (
                     <Combobox.Status
-                      className="pv-target-search__status"
+                      className={ts.status}
                       data-testid="target-search-status"
                     >
                       {m.cmp_target_search_type_more()}
@@ -401,7 +397,7 @@ export function TargetSearch({
                     </Combobox.Status>
                     <button
                       type="button"
-                      className="pv-target-search__override"
+                      className={ts.override}
                       onPointerDown={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -425,7 +421,7 @@ export function TargetSearch({
                  */}
                 {offlineNoticeOffered && (
                   <Combobox.Status
-                    className="pv-target-search__status"
+                    className={ts.status}
                     data-testid="target-search-status"
                   >
                     {m.settings_resolver_online_off_info()}
@@ -441,7 +437,7 @@ export function TargetSearch({
                 )}
                 {harderState === 'no-results' && (
                   <Combobox.Status
-                    className="pv-target-search__status"
+                    className={ts.status}
                     data-testid="target-search-status"
                   >
                     {m.cmp_target_search_search_harder_no_results()}
@@ -464,7 +460,7 @@ export function TargetSearch({
                           value={s}
                           ref={virtualizer.measureElement}
                           data-index={i}
-                          className="pv-target-search__option"
+                          className={ts.option}
                           data-testid="target-search-option"
                           // eslint-disable-next-line no-restricted-syntax -- dynamic: virtualizer translateY offset per suggestion row
                           style={{
@@ -475,15 +471,13 @@ export function TargetSearch({
                             transform: `translateY(${virtualRow.start}px)`,
                           }}
                         >
-                          <span className="pv-target-search__primary">
+                          <span className={ts.primary}>
                             {s.primaryDesignation}
                           </span>
                           {secondary && secondary !== s.primaryDesignation && (
-                            <span className="pv-target-search__secondary">
-                              {secondary}
-                            </span>
+                            <span className={ts.secondary}>{secondary}</span>
                           )}
-                          <span className="pv-target-search__badges">
+                          <span className={ts.badges}>
                             <Pill variant="info">
                               {objectTypeLabel(s.objectType)}
                             </Pill>
@@ -499,7 +493,7 @@ export function TargetSearch({
                             {enableOverride && (
                               <button
                                 type="button"
-                                className="pv-target-search__override"
+                                className={ts.override}
                                 aria-label={m.cmp_target_search_set_primary_aria(
                                   {
                                     query: query.trim(),

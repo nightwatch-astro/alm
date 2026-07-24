@@ -23,6 +23,8 @@ import { Checkbox } from '@base-ui-components/react/checkbox';
 import { Select } from '@base-ui-components/react/select';
 import { Tooltip } from '@/ui';
 import { m } from '@/lib/i18n';
+import * as pt from './PropertyTable.css';
+import { vars } from '@/styles/themes.css';
 import {
   renderValueOnly,
   SourceBadge,
@@ -140,39 +142,30 @@ export function PropertyTable({
 }: PropertyTableProps) {
   return (
     <div
-      className="pv-property-table"
+      className={pt.root}
       data-testid="property-table"
       role="table"
       aria-label={m.cmp_property_table_aria()}
     >
       {/* Header row */}
-      <div className="pv-property-table__header" role="row">
-        <span
-          className="pv-property-table__cell pv-property-table__cell--label"
-          role="columnheader"
-        >
+      <div className={pt.header} role="row">
+        <span className={pt.cellLabel} role="columnheader">
           {m.cmp_property_table_col_property()}
         </span>
         <span
-          className="pv-property-table__cell pv-property-table__cell--value"
+          className={pt.cellValue}
           data-testid="property-table-cell-value"
           role="columnheader"
         >
           {m.cmp_property_table_col_value()}
         </span>
         {showSource && (
-          <span
-            className="pv-property-table__cell pv-property-table__cell--source"
-            role="columnheader"
-          >
+          <span className={pt.cellSource} role="columnheader">
             {m.projects_wizard_col_source()}
           </span>
         )}
         {showConfirm && (
-          <span
-            className="pv-property-table__cell pv-property-table__cell--confirm"
-            role="columnheader"
-          >
+          <span className={pt.cellConfirm} role="columnheader">
             {m.cmp_property_table_col_confirmed()}
           </span>
         )}
@@ -185,18 +178,18 @@ export function PropertyTable({
         const state = valueState(prop.value, applicability);
 
         return (
-          <div key={prop.key} className="pv-property-table__row" role="row">
-            <span
-              className="pv-property-table__cell pv-property-table__cell--label"
-              role="rowheader"
-            >
+          <div key={prop.key} className={pt.row} role="row">
+            <span className={pt.cellLabel} role="rowheader">
               {prop.label}
             </span>
 
             <span
-              className={
-                'pv-property-table__cell pv-property-table__cell--value' +
-                (prop.mono ? ' pv-mono' : '')
+              className={pt.cellValue}
+              // mono: inline font-family override — still token-driven via vars.fontMono
+              style={
+                prop.mono
+                  ? { fontFamily: vars.fontMono, fontSize: 'var(--pv-text-xs)' }
+                  : undefined
               }
               data-testid="property-table-cell-value"
               role="cell"
@@ -228,10 +221,7 @@ export function PropertyTable({
             </span>
 
             {showSource && (
-              <span
-                className="pv-property-table__cell pv-property-table__cell--source"
-                role="cell"
-              >
+              <span className={pt.cellSource} role="cell">
                 {/* Source pills couple to value presence (FR-138) — never
                     shown for an unresolved or not-applicable field. */}
                 {state === 'real' && prop.source && (
@@ -241,10 +231,7 @@ export function PropertyTable({
             )}
 
             {showConfirm && (
-              <span
-                className="pv-property-table__cell pv-property-table__cell--confirm"
-                role="cell"
-              >
+              <span className={pt.cellConfirm} role="cell">
                 {prop.onConfirmToggle !== undefined && (
                   <Checkbox.Root
                     className="pv-checkbox"
