@@ -495,7 +495,7 @@ describe('InboxDetail — compact layout: detection col + popover trigger', () =
   });
 
   it('renders detection facts spread across multiple property columns', () => {
-    const { container } = render(
+    render(
       <InboxDetail
         item={sampleItem}
         rootAbsolutePath="/astro/inbox"
@@ -518,7 +518,7 @@ describe('InboxDetail — compact layout: detection col + popover trigger', () =
   });
 
   it('files popover trigger renders inside a detail column', () => {
-    const { container } = render(
+    render(
       <InboxDetail
         item={sampleItem}
         rootAbsolutePath="/astro/inbox"
