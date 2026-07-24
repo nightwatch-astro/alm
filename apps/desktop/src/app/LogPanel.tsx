@@ -52,6 +52,7 @@ import {
   events,
   empty,
 } from './logpanel.css';
+import { virtualInner, virtualScroll } from '@/styles/app-shell.css';
 
 // ── LogPanel component ────────────────────────────────────────────────────────
 
@@ -341,7 +342,7 @@ export function LogPanel() {
         )}
 
         <ul
-          className={`${events} pv-virtual-scroll`}
+          className={`${events} ${virtualScroll}`}
           ref={listRef}
           onScroll={handleScroll}
           data-virtual-scroll="true"
@@ -361,7 +362,7 @@ export function LogPanel() {
             </li>
           ) : (
             <div
-              className="pv-virtual-inner"
+              className={virtualInner}
               // eslint-disable-next-line no-restricted-syntax
               style={{
                 height: `${virtualizer.getTotalSize()}px`,

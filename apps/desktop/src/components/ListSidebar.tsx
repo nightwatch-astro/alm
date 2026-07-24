@@ -3,6 +3,14 @@
 
 import type { ReactNode, Ref } from 'react';
 import { m } from '@/lib/i18n';
+import {
+  listSidebar,
+  listSidebarControls,
+  listSidebarFooter,
+  listSidebarList,
+  listSidebarSearch,
+  virtualScroll,
+} from '@/styles/app-shell.css';
 
 export interface ListSidebarProps {
   placeholder?: string;
@@ -34,8 +42,8 @@ export function ListSidebar({
   virtualized = false,
 }: ListSidebarProps) {
   return (
-    <div className="pv-list-sidebar">
-      <div className="pv-list-sidebar__search">
+    <div className={listSidebar}>
+      <div className={listSidebarSearch}>
         <input
           type="text"
           placeholder={placeholder || m.common_search_placeholder()}
@@ -47,15 +55,17 @@ export function ListSidebar({
           aria-label={placeholder || m.common_search_aria()}
         />
       </div>
-      {controls && <div className="pv-list-sidebar__controls">{controls}</div>}
+      {controls && <div className={listSidebarControls}>{controls}</div>}
       <div
-        className={`pv-list-sidebar__list${virtualized ? ' pv-virtual-scroll' : ''}`}
+        className={[listSidebarList, virtualized ? virtualScroll : undefined]
+          .filter(Boolean)
+          .join(' ')}
         ref={scrollRef}
         data-virtual-scroll={virtualized ? 'true' : undefined}
       >
         {children}
       </div>
-      {footer && <div className="pv-list-sidebar__footer">{footer}</div>}
+      {footer && <div className={listSidebarFooter}>{footer}</div>}
     </div>
   );
 }

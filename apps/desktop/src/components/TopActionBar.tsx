@@ -2,6 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
+import {
+  actionBar,
+  actionBarActions,
+  actionBarSpacer,
+  actionBarSubtitle,
+  actionBarTitle,
+} from '@/styles/app-shell.css';
 
 export interface TopActionBarProps {
   title: string;
@@ -17,12 +24,12 @@ export function TopActionBar({
   children,
 }: TopActionBarProps) {
   return (
-    <div className="pv-action-bar">
-      <span className="pv-action-bar__title">{title}</span>
-      {subtitle && <span className="pv-action-bar__subtitle">{subtitle}</span>}
+    <div className={actionBar}>
+      <span className={actionBarTitle}>{title}</span>
+      {subtitle && <span className={actionBarSubtitle}>{subtitle}</span>}
       {children}
-      <span className="pv-action-bar__spacer" />
-      {right && <div className="pv-action-bar__actions">{right}</div>}
+      <span className={actionBarSpacer} />
+      {right && <div className={actionBarActions}>{right}</div>}
     </div>
   );
 }

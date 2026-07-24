@@ -36,13 +36,14 @@ import {
   pageExportResult,
   pageSectionHeading,
 } from './dev.css';
+import { pageScroll } from '@/styles/app-shell.css';
 
 // ── Disabled stub ─────────────────────────────────────────────────────────────
 
 function DevModeDisabledStub() {
   return (
     <div
-      className={`pv-dev-stub pv-page__scroll ${pageStubBody}`}
+      className={`pv-dev-stub ${pageScroll} ${pageStubBody}`}
       data-testid="dev-disabled-stub"
     >
       <h2 className={pageStubHeading}>Developer mode disabled</h2>
@@ -195,7 +196,7 @@ export function ContractsPage() {
   if (devMode === null) {
     return (
       <PageShell>
-        <div className={`pv-page__scroll ${pageLoading}`}>Loading…</div>
+        <div className={`${pageScroll} ${pageLoading}`}>Loading…</div>
       </PageShell>
     );
   }
@@ -211,7 +212,7 @@ export function ContractsPage() {
 
   return (
     <PageShell>
-      <div className={`pv-dev-contracts pv-page__scroll ${pageBody}`}>
+      <div className={`pv-dev-contracts ${pageScroll} ${pageBody}`}>
         <div className={pageHeader}>
           <h1 className={pageTitle}>Developer Contract Diagnostics</h1>
           <div className={pageActions}>

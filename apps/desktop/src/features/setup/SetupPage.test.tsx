@@ -39,20 +39,18 @@ beforeEach(() => {
 describe('SetupPage — live density preview (#505)', () => {
   it('carries the density class matching the current preference', async () => {
     setPreference('density', 'spacious');
-    const { container } = render(<SetupPage />);
+    render(<SetupPage />);
     await waitFor(() =>
       expect(screen.getByTestId('setup-wizard-stub')).toBeInTheDocument(),
     );
-    expect(container.querySelector('.pv-page')).toHaveClass('density-spacious');
+    expect(screen.getByTestId('setup-page')).toHaveClass('density-spacious');
   });
 
   it('defaults to the comfortable density class', async () => {
-    const { container } = render(<SetupPage />);
+    render(<SetupPage />);
     await waitFor(() =>
       expect(screen.getByTestId('setup-wizard-stub')).toBeInTheDocument(),
     );
-    expect(container.querySelector('.pv-page')).toHaveClass(
-      'density-comfortable',
-    );
+    expect(screen.getByTestId('setup-page')).toHaveClass('density-comfortable');
   });
 });

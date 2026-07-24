@@ -64,6 +64,7 @@ import { PageTopBar, type PageTopBarProps } from './PageTopBar';
 import { DetailDockPlacementControl } from './DetailDockPlacementControl';
 import { m } from '@/lib/i18n';
 import { useAdaptiveDock, ResizeHandle } from '@/ui';
+import { page } from '@/styles/app-shell.css';
 
 export interface ListPageLayoutProps {
   /** A ready top-bar node. Mutually exclusive with `topBarProps`. */
@@ -207,7 +208,7 @@ export function ListPageLayout({
   //
   if (detailPlacement === 'side-and-bottom') {
     return (
-      <div className="pv-page">
+      <div className={page}>
         {topBar ?? (topBarProps && <PageTopBar {...topBarProps} />)}
 
         <div className="pv-listpage__body pv-listpage__body--dual">
@@ -283,7 +284,7 @@ export function ListPageLayout({
       : undefined;
 
   return (
-    <div className="pv-page">
+    <div className={page}>
       {topBar ?? (topBarProps && <PageTopBar {...topBarProps} />)}
 
       <div className={bodyClass}>

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
+import { detail } from '@/styles/app-shell.css';
 
 export interface DetailPaneProps {
   children: ReactNode;
@@ -16,7 +17,7 @@ export interface DetailPaneProps {
 export function DetailPane({ children, fill }: DetailPaneProps) {
   return (
     <div
-      className={`pv-detail${fill ? ' pv-detail--fill' : ''}`}
+      className={`${detail}${fill ? ' pv-detail--fill' : ''}`}
       data-testid="detail"
     >
       {children}

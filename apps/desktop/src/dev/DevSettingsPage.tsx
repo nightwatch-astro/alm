@@ -34,6 +34,7 @@ import {
   pageError,
   pageLoading,
 } from './dev.css';
+import { pageScroll } from '@/styles/app-shell.css';
 
 export function DevSettingsPage() {
   const [devMode, setDevModeState] = useState<boolean | null>(null);
@@ -75,7 +76,7 @@ export function DevSettingsPage() {
     <PageShell>
       {/* Reuses the dev/ContractsPage body/title/error/loading classes (shared
           component / no cloned CSS — see dev.css "DEV CONTRACTS PAGE"). */}
-      <div className={`pv-page__scroll ${pageBody}`}>
+      <div className={`${pageScroll} ${pageBody}`}>
         <h1 className={pageTitle}>{m.dev_settings_title()}</h1>
         <p className={pageExportResult}>{m.dev_settings_intro()}</p>
 

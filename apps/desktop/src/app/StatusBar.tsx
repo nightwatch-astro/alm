@@ -7,6 +7,18 @@ import { useLogPanel } from './LogPanelContext';
 import { useOperationStatus } from './OperationStatusContext';
 import { usePageStatus } from './PageStatusContext';
 import { useStatusSummary } from './useStatusSummary';
+import {
+  statusBar,
+  statusBarIdle,
+  statusBarLogToggle,
+  statusBarMeter,
+  statusBarOp,
+  statusBarRight,
+  statusBarSep,
+  statusBarSpinner,
+  statusBarVol,
+  statusBarVolWarn,
+} from '@/styles/app-shell.css';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -42,16 +54,16 @@ export function StatusBar() {
   const isActive = opStatus !== 'idle';
 
   return (
-    <div className="pv-frame__statusbar">
+    <div className={statusBar}>
       {/* LEFT — current operation */}
-      <div className="pv-statusbar__op">
+      <div className={statusBarOp}>
         {isActive ? (
           <>
-            <span className="pv-statusbar__spinner" />
+            <span className={statusBarSpinner} />
             <span>{statusLabel}</span>
           </>
         ) : (
-          <span className="pv-statusbar__idle">{m.status_ready()}</span>
+          <span className={statusBarIdle}>{m.status_ready()}</span>
         )}
       </div>
 
@@ -74,12 +86,12 @@ export function StatusBar() {
           {formatCount(status.sessionCount)}{' '}
           {m.status_sessions_label({ count: status.sessionCount })}
         </span>
-        <span className="pv-statusbar__sep">·</span>
+        <span className={statusBarSep}>·</span>
         <span title={m.status_projects_title()}>
           {formatCount(status.projectCount)}{' '}
           {m.status_projects_label({ count: status.projectCount })}
         </span>
-        <span className="pv-statusbar__sep">·</span>
+        <span className={statusBarSep}>·</span>
         <span title={m.status_masters_title()}>
           {formatCount(status.calibrationCount)}{' '}
           {m.status_masters_label({ count: status.calibrationCount })}
@@ -87,7 +99,7 @@ export function StatusBar() {
       </div>
 
       {/* RIGHT — persistent storage / cleanup health + log */}
-      <div className="pv-statusbar__right">
+      <div className={statusBarRight}>
         {status.cleanupReclaimableBytes > 0 && (
           <span>
             {formatBytes(status.cleanupReclaimableBytes)}{' '}
@@ -105,10 +117,7 @@ export function StatusBar() {
           return (
             <span
               key={vol.path}
-              className={clsx(
-                'pv-statusbar__vol',
-                vol.warning && 'pv-statusbar__vol--warn',
-              )}
+              className={clsx(statusBarVol, vol.warning && statusBarVolWarn)}
               title={m.statusbar_vol_title({
                 path: vol.path,
                 free: formatBytes(vol.freeBytes),
@@ -116,7 +125,7 @@ export function StatusBar() {
               })}
             >
               <span>{label}</span>
-              <span className="pv-statusbar__meter">
+              <span className={statusBarMeter}>
                 {/* eslint-disable-next-line no-restricted-syntax -- dynamic: disk usage meter width % */}
                 <i style={{ width: `${usedPct}%` }} />
               </span>
@@ -126,7 +135,7 @@ export function StatusBar() {
         })}
         <button
           type="button"
-          className="pv-statusbar__log-toggle"
+          className={statusBarLogToggle}
           onClick={toggle}
           aria-label={m.status_log_toggle_aria()}
         >

@@ -3,6 +3,7 @@
 
 import { forwardRef } from 'react';
 import type { ReactNode, HTMLAttributes } from 'react';
+import { emptyDesc, emptyTitle } from '@/styles/app-shell.css';
 
 export interface EmptyStateProps extends HTMLAttributes<HTMLDivElement> {
   title: string;
@@ -22,8 +23,8 @@ export const EmptyState = forwardRef<HTMLDivElement, EmptyStateProps>(
     const cls = ['pv-empty', className].filter(Boolean).join(' ');
     return (
       <div ref={ref} className={cls} {...rest}>
-        <div className="pv-empty__title">{title}</div>
-        {body && <div className="pv-empty__desc">{body}</div>}
+        <div className={emptyTitle}>{title}</div>
+        {body && <div className={emptyDesc}>{body}</div>}
         {action}
       </div>
     );

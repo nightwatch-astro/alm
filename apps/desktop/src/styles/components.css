@@ -17,7 +17,7 @@
  *   land on the spacing scale — those use --pv-sp-*.
  */
 
-@import './components/app-shell.css';
+/* app-shell.css migrated to VE: src/styles/app-shell.css.ts */
 @import './components/primitives.css';
 @import './components/settings.css';
 /* wizard-base.css migrated to VE: src/styles/select.css.ts, src/components/lifecycle.css.ts, src/ui/wizard-shell.css.ts */

@@ -2,6 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
+import {
+  pageBar,
+  threePane,
+  threePaneContent,
+  threePaneSidebar,
+  twoPane,
+  twoPaneDetail,
+} from '@/styles/app-shell.css';
 
 export interface ListDetailLayoutProps {
   topBar?: ReactNode;
@@ -20,14 +28,14 @@ export function ListDetailLayout({
     return (
       <>
         {topBar && (
-          <div className="pv-page__bar" data-testid="page-bar">
+          <div className={pageBar} data-testid="page-bar">
             {topBar}
           </div>
         )}
-        <div className="pv-three-pane">
+        <div className={threePane}>
           {list}
-          <div className="pv-three-pane__content">{detail}</div>
-          <div className="pv-three-pane__sidebar">{sidebar}</div>
+          <div className={threePaneContent}>{detail}</div>
+          <div className={threePaneSidebar}>{sidebar}</div>
         </div>
       </>
     );
@@ -35,13 +43,13 @@ export function ListDetailLayout({
   return (
     <>
       {topBar && (
-        <div className="pv-page__bar" data-testid="page-bar">
+        <div className={pageBar} data-testid="page-bar">
           {topBar}
         </div>
       )}
-      <div className="pv-two-pane">
+      <div className={twoPane}>
         {list}
-        <div className="pv-two-pane__detail" data-testid="two-pane-detail">
+        <div className={twoPaneDetail} data-testid="two-pane-detail">
           {detail}
         </div>
       </div>

@@ -8,6 +8,12 @@ import { ListSidebar } from '@/components';
 import { Pill, SegControl } from '@/ui';
 import { m } from '@/lib/i18n';
 import { objectTypeLabel } from '@/components/TargetSearch/objectType';
+import {
+  listItem,
+  listItemSelected,
+  virtualInner,
+  virtualScroll,
+} from '@/styles/app-shell.css';
 
 /**
  * Estimated row height (px) for the virtualizer's initial measurement.
@@ -93,7 +99,7 @@ export function TargetList({ targets, selected, onSelect }: Props) {
       footer={m.common_item_count({ count: filtered.length })}
     >
       <div
-        className="pv-virtual-inner"
+        className={virtualInner}
         // eslint-disable-next-line no-restricted-syntax -- dynamic: virtualizer total height (getTotalSize)
         style={{
           height: `${virtualizer.getTotalSize()}px`,
@@ -110,7 +116,9 @@ export function TargetList({ targets, selected, onSelect }: Props) {
               key={t.id}
               data-index={virtualRow.index}
               ref={virtualizer.measureElement}
-              className={`pv-list-item${isSelected ? ' pv-list-item--selected' : ''}`}
+              className={[listItem, isSelected ? listItemSelected : undefined]
+                .filter(Boolean)
+                .join(' ')}
               role="button"
               tabIndex={0}
               aria-label={m.targets_list_view_aria({ label: t.effectiveLabel })}

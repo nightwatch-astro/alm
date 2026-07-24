@@ -84,6 +84,7 @@ import {
 import { DEFAULT_LIMIT, MIN_RESOLVE_LEN } from './helpers';
 import { useTargetSearch } from './useTargetSearch';
 import { selectBase } from '@/styles/select.css';
+import { virtualInner, virtualScroll } from '@/styles/app-shell.css';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -355,7 +356,7 @@ export function TargetSearch({
             <Combobox.Popup className="pv-target-search__popup">
               <Combobox.List
                 ref={scrollRef}
-                className="pv-target-search__list pv-virtual-scroll"
+                className={`pv-target-search__list ${virtualScroll}`}
                 data-virtual-scroll="true"
                 aria-label={m.cmp_target_search_suggestions_aria()}
               >
@@ -448,7 +449,7 @@ export function TargetSearch({
                 )}
                 {suggestions.length > 0 && (
                   <div
-                    className="pv-virtual-inner"
+                    className={virtualInner}
                     // eslint-disable-next-line no-restricted-syntax -- dynamic: virtualizer total height (totalSize)
                     style={{ height: `${totalSize}px`, position: 'relative' }}
                   >
