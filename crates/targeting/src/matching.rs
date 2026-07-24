@@ -345,10 +345,10 @@ fn evaluate_relation(
         right,
         mosaic_band,
         RotationSearch::new(
-            skymath::Angle::from_degrees(-cap),
-            skymath::Angle::from_degrees(cap),
-            skymath::Angle::from_degrees(MOSAIC_ROTATION_SAMPLE_DEG),
-            skymath::Angle::from_degrees(MOSAIC_ROTATION_TOLERANCE_DEG),
+            target_match::skymath::Angle::from_degrees(-cap),
+            target_match::skymath::Angle::from_degrees(cap),
+            target_match::skymath::Angle::from_degrees(MOSAIC_ROTATION_SAMPLE_DEG),
+            target_match::skymath::Angle::from_degrees(MOSAIC_ROTATION_TOLERANCE_DEG),
         )?,
     )?;
 
@@ -498,12 +498,13 @@ impl<'a, T> CompleteLinkage<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use target_match::{FootprintProvenance, ImageParity};
+    // target-match embeds skymath 0.6; use its re-export so the types match.
+    use target_match::{skymath as tm_skymath, FootprintProvenance, ImageParity};
 
-    fn coordinate(ra: f64, dec: f64) -> skymath::Equatorial {
-        skymath::Equatorial::j2000(
-            skymath::Angle::from_degrees(ra),
-            skymath::Angle::from_degrees(dec),
+    fn coordinate(ra: f64, dec: f64) -> tm_skymath::Equatorial {
+        tm_skymath::Equatorial::j2000(
+            tm_skymath::Angle::from_degrees(ra),
+            tm_skymath::Angle::from_degrees(dec),
         )
         .expect("valid coordinate")
     }
@@ -517,7 +518,7 @@ mod tests {
                 coordinate(11.0, 1.0),
                 coordinate(9.0, 1.0),
             ],
-            skymath::Angle::from_degrees(position_angle),
+            tm_skymath::Angle::from_degrees(position_angle),
             parity,
             FootprintProvenance::new(format!("{position_angle}-{parity:?}"))
                 .expect("valid provenance"),
@@ -636,20 +637,20 @@ mod tests {
     #[test]
     fn inclusive_threshold_helpers_accept_exact_boundaries() {
         let comparison = FootprintComparison {
-            anchor: skymath::Equatorial::at_epoch(
-                skymath::Angle::from_degrees(0.0),
-                skymath::Angle::from_degrees(0.0),
-                skymath::Epoch::J2000,
+            anchor: tm_skymath::Equatorial::at_epoch(
+                tm_skymath::Angle::from_degrees(0.0),
+                tm_skymath::Angle::from_degrees(0.0),
+                tm_skymath::Epoch::J2000,
             )
             .expect("valid coordinate"),
             left_area: 1.0,
             right_area: 1.0,
             intersection_area: 0.9,
             normalized_coverage: 0.9,
-            centre_separation: skymath::Angle::from_degrees(0.05),
-            smaller_diagonal: skymath::Angle::from_degrees(1.0),
+            centre_separation: tm_skymath::Angle::from_degrees(0.05),
+            smaller_diagonal: tm_skymath::Angle::from_degrees(1.0),
             normalized_centre_separation: 0.05,
-            residual_sky_rotation: skymath::Angle::from_degrees(-5.0),
+            residual_sky_rotation: tm_skymath::Angle::from_degrees(-5.0),
             parity_match: true,
         };
         assert!(geometry_passes(&comparison, MatchingSettings::default().sibling));
@@ -664,10 +665,10 @@ mod tests {
             right_area: 1.0,
             intersection_area: 0.05,
             normalized_coverage: 0.05,
-            centre_separation: skymath::Angle::from_degrees(1.0),
-            smaller_diagonal: skymath::Angle::from_degrees(2.0),
+            centre_separation: tm_skymath::Angle::from_degrees(1.0),
+            smaller_diagonal: tm_skymath::Angle::from_degrees(2.0),
             normalized_centre_separation: 0.5,
-            residual_sky_rotation: skymath::Angle::from_degrees(10.0),
+            residual_sky_rotation: tm_skymath::Angle::from_degrees(10.0),
             parity_match: true,
         };
         assert!(mosaic_band_contains(&comparison, thresholds));
@@ -681,7 +682,7 @@ mod tests {
         comparison.normalized_coverage = 0.4 + 1e-12;
         assert!(!mosaic_band_contains(&comparison, thresholds));
         comparison.normalized_coverage = 0.2;
-        comparison.residual_sky_rotation = skymath::Angle::from_degrees(10.0 + 1e-12);
+        comparison.residual_sky_rotation = tm_skymath::Angle::from_degrees(10.0 + 1e-12);
         assert!(!mosaic_band_contains(&comparison, thresholds));
     }
 

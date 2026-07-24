@@ -195,7 +195,7 @@ dependencies = [
  "sessions",
  "sha2 0.10.9",
  "simbad-resolver",
- "skymath 0.6.0",
+ "skymath 0.7.1",
  "sqlx",
  "target-match",
  "targeting",
@@ -1395,7 +1395,7 @@ dependencies = [
  "serde",
  "serde_json",
  "simbad-resolver",
- "skymath 0.6.0",
+ "skymath 0.7.1",
  "specta",
  "specta-typescript",
  "sqlx",
@@ -3304,7 +3304,7 @@ name = "metadata_core"
 version = "0.1.0"
 dependencies = [
  "serde",
- "skymath 0.6.0",
+ "skymath 0.7.1",
  "thiserror 2.0.19",
  "toml 0.9.12+spec-1.1.0",
 ]
@@ -6178,7 +6178,7 @@ name = "targeting"
 version = "0.1.0"
 dependencies = [
  "simbad-resolver",
- "skymath 0.6.0",
+ "skymath 0.7.1",
  "target-match",
  "uuid",
 ]
@@ -6194,7 +6194,7 @@ dependencies = [
  "serde",
  "serde_json",
  "simbad-resolver",
- "skymath 0.6.0",
+ "skymath 0.7.1",
  "sqlx",
  "targeting",
  "tempfile",

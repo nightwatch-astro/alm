@@ -492,8 +492,7 @@ struct GroupAccumulator {
     /// trivial match in [`best_matching_group`]. Meaningless for new
     /// (`existing_id: None`) groups.
     declared_empty: bool,
-    sum_sin_ra: f64,
-    sum_cos_ra: f64,
+    ra_mean: skymath::CircularMean,
     sum_dec: f64,
     rotation_mean: skymath::AxialMean,
     count: u32,
@@ -506,8 +505,7 @@ impl GroupAccumulator {
         Self {
             existing_id,
             declared_empty,
-            sum_sin_ra: 0.0,
-            sum_cos_ra: 0.0,
+            ra_mean: skymath::CircularMean::new(),
             sum_dec: 0.0,
             rotation_mean: skymath::AxialMean::new(),
             count: 0,
@@ -526,9 +524,7 @@ impl GroupAccumulator {
         if self.count == 0 {
             self.seed_used_fallback = used_fallback;
         }
-        let ra_rad = pointing.ra_deg.to_radians();
-        self.sum_sin_ra += ra_rad.sin();
-        self.sum_cos_ra += ra_rad.cos();
+        self.ra_mean.push(skymath::Angle::from_degrees(pointing.ra_deg));
         self.sum_dec += pointing.dec_deg;
         self.rotation_mean.push(skymath::Angle::from_degrees(f64::from(rotation_deg)));
         self.count += 1;
@@ -542,7 +538,10 @@ impl GroupAccumulator {
     fn representative_pointing(&self) -> Pointing {
         let count = f64::from(self.count.max(1));
         Pointing {
-            ra_deg: normalize_deg_0_360(self.sum_sin_ra.atan2(self.sum_cos_ra).to_degrees()),
+            // `CircularMean::mean` returns `None` only on empty — `max(1)` above
+            // means `sum_dec / count` is well-defined, and the same invariant
+            // guarantees at least one push occurred, so `ra_mean.mean()` is `Some`.
+            ra_deg: self.ra_mean.mean().map_or(0.0, |a| a.degrees()),
             dec_deg: self.sum_dec / count,
         }
     }
@@ -557,10 +556,6 @@ impl GroupAccumulator {
     }
 }
 
-fn normalize_deg_0_360(deg: f64) -> f64 {
-    deg.rem_euclid(360.0)
-}
-
 /// Great-circle angular separation between two ICRS pointings, in degrees
 /// (delegates to `skymath::separation` — accurate at the sub-degree scale
 /// framing tolerances operate at; avoids the RA/Dec Euclidean-distance bug
@@ -568,32 +563,16 @@ fn normalize_deg_0_360(deg: f64) -> f64 {
 ///
 /// A non-finite input on either pointing yields `NaN` (matching the previous
 /// haversine's permissive behaviour), rather than the domain-validation error
-/// `skymath::Equatorial` would otherwise raise.
+/// `skymath::Equatorial::j2000_lenient` would otherwise raise.
 #[must_use]
 pub fn angular_separation_deg(a: Pointing, b: Pointing) -> f64 {
-    if !a.ra_deg.is_finite()
-        || !a.dec_deg.is_finite()
-        || !b.ra_deg.is_finite()
-        || !b.dec_deg.is_finite()
-    {
+    let (Ok(ea), Ok(eb)) = (
+        skymath::Equatorial::j2000_lenient(a.ra_deg, a.dec_deg),
+        skymath::Equatorial::j2000_lenient(b.ra_deg, b.dec_deg),
+    ) else {
         return f64::NAN;
-    }
-    skymath::separation(to_equatorial(a), to_equatorial(b)).degrees()
-}
-
-/// Build a `skymath::Equatorial` from a [`Pointing`], wrapping RA into
-/// `[0, 360)` and clamping Dec into `[-90, 90]` so out-of-domain-but-finite
-/// inputs still produce a position rather than an error (the previous
-/// haversine was equally permissive).
-///
-/// # Panics
-/// Panics if `p.ra_deg` or `p.dec_deg` is non-finite; [`angular_separation_deg`]
-/// filters those before calling.
-fn to_equatorial(p: Pointing) -> skymath::Equatorial {
-    let ra = skymath::Angle::from_degrees(p.ra_deg).normalized_0_360();
-    let dec = skymath::Angle::from_degrees(p.dec_deg.clamp(-90.0, 90.0));
-    skymath::Equatorial::j2000(ra, dec)
-        .expect("ra normalized to [0, 360), dec clamped to [-90, 90]")
+    };
+    skymath::separation(ea, eb).degrees()
 }
 
 /// Shortest axial distance between two rotation angles, in degrees, modulo
@@ -622,13 +601,11 @@ pub fn rotation_axial_distance_deg(a: f32, b: f32) -> f64 {
 /// Never panics; returns `0.0` for an empty iterator (no observations).
 #[must_use]
 pub fn circular_mean_deg<I: IntoIterator<Item = f64>>(angles: I) -> f64 {
-    let (mut sin_sum, mut cos_sum) = (0.0, 0.0);
-    for angle in angles {
-        let rad = angle.to_radians();
-        sin_sum += rad.sin();
-        cos_sum += rad.cos();
+    let mut acc = skymath::CircularMean::new();
+    for deg in angles {
+        acc.push(skymath::Angle::from_degrees(deg));
     }
-    normalize_deg_0_360(sin_sum.atan2(cos_sum).to_degrees())
+    acc.mean().map_or(0.0, |a| a.degrees())
 }
 
 #[cfg(test)]
@@ -827,6 +804,44 @@ mod tests {
         // the sky); the circular mean must land near 0.
         let mean = circular_mean_deg([359.0, 1.0]);
         assert!(!(1.0..=359.0).contains(&mean), "expected near-0 wraparound mean, got {mean}");
+    }
+
+    #[test]
+    fn circular_mean_empty_returns_zero() {
+        assert_eq!(circular_mean_deg(std::iter::empty::<f64>()), 0.0);
+    }
+
+    #[test]
+    fn circular_mean_single_value_is_identity() {
+        let mean = circular_mean_deg([47.3_f64]);
+        assert!((mean - 47.3).abs() < 1e-9, "single-value mean must equal the input, got {mean}");
+    }
+
+    #[test]
+    fn circular_mean_symmetric_cluster_near_zero() {
+        // Symmetric cluster spanning the 0/360 seam: midpoint must be near 0.
+        let mean = circular_mean_deg([358.0, 359.0, 0.0, 1.0, 2.0_f64]);
+        assert!(mean > 359.0 || mean < 1.0, "cluster midpoint near 0, got {mean}");
+    }
+
+    // ── angular_separation_deg equivalence / NaN boundary ────────────────────
+
+    #[test]
+    fn separation_nan_on_non_finite_inputs() {
+        let good = Pointing { ra_deg: 10.0, dec_deg: 20.0 };
+        assert!(angular_separation_deg(Pointing { ra_deg: f64::NAN, dec_deg: 0.0 }, good).is_nan());
+        assert!(
+            angular_separation_deg(Pointing { ra_deg: 0.0, dec_deg: f64::INFINITY }, good).is_nan()
+        );
+        assert!(angular_separation_deg(good, Pointing { ra_deg: f64::NAN, dec_deg: 0.0 }).is_nan());
+    }
+
+    #[test]
+    fn separation_out_of_domain_ra_is_normalized() {
+        // RA=370 wraps to 10; the two pointings are identical so sep is 0.
+        let a = Pointing { ra_deg: 10.0, dec_deg: 20.0 };
+        let b = Pointing { ra_deg: 370.0, dec_deg: 20.0 };
+        assert!(angular_separation_deg(a, b) < 1e-9, "RA 370 normalises to 10, same point");
     }
 
     #[test]
