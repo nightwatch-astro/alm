@@ -24,8 +24,8 @@ export interface StatusTagProps {
 
 export function StatusTag({ variant, children }: StatusTagProps) {
   return (
-    <span className={variantStyles[variant]}>
-      <span className={dotVariants[variant]} aria-hidden="true" />
+    <span className={variantStyles[variant]} data-component="status-tag" data-variant={variant}>
+      <span className={dotVariants[variant]} data-component="status-tag-dot" aria-hidden="true" />
       {children}
     </span>
   );

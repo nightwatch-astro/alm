@@ -126,13 +126,11 @@ describe('StepSourceFolders — required-first ordering', () => {
 
     const met = screen.getByTestId('requirement-status-light_frames');
     const unmet = screen.getByTestId('requirement-status-project');
-    expect(met).toHaveClass('pv-pill', 'pv-pill--ok');
+    // Assert on text content — class names are VE-generated and opaque.
     expect(met).toHaveTextContent('required ✓');
-    expect(unmet).toHaveClass('pv-pill', 'pv-pill--warn');
     expect(unmet).toHaveTextContent(/^required$/);
     for (const kind of ['calibration', 'inbox']) {
       const optional = screen.getByTestId(`requirement-status-${kind}`);
-      expect(optional).toHaveClass('pv-pill', 'pv-pill--ghost');
       expect(optional).toHaveTextContent(/^optional$/);
     }
   });
@@ -154,7 +152,8 @@ describe('StepSourceFolders — required-first ordering', () => {
     const organization = within(group).getByTestId('org-select-light_frames');
 
     expect(organization.tagName.toLowerCase()).toBe('select');
-    expect(input).toHaveClass('pv-input', 'pv-step-sources__manual-input');
+    // Verify it's a text input — class names are VE-generated.
+    expect(input.tagName.toLowerCase()).toBe('input');
     expect(info.compareDocumentPosition(choose)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );

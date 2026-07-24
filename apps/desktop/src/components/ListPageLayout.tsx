@@ -212,7 +212,7 @@ export function ListPageLayout({
       <div className={page}>
         {topBar ?? (topBarProps && <PageTopBar {...topBarProps} />)}
 
-        <div className={`${lpl.body} ${lpl.bodyDual}`}>
+        <div className={`${lpl.body} ${lpl.bodyDual}`} data-testid="listpage-body-dual">
           {/* Left column: main table + bottom strip stacked */}
           <div className={lpl.mainCol}>
             <div className={lpl.main}>{children}</div>
@@ -221,6 +221,7 @@ export function ListPageLayout({
             {hasBottom && (
               <section
                 className={lpl.bottomPanel}
+                data-testid="listpage-bottom"
                 role="complementary"
                 aria-label={bottomDetailLabel}
               >
@@ -245,6 +246,7 @@ export function ListPageLayout({
           {hasDetail && (
             <section
               className={lpl.sidePanel}
+              data-testid="listpage-side"
               role="complementary"
               aria-label={detailLabel}
             >
@@ -286,13 +288,13 @@ export function ListPageLayout({
     <div className={page}>
       {topBar ?? (topBarProps && <PageTopBar {...topBarProps} />)}
 
-      <div className={bodyClass}>
+      <div className={bodyClass} data-testid={isSide ? 'listpage-body-side' : 'listpage-body'}>
         <div className={lpl.main}>{children}</div>
 
         {hasDetail && (
           <section
             className={detailClass}
-            data-testid="listpage-detail"
+            data-testid={isSide ? 'listpage-detail-side' : 'listpage-detail'}
             // eslint-disable-next-line no-restricted-syntax -- dynamic: user-resizable side-panel width persisted per dockId, not a static design token
             style={detailStyle}
             role="complementary"

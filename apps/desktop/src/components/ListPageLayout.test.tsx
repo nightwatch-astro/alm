@@ -49,12 +49,12 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    const body = container.querySelector('.pv-listpage__body');
+    const body = screen.getByTestId('listpage-body');
     expect(body).toBeInTheDocument();
-    expect(body).not.toHaveClass('pv-listpage__body--side');
-    const detail = container.querySelector('.pv-listpage__detail');
+    expect(body).not.toHaveAttribute('data-testid', 'listpage-body-side');
+    const detail = screen.queryByTestId('listpage-detail');
     expect(detail).toBeInTheDocument();
-    expect(detail).not.toHaveClass('pv-listpage__detail--side');
+    expect(detail).not.toHaveAttribute('data-testid', 'listpage-detail-side');
   });
 
   it('does not render the detail panel when detail is null', () => {
@@ -63,7 +63,7 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__detail')).toBeNull();
+    expect(screen.queryByTestId('listpage-detail')).toBeNull();
   });
 
   it('applies the side variant classes when detailPlacement="side"', () => {
@@ -77,12 +77,8 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__body')).toHaveClass(
-      'pv-listpage__body--side',
-    );
-    expect(container.querySelector('.pv-listpage__detail')).toHaveClass(
-      'pv-listpage__detail--side',
-    );
+    expect(screen.getByTestId('listpage-body-side')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
   });
 
   it('keeps role=complementary + detailLabel + close affordance in the side variant', () => {
@@ -131,11 +127,11 @@ describe('ListPageLayout', () => {
     ).toBeInTheDocument();
     // Body carries the dual modifier class.
     expect(
-      container.querySelector('.pv-listpage__body--dual'),
+      screen.queryByTestId('listpage-body-dual'),
     ).toBeInTheDocument();
     // Side panel and bottom strip use their own classes (not the old detail classes).
-    expect(container.querySelector('.pv-listpage__side')).toBeInTheDocument();
-    expect(container.querySelector('.pv-listpage__bottom')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-side')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-bottom')).toBeInTheDocument();
     expect(screen.getByText('side content')).toBeInTheDocument();
     expect(screen.getByText('bottom content')).toBeInTheDocument();
   });
@@ -150,8 +146,8 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__side')).toBeNull();
-    expect(container.querySelector('.pv-listpage__bottom')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-side')).toBeNull();
+    expect(screen.queryByTestId('listpage-bottom')).toBeInTheDocument();
   });
 
   it('(#104) dual: does not render bottom strip when bottomDetail is null', () => {
@@ -165,8 +161,8 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__side')).toBeInTheDocument();
-    expect(container.querySelector('.pv-listpage__bottom')).toBeNull();
+    expect(screen.queryByTestId('listpage-side')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-bottom')).toBeNull();
   });
 
   it('(#104) dual: close affordances call their respective callbacks', () => {
@@ -202,11 +198,11 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__body--dual')).toBeNull();
-    expect(container.querySelector('.pv-listpage__side')).toBeNull();
-    expect(container.querySelector('.pv-listpage__bottom')).toBeNull();
+    expect(screen.queryByTestId('listpage-body-dual')).toBeNull();
+    expect(screen.queryByTestId('listpage-side')).toBeNull();
+    expect(screen.queryByTestId('listpage-bottom')).toBeNull();
     // Original detail class still present.
-    expect(container.querySelector('.pv-listpage__detail')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-detail')).toBeInTheDocument();
   });
 
   // ── Escape-to-close (#771) ────────────────────────────────────────────────
@@ -388,9 +384,8 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      expect(container.querySelector('.pv-listpage__detail')).not.toHaveClass(
-        'pv-listpage__detail--side',
-      );
+      // narrow: bottom dock (no side testid).
+      expect(screen.queryByTestId('listpage-detail-side')).toBeNull();
 
       resizeWindowTo(1600);
       rerender(
@@ -402,14 +397,12 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      expect(container.querySelector('.pv-listpage__detail')).toHaveClass(
-        'pv-listpage__detail--side',
-      );
+      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
     });
 
     it('honors adaptiveThreshold overrides per page', () => {
       resizeWindowTo(1450);
-      const { container } = render(
+      render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -420,9 +413,7 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       // 1450 < 1500 → still bottom, even though it clears the generic default.
-      expect(container.querySelector('.pv-listpage__detail')).not.toHaveClass(
-        'pv-listpage__detail--side',
-      );
+      expect(screen.queryByTestId('listpage-detail-side')).toBeNull();
     });
 
     it('pinning to side persists across remount (dockId-scoped preference)', () => {
@@ -437,9 +428,7 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       fireEvent.click(screen.getByRole('radio', { name: 'Right' }));
-      expect(container.querySelector('.pv-listpage__detail')).toHaveClass(
-        'pv-listpage__detail--side',
-      );
+      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
       unmount();
 
       const { container: container2 } = render(
@@ -452,9 +441,7 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       // Narrow window (1024), but the pin from the previous mount survives.
-      expect(container2.querySelector('.pv-listpage__detail')).toHaveClass(
-        'pv-listpage__detail--side',
-      );
+      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
     });
 
     // #1066: the placement model is three-state (side / bottom / null=auto),
@@ -472,15 +459,13 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      const detailEl = () => container.querySelector('.pv-listpage__detail');
-
       // Pin to Right on a narrow window — placement defies the width rule.
       fireEvent.click(screen.getByRole('radio', { name: 'Right' }));
-      expect(detailEl()).toHaveClass('pv-listpage__detail--side');
+      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
 
       // Back to Auto: 1024 is below the threshold, so it must fall to bottom.
       fireEvent.click(screen.getByRole('radio', { name: 'Auto' }));
-      expect(detailEl()).not.toHaveClass('pv-listpage__detail--side');
+      expect(screen.queryByTestId('listpage-detail-side')).toBeNull();
       expect(screen.getByRole('radio', { name: 'Auto' })).toBeChecked();
 
       // And Auto must survive a remount — i.e. the persisted pin was actually
@@ -495,15 +480,11 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      expect(container2.querySelector('.pv-listpage__detail')).not.toHaveClass(
-        'pv-listpage__detail--side',
-      );
+      expect(screen.queryByTestId('listpage-detail-side')).toBeNull();
 
       // Auto still follows the width rule upward, not just downward.
       resizeWindowTo(1600);
-      expect(container2.querySelector('.pv-listpage__detail')).toHaveClass(
-        'pv-listpage__detail--side',
-      );
+      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
     });
 
     it('renders a resize handle only in the side placement', () => {

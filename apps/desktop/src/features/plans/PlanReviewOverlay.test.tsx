@@ -707,8 +707,8 @@ describe('PlanReviewOverlay (spec 017 WP-E)', () => {
     // 'primary' regardless of the eventual plan content.
     await screen.findByText('light_001.xisf');
     const approveBtn = screen.getByTestId('plan-review-approve-apply');
-    await waitFor(() => expect(approveBtn).toHaveClass('pv-btn--primary'));
-    expect(approveBtn).not.toHaveClass('pv-btn--destructive');
+    await waitFor(() => expect(approveBtn).toHaveAttribute('data-variant', 'primary'));
+    expect(approveBtn).not.toHaveAttribute('data-variant', 'destructive');
   });
 
   it('renders Approve & apply as destructive for a plan with a delete item', async () => {
@@ -722,8 +722,8 @@ describe('PlanReviewOverlay (spec 017 WP-E)', () => {
 
     await screen.findByText('light_001.xisf');
     const approveBtn = screen.getByTestId('plan-review-approve-apply');
-    await waitFor(() => expect(approveBtn).toHaveClass('pv-btn--destructive'));
-    expect(approveBtn).not.toHaveClass('pv-btn--primary');
+    await waitFor(() => expect(approveBtn).toHaveAttribute('data-variant', 'destructive'));
+    expect(approveBtn).not.toHaveAttribute('data-variant', 'primary');
   });
 
   it('offers Cancel apply during a running apply and calls plan.cancel (US3/FR-009, issue #743)', async () => {
