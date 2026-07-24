@@ -611,14 +611,16 @@ pub async fn list_pins_paged(
     revision_row_id: i64,
     cursor_session_public_id: Option<&str>,
     page_size: i64,
-) -> DbResult<Vec<(i64, String, i64, String, String, Option<String>)>> {
+) -> DbResult<Vec<(i64, String, i64, String, String, Option<String>, String)>> {
     let rows = sqlx::query_as(
         "SELECT prs.session_row_id, s.public_id AS session_id,
                 prs.pin_revision, prs.pinned_at, prs.source,
-                rs.public_id AS replaces_session_id
+                rs.public_id AS replaces_session_id,
+                a.public_id  AS pinned_by
          FROM project_membership_revision_session prs
          INNER JOIN session s ON s.row_id = prs.session_row_id
          LEFT JOIN session rs ON rs.row_id = prs.replaces_session_row_id
+         INNER JOIN spec062_actor a ON a.row_id = prs.pinned_by_actor_row_id
          WHERE prs.revision_row_id = ?
            AND (?2 IS NULL OR s.public_id > ?2)
          ORDER BY s.public_id ASC

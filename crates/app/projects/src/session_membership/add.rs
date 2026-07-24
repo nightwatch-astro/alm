@@ -38,8 +38,10 @@ pub struct AddSessionPinRequest<'a> {
     /// Public UUID of the actor performing the operation.
     pub actor_id: &'a str,
     /// Optional evidence identifier from the related-session surface that
-    /// triggered this explicit add (audit provenance only; not durably stored
-    /// in the membership row).
+    /// triggered this explicit add (audit provenance only).
+    // TODO(ic9h.20): project_membership_revision_session has no
+    // related_session_evidence_id column yet; accepted per contract but not
+    // persisted until the .20 migration lands.
     pub related_session_evidence_id: Option<&'a str>,
 }
 

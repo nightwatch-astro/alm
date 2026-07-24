@@ -35,6 +35,7 @@ pub struct ProjectSessionPin {
     pub session_id: String,
     pub pin_revision: i64,
     pub pinned_at: String,
+    pub pinned_by: String,
     pub source: String,
     pub replaces_session_id: Option<String>,
 }
@@ -200,13 +201,16 @@ pub async fn list_session_pins(
 
     Ok(rows
         .into_iter()
-        .map(|(_row_id, session_id, pin_revision, pinned_at, source, replaces)| ProjectSessionPin {
-            project_id: project_id.to_owned(),
-            session_id,
-            pin_revision,
-            pinned_at,
-            source,
-            replaces_session_id: replaces,
+        .map(|(_row_id, session_id, pin_revision, pinned_at, source, replaces, pinned_by)| {
+            ProjectSessionPin {
+                project_id: project_id.to_owned(),
+                session_id,
+                pin_revision,
+                pinned_at,
+                pinned_by,
+                source,
+                replaces_session_id: replaces,
+            }
         })
         .collect())
 }
