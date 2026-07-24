@@ -63,7 +63,7 @@ import {
   actions as mdActionsCls,
   linkedStack,
   match,
-} from '@/components/two-col-detail-layout.css';
+} from '@/ui/two-col-detail-layout.css';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 

@@ -50,7 +50,7 @@ import { useObservingState, saveSites } from './site-store';
 import type { ObserverSite, Twilight } from './observer-site';
 import { ianaTimezones, localTimezone } from './iana-timezones';
 import { selectBase } from '@/styles/select.css';
-import { message as modalMessage } from '@/components/modal.css';
+import { message as modalMessage } from '@/ui/modal.css';
 
 interface SiteForm {
   id: string | null;

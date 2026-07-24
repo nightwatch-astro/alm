@@ -41,7 +41,7 @@ import {
   closeBtn,
   body as bodyCls,
   footer as footerCls,
-} from './modal.css';
+} from '@/ui/modal.css';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'auto';
 

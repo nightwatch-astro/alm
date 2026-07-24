@@ -55,7 +55,7 @@ import {
   resolveInboxRevealPath,
 } from './inboxDetailHelpers';
 import { selectBase } from '@/styles/select.css';
-import { actions as inboxActionsCls } from '@/components/two-col-detail-layout.css';
+import { actions as inboxActionsCls } from '@/ui/two-col-detail-layout.css';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 

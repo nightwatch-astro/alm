@@ -23,7 +23,7 @@ import { basename, formatExposureSeconds } from './inboxDetailHelpers';
 import {
   head as detailHead,
   muted as detailMuted,
-} from '@/components/two-col-detail-layout.css';
+} from '@/ui/two-col-detail-layout.css';
 
 export interface InboxFilesColumnProps {
   fileMetadata: InboxFileMetadata[] | null | undefined;

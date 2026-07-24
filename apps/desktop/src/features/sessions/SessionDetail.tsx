@@ -55,7 +55,7 @@ import {
   head,
   link,
   muted as mutedCls,
-} from '@/components/two-col-detail-layout.css';
+} from '@/ui/two-col-detail-layout.css';
 
 /** `SessionCalibrationMatch.kind` is the wider `CalibrationKind` (adds
  * `dark_flat`/`bad_pixel_map`, neither assignable per FR-001), while

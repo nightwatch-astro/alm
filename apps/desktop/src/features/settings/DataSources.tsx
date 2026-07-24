@@ -38,7 +38,7 @@ import { categoryLabel, SOURCES_KEYS } from './datasources-model';
 import { RootCard } from './RootCard';
 import { useDataSources } from './useDataSources';
 import { selectBase } from '@/styles/select.css';
-import { message as modalMessage } from '@/components/modal.css';
+import { message as modalMessage } from '@/ui/modal.css';
 
 interface DataSourcesProps {
   save: (scope: string, values: Record<string, unknown>) => void;

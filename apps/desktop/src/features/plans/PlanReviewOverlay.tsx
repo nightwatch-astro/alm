@@ -38,7 +38,7 @@ import type {
   PlanDetail_Serialize,
   PlanItemDetail_Serialize,
 } from '@/bindings/index';
-import { bodyFill as modalBodyFill } from '@/components/modal.css';
+import { bodyFill as modalBodyFill } from '@/ui/modal.css';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 

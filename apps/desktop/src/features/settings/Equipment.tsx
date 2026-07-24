@@ -42,7 +42,7 @@ import {
 } from './equipment-helpers';
 import { useEquipment } from './useEquipment';
 import { selectBase } from '@/styles/select.css';
-import { message as modalMessage } from '@/components/modal.css';
+import { message as modalMessage } from '@/ui/modal.css';
 
 interface EquipmentProps {
   save: (scope: string, values: Record<string, unknown>) => void;

@@ -34,6 +34,6 @@
 @import './components/targets.css';
 @import './components/inbox.css';
 /* sessions.css migrated to VE: two-col-detail-layout.css.ts, session-list-popover.css.ts; pv-session-frames dead */
-/* modals.css migrated to VE: src/components/modal.css.ts */
+/* modals.css migrated to VE: src/ui/modal.css.ts */
 /* skeleton.css migrated to VE: src/ui/skeleton.css.ts */
 @import './components/logpanel.css';

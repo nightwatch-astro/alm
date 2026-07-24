@@ -8,7 +8,7 @@ import {
   linked as linkedCls,
   head,
   muted as mutedCls,
-} from './two-col-detail-layout.css';
+} from '@/ui/two-col-detail-layout.css';
 
 export interface TwoColDetailLayoutProps {
   /** Left property column (typically a `PropertyTable` half). */
