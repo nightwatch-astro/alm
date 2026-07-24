@@ -179,9 +179,9 @@ pub struct TargetDetailV3 {
 /// `constellation` and `magnitude` are optional because those columns were not
 /// in the original schema; they are populated from `canonical_target.constellation`
 /// and `canonical_target.magnitude` when present (migration 0046).
-/// `aliases` carries all alias display forms (designations, common names, and
-/// user-added) so client-side alias search (e.g. "Andromeda" → M31) works
-/// without a separate round-trip. Empty when no aliases are stored.
+/// Alias search is now backend-side via the `search` parameter on `target.list`
+/// (GF-11 / DS-16); `aliases` is no longer serialized to the IPC response to
+/// avoid cloning all alias strings for every list call (13k× entries).
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetListItem {
@@ -200,10 +200,11 @@ pub struct TargetListItem {
     /// Visual magnitude; `null` when not stored or not applicable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub magnitude: Option<f64>,
-    /// All alias display forms for this target (designations, common names,
-    /// user-added). Empty when none are stored. Additive field — older clients
-    /// that ignore unknown keys are unaffected.
-    #[serde(default)]
+    /// Alias display forms — kept in-process for backend search but NOT
+    /// serialized to the IPC response (detail-only; use `target.get` for the
+    /// full alias list, or pass `search` to `target.list` for alias-aware
+    /// filtering without cloning all alias strings over IPC).
+    #[serde(skip)]
     pub aliases: Vec<String>,
     /// Count of `acquisition_session` rows linked to this target (#877, planner
     /// Sessions column). `0` when no session has resolved to this target yet —

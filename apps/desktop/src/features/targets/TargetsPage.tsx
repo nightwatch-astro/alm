@@ -76,6 +76,33 @@ const CATALOGUE_OPTIONS: FilterOption[] = PLANNER_CATALOGS.map((c) => ({
   label: c.label(),
 }));
 
+/**
+ * Normalize a designation or label for alias-aware matching (#103b).
+ *
+ * Collapses internal whitespace so "M31" and "M 31" become identical tokens
+ * ("m31"). Case is folded to lower. This means "M31", "M 31", and "m 31" all
+ * normalize to "m31" and match each other — the key astrophotography UX need
+ * where catalog designations appear both spaced ("M 31") and compact ("M31").
+ */
+export function normalizeDesig(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, '');
+}
+
+/**
+ * Designation- and label-aware match for the CommandPalette client-side
+ * filter.  Alias matching moved to backend via `target.list(search)` (GF-11).
+ */
+export function matchesSearch(t: TargetListItem, query: string): boolean {
+  const qNorm = normalizeDesig(query);
+  const qLower = query.toLowerCase();
+  if (normalizeDesig(t.primaryDesignation).includes(qNorm)) return true;
+  if (normalizeDesig(t.effectiveLabel).includes(qNorm)) return true;
+  // Plain lowercase substring on effectiveLabel for proper names
+  // ("andromeda" in "Andromeda Galaxy") without whitespace collapsing.
+  if (t.effectiveLabel.toLowerCase().includes(qLower)) return true;
+  return false;
+}
+
 /** My Targets filter options for the FilterToolbar single-select (#91). */
 // Render-time factory (spec 046 #8b) so the label re-reads the active locale.
 const MY_TARGETS_FILTER_OPTIONS = (): FilterOption[] => [
@@ -134,10 +161,9 @@ export function TargetsPage() {
     void loadGuidanceParams();
   }, []);
 
-  // search state is lifted above useTargets() so the query can be forwarded to
-  // the backend (GF-11 / DS-16, lands with perf/ipc-surface #1543). Currently
-  // the backend binding ignores it and client-side alias matching covers
-  // this path; once #1543's bindings land the store passes it through.
+  // search state is lifted above useTargets() so the query is forwarded to the
+  // backend target.list endpoint (GF-11 / DS-16) for server-side alias-aware
+  // filtering.
   const [search, setSearch] = useState('');
 
   const targetsQuery = useTargets(search);
@@ -205,6 +231,97 @@ export function TargetsPage() {
     },
     [load, navigate],
   );
+
+  const handleSort = useCallback((col: TargetSortCol) => {
+    setSort((prev) =>
+      prev.col === col
+        ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { col, dir: 'asc' },
+    );
+  }, []);
+
+  // STUB: client-side catalog filter. Replace with a backend catalog filter on
+  // the list endpoint (task #57) once `target.list` can filter server-side. The
+  // catalogue multi-select (task #82) restricts to the user-selected subset.
+  const plannerTargets = useMemo(
+    () =>
+      listState.status === 'loaded'
+        ? filterByCatalogues(listState.items, new Set(enabledCatalogues))
+        : [],
+    [listState, enabledCatalogues],
+  );
+
+  /**
+   * #573: the "All targets" view is what the progressive reveal caps — a
+   * prefix slice of the full filtered catalogue, growing via `revealCount`.
+   * Order is the raw fetch order (not the user's chosen sort — TargetsTable
+   * sorts whatever it's given), so this only affects which rows exist during
+   * the brief initial-load window, not final correctness once fully loaded.
+   */
+  const revealedPlannerTargets = useMemo(
+    () => plannerTargets.slice(0, revealCount),
+    [plannerTargets, revealCount],
+  );
+
+  /**
+   * task #18: when "My Targets" is active, filter the Planner catalog to only
+   * the targets the user has starred (stored client-side via useFavourites).
+   * STUB: favouriteIds comes from localStorage only until task #54 lands and
+   * provides real backend "has linked sessions/projects" data.
+   *
+   * Uses the FULL `plannerTargets` (not the progressive-reveal slice, #573):
+   * favourites are a small set regardless of catalogue size, so there's no
+   * perf reason to cap it, and capping it would make a starred target
+   * transiently vanish from "My Targets" until reveal catches up to it.
+   */
+  const tabTargets = useMemo(() => {
+    if (myTargetsFilter !== MY_TARGETS_VALUE) return revealedPlannerTargets;
+    if (favouriteIds.size === 0) return MY_TARGETS_EMPTY;
+    return plannerTargets.filter((t) => favouriteIds.has(t.id));
+  }, [myTargetsFilter, revealedPlannerTargets, plannerTargets, favouriteIds]);
+
+  const visibleTargets = useMemo(() => {
+    // Backend filters by search (alias-aware, GF-11 / DS-16) — the returned
+    // list is already scoped to the query, so no client-side alias filter
+    // needed.  My Targets still bypasses the backend filter and uses the
+    // local favourite set.
+    let result = tabTargets;
+
+    // Filter-by-recommendation (spec 047 US3, FR-011): keep only targets whose
+    // REAL derived recommendation is one of the selected categories.
+    // deriveRowMoonPlanning is O(1) per target (pure, no fetch); night/params
+    // are included in deps so a settings change or the nightly Moon state
+    // re-filters too.
+    if (filterRecommendations.length > 0) {
+      const selected = new Set(filterRecommendations);
+      result = result.filter((t) => {
+        const { recommendation } = deriveRowMoonPlanning(
+          t,
+          night,
+          guidanceParams,
+        );
+        return selected.has(recommendation);
+      });
+    }
+
+    return result;
+  }, [
+    tabTargets,
+    plannerTargets,
+    myTargetsFilter,
+    search,
+    filterRecommendations,
+    night,
+    guidanceParams,
+  ]);
+
+  // Per the top-bar convention (task #80/#91): no title/summary in the bar —
+  // the left nav names the page and per-page counts move to the status bar.
+  // The My Targets filter, search, catalogue multi-select, and group-by ALL
+  // remain visible on both the "All targets" and "My Targets" views so the
+  // bar is consistent regardless of which view is active (#91 correction:
+  // the bar must not collapse on tab switch).
+  const isMyTargets = myTargetsFilter === MY_TARGETS_VALUE;
 
   const topBar = (
     <PageTopBar

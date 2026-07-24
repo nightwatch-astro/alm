@@ -54,16 +54,24 @@ pub async fn target_get(
 
 // ── target.list ──────────────────────────────────────────────────────────────
 
-/// `target.list` — list all canonical targets ordered by primary designation.
+/// `target.list` — list canonical targets ordered by primary designation.
+///
+/// When `search` is provided, returns only targets whose primary designation,
+/// effective label, or any alias (designation, common name, user-added)
+/// case-insensitively contains the query string.  An empty `search` string is
+/// treated as no filter (returns all targets).
 ///
 /// # Errors
 ///
 /// Returns `Err(ContractError)` with code `internal.database`.
 #[tauri::command]
 #[specta::specta]
-pub async fn target_list(state: State<'_, AppState>) -> Result<Vec<TargetListItem>, ContractError> {
-    tracing::debug!("target.list");
-    app_core::target_management::list(state.repo.pool()).await
+pub async fn target_list(
+    state: State<'_, AppState>,
+    search: Option<String>,
+) -> Result<Vec<TargetListItem>, ContractError> {
+    tracing::debug!("target.list search={search:?}");
+    app_core::target_management::list(state.repo.pool(), search.as_deref()).await
 }
 
 // ── target.alias.add ─────────────────────────────────────────────────────────

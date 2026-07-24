@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * target-search.test.ts — alias-aware search normalization (#103b, #29, spec-043).
+ * target-search.test.ts — designation/label search normalization (#103b, spec-043).
  *
  * Validates that normalizeDesig collapses whitespace and folds case, and that
- * matchesSearch matches "M31", "M 31", and "Andromeda" to the same target —
- * including via the `aliases` array now carried on every TargetListItem
- * (backend task #29, alias enrichment).
+ * matchesSearch matches "M31", "M 31", and "Andromeda" to the same target via
+ * designation and effectiveLabel.  Alias-based search moved to backend
+ * (GF-11 / DS-16) — `target.list(search)` filters aliases server-side; the
+ * client-side `matchesSearch` no longer consults an aliases array.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -18,7 +19,6 @@ function item(
   primaryDesignation: string,
   effectiveLabel?: string,
   objectType = 'other',
-  aliases: string[] = [],
 ): TargetListItem {
   return {
     id: primaryDesignation,
@@ -27,7 +27,6 @@ function item(
     objectType,
     raDeg: 0,
     decDeg: 0,
-    aliases,
     sessionCount: 0,
   };
 }
@@ -114,53 +113,22 @@ describe('matchesSearch — designation + label (#103b)', () => {
   });
 });
 
-describe('matchesSearch — alias array (#29)', () => {
-  // Key scenario: effectiveLabel is the bare designation ("M 31"), but the
-  // aliases array carries "Andromeda Galaxy". The search must still resolve.
-  const m31DesigLabel = item('M 31', 'M 31', 'galaxy', [
-    'M 31',
-    'NGC 224',
-    'Andromeda Galaxy',
-  ]);
-
-  it('"Andromeda" resolves to M31 via aliases when effectiveLabel is bare designation', () => {
-    expect(matchesSearch(m31DesigLabel, 'Andromeda')).toBe(true);
+// Alias-aware search (#29 / GF-11) moved to backend via `target.list(search)`.
+// The `matchesSearch` helper is now designation+label only; alias coverage
+// is tested at the Rust layer in `crates/app/targets/src/target_management/`.
+describe('matchesSearch — alias search is backend-only (GF-11)', () => {
+  it('"M 31" designation still matches via matchesSearch', () => {
+    expect(matchesSearch(item('M 31', 'M 31'), 'M31')).toBe(true);
   });
 
-  it('"andromeda galaxy" case-insensitive matches alias', () => {
-    expect(matchesSearch(m31DesigLabel, 'andromeda galaxy')).toBe(true);
+  it('"Andromeda Galaxy" label still matches via matchesSearch', () => {
+    expect(matchesSearch(item('M 31', 'Andromeda Galaxy'), 'Andromeda')).toBe(
+      true,
+    );
   });
 
-  it('"NGC 224" alternate designation matches via aliases', () => {
-    expect(matchesSearch(m31DesigLabel, 'NGC 224')).toBe(true);
-  });
-
-  it('"ngc224" compact form matches alias "NGC 224" via normalization', () => {
-    expect(matchesSearch(m31DesigLabel, 'ngc224')).toBe(true);
-  });
-
-  it('"Pinwheel" does NOT match M31 aliases', () => {
-    expect(matchesSearch(m31DesigLabel, 'Pinwheel')).toBe(false);
-  });
-
-  // Empty aliases array — graceful no-op (no crash, no false match).
-  const bare = item('IC 1805', 'IC 1805', 'emission_nebula', []);
-  it('empty aliases array does not crash and does not produce false matches', () => {
-    expect(matchesSearch(bare, 'Andromeda')).toBe(false);
-    expect(matchesSearch(bare, 'IC 1805')).toBe(true);
-  });
-
-  // Missing aliases field (undefined) — graceful fallback via `?? []`.
-  const noAliasField = {
-    id: 'x',
-    effectiveLabel: 'M 42',
-    primaryDesignation: 'M 42',
-    objectType: 'emission_nebula',
-    raDeg: 0,
-    decDeg: 0,
-  } as TargetListItem;
-  it('absent aliases field does not crash (nullish coalesce guard)', () => {
-    expect(matchesSearch(noAliasField, 'Orion')).toBe(false);
-    expect(matchesSearch(noAliasField, 'M 42')).toBe(true);
+  it('alias-only query ("NGC 224") does NOT match on the client — backend search needed', () => {
+    // m31 with bare designation label; "NGC 224" is an alias not in effectiveLabel.
+    expect(matchesSearch(item('M 31', 'M 31'), 'NGC 224')).toBe(false);
   });
 });

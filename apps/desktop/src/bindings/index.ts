@@ -189,13 +189,18 @@ export const commands = {
 	 */
 	targetGet: (req: TargetGetRequest) => typedError<TargetDetailV3_Serialize, ContractError_Serialize>(__TAURI_INVOKE("target_get", { req })),
 	/**
-	 *  `target.list` — list all canonical targets ordered by primary designation.
+	 *  `target.list` — list canonical targets ordered by primary designation.
+	 * 
+	 *  When `search` is provided, returns only targets whose primary designation,
+	 *  effective label, or any alias (designation, common name, user-added)
+	 *  case-insensitively contains the query string.  An empty `search` string is
+	 *  treated as no filter (returns all targets).
 	 * 
 	 *  # Errors
 	 * 
 	 *  Returns `Err(ContractError)` with code `internal.database`.
 	 */
-	targetList: () => typedError<TargetListItem_Serialize[], ContractError_Serialize>(__TAURI_INVOKE("target_list")),
+	targetList: (search: string | null) => typedError<TargetListItem_Serialize[], ContractError_Serialize>(__TAURI_INVOKE("target_list", { search })),
 	/**
 	 *  `target.alias.add` — add a user alias to a canonical target (gen-3).
 	 * 
@@ -867,6 +872,21 @@ export const commands = {
 	/**  RFC 3339 upper bound on the entry timestamp (exclusive). */
 	to?: string | null,
 } | null) => typedError<AuditExportResponse, ContractError_Serialize>(__TAURI_INVOKE("audit_export", { filePath, filters })),
+	/**
+	 *  `entity.names` — batch display-name lookup for `(entityType, entityId)` refs.
+	 * 
+	 *  Resolves project, plan, and target refs in three IN-clause DB queries instead
+	 *  of one IPC round-trip per unseen ref.  Session names are not included —
+	 *  callers read those from the inventory-sources query that is already in the
+	 *  session store.
+	 * 
+	 *  Absent ids (not in the DB) are simply omitted from the response map; the
+	 *  frontend hook treats absence as "unresolved".
+	 * 
+	 *  # Errors
+	 *  Returns `Err(ContractError)` with code `internal.database` on query failure.
+	 */
+	entityNames: (refs: EntityNameRef[]) => typedError<EntityNamesResponse, ContractError_Serialize>(__TAURI_INVOKE("entity_names", { refs })),
 	/**
 	 *  `log.recent` — return the most-recent log entries (initial hydration window).
 	 * 
@@ -3744,6 +3764,27 @@ export type DockPlacement = "side" | "bottom";
 
 /**  Entity kind for audit-log correlation on reveal operations. */
 export type EntityKind = "inbox_item" | "inventory_row" | "project_manifest" | "master_calibration" | "registered_source" | "other";
+
+/**  One entity reference for the `entity.names` batch lookup. */
+export type EntityNameRef = {
+	entityType: string,
+	entityId: string,
+};
+
+/**
+ *  Result of the `entity.names` batch lookup: a map from
+ *  `"<entityType>:<entityId>"` keys to display names.
+ * 
+ *  Keys with no matching DB row are omitted — the caller uses absence as
+ *  the "unknown / still loading" signal.
+ */
+export type EntityNamesResponse = {
+	/**
+	 *  Flat `{ "<type>:<id>": "<name>" }` map — camelCase key matches the
+	 *  frontend `entityNameKey(ref)` helper.
+	 */
+	names: { [key in string]: string },
+};
 
 /**  A piece of astrophotography equipment. */
 export type Equipment = {
@@ -9815,9 +9856,9 @@ export type TargetGetRequest = {
  *  `constellation` and `magnitude` are optional because those columns were not
  *  in the original schema; they are populated from `canonical_target.constellation`
  *  and `canonical_target.magnitude` when present (migration 0046).
- *  `aliases` carries all alias display forms (designations, common names, and
- *  user-added) so client-side alias search (e.g. "Andromeda" → M31) works
- *  without a separate round-trip. Empty when no aliases are stored.
+ *  Alias search is now backend-side via the `search` parameter on `target.list`
+ *  (GF-11 / DS-16); `aliases` is no longer serialized to the IPC response to
+ *  avoid cloning all alias strings for every list call (13k× entries).
  */
 export type TargetListItem = TargetListItem_Serialize | TargetListItem_Deserialize;
 
@@ -9828,9 +9869,9 @@ export type TargetListItem = TargetListItem_Serialize | TargetListItem_Deseriali
  *  `constellation` and `magnitude` are optional because those columns were not
  *  in the original schema; they are populated from `canonical_target.constellation`
  *  and `canonical_target.magnitude` when present (migration 0046).
- *  `aliases` carries all alias display forms (designations, common names, and
- *  user-added) so client-side alias search (e.g. "Andromeda" → M31) works
- *  without a separate round-trip. Empty when no aliases are stored.
+ *  Alias search is now backend-side via the `search` parameter on `target.list`
+ *  (GF-11 / DS-16); `aliases` is no longer serialized to the IPC response to
+ *  avoid cloning all alias strings for every list call (13k× entries).
  */
 export type TargetListItem_Deserialize = {
 	id: string,
@@ -9849,12 +9890,6 @@ export type TargetListItem_Deserialize = {
 	/**  Visual magnitude; `null` when not stored or not applicable. */
 	magnitude: number | null,
 	/**
-	 *  All alias display forms for this target (designations, common names,
-	 *  user-added). Empty when none are stored. Additive field — older clients
-	 *  that ignore unknown keys are unaffected.
-	 */
-	aliases?: string[],
-	/**
 	 *  Count of `acquisition_session` rows linked to this target (#877, planner
 	 *  Sessions column). `0` when no session has resolved to this target yet —
 	 *  additive field, older clients ignoring unknown keys are unaffected.
@@ -9869,9 +9904,9 @@ export type TargetListItem_Deserialize = {
  *  `constellation` and `magnitude` are optional because those columns were not
  *  in the original schema; they are populated from `canonical_target.constellation`
  *  and `canonical_target.magnitude` when present (migration 0046).
- *  `aliases` carries all alias display forms (designations, common names, and
- *  user-added) so client-side alias search (e.g. "Andromeda" → M31) works
- *  without a separate round-trip. Empty when no aliases are stored.
+ *  Alias search is now backend-side via the `search` parameter on `target.list`
+ *  (GF-11 / DS-16); `aliases` is no longer serialized to the IPC response to
+ *  avoid cloning all alias strings for every list call (13k× entries).
  */
 export type TargetListItem_Serialize = {
 	id: string,
@@ -9889,12 +9924,6 @@ export type TargetListItem_Serialize = {
 	constellation?: string | null,
 	/**  Visual magnitude; `null` when not stored or not applicable. */
 	magnitude?: number | null,
-	/**
-	 *  All alias display forms for this target (designations, common names,
-	 *  user-added). Empty when none are stored. Additive field — older clients
-	 *  that ignore unknown keys are unaffected.
-	 */
-	aliases: string[],
 	/**
 	 *  Count of `acquisition_session` rows linked to this target (#877, planner
 	 *  Sessions column). `0` when no session has resolved to this target yet —

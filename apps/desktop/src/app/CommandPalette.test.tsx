@@ -189,7 +189,6 @@ function targetItem(
   id: string,
   primaryDesignation: string,
   effectiveLabel?: string,
-  aliases: string[] = [],
 ): TargetListItem {
   return {
     id,
@@ -198,21 +197,15 @@ function targetItem(
     objectType: 'other',
     raDeg: 0,
     decDeg: 0,
-    aliases,
     sessionCount: 0,
   };
 }
 
-describe('buildTargetResults (#581 client-side alias-aware target search)', () => {
-  const m31 = targetItem('t-m31', 'M 31', 'Andromeda Galaxy', [
-    'M 31',
-    'NGC 224',
-    'Andromeda Galaxy',
-  ]);
-  const ngc7000 = targetItem('t-ngc7000', 'NGC 7000', 'North America Nebula', [
-    'NGC 7000',
-    'Caldwell 20',
-  ]);
+describe('buildTargetResults (#581 client-side target search via designation+label)', () => {
+  // Alias search moved to backend (GF-11 / DS-16); client-side matchesSearch
+  // matches only primaryDesignation and effectiveLabel.
+  const m31 = targetItem('t-m31', 'M 31', 'Andromeda Galaxy');
+  const ngc7000 = targetItem('t-ngc7000', 'NGC 7000', 'North America Nebula');
   const targets = [m31, ngc7000];
 
   it('empty query short-circuits to no results (no crash on blank input)', () => {
@@ -259,7 +252,9 @@ describe('buildTargetResults (#581 client-side alias-aware target search)', () =
     expect(prefixResult.score ?? 0).toBeGreaterThan(containsResult.score ?? 0);
   });
 
-  it('alias-only match: "Andromeda" resolves to M 31 via the aliases array', () => {
+  it('"Andromeda" matches M 31 via effectiveLabel "Andromeda Galaxy" (not alias lookup)', () => {
+    // effectiveLabel = 'Andromeda Galaxy' → still matches "Andromeda" via label.
+    // Alias-only matches (no label, only alias entry) require backend search.
     const results = buildTargetResults(targets, 'Andromeda', {
       matchesSearch,
       normalizeDesig,
@@ -267,13 +262,14 @@ describe('buildTargetResults (#581 client-side alias-aware target search)', () =
     expect(results.map((r) => r.id)).toContain('t-m31');
   });
 
-  it('alias match on "Caldwell 20" resolves to NGC 7000', () => {
+  it('"Caldwell 20" does not match on client — alias-only queries need backend search', () => {
+    // "Caldwell 20" is not in primaryDesignation ("NGC 7000") nor effectiveLabel
+    // ("North America Nebula") — alias lookup moved to backend (GF-11 / DS-16).
     const results = buildTargetResults(targets, 'Caldwell 20', {
       matchesSearch,
       normalizeDesig,
     });
-    expect(results).toHaveLength(1);
-    expect(results[0].id).toBe('t-ngc7000');
+    expect(results).toHaveLength(0);
   });
 
   it('non-matching query returns no results', () => {
