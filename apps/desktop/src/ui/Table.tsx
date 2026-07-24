@@ -364,7 +364,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
           {windowed ? (
             <>
               {paddingBefore > 0 && (
-                <tr aria-hidden="true" className={tbl.spacerRow}>
+                <tr aria-hidden="true" className={tbl.spacerRow} data-testid="table-spacer">
                   {/* eslint-disable-next-line jsx-a11y/control-has-associated-label -- decorative spacer in aria-hidden row, no label needed */}
                   <td
                     colSpan={colCount}
@@ -377,7 +377,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
                 renderRow(rows[vi.index], vi.index, handleVirtNav),
               )}
               {paddingAfter > 0 && (
-                <tr aria-hidden="true" className={tbl.spacerRow}>
+                <tr aria-hidden="true" className={tbl.spacerRow} data-testid="table-spacer">
                   {/* eslint-disable-next-line jsx-a11y/control-has-associated-label -- decorative spacer in aria-hidden row, no label needed */}
                   <td
                     colSpan={colCount}

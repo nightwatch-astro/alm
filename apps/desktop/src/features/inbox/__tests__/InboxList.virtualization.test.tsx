@@ -138,7 +138,7 @@ afterEach(() => {
 // heights — the windowed-pattern stand-in for the old single-sizer height.
 function sizerHeight(): number {
   let h = 0;
-  document.querySelectorAll('.pv-table__spacer td').forEach((td) => {
+  document.querySelectorAll('[data-testid="table-spacer"] td').forEach((td) => {
     h += parseFloat((td as HTMLElement).style.height || '0');
   });
   return h;
