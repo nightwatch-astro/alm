@@ -11,7 +11,12 @@
  * props (`onMutated`).
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import { queryKeys } from '@/data/queryKeys';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
@@ -73,20 +78,35 @@ export interface TargetsListState extends QueryState<TargetListItem[]> {
 // ── Query hooks ───────────────────────────────────────────────────────────────
 
 /**
- * Subscribe to the full targets (Planner catalogue) list.
+ * Subscribe to the targets (Planner catalogue) list.
+ *
+ * `search` is forwarded to the backend `target.list` endpoint (GF-11 / DS-16)
+ * once the binding supports it (perf/ipc-surface, #1543) so alias-aware
+ * filtering happens server-side. The query key includes the normalized search
+ * so each distinct query is cached independently. Until #1543 lands the
+ * backend ignores the arg and the client-side filter in useTargetsPageFilters
+ * covers alias matching.
  *
  * `refetch` replaces the old manual `load()` re-fetch — `TargetsPage` calls it
  * after "Add target" and passes it as `TargetDetailV2`'s `onMutated` so an
  * alias/display-alias edit refreshes the list's search/label data too.
  */
-export function useTargets(): TargetsListState {
-  const { data, isFetching, error, refetch } = useQuery({
-    queryKey: queryKeys.targets.list(),
+export function useTargets(search?: string): TargetsListState {
+  const normalizedSearch = search?.trim() || null;
+  const { data, isLoading, error, refetch } = useQuery({
+    // Include normalizedSearch in the key so each query is cached independently;
+    // keepPreviousData prevents the table from flashing a skeleton while a
+    // new search key resolves — the previous page stays visible.
+    queryKey: [...queryKeys.targets.list(), normalizedSearch],
     queryFn: async () => unwrap(await commands.targetList()),
+    placeholderData: keepPreviousData,
   });
   return {
     data,
-    loading: isFetching,
+    // isLoading is true only on the very first load (no data yet); isFetching
+    // would be true on every background refetch including search key changes,
+    // which would flash a skeleton during type-ahead with keepPreviousData.
+    loading: isLoading,
     error: error ?? undefined,
     refetch: () => void refetch(),
   };

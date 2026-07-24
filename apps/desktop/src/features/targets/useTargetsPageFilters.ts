@@ -81,9 +81,14 @@ export function useTargetsPageFilters(
   listState: ListState,
   night: ObservingNight | null,
   guidanceParams: MoonAvoidanceParams,
+  // search/setSearch are lifted to the TargetsPage call site so the value is
+  // available before useTargets() is called (needed to forward the query to
+  // the backend on perf/ipc-surface landing). The hook still owns all other
+  // filter state and returns search/setSearch in its result for the JSX bindings.
+  search: string,
+  setSearch: (v: string) => void,
 ): TargetsPageFilters {
   const [myTargetsFilter, setMyTargetsFilter] = useState('');
-  const [search, setSearch] = useState('');
   const [sort, setSort] = useState<TargetSort>(DEFAULT_TARGET_SORT);
   const [enabledCatalogues, setEnabledCatalogues] = useState<CatalogueId[]>(
     () => [...DEFAULT_ENABLED_CATALOGUES],

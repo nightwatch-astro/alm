@@ -134,7 +134,13 @@ export function TargetsPage() {
     void loadGuidanceParams();
   }, []);
 
-  const targetsQuery = useTargets();
+  // search state is lifted above useTargets() so the query can be forwarded to
+  // the backend (GF-11 / DS-16, lands with perf/ipc-surface #1543). Currently
+  // the backend binding ignores it and client-side alias matching covers
+  // this path; once #1543's bindings land the store passes it through.
+  const [search, setSearch] = useState('');
+
+  const targetsQuery = useTargets(search);
   const load = targetsQuery.refetch;
   const listState: ListState = targetsQuery.error
     ? { status: 'error', message: m.targets_page_error_load() }
@@ -145,8 +151,6 @@ export function TargetsPage() {
   const {
     myTargetsFilter,
     setMyTargetsFilter,
-    search,
-    setSearch,
     sort,
     handleSort,
     enabledCatalogues,
@@ -158,7 +162,13 @@ export function TargetsPage() {
     favouriteIds,
     toggleFavourite,
     isMyTargets,
-  } = useTargetsPageFilters(listState, night, guidanceParams);
+  } = useTargetsPageFilters(
+    listState,
+    night,
+    guidanceParams,
+    search,
+    setSearch,
+  );
 
   const onSelect = (id: string) =>
     navigate({ search: (prev) => ({ ...prev, selected: id }) });
