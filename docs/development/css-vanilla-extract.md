@@ -39,9 +39,26 @@ theme switching. Do not write raw `var(--pv-*)` strings inside `.css.ts` files
 — the TypeScript compiler cannot catch a typo in a raw string, but it will flag
 a missing key on `vars`.
 
-Spacing, typography, and radius tokens (`--pv-sp-*`, `--pv-text-*`,
-`--pv-radius-*`) remain as raw CSS variables; they do not change per theme and
-are not in the VE contract.
+For theme-invariant tokens (spacing, typography, radii, weights, and layout
+dimensions), import `uvars`:
+
+```ts
+import { style } from '@vanilla-extract/css';
+import { vars } from '@/styles/themes.css';
+import { uvars } from '@/styles/themes.css';
+
+export const btn = style({
+  height: uvars.controlH,
+  padding: `0 ${uvars.sp3}`,
+  borderRadius: uvars.radiusSm,
+  color: vars.text,
+});
+```
+
+`uvars` maps to `createGlobalTheme(':root', ...)` and covers all keys from
+`tokens/foundation.json` and `tokens/component/*.json`. Use `uvars.*` instead
+of raw `var(--pv-sp-*)`, `var(--pv-text-*)`, `var(--pv-radius-*)` etc. — the
+same typo-safety guarantee applies.
 
 ## styleVariants for modifiers
 

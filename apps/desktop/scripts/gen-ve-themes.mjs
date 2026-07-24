@@ -12,9 +12,20 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, basename, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const COMPONENT_TOKEN_DIR = join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'tokens', 'component');
+
 const APP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TOKENS_DIR = join(APP_DIR, 'tokens');
 const OUT = join(APP_DIR, 'src/styles/themes.css.ts');
+
+// Component token files provide layout/dimension tokens (control heights,
+// sidebar widths, row height, etc.) that are theme-invariant like foundation.
+const componentFiles = readdirSync(COMPONENT_TOKEN_DIR)
+  .filter((f) => f.endsWith('.json'))
+  .sort();
+const componentEntries = componentFiles.flatMap((f) =>
+  Object.entries(JSON.parse(readFileSync(join(COMPONENT_TOKEN_DIR, f), 'utf8'))),
+);
 
 const DEFAULT_THEME = 'warm-slate';
 
@@ -127,14 +138,21 @@ for (const id of themeIds) {
 
 // Foundation tokens (non-color, theme-invariant) as :root CSS variables.
 const foundationEntries = Object.entries(foundation).filter(([, d]) => d.$type !== 'color');
-if (foundationEntries.length > 0) {
-  lines.push("// Foundation tokens (type scale, spacing, radii, weights) — theme-invariant.");
-  lines.push("globalStyle(':root', {");
-  lines.push("  vars: {");
-  for (const [key, def] of foundationEntries) {
-    lines.push(`    '--pv-${key}': ${JSON.stringify(String(def.$value))},`);
+
+// All theme-invariant tokens: foundation (non-color) + component dimension tokens.
+// Emitted via createGlobalTheme so .css.ts files get type-safe refs (uvars.*).
+const invariantEntries = [
+  ...foundationEntries,
+  ...componentEntries,
+];
+
+if (invariantEntries.length > 0) {
+  lines.push("// Typed theme-invariant contract (spacing, type scale, radii, weights, layout dims).");
+  lines.push("// Use uvars.* in .css.ts files instead of raw var(--pv-*) strings.");
+  lines.push("export const uvars = createGlobalTheme(':root', {");
+  for (const [key, def] of invariantEntries) {
+    lines.push(`  ${toJsKey(key)}: ${JSON.stringify(String(def.$value))},`);
   }
-  lines.push("  },");
   lines.push("});");
   lines.push("");
 }
