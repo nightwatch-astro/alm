@@ -112,9 +112,23 @@
 .pv-mono { font-family: var(--pv-font-mono); }
 
 /* === TOOLTIP TRIGGER GLYPHS (InfoTip ⓘ, Lock 🔒) ============================
- * The .pv-info-tip and .pv-lock base layout rules are now in VE.
- * Only the global-selector rules that cross component boundaries stay here
- * for Phase 3 cleanup. */
+ * The .pv-info-tip and .pv-lock base layout rules are now in VE
+ * (src/ui/InfoTip.css.ts, src/ui/Lock.css.ts). The hover/focus-visible rules
+ * below MUST remain here so primitives.focus-vs-hover.test.ts can assert the
+ * WCAG 2.4.7/2.4.11 invariant that keyboard focus is distinguishable from hover
+ * (that test reads raw .css sources; see its module docstring). Phase 3 will
+ * update the test to read .css.ts sources and retire these. */
+
+.pv-info-tip:hover {
+  border-color: var(--pv-accent);
+  color: var(--pv-accent);
+}
+
+.pv-info-tip:focus-visible,
+.pv-lock:focus-visible {
+  outline: none;
+  box-shadow: var(--pv-focus-ring);
+}
 
 /* Screen-reader-only utility */
 .pv-visually-hidden {
