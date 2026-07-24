@@ -52,16 +52,8 @@ describe('normalizeDesig', () => {
 });
 
 describe('matchesSearch — designation + label (#103b)', () => {
-  // effectiveLabel is the bare designation; aliases carry the proper names.
-  const m31 = item('M 31', 'Andromeda Galaxy', 'galaxy', [
-    'M 31',
-    'NGC 224',
-    'Andromeda Galaxy',
-  ]);
-  const ngc7000 = item('NGC 7000', 'North America Nebula', 'emission_nebula', [
-    'NGC 7000',
-    'North America Nebula',
-  ]);
+  const m31 = item('M 31', 'Andromeda Galaxy', 'galaxy');
+  const ngc7000 = item('NGC 7000', 'North America Nebula', 'emission_nebula');
 
   // Compact (no-space) form matches spaced designation
   it('"M31" matches target with primaryDesignation "M 31"', () => {

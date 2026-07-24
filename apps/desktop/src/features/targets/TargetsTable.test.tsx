@@ -136,7 +136,6 @@ function item(
     objectType,
     raDeg: 0,
     decDeg: 0,
-    aliases: [],
     sessionCount: 0,
   };
 }
@@ -365,7 +364,6 @@ describe('TargetsTable — no-site prompt (US6/T015/T018)', () => {
       objectType: 'other',
       raDeg: 0,
       decDeg: 85, // circumpolar at 52°N regardless of date/time
-      aliases: [],
       sessionCount: 0,
     };
     // Pin "now" to a winter night: mid-summer at 52°N never reaches
@@ -438,7 +436,6 @@ function coordItem(
     objectType: 'other',
     raDeg,
     decDeg,
-    aliases: [],
     sessionCount: 0,
   };
 }

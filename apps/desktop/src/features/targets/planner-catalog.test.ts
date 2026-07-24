@@ -28,7 +28,6 @@ function item(
     objectType,
     raDeg: 0,
     decDeg: 0,
-    aliases: [],
     sessionCount: 0,
   };
 }
