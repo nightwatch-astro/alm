@@ -4,6 +4,7 @@
 import { forwardRef } from 'react';
 import type { CSSProperties, HTMLAttributes } from 'react';
 import { m } from '@/lib/i18n';
+import { group, skeletonVariants } from './skeleton.css';
 
 export type SkeletonVariant = 'line' | 'block' | 'circle';
 
@@ -35,8 +36,8 @@ const len = (v: number | string | undefined): string | undefined =>
  * Token-styled shimmer placeholder shown while real content loads. Renders a
  * `role="status"` group (accessible loading semantic) wrapping `count`
  * decorative blocks. Per-instance geometry is passed as CSS custom properties
- * so shape/motion stay in `styles/components/skeleton.css`; the shimmer is
- * disabled under `prefers-reduced-motion`, leaving a plain muted block.
+ * so shape/motion stay in skeleton.css.ts; the shimmer is disabled under
+ * `prefers-reduced-motion`, leaving a plain muted block.
  */
 export const Skeleton = forwardRef<HTMLDivElement, SkeletonProps>(
   function Skeleton(
@@ -53,7 +54,7 @@ export const Skeleton = forwardRef<HTMLDivElement, SkeletonProps>(
     },
     ref,
   ) {
-    const vars: CSSProperties = {
+    const cssVars: CSSProperties = {
       ...style,
       ...(len(width) ? { ['--pv-skel-w' as string]: len(width) } : null),
       ...(len(height) ? { ['--pv-skel-h' as string]: len(height) } : null),
@@ -62,19 +63,19 @@ export const Skeleton = forwardRef<HTMLDivElement, SkeletonProps>(
     return (
       <div
         ref={ref}
-        className={['pv-skeleton-group', className].filter(Boolean).join(' ')}
+        className={[group, className].filter(Boolean).join(' ')}
         role="status"
         aria-busy="true"
         aria-label={label}
         data-testid="skeleton"
         // eslint-disable-next-line no-restricted-syntax -- dynamic: per-instance skeleton geometry passed as CSS custom properties
-        style={vars}
+        style={cssVars}
         {...rest}
       >
         {Array.from({ length: Math.max(1, count) }, (_, i) => (
           <span
             key={i}
-            className={`pv-skeleton pv-skeleton--${variant}`}
+            className={skeletonVariants[variant]}
             aria-hidden="true"
           />
         ))}
