@@ -19,6 +19,7 @@ pub mod project_health;
 pub mod project_manifests;
 pub mod project_notes;
 pub mod project_setup;
+pub mod session_membership;
 pub mod source_view_generate;
 pub mod source_view_verify;
 #[cfg(test)]

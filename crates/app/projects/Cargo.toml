@@ -24,6 +24,8 @@ patterns = { path = "../../patterns" }
 persistence_calibration = { path = "../../persistence/calibration" }
 persistence_core = { path = "../../persistence/core" }
 persistence_inbox = { path = "../../persistence/inbox" }
+persistence_sessions = { path = "../../persistence/sessions" }
+persistence_topology = { path = "../../persistence/topology" }
 persistence_lifecycle = { path = "../../persistence/lifecycle" }
 persistence_plans = { path = "../../persistence/plans" }
 persistence_targets = { path = "../../persistence/targets" }
@@ -42,7 +44,14 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+contracts_core = { path = "../../contracts/core" }
+persistence_core = { path = "../../persistence/core", features = ["test-fixture"] }
+persistence_sessions = { path = "../../persistence/sessions", features = ["test-fixture"] }
+persistence_topology = { path = "../../persistence/topology", features = ["test-fixture"] }
+sqlx.workspace = true
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+uuid = { workspace = true }
 
 [lints]
 workspace = true
