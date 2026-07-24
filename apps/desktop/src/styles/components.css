@@ -34,6 +34,6 @@
 @import './components/targets.css';
 @import './components/inbox.css';
 @import './components/sessions.css';
-@import './components/modals.css';
+/* modals.css migrated to VE: src/components/modal.css.ts */
 @import './components/skeleton.css';
 @import './components/logpanel.css';

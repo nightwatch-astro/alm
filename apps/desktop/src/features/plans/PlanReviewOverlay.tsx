@@ -38,6 +38,7 @@ import type {
   PlanDetail_Serialize,
   PlanItemDetail_Serialize,
 } from '@/bindings/index';
+import { bodyFill as modalBodyFill } from '@/components/modal.css';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -504,7 +505,7 @@ export function PlanReviewOverlay({
       footer={footer}
       // The item table owns its own scroll region (below); the body itself
       // must not also scroll, or the item list would double-scroll.
-      bodyClassName="pv-modal__body--fill"
+      bodyClassName={modalBodyFill}
       data-testid="plan-review-overlay"
     >
       {planLoading && plan == null ? (

@@ -30,6 +30,18 @@
 import { useState, type ReactNode, type RefObject } from 'react';
 import { Dialog } from '@base-ui-components/react/dialog';
 import { m } from '@/lib/i18n';
+import {
+  backdrop as backdropCls,
+  popup as popupCls,
+  sizeVariants,
+  header as headerCls,
+  title as titleCls,
+  titleSpacer,
+  subtitle as subtitleCls,
+  closeBtn,
+  body as bodyCls,
+  footer as footerCls,
+} from './modal.css';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'auto';
 
@@ -111,6 +123,11 @@ export function Modal({
     }
   }
 
+  const popupClass = [popupCls, sizeVariants[size], className]
+    .filter(Boolean)
+    .join(' ');
+  const bodyClass = [bodyCls, bodyClassName].filter(Boolean).join(' ');
+
   return (
     <Dialog.Root
       open={open}
@@ -126,43 +143,36 @@ export function Modal({
     >
       <Dialog.Portal>
         <Dialog.Backdrop
-          className="pv-modal__backdrop"
+          className={backdropCls}
           onClick={closeOnBackdrop ? onClose : undefined}
         />
         <Dialog.Popup
-          className={`pv-modal pv-modal--${size}${className ? ` ${className}` : ''}`}
+          className={popupClass}
           aria-label={label}
           data-testid={testId}
           initialFocus={initialFocus}
           finalFocus={() => invoker}
         >
-          <div className="pv-modal__header">
+          <div className={headerCls}>
             {title != null ? (
-              <Dialog.Title className="pv-modal__title">{title}</Dialog.Title>
+              <Dialog.Title className={titleCls}>{title}</Dialog.Title>
             ) : (
               // Keep the close button right-aligned even without a title.
-              <span className="pv-modal__title-spacer" />
+              <span className={titleSpacer} />
             )}
             {subtitle != null && (
-              <span className="pv-modal__subtitle">{subtitle}</span>
+              <span className={subtitleCls}>{subtitle}</span>
             )}
             {!hideClose && (
-              <Dialog.Close
-                className="pv-modal__close"
-                aria-label={m.common_close()}
-              >
+              <Dialog.Close className={closeBtn} aria-label={m.common_close()}>
                 ✕
               </Dialog.Close>
             )}
           </div>
 
-          <div
-            className={`pv-modal__body${bodyClassName ? ` ${bodyClassName}` : ''}`}
-          >
-            {children}
-          </div>
+          <div className={bodyClass}>{children}</div>
 
-          {footer != null && <div className="pv-modal__footer">{footer}</div>}
+          {footer != null && <div className={footerCls}>{footer}</div>}
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>

@@ -50,6 +50,7 @@ import { useObservingState, saveSites } from './site-store';
 import type { ObserverSite, Twilight } from './observer-site';
 import { ianaTimezones, localTimezone } from './iana-timezones';
 import { selectBase } from '@/styles/select.css';
+import { message as modalMessage } from '@/components/modal.css';
 
 interface SiteForm {
   id: string | null;
@@ -560,7 +561,7 @@ export function ObservingSites() {
           </>
         }
       >
-        <p className="pv-modal__message">
+        <p className={modalMessage}>
           {m.settings_observing_sites_delete_confirm_desc()}
         </p>
         {deleteNeedsFallbackChoice && (

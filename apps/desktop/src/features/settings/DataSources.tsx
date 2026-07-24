@@ -38,6 +38,7 @@ import { categoryLabel, SOURCES_KEYS } from './datasources-model';
 import { RootCard } from './RootCard';
 import { useDataSources } from './useDataSources';
 import { selectBase } from '@/styles/select.css';
+import { message as modalMessage } from '@/components/modal.css';
 
 interface DataSourcesProps {
   save: (scope: string, values: Record<string, unknown>) => void;
@@ -259,7 +260,7 @@ export function DataSources({ save: _save }: DataSourcesProps) {
           </>
         }
       >
-        <p className="pv-modal__message">
+        <p className={modalMessage}>
           {m.settings_datasources_disable_confirm_desc()}
         </p>
         {toggleActiveError && (
@@ -291,7 +292,7 @@ export function DataSources({ save: _save }: DataSourcesProps) {
           </>
         }
       >
-        <p className="pv-modal__message">
+        <p className={modalMessage}>
           {m.settings_datasources_delete_confirm_desc({
             path: deleteTarget?.path ?? '',
           })}
