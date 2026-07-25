@@ -4,7 +4,7 @@
 /**
  * TonightPanel — the tonight altitude graph + planner stats + filter guidance.
  *
- * Extracted from TargetDetailV2.tsx for isolation.
+ * Extracted from TargetDetail.tsx for isolation.
  */
 
 import { Link } from '@tanstack/react-router';

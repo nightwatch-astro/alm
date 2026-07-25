@@ -8,7 +8,7 @@
  * Standardized on the Sessions layout system: a pinned `PageTopBar` (title +
  * summary counts + `FilterToolbar` + right-aligned actions) over a
  * `ListPageLayout` body — a dense FULL-WIDTH sortable `TargetsTable` as primary
- * content and the existing planner detail (`TargetDetailV2`) in the right-side
+ * content and the existing planner detail (`TargetDetail`) in the right-side
  * detail pane that mounts on selection.
  *
  * Filter/search/sort state lives in `useTargetsPageFilters` (refactor sweep
@@ -34,7 +34,7 @@ import { Btn, EmptyState } from '@/ui';
 import { useGrouping } from '@/lib/use-grouping';
 import { useStaleSelectionCleanup } from '@/lib/use-stale-selection';
 import { AddTargetDialog } from './AddTargetDialog';
-import { TargetDetailV2 } from './TargetDetailV2';
+import { TargetDetail } from './TargetDetail';
 import { useTargets } from './store';
 import { PLANNER_CATALOGS, type CatalogueId } from './planner-catalog';
 import { TargetsTable } from './TargetsTable';
@@ -277,7 +277,7 @@ export function TargetsPage() {
         topBar={topBar}
         detail={
           selected ? (
-            <TargetDetailV2
+            <TargetDetail
               targetId={selected}
               item={plannerTargets.find((t) => t.id === selected) ?? null}
               usableAltDeg={usableAltDeg}

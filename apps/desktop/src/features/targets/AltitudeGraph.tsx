@@ -3,7 +3,7 @@
 
 /**
  * Tonight Altitude graph (spec 044 Track B, T035 — @visx), split out of
- * `TargetDetailV2` (refactor sweep #982): a self-contained, purely
+ * `TargetDetail` (refactor sweep #982): a self-contained, purely
  * props-driven SVG chart with no dependency on the detail pane's own state.
  *
  * Built on `@visx/scale`/`shape`/`group`/`threshold` (replacing the prior
@@ -59,7 +59,7 @@ export function AltitudeGraph({
   darkWindowHours,
   moonSpans = [],
 }: AltitudeGraphProps) {
-  // #757 defense-in-depth: the caller (TargetDetailV2) already gates this
+  // #757 defense-in-depth: the caller (TargetDetail) already gates this
   // component out of the render tree for the degrade states where `points`
   // is `[]` (DEGRADE_ROW — no coordinates / no site). Guard here too so a
   // future caller passing an empty curve degrades to nothing rather than

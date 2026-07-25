@@ -33,7 +33,7 @@ const MIGRATED_DETAIL_FILES = [
   'src/features/calibration/MasterDetail.tsx',
   'src/features/inbox/InboxDetail.tsx',
   'src/features/archive/ArchiveDetail.tsx',
-  'src/features/targets/TargetDetailV2.tsx',
+  'src/features/targets/TargetDetail.tsx',
   'src/features/projects/ProjectDetail.tsx',
 ];
 

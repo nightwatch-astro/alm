@@ -7,7 +7,7 @@
  *
  * The page now uses the shared layout system: a pinned PageTopBar (FilterToolbar
  * with My Targets filter + search + catalogues + group-by) over a ListPageLayout
- * whose primary content is the full-width TargetsTable, with TargetDetailV2 in
+ * whose primary content is the full-width TargetsTable, with TargetDetail in
  * the detail pane that mounts only on selection.
  *
  * Tests:
@@ -15,7 +15,7 @@
  *  2. Renders target rows from listTargets backend response.
  *  3. Detail pane mounts only on selection (no empty centered dashboard).
  *  4. Clicking a row triggers navigate with the target id.
- *  5. When selected UUID provided, TargetDetailV2 mounts and calls getTargetDetail.
+ *  5. When selected UUID provided, TargetDetail mounts and calls getTargetDetail.
  *  6. effectiveLabel from backend renders in the detail pane.
  *  7. Shows error state when listTargets rejects.
  *  8. Target count appears in the table footer.
@@ -41,7 +41,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 
-// TargetsPage (list load + the nested TargetDetailV2/useFavourites) is now
+// TargetsPage (list load + the nested TargetDetail/useFavourites) is now
 // TanStack-Query-backed — every render needs a QueryClientProvider ancestor.
 // Shadowing `render` keeps every call site in this file unchanged.
 function render(ui: ReactElement) {
@@ -146,7 +146,7 @@ vi.mock('@tanstack/react-router', () => ({
   useSearch: () => ({ selected: mockSelectedId.current }),
   // The no-site banner (spec 044 US3) links to Settings via `Link`, which
   // needs a router context this test doesn't provide. Stub it as a plain
-  // anchor, consistent with TargetsTable.test.tsx/TargetDetailV2.test.tsx.
+  // anchor, consistent with TargetsTable.test.tsx/TargetDetail.test.tsx.
   Link: ({
     children,
     to,
