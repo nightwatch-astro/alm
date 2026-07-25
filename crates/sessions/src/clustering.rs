@@ -808,7 +808,7 @@ mod tests {
 
     #[test]
     fn circular_mean_empty_returns_zero() {
-        assert_eq!(circular_mean_deg(std::iter::empty::<f64>()), 0.0);
+        assert!((circular_mean_deg(std::iter::empty::<f64>()) - 0.0).abs() < 1e-9);
     }
 
     #[test]
@@ -821,7 +821,7 @@ mod tests {
     fn circular_mean_symmetric_cluster_near_zero() {
         // Symmetric cluster spanning the 0/360 seam: midpoint must be near 0.
         let mean = circular_mean_deg([358.0, 359.0, 0.0, 1.0, 2.0_f64]);
-        assert!(mean > 359.0 || mean < 1.0, "cluster midpoint near 0, got {mean}");
+        assert!(!(1.0..=359.0).contains(&mean), "cluster midpoint near 0, got {mean}");
     }
 
     // ── angular_separation_deg equivalence / NaN boundary ────────────────────
