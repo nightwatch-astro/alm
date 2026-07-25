@@ -14,6 +14,10 @@ export const header = style({
   paddingBottom: 'var(--pv-sp-3)',
   borderBottom: `1px solid ${vars.borderSubtle}`,
   flexWrap: 'wrap',
+  // The header must not shrink inside the flex-column detail pane, so the
+  // scroll region below it keeps its height (was `.pv-detail__header` in
+  // tables-lists.css, whose class this VE style replaced).
+  flexShrink: 0,
 });
 
 export const content = style({ flex: 1, minWidth: '200px' });

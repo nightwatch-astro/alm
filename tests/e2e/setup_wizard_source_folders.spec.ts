@@ -145,7 +145,11 @@ test.describe('setup wizard · source-folder primitives at 320 CSS px', () => {
       const manualPath = lightFrames.getByTestId(
         'manual-path-input-light_frames',
       );
-      await expect(organization).toHaveClass(/pv-select/);
+      // The org-state select carries the shared select primitive, migrated
+      // from the global `.pv-select` rule to the vanilla-extract `selectBase`
+      // style (dev-server class `select_selectBase__<hash>`). The manual-path
+      // input still uses the un-migrated global `.pv-input`.
+      await expect(organization).toHaveClass(/selectBase/);
       await expect(manualPath).toHaveClass(/pv-input/);
 
       const info = lightFrames.locator('[data-testid="info-tip"]').first();

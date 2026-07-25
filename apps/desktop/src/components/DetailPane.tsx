@@ -17,7 +17,12 @@ export interface DetailPaneProps {
 export function DetailPane({ children, fill }: DetailPaneProps) {
   return (
     <div
-      className={`${detail}${fill ? ' pv-detail--fill' : ''}`}
+      // `pv-detail` is a structural hook, NOT a style class: the un-migrated
+      // list-detail layout (tables-lists.css) keys its scroll contract on
+      // `.pv-listpage__detail-body > .pv-detail` and `:has(> .pv-detail)`.
+      // Dropping it triggers the no-scroll fallback and clips the pane (#816).
+      // Visual padding comes from the vanilla-extract `detail` class.
+      className={`${detail} pv-detail${fill ? ' pv-detail--fill' : ''}`}
       data-testid="detail"
     >
       {children}
