@@ -11,6 +11,8 @@
 
 import type { InboxPlanAction } from './store';
 import { m } from '@/lib/i18n';
+import { basename } from '@/lib/path';
+export { basename };
 
 function actionLabel(kind: string): string {
   switch (kind) {
@@ -25,11 +27,6 @@ function actionLabel(kind: string): string {
     default:
       return kind;
   }
-}
-
-export function basename(path: string): string {
-  const parts = path.replace(/\\/g, '/').split('/');
-  return parts[parts.length - 1] || path;
 }
 
 /**
