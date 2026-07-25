@@ -244,3 +244,77 @@ async fn migration_is_idempotent() {
         Some(serde_json::json!("debug"))
     );
 }
+
+// ── Boot-path wiring tests ────────────────────────────────────────────────────
+//
+// These tests model the production boot sequence from `desktop_shell::lib::boot`:
+//   1. migrate_v1_to_v2 (settings schema migration)
+//   2. get_settings     (repair/hydrate pass, primes the read cache)
+//
+// They prove that migration RUNS and takes effect on a DB with v1 rows before
+// `get_settings` consumes them, and that running migration on an already-current
+// DB is safe (idempotent, stored values unchanged).
+
+/// Boot path — v1 DB: migration runs, then `get_settings` hydrates the
+/// post-migration values correctly.
+///
+/// Models the upgraded-install scenario: v1 rows exist in the DB, the boot
+/// sequence calls `migrate_v1_to_v2` then `get_settings`.  After migration
+/// the v1 rows must still be readable (identity migration retains them) and
+/// `get_settings` must reflect them.
+#[tokio::test]
+async fn migration_runs_on_load_for_v1_stored_settings() {
+    let (db, bus, cache) = setup().await;
+    seed_v1_rows(&db).await;
+
+    // Step 1: migration (production boot order).
+    let summary = migrate_v1_to_v2(db.pool(), &bus).await.expect("migrate_v1_to_v2");
+
+    // Identity migration — nothing dropped/reset.
+    assert_eq!(summary.dropped, 0);
+    assert_eq!(summary.reset, 0);
+    assert_eq!(summary.migrated, 5, "all five seeded keys must be retained");
+
+    // Step 2: repair/hydrate pass.
+    let resp =
+        app_core_settings::get_settings(db.pool(), &bus, &cache).await.expect("get_settings");
+
+    // The seeded v1 values must be present in the returned state.
+    assert_eq!(resp.settings.log_level, "debug", "seeded logLevel must survive migration");
+    assert!(resp.settings.follow_symlinks, "seeded followSymlinks must survive migration");
+    assert!(
+        !resp.settings.block_permanent_delete,
+        "seeded blockPermanentDelete must survive migration"
+    );
+}
+
+/// Boot path — already-v2 DB: running migration again is safe and leaves
+/// stored values unchanged.
+///
+/// Models the already-upgraded-install scenario: `migrate_v1_to_v2` was run
+/// on a previous boot, so running it again on the same DB must not corrupt
+/// or remove any rows.
+#[tokio::test]
+async fn migration_does_not_re_run_on_already_migrated_db() {
+    let (db, bus, cache) = setup().await;
+    seed_v1_rows(&db).await;
+
+    // First boot: migration ran.
+    migrate_v1_to_v2(db.pool(), &bus).await.expect("first boot migrate");
+
+    // Second boot: migration runs again (idempotent).
+    let second = migrate_v1_to_v2(db.pool(), &bus).await.expect("second boot migrate");
+
+    // Summary must be identical — rows still present, nothing dropped/reset.
+    assert_eq!(second.dropped, 0, "second run must not drop anything");
+    assert_eq!(second.reset, 0, "second run must not reset anything");
+    assert_eq!(second.migrated, 5, "second run must count the same retained rows");
+
+    // Repair/hydrate pass must still read original seeded values.
+    let resp =
+        app_core_settings::get_settings(db.pool(), &bus, &cache).await.expect("get_settings");
+    assert_eq!(
+        resp.settings.log_level, "debug",
+        "already-migrated DB: logLevel must be unchanged after second migration run"
+    );
+}

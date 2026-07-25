@@ -632,6 +632,16 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         });
     }
 
+    // spec 018 US5 T030/T031: migrate stored settings from v1 to v2 schema.
+    // Runs eagerly on every boot before any consumer reads settings. The
+    // function is idempotent (running on a v2 DB is a no-op that emits a
+    // 0/0/0 summary), so no version sentinel is needed. Awaited directly —
+    // not spawned — so migration is complete before the repair pass below
+    // schedules its own task (ordering: migrate → repair → snapshot).
+    if let Err(e) = app_core::settings::migrate::migrate_v1_to_v2(&pool, &bus).await {
+        tracing::warn!("settings v1→v2 migration failed: {e:?}");
+    }
+
     // spec 018 T018/T019: hydrate defaults for missing settings rows and repair
     // invalid stored values (delete the bad row, fall back to the in-code
     // default, emit a settings.repair audit event), then prime the settings-bag

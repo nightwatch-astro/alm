@@ -37,7 +37,6 @@ list_events
 list_protection_defaults
 list_source_overrides
 merge_sessions
-migrate_v1_to_v2
 parse_marker
 parse_mismatched_dimensions
 rank_candidates
