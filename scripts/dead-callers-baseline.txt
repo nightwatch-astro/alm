@@ -217,3 +217,11 @@ upsert_source_availability
 list_sessions
 list_sessions_joined
 
+# spec 062 node ic9h.14: project session-pin use cases consumed by ic9h.16 (UX)
+# and ic9h.20 (shared wiring). Remove each entry as its Tauri adapter lands.
+add_session_pin
+get_current_membership_pins
+list_session_pins
+replace_session_pin
+view_state_query
+

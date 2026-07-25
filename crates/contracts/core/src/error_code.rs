@@ -267,6 +267,17 @@ pub enum ErrorCode {
     ProjectNotFound,
     #[serde(rename = "project.read_only")]
     ProjectReadOnly,
+    // ── Project session membership (spec 062) ────────────────────────────────
+    #[serde(rename = "project.session_already_pinned")]
+    ProjectSessionAlreadyPinned,
+    #[serde(rename = "project.session_not_pinned")]
+    ProjectSessionNotPinned,
+    #[serde(rename = "project.lifecycle_disallows_session_add")]
+    ProjectLifecycleDisallowsSessionAdd,
+    #[serde(rename = "project.reclassification_revision_invalid")]
+    ProjectReclassificationRevisionInvalid,
+    #[serde(rename = "project.membership_conflict")]
+    ProjectMembershipConflict,
 
     // ── Framing (spec 008 Q27, F-Framing-3) ────────────────────────────────────
     #[serde(rename = "framing.not_found")]
