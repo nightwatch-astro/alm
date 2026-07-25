@@ -191,6 +191,7 @@ mod callbacks;
 mod finalizers;
 mod lifecycle;
 mod paths;
+mod reconcile;
 mod terminal;
 
 #[cfg(test)]
@@ -202,6 +203,7 @@ pub use lifecycle::{
     skip_plan_item, sweep_crashed_applying_plans,
 };
 pub(crate) use paths::resolve_root_path;
+pub use reconcile::{reconcile_crashed_plans, ReconcileReport};
 
 use apply::{spawn_executor_run, SpawnExecutorParams};
 use callbacks::{audit_item_cancelled, PlanApplyCallbacks};
