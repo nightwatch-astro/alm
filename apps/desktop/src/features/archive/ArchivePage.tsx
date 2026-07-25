@@ -25,7 +25,13 @@
 
 import { useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { ListPageLayout, PageTopBar, FilterToolbar, Modal, TableStateGate } from '@/components';
+import {
+  ListPageLayout,
+  PageTopBar,
+  FilterToolbar,
+  Modal,
+  TableStateGate,
+} from '@/components';
 import { Btn, EmptyState } from '@/ui';
 import { m } from '@/lib/i18n';
 import { useStaleSelectionCleanup } from '@/lib/use-stale-selection';

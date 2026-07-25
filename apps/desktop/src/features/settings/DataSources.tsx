@@ -265,7 +265,9 @@ export function DataSources({ save: _save }: DataSourcesProps) {
         message={m.settings_datasources_delete_confirm_desc({
           path: deleteTarget?.path ?? '',
         })}
-        actionLabel={deletingId ? m.common_deleting() : m.settings_datasources_delete()}
+        actionLabel={
+          deletingId ? m.common_deleting() : m.settings_datasources_delete()
+        }
         busy={!!deletingId}
         onConfirm={() => void handleConfirmDelete()}
         error={deleteError}

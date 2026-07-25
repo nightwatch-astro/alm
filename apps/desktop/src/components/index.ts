@@ -68,7 +68,10 @@ export type { ModalProps, ModalSize } from './Modal';
 
 // C-13: shared confirm dialog for delete/disable actions.
 export { ConfirmModal } from './ConfirmModal';
-export type { ConfirmModalProps, ConfirmModalActionVariant } from './ConfirmModal';
+export type {
+  ConfirmModalProps,
+  ConfirmModalActionVariant,
+} from './ConfirmModal';
 
 // C-28: shared loading/error/empty gate for list pages.
 export { TableStateGate } from './TableStateGate';
