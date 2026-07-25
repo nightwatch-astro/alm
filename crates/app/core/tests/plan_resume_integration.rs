@@ -26,6 +26,20 @@ use persistence_plans::repositories::plan_apply as apply_repo;
 use persistence_plans::repositories::plans as plans_repo;
 use uuid::Uuid;
 
+/// Fetch plan_apply_events rows for a plan as `(item_id, prior_state, new_state)`.
+async fn list_events_raw(
+    pool: &sqlx::SqlitePool,
+    plan_id: &str,
+) -> Vec<(Option<String>, String, String)> {
+    sqlx::query_as::<_, (Option<String>, String, String)>(
+        "SELECT item_id, prior_state, new_state FROM plan_apply_events WHERE plan_id = ? ORDER BY at ASC",
+    )
+    .bind(plan_id)
+    .fetch_all(pool)
+    .await
+    .expect("list_events_raw")
+}
+
 /// Seed one item into `failed` state without going through the executor.
 /// Replaces the deleted `item_start_applying` + `item_failed` pair —
 /// `batch_flush_item_states` goes pending → terminal in one step,
@@ -182,7 +196,7 @@ async fn resume_refused_while_item_still_stale() {
         .await
         .expect("get_active_run")
         .expect("a paused run must still have its run row");
-    let events_before = apply_repo::list_events(db.pool(), &plan_id).await.expect("list_events");
+    let events_before = list_events_raw(db.pool(), &plan_id).await;
 
     // The condition is NOT resolved (snapshot still mismatched) — resume must refuse.
     let err = app_core::plan_apply::resume_plan(db.pool(), &bus, &plan_id, &run_row.id)
@@ -193,7 +207,7 @@ async fn resume_refused_while_item_still_stale() {
     // State untouched: still paused, no new audit events, item 1 never ran.
     let plan_row = plans_repo::get_plan(db.pool(), &plan_id, false).await.expect("get_plan");
     assert_eq!(plan_row.state, "paused", "a refused resume must not flip state");
-    let events_after = apply_repo::list_events(db.pool(), &plan_id).await.expect("list_events");
+    let events_after = list_events_raw(db.pool(), &plan_id).await;
     assert_eq!(
         events_before.len(),
         events_after.len(),
@@ -270,13 +284,13 @@ async fn resume_succeeds_after_stale_item_resolved_and_drains_remaining_pending(
     assert_eq!(plan_row.items_failed, 1, "item 0 stays failed from the original pause");
 
     // Audit trail carries the resume transition.
-    let events = apply_repo::list_events(db.pool(), &plan_id).await.expect("list_events");
+    let events = list_events_raw(db.pool(), &plan_id).await;
     assert!(
-        events.iter().any(|e| e.prior_state == "paused" && e.new_state == "applying"),
+        events.iter().any(|e| e.1 == "paused" && e.2 == "applying"),
         "audit trail must record the paused -> applying resume transition"
     );
     assert!(
-        events.iter().any(|e| e.prior_state == "applying" && e.new_state == "partially_applied"),
+        events.iter().any(|e| e.1 == "applying" && e.2 == "partially_applied"),
         "audit trail must record the final terminal transition"
     );
 }
@@ -694,11 +708,11 @@ async fn resume_then_retry_of_pre_pause_failed_item_reaches_terminal_state() {
 
     // A real terminal audit record landed for the retry (applying -> succeeded),
     // not silence.
-    let events = apply_repo::list_events(db.pool(), &plan_id).await.expect("list_events");
+    let events = list_events_raw(db.pool(), &plan_id).await;
     assert!(
-        events.iter().any(|e| e.item_id.as_deref() == Some(item0_id.as_str())
-            && e.prior_state == "applying"
-            && e.new_state == "succeeded"),
+        events.iter().any(|e| e.0.as_deref() == Some(item0_id.as_str())
+            && e.1 == "applying"
+            && e.2 == "succeeded"),
         "the retry must append a real terminal audit event for item 0, not leave it silent"
     );
 }

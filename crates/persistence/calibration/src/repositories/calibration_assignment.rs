@@ -181,14 +181,6 @@ pub async fn list_for_session(
     Ok(rows.into_iter().map(row_to_struct).collect())
 }
 
-/// Parse the JSON `mismatched_dimensions` column as a `Vec<String>`.
-///
-/// Returns an empty vec on parse failure (defensive — schema enforces valid JSON).
-#[must_use]
-pub fn parse_mismatched_dimensions(json: &str) -> Vec<String> {
-    serde_json::from_str::<Vec<String>>(json).unwrap_or_default()
-}
-
 // ── Missing-frame awareness (spec 048 US5, FR-024/025) ─────────────────────────
 //
 // A "master" here is always a `calibration_session` row (`master_id` ==
@@ -361,7 +353,8 @@ mod tests {
         assert_eq!(row.master_id, "master-002");
         assert!(row.was_override);
         // Round-trips through the `sqlx::types::Json` write-side codec.
-        assert_eq!(parse_mismatched_dimensions(&row.mismatched_dimensions), override_dims);
+        let got: Vec<String> = serde_json::from_str(&row.mismatched_dimensions).unwrap_or_default();
+        assert_eq!(got, override_dims);
     }
 
     #[tokio::test]
@@ -388,25 +381,5 @@ mod tests {
         let result =
             upsert(&pool, params("a-df", "ses-001", "dark_flat", "m-1", 1.0, false, &[])).await;
         assert!(result.is_err(), "dark_flat should be rejected by DB CHECK constraint");
-    }
-
-    #[tokio::test]
-    async fn parse_mismatched_dimensions_valid() {
-        let dims = parse_mismatched_dimensions(r#"["gain","filter"]"#);
-        assert_eq!(dims, vec!["gain".to_owned(), "filter".to_owned()]);
-    }
-
-    #[tokio::test]
-    async fn parse_mismatched_dimensions_empty() {
-        let dims = parse_mismatched_dimensions("[]");
-        assert!(dims.is_empty());
-    }
-
-    /// Graceful-degradation site (spec `n4_jsoncodec`): a corrupt
-    /// `mismatched_dimensions` cell must degrade to empty, not panic/propagate.
-    #[tokio::test]
-    async fn parse_mismatched_dimensions_corrupt_degrades_to_empty() {
-        let dims = parse_mismatched_dimensions("not valid json");
-        assert!(dims.is_empty());
     }
 }

@@ -10,19 +10,6 @@ use sqlx::SqlitePool;
 
 use persistence_core::DbResult;
 
-/// Whether a `file_record` row exists for `id` (spec 026 regenerate: checks
-/// inventory resolution before re-linking a prepared view item).
-///
-/// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
-pub async fn file_record_exists(pool: &SqlitePool, id: &str) -> DbResult<bool> {
-    let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM file_record WHERE id = ?")
-        .bind(id)
-        .fetch_one(pool)
-        .await?;
-    Ok(exists)
-}
-
 /// `(relative_path, state)` for a `file_record` row (spec 049 generation:
 /// resolves a session's frame ids to their current path + presence state).
 /// Returns `None` when no row exists.

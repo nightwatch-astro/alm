@@ -472,20 +472,6 @@ pub async fn soft_delete_plan(
     Ok(())
 }
 
-/// Update `approved_mtime` and `approved_size_bytes` on all pending items of a
-/// plan (R-FS-1). Called at approve time to snapshot the source filesystem state.
-///
-/// The actual per-item snapshots are written via [`update_item_fs_snapshot`].
-/// This function exists as a coordination point; callers iterate items and call
-/// `update_item_fs_snapshot` per item after performing the filesystem stat.
-///
-/// # Errors
-///
-/// Returns [`DbError::Database`] on connection failure.
-pub fn snapshot_item_fs_metadata_noop(_pool: &SqlitePool, _plan_id: &str, _approved_at: &str) {
-    // No-op: callers use update_item_fs_snapshot per-item (R-FS-1).
-}
-
 /// Update per-item FS snapshot fields (R-FS-1).
 ///
 /// # Errors

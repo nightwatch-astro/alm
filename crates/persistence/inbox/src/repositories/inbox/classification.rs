@@ -319,31 +319,6 @@ pub async fn list_evidence(
     .await?)
 }
 
-/// Apply a manual override to one evidence row.
-///
-/// # Errors
-/// Returns [`DbError::Database`] on connection failure.
-pub async fn set_manual_override(
-    pool: &SqlitePool,
-    inbox_item_id: &str,
-    relative_file_path: &str,
-    override_type: &str,
-) -> DbResult<bool> {
-    let rows = sqlx::query(
-        "UPDATE inbox_classification_evidence
-         SET manual_override = ?, evidence_source = 'manual_override'
-         WHERE inbox_item_id = ? AND relative_file_path = ?",
-    )
-    .bind(override_type)
-    .bind(inbox_item_id)
-    .bind(relative_file_path)
-    .execute(pool)
-    .await?
-    .rows_affected();
-
-    Ok(rows > 0)
-}
-
 /// Apply a full set of non-type overrides (filter, exposure, binning) and
 /// optionally a frame-type override.
 ///

@@ -103,33 +103,6 @@ async fn insert_and_list_evidence() {
 }
 
 #[tokio::test]
-async fn set_manual_override_updates_row() {
-    let db = test_db().await;
-    insert_inbox_item(db.pool(), &sample_item("item-5")).await.unwrap();
-
-    let ev = InsertEvidence {
-        id: "ev-2",
-        inbox_item_id: "item-5",
-        relative_file_path: "frame_002.fits",
-        frame_type: None,
-        evidence_source: "none",
-        raw_value: None,
-        unclassified: true,
-        manual_override: None,
-        is_master: false,
-        master_detector: None,
-    };
-    insert_evidence(db.pool(), &ev).await.unwrap();
-
-    let updated = set_manual_override(db.pool(), "item-5", "frame_002.fits", "dark").await.unwrap();
-    assert!(updated);
-
-    let rows = list_evidence(db.pool(), "item-5").await.unwrap();
-    assert_eq!(rows[0].manual_override, Some("dark".to_owned()));
-    assert_eq!(rows[0].evidence_source, "manual_override");
-}
-
-#[tokio::test]
 async fn plan_link_insert_and_get() {
     let db = test_db().await;
     insert_inbox_item(db.pool(), &sample_item("item-6")).await.unwrap();

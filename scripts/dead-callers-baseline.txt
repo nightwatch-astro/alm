@@ -4,21 +4,14 @@
 # Shrink-only. Removing a name (by wiring the function into its call path or
 # deleting it) is always fine. Adding one requires a comment explaining why the
 # function is legitimately unreferenced.
-default_label
-delete_source_protection
 emit_unarchive_transition
-file_record_exists
 # Uncalled by design pending epic astro-plan-v25w (#1370). Per PR #1364:
 # creating one equipment row per distinct header spelling mints sibling rows
 # for exactly the spellings an alias array exists to collapse.
 find_or_create_camera_by_alias
 find_or_create_filter_by_name
 find_or_create_telescope_by_alias
-fov_radius_deg
 get_library_root_state
-get_override
-get_run
-hard_violations_to_mismatched
 
 # astro-plan-xhj0: check-dead-callers.sh's corpus builder leaked out-of-line
 # `#[cfg(test)] mod name;` test files (sibling `name.rs` / `name/mod.rs`, no
@@ -33,26 +26,8 @@ insert_inbox_item
 # unreliable after a crashed partial warm (#818), so production gates on a
 # version sentinel instead. See crates/targeting/resolver/src/seed.rs:204-224.
 is_first_run
-list_events
-list_protection_defaults
-list_source_overrides
-merge_sessions
 parse_marker
-parse_mismatched_dimensions
-rank_candidates
-reset_pattern_for
-resolve_archive_destination
-resolve_protection_with_fallback
-reveal_failed
-set_manual_override
-set_pattern_for
-snapshot_item_fs_metadata_noop
-split_session
-sqlx_to_contract
-update_acquisition_session_root_id
-update_calibration_session_root_id
 validate_seeds
-video_record
 
 # astro-plan-bc4e: the pub-use-stripping fix to check-dead-callers.sh removed
 # a false "has a caller" signal that a `pub use` re-export line was producing

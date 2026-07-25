@@ -509,21 +509,6 @@ pub async fn append_event(
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 
-/// Fetch a plan apply run by id.
-///
-/// # Errors
-///
-/// Returns [`DbError::NotFound`] if no run matches.
-/// Returns [`DbError::Database`] on connection failure.
-pub async fn get_run(pool: &SqlitePool, run_id: &str) -> DbResult<PlanApplyRunRow> {
-    let row: Option<PlanApplyRunRow> = sqlx::query_as("SELECT * FROM plan_apply_runs WHERE id = ?")
-        .bind(run_id)
-        .fetch_optional(pool)
-        .await?;
-
-    row.ok_or_else(|| DbError::NotFound(format!("run {run_id}")))
-}
-
 /// Fetch the most recent active (paused or applying) run for a plan.
 ///
 /// Returns `None` if no run is in-progress.
@@ -540,18 +525,6 @@ pub async fn get_active_run(pool: &SqlitePool, plan_id: &str) -> DbResult<Option
     .bind(plan_id)
     .fetch_optional(pool)
     .await?)
-}
-
-/// List all apply events for a plan in chronological order.
-///
-/// # Errors
-///
-/// Returns [`DbError::Database`] on connection failure.
-pub async fn list_events(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<PlanApplyEventRow>> {
-    Ok(sqlx::query_as("SELECT * FROM plan_apply_events WHERE plan_id = ? ORDER BY at ASC")
-        .bind(plan_id)
-        .fetch_all(pool)
-        .await?)
 }
 
 /// Fetch the plan item whose CAS mismatch most recently triggered a pause
@@ -1030,7 +1003,7 @@ mod tests {
         let plan = plans_repo::get_plan(db.pool(), "p1", false).await.unwrap();
         assert_eq!(plan.state, "applying");
 
-        let run = get_run(db.pool(), "run-1").await.unwrap();
+        let run = get_active_run(db.pool(), "p1").await.unwrap().expect("run should exist");
         assert_eq!(run.plan_id, "p1");
         assert_eq!(run.items_total, 2);
     }
@@ -1127,34 +1100,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn append_and_list_events() {
-        let db = Database::in_memory().await.unwrap();
-        db.migrate().await.unwrap();
-        setup_with_approved_plan(&db, "p5", 1).await;
-        cas_approved_to_applying(db.pool(), "p5", "run-5", "tok", 1, 1).await.unwrap();
-
-        append_event(
-            db.pool(),
-            "evt-1",
-            "run-5",
-            "p5",
-            Some("p5-item-0"),
-            "pending",
-            "applying",
-            "2026-06-01T00:00:00Z",
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-
-        let events = list_events(db.pool(), "p5").await.unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].prior_state, "pending");
-        assert_eq!(events[0].new_state, "applying");
-    }
-
-    #[tokio::test]
     async fn sweep_crashed_applying_plans_transitions_to_paused() {
         let db = Database::in_memory().await.unwrap();
         db.migrate().await.unwrap();
@@ -1171,7 +1116,7 @@ mod tests {
         let plan = plans_repo::get_plan(db.pool(), "pc1", false).await.unwrap();
         assert_eq!(plan.state, "paused", "crash-applying plan must become paused");
 
-        let run = get_run(db.pool(), "run-c1").await.unwrap();
+        let run = get_active_run(db.pool(), "pc1").await.unwrap().expect("run should exist");
         assert_eq!(run.terminal_state, Some("paused".to_owned()));
         assert_eq!(run.pause_reason, Some("crash".to_owned()));
     }
@@ -1191,7 +1136,7 @@ mod tests {
         let plan = plans_repo::get_plan(db.pool(), "pp1", false).await.unwrap();
         assert_eq!(plan.state, "paused");
         // pause_reason stays 'item.stale', not overwritten to 'crash'.
-        let run = get_run(db.pool(), "run-pp1").await.unwrap();
+        let run = get_active_run(db.pool(), "pp1").await.unwrap().expect("run should exist");
         assert_eq!(run.pause_reason, Some("item.stale".to_owned()));
     }
 
@@ -1208,8 +1153,12 @@ mod tests {
         assert_eq!(plan.state, "applied");
         assert_eq!(plan.items_applied, 2);
 
-        let run = get_run(db.pool(), "run-6").await.unwrap();
-        assert_eq!(run.terminal_state, Some("applied".to_owned()));
+        let terminal: Option<String> =
+            sqlx::query_scalar("SELECT terminal_state FROM plan_apply_runs WHERE id = 'run-6'")
+                .fetch_optional(db.pool())
+                .await
+                .unwrap();
+        assert_eq!(terminal.as_deref(), Some("applied"));
     }
 
     /// batch_flush_item_states must set item_stale=1 for stale items so

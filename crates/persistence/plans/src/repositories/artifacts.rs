@@ -415,20 +415,6 @@ pub async fn clear_override(pool: &SqlitePool, artifact_id: &str) -> DbResult<Op
     Ok(prior)
 }
 
-/// Fetch the override row for an artifact, if any.
-///
-/// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
-pub async fn get_override(pool: &SqlitePool, artifact_id: &str) -> DbResult<Option<OverrideRow>> {
-    let row = sqlx::query_as::<_, OverrideRow>(
-        "SELECT * FROM classification_overrides WHERE artifact_id = ?",
-    )
-    .bind(artifact_id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(row)
-}
-
 // ── tool_launches completion (T022c) ──────────────────────────────────────────
 
 /// Set `tool_launches.completed_at` when the attribution pass determines a run
@@ -548,19 +534,16 @@ mod tests {
             .unwrap();
         upsert_override(pool, "a1", "final", Some("manual inspection")).await.unwrap();
 
-        let ov = get_override(pool, "a1").await.unwrap().expect("override should exist");
-        assert_eq!(ov.kind, "final");
-
-        // Check the main row was updated too.
+        // Main row updated by upsert_override.
         let row = get_artifact_by_path(pool, "p1", "out/img.xisf").await.unwrap().unwrap();
         assert_eq!(row.kind, "final");
         assert_eq!(row.classification_source, "manual_override");
         assert!((row.classification_confidence - 1.0_f64).abs() < f64::EPSILON);
 
-        // Clear the override.
+        // Clear the override — clear_override returns the deleted row.
         let cleared = clear_override(pool, "a1").await.unwrap();
         assert!(cleared.is_some());
-        assert!(get_override(pool, "a1").await.unwrap().is_none());
+        assert_eq!(cleared.unwrap().kind, "final");
     }
 
     #[tokio::test]

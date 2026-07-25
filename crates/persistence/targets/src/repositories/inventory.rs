@@ -426,52 +426,6 @@ pub async fn list_session_cameras(
     Ok(rows)
 }
 
-/// Set `root_id` on an `acquisition_session` row (T036, FR-012).
-///
-/// Called when the inbox confirm pipeline resolves the root for a session.
-/// Only updates rows where `root_id IS NULL` to avoid overwriting a correctly
-/// set root with a different one.
-///
-/// # Errors
-/// Returns [`DbError::Database`] on query failure.
-pub async fn update_acquisition_session_root_id(
-    pool: &SqlitePool,
-    session_id: &str,
-    root_id: &str,
-) -> DbResult<()> {
-    sqlx::query(
-        "UPDATE acquisition_session SET root_id = ? \
-         WHERE id = ? AND root_id IS NULL",
-    )
-    .bind(root_id)
-    .bind(session_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// Set `root_id` on a `calibration_session` row (T036, FR-012).
-///
-/// See [`update_acquisition_session_root_id`] for semantics.
-///
-/// # Errors
-/// Returns [`DbError::Database`] on query failure.
-pub async fn update_calibration_session_root_id(
-    pool: &SqlitePool,
-    session_id: &str,
-    root_id: &str,
-) -> DbResult<()> {
-    sqlx::query(
-        "UPDATE calibration_session SET root_id = ? \
-         WHERE id = ? AND root_id IS NULL",
-    )
-    .bind(root_id)
-    .bind(session_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 /// Write `notes` to whichever session table owns `session_id` — an
 /// inventory session id is always exactly one of `acquisition_session` or
 /// `calibration_session` (spec 006 union), so this tries the acquisition

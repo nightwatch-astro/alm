@@ -7,7 +7,9 @@
 //! destination. The archive path is pre-computed at plan generation time and
 //! stored in `plan_items.archive_path`.
 
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
+#[cfg(test)]
+use camino::Utf8PathBuf;
 
 use crate::failure::PlanItemFailure;
 use crate::ops::move_op::{move_file, MoveResult};
@@ -28,21 +30,6 @@ pub fn archive_file(
     move_file(source, archive_destination)
 }
 
-/// Build the absolute archive destination from a library root path and the
-/// relative archive path stored in `plan_items.archive_path`.
-///
-/// Returns `None` if `archive_relative` is empty or the path cannot be joined.
-#[must_use]
-pub fn resolve_archive_destination(
-    library_root: &Utf8Path,
-    archive_relative: &str,
-) -> Option<Utf8PathBuf> {
-    if archive_relative.is_empty() {
-        return None;
-    }
-    Some(library_root.join(archive_relative))
-}
-
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -61,19 +48,5 @@ mod tests {
 
         assert!(!src.exists());
         assert!(dst.exists());
-    }
-
-    #[test]
-    fn resolve_archive_destination_builds_path() {
-        let root = Utf8PathBuf::from("/mnt/library");
-        let rel = ".astro-plan-archive/p1/file.fits";
-        let resolved = resolve_archive_destination(&root, rel).unwrap();
-        assert_eq!(resolved, Utf8PathBuf::from("/mnt/library/.astro-plan-archive/p1/file.fits"));
-    }
-
-    #[test]
-    fn resolve_archive_destination_empty_relative_returns_none() {
-        let root = Utf8PathBuf::from("/mnt/library");
-        assert!(resolve_archive_destination(&root, "").is_none());
     }
 }
