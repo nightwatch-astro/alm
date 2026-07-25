@@ -200,3 +200,25 @@ list_session_pins
 replace_session_pin
 view_state_query
 
+
+# spec 062 node ic9h.15: Update View use cases consumed by ic9h.20 (Tauri
+# adapter wiring). Remove each entry as its adapter lands.
+plan_update_view
+approve_update_view
+apply_update_view
+run_apply_loop
+cancel_update_view
+discard_update_view
+query_update_view
+list_update_view_added_sessions
+list_update_view_conflicts
+list_update_view_items
+list_update_view_overlay_mappings
+# Persistence helpers for Update View install-intent/journal — wired by ic9h.20.
+complete_item_journal
+list_incomplete_intents
+mark_intent_installed
+upsert_install_intent
+# get_plan_by_row_id: available for ic9h.20 resume/recovery flow that needs to
+# load a plan by its integer row_id from the apply-loop context.
+get_plan_by_row_id

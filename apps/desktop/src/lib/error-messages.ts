@@ -102,6 +102,24 @@ export const ERROR_MESSAGES: Record<ErrorCode, () => string> = {
   'project.reclassification_revision_invalid':
     m.err_project_reclassification_revision_invalid,
   'project.membership_conflict': m.err_project_membership_conflict,
+  // spec 062 — Update View (US3/US5).
+  'project.update_view_no_additions': m.err_project_update_view_no_additions,
+  'project.update_view_plan_not_found':
+    m.err_project_update_view_plan_not_found,
+  'project.update_view_plan_not_open': m.err_project_update_view_plan_not_open,
+  'project.update_view_plan_not_approved':
+    m.err_project_update_view_plan_not_approved,
+  'project.update_view_plan_stale': m.err_project_update_view_plan_stale,
+  'project.update_view_path_conflict': m.err_project_update_view_path_conflict,
+  'project.update_view_source_unavailable':
+    m.err_project_update_view_source_unavailable,
+  'project.update_view_root_changed': m.err_project_update_view_root_changed,
+  'project.update_view_plan_digest_mismatch':
+    m.err_project_update_view_plan_digest_mismatch,
+  'project.update_view_session_too_large':
+    m.err_project_update_view_session_too_large,
+  'project.update_view_operation_not_cancellable':
+    m.err_project_update_view_operation_not_cancellable,
   'view.mixed_kind': m.err_view_mixed_kind,
   'view.not_found': m.err_view_not_found,
   'view.unsupported_kind': m.err_view_unsupported_kind,
