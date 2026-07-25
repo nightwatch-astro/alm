@@ -24,7 +24,9 @@ mod common;
 use std::time::Duration;
 
 use anyhow::Context;
-use common::{settle_first_run_redirect, write_minimal_fits_with_exposure, E2eApp, DRAIN_BACKED_TIMEOUT};
+use common::{
+    settle_first_run_redirect, write_minimal_fits_with_exposure, E2eApp, DRAIN_BACKED_TIMEOUT,
+};
 use serde_json::json;
 use thirtyfour::{By, WebElement};
 

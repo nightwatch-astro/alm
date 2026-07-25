@@ -19,7 +19,7 @@ use thirtyfour::prelude::*;
 use super::boot::{
     instance_env, pick_port_pair, LAUNCH_TIMEOUT, SCRIPT_TIMEOUT, SCRIPT_TIMEOUT_PAGE_LOAD,
 };
-use super::boot::{DEFAULT_FIND_TIMEOUT, APP_URL};
+use super::boot::{APP_URL, DEFAULT_FIND_TIMEOUT};
 use super::helpers::{
     app_binary_path, blocking_session_delete, drain_into, kill_driver_proc, preflight,
     reset_database, reset_webview_storage, reset_window_state, spawn_tauri_webdriver, ProcLog,

@@ -41,7 +41,9 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{scan_and_classify_one_item, settle_first_run_redirect, write_minimal_fits_with_exposure, E2eApp};
+use common::{
+    scan_and_classify_one_item, settle_first_run_redirect, write_minimal_fits_with_exposure, E2eApp,
+};
 use serde_json::json;
 
 const UI_TIMEOUT: Duration = Duration::from_secs(20);

@@ -25,7 +25,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use anyhow::Context;
-use common::{settle_first_run_redirect, write_minimal_fits, write_minimal_fits_with_exposure, E2eApp};
+use common::{
+    settle_first_run_redirect, write_minimal_fits, write_minimal_fits_with_exposure, E2eApp,
+};
 use serde_json::json;
 
 const UI_TIMEOUT: Duration = Duration::from_secs(20);
