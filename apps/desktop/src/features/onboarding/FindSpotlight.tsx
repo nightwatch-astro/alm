@@ -152,7 +152,10 @@ export function useActiveFindItem(): OnboardingItemDto | null {
 // ── Spotlight ─────────────────────────────────────────────────────────────────
 
 const PULSE_MS = 2500;
-const RESOLVE_TIMEOUT_MS = 1500;
+// Cross-page navigation + React hydration under full-suite Playwright load can
+// take up to ~2s; 3s gives the poll enough headroom without visibly delaying
+// the unavailable-target fallback for genuinely absent anchors.
+const RESOLVE_TIMEOUT_MS = 3000;
 const RESOLVE_POLL_MS = 60;
 
 // react-joyride wire strings (enum imports stay in the adapter — mirrored here).
