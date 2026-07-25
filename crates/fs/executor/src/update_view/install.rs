@@ -257,9 +257,19 @@ mod tests {
         let dest_dir = tempfile::TempDir::new().unwrap();
         let real_file = src_dir.path().join("real.fits");
         std::fs::write(&real_file, b"data").unwrap();
-        // Create a symlink as the source file.
         let link = src_dir.path().join("link.fits");
+
+        // Create a symlink using the platform-appropriate API.
+        // The rejection check uses symlink_metadata().is_symlink() which is
+        // cross-platform, so the assertion must hold on all three platforms.
+        #[cfg(unix)]
         std::os::unix::fs::symlink(&real_file, &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&real_file, &link).unwrap();
+        // Non-unix, non-windows targets (wasm etc.) cannot create symlinks;
+        // skip the test body rather than fail to compile.
+        #[cfg(not(any(unix, windows)))]
+        return;
 
         let err = install_item(
             &utf8(src_dir.path().to_owned()),
