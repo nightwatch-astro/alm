@@ -44,6 +44,7 @@ pub mod preferences;
 pub mod prepared_views;
 pub mod projects;
 pub mod protection;
+pub mod recovery;
 pub mod review;
 pub mod roots;
 pub mod search;

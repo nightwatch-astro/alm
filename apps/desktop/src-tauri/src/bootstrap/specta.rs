@@ -114,6 +114,7 @@ use crate::commands::protection::{
     plan_protection_check_cmd, protection_plan_acknowledged, source_protection_get,
     source_protection_set,
 };
+use crate::commands::recovery::recovery_status;
 use crate::commands::review::review_queue;
 use crate::commands::roots::{
     equipment_list, roots_delete, roots_list, roots_register, roots_remap, roots_remap_apply,
@@ -286,6 +287,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         plans_item_retry,
         plans_apply_status,
         plans_confirm_destructive,
+        // unclean-shutdown recovery (astro-plan-kyo7.48)
+        recovery_status,
         // audit
         audit_list,
         audit_export,
@@ -536,6 +539,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         plans_item_retry,
         plans_apply_status,
         plans_confirm_destructive,
+        // unclean-shutdown recovery (astro-plan-kyo7.48)
+        recovery_status,
         // audit
         audit_list,
         audit_export,

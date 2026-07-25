@@ -829,6 +829,15 @@ export const commands = {
 	 */
 	plansConfirmDestructive: (planId: string) => typedError<PlanDestructiveConfirmResponse, ContractError_Serialize>(__TAURI_INVOKE("plans_confirm_destructive", { planId })),
 	/**
+	 *  `recovery.status` — input for the unclean-shutdown recovery prompt.
+	 * 
+	 *  # Errors
+	 * 
+	 *  Returns [`ContractError`] on a database failure while listing interrupted
+	 *  plans.
+	 */
+	recoveryStatus: () => typedError<RecoveryStatus, ContractError_Serialize>(__TAURI_INVOKE("recovery_status")),
+	/**
 	 *  `audit.list` — returns paginated audit entries read from `audit_log_entry`.
 	 * 
 	 *  Applies a server-side default limit clamp (1..=500, default 100) to prevent
@@ -8885,6 +8894,19 @@ export type RecoveryAction_Serialize = {
 	code: string,
 	label: string,
 	description?: string | null,
+};
+
+/**
+ *  Response for `recovery.status` — the unclean-shutdown recovery prompt input.
+ * 
+ *  `unclean_shutdown` is true when the clean-shutdown marker was absent at
+ *  boot (the previous process did not exit gracefully). `interrupted_plan_ids`
+ *  lists plans left mid-apply by the crash (still `applying`, or `paused` with
+ *  a `crash` reason) — the recovery prompt offers these for review/resume.
+ */
+export type RecoveryStatus = {
+	uncleanShutdown: boolean,
+	interruptedPlanIds: string[],
 };
 
 /**  Request payload for `roots.register.batch`. */
