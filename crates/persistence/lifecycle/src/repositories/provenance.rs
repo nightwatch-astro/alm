@@ -120,7 +120,7 @@ fn row_to_entry(row: &ProvenanceRow) -> DbResult<ProvenanceEntry<Value>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] for SQL failures (including a stored `value`
+/// Returns `persistence_core::DbError::Database` for SQL failures (including a stored `value`
 /// that cannot be parsed as JSON — decoded via `sqlx::types::Json` at fetch
 /// time) and [`DbError::NotFound`] when stored discriminants/UUIDs/timestamps
 /// cannot be decoded.

@@ -6,7 +6,7 @@
 //! Two-step flow (D11):
 //!   1. [`scan`] — pure, read-only preview. Enumerates a project's observed
 //!      processing artifacts, classifies each into a [`DataType`], applies the
-//!      persisted [`CleanupPolicy`], and returns candidate files plus reclaimable
+//!      persisted `CleanupPolicy`, and returns candidate files plus reclaimable
 //!      bytes. NO plan row is created and NO filesystem mutation occurs (FR-002).
 //!   2. [`generate`] — materialises a reviewable cleanup plan from the same
 //!      candidates by building `CleanupPlanItem`s and delegating to the spec-016
@@ -43,7 +43,7 @@
 //!
 //! ## Policy storage (D13)
 //!
-//! The [`CleanupPolicy`] is persisted through the existing generic
+//! The `CleanupPolicy` is persisted through the existing generic
 //! `protection_defaults` (scope, key, value-JSON) store (migration 0035) under
 //! `scope = "cleanup"`, `key = "policy"`. The policy serialises cleanly to JSON,
 //! so no new table or migration is required.

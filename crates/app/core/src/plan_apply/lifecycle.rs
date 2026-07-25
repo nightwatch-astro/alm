@@ -22,7 +22,7 @@ use super::{
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure (non-fatal at boot —
+/// Returns `persistence_core::DbError::Database` on connection failure (non-fatal at boot —
 /// caller should log and continue).
 pub async fn sweep_crashed_applying_plans(
     pool: &SqlitePool,
@@ -329,14 +329,14 @@ pub(super) async fn revalidate_pause_condition(
 /// Resume a paused plan apply run (R-Pause-1, T052).
 ///
 /// Re-validates the pause condition recorded on the run
-/// ([`revalidate_pause_condition`]) before transitioning back to
+/// (`revalidate_pause_condition`) before transitioning back to
 /// `applying`. If the condition is still present, resume is refused with
 /// the matching `*.still.*` code and the plan stays `paused` — it is never
 /// silently flipped to `applying` for a run that would immediately stall
 /// again (constitution §II, issue #575).
 ///
-/// On success, re-registers an [`ActiveRun`] (R-Concur-1) and re-spawns the
-/// executor (via [`spawn_executor_run`]) over the plan's remaining
+/// On success, re-registers an `ActiveRun` (R-Concur-1) and re-spawns the
+/// executor (via `spawn_executor_run`) over the plan's remaining
 /// `pending` items. Items already `failed` when the run paused — including
 /// the one that triggered the pause — stay terminal for this run; per-item
 /// retry is a separate affordance (`retry_plan_item`), not part of resume.

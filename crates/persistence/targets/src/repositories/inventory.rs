@@ -77,7 +77,7 @@ pub struct InventoryFilters {
 /// List all `LibraryRoot` rows that have at least one session under them.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn list_roots_with_sessions(pool: &SqlitePool) -> DbResult<Vec<LibraryRootRow>> {
     let rows = sqlx::query_as::<_, LibraryRootRow>(
         r"
@@ -103,7 +103,7 @@ pub async fn list_roots_with_sessions(pool: &SqlitePool) -> DbResult<Vec<Library
 /// Used by spec 011 cwd-containment check (R-CwdContain, FR-010).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn list_all_roots(pool: &SqlitePool) -> DbResult<Vec<LibraryRootRow>> {
     let rows = sqlx::query_as::<_, LibraryRootRow>(
         "SELECT id, current_path, kind, state FROM library_root ORDER BY current_path ASC",
@@ -129,7 +129,7 @@ pub async fn list_all_roots(pool: &SqlitePool) -> DbResult<Vec<LibraryRootRow>> 
 /// (spec 036, T007); the gen-3 `canonical_target` is the live store.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn list_sessions_for_root(
     pool: &SqlitePool,
     root_id: &str,
@@ -316,7 +316,7 @@ pub struct SessionContextRow {
 /// returned `Vec` — callers treat a missing id as "no context available".
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn get_session_context_by_ids(
     pool: &SqlitePool,
     session_ids: &[String],
@@ -380,7 +380,7 @@ pub struct SessionCameraRow {
 /// Sessions whose frames resolve no metadata row are simply absent.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn list_session_cameras(
     pool: &SqlitePool,
     session_ids: &[String],
@@ -437,7 +437,7 @@ pub async fn list_session_cameras(
 /// `session_id` matches neither (caller maps that to `session.not_found`).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn set_session_notes(
     pool: &SqlitePool,
     session_id: &str,
@@ -483,7 +483,7 @@ pub struct SessionCalibrationLinkRow {
 /// input simply produce no rows.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn list_calibration_matches_for_sessions(
     pool: &SqlitePool,
     session_ids: &[String],
@@ -514,7 +514,7 @@ pub async fn list_calibration_matches_for_sessions(
 /// Returns `Some(path_string)` when found, `None` when not found.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn get_library_root_path(pool: &SqlitePool, root_id: &str) -> DbResult<Option<String>> {
     let row: Option<(String,)> =
         sqlx::query_as("SELECT current_path FROM library_root WHERE id = ?")
@@ -529,7 +529,7 @@ pub async fn get_library_root_path(pool: &SqlitePool, root_id: &str) -> DbResult
 /// Returns `Some(state)` when found, `None` when not found.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn get_library_root_state(pool: &SqlitePool, root_id: &str) -> DbResult<Option<String>> {
     let row: Option<(String,)> = sqlx::query_as("SELECT state FROM library_root WHERE id = ?")
         .bind(root_id)
@@ -551,7 +551,7 @@ pub struct FileRecordLookupRow {
 /// read-only source-resolution step). Returns `None` when no row exists.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [\ `persistence_core::DbError::Database`] on query failure.
 pub async fn get_file_record_lookup(
     pool: &SqlitePool,
     file_record_id: &str,

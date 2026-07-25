@@ -37,7 +37,7 @@ pub struct ProjectNoteRow {
 /// Returns the new `updated_at` timestamp.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn upsert_note(
     pool: &SqlitePool,
     id: &str,
@@ -69,7 +69,7 @@ pub async fn upsert_note(
 /// saved; callers treat this as empty content).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_note(pool: &SqlitePool, project_id: &str) -> DbResult<Option<ProjectNoteRow>> {
     let row: Option<ProjectNoteRow> = sqlx::query_as(
         "\
@@ -89,7 +89,7 @@ pub async fn get_note(pool: &SqlitePool, project_id: &str) -> DbResult<Option<Pr
 /// Returns `None` when no note has been saved yet.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_note_content(pool: &SqlitePool, project_id: &str) -> DbResult<Option<String>> {
     let row: Option<(String,)> =
         sqlx::query_as("SELECT content FROM project_notes WHERE project_id = ?")

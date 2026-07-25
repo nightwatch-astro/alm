@@ -44,7 +44,7 @@ pub const MAIN_WINDOW_LABEL: &str = "main";
 // scope. `tests/bindings.rs` depends on `desktop_shell::specta_builder`.
 include!("bootstrap/specta.rs");
 
-/// Build the Tauri [`App`] **without** starting the event loop.
+/// Build the Tauri `App` **without** starting the event loop.
 ///
 /// The returned handle exposes the platform path resolver (needed to locate
 /// the default `SQLite` database path) while the caller retains full control
@@ -240,7 +240,7 @@ pub fn build_app() -> tauri::App {
 }
 
 /// Builds the compiled-in Tauri context and defers the main window's
-/// creation (see [`defer_main_window`]).
+/// creation (see `defer_main_window`).
 ///
 /// Per-instance webview isolation for the E2E harness (#1204) does **not**
 /// go through this context any more: it used to point each config-declared
@@ -303,7 +303,7 @@ fn instance_context() -> tauri::Context {
 /// Start the event loop first, then finish database startup behind the splash.
 ///
 /// The splash is the only window Tauri creates for itself (see
-/// [`defer_main_window`]), so it paints as soon as `app.run()` begins pumping.
+/// `defer_main_window`), so it paints as soon as `app.run()` begins pumping.
 /// Connecting, migrating, and wiring shared state all happen on a background
 /// task from there, and the main window is built only once that task has
 /// finished — so a long migration is visible instead of being a windowless

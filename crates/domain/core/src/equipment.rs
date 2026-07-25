@@ -45,7 +45,7 @@ pub struct Camera {
     /// meaningful when `sensor_type` is `Osc`.
     pub passband: Option<Vec<String>>,
     /// Pixel pitch in micrometres; `None` = not recorded. Square pixels are
-    /// assumed on both axes, matching [`sessions::fov_diagonal_deg`].
+    /// assumed on both axes, matching `sessions::fov_diagonal_deg`.
     #[serde(default)]
     pub pixel_size_um: Option<f64>,
     /// Unbinned sensor width in pixels (FITS `NAXIS1`); `None` = not recorded.

@@ -7,11 +7,11 @@
 //! Two plans may apply concurrently only if their (source ∪ destination ∪
 //! archive) path sets are disjoint at subtree-prefix granularity. This module
 //! owns the pure comparison; the apply use case computes each plan's claimed
-//! paths and calls [`PlanPathSet::first_overlap`] before registering a run.
+//! paths and calls `PlanPathSet::first_overlap` before registering a run.
 //!
 //! Inputs are expected to be **lexically normalized** paths (no `.` / `..`
 //! components) that are absolute whenever the owning library root is known.
-//! Comparison is component-wise (via [`Utf8Path::starts_with`]), so sibling
+//! Comparison is component-wise (via `Utf8Path::starts_with`), so sibling
 //! names that share a string prefix (`/a/b` vs `/a/bc`) do NOT overlap.
 //! Comparison is case-sensitive; case-insensitive filesystem semantics are a
 //! documented future refinement (research R7).

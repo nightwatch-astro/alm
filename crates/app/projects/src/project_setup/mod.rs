@@ -31,8 +31,8 @@
 //!
 //! Split by responsibility (refactor sweep #972): [`create`] owns path
 //! anchoring + the Constitution II folder plan builder; [`update`] is
-//! metadata-only; [`sources`] links/unlinks Inventory sessions and recomputes
-//! channels; [`channels`] handles the reinfer/dismiss-drift pair; [`read`]
+//! metadata-only; `sources` links/unlinks Inventory sessions and recomputes
+//! channels; `channels` handles the reinfer/dismiss-drift pair; `read`
 //! covers the `list`/`get` DTO projections. Helpers shared by more than one
 //! use case (error mapping, exposure/channel aggregation, the auto-transition
 //! seam, the source-change manifest trigger) stay here so siblings pull them

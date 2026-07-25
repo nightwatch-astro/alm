@@ -29,10 +29,10 @@
 //! Constitution III: this module never opens, processes, or modifies observed files.
 //! Constitution V: the DB row is the durable record; the file index is reproducible.
 //!
-//! Split by responsibility (refactor sweep #980): [`attribution`] is the
+//! Split by responsibility (refactor sweep #980): `attribution` is the
 //! path→project resolver + startup fix-up; [`detect`] is the observe/insert
-//! pipeline; [`list`] is the read projection; [`classify`] is the manual
-//! override; [`missing_recovered`] handles the reconcile pass; [`launches`]
+//! pipeline; [`list`] is the read projection; `classify` is the manual
+//! override; `missing_recovered` handles the reconcile pass; `launches`
 //! covers re-attribution, run completion, and the stale-launch sweep.
 #![allow(clippy::doc_markdown)]
 

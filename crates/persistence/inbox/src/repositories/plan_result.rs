@@ -98,7 +98,7 @@ pub async fn get_plan_snapshot_for_operation(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_proposed_sessions(
     pool: &SqlitePool,
     snapshot_row_id: i64,
@@ -120,7 +120,7 @@ pub async fn list_proposed_sessions(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_proposed_session_frames(
     pool: &SqlitePool,
     proposed_session_row_id: i64,

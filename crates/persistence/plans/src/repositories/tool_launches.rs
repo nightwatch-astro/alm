@@ -51,7 +51,7 @@ pub struct InsertToolLaunch<'a> {
 /// Insert a new `tool_launches` row.  Returns the row `id`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_tool_launch(
     pool: &SqlitePool,
     data: &InsertToolLaunch<'_>,
@@ -81,7 +81,7 @@ pub async fn insert_tool_launch(
 /// Used by the re-launch guard (spec 011 T012).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 /// Internal FromRow helper to avoid type-complexity lint on tuple results.
 #[derive(sqlx::FromRow)]
 struct ToolLaunchRawRow {
@@ -119,7 +119,7 @@ impl From<ToolLaunchRawRow> for ToolLaunchRow {
 /// Used by the re-launch guard (spec 011 T012).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_latest_launch(
     pool: &SqlitePool,
     project_id: &str,
@@ -143,7 +143,7 @@ pub async fn get_latest_launch(
 /// List all `tool_launches` rows for a project, newest first.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_launches_for_project(
     pool: &SqlitePool,
     project_id: &str,

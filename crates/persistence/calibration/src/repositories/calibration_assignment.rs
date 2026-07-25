@@ -78,7 +78,7 @@ fn row_to_struct(
 /// Replaces any existing row for the same `(session_id, calibration_type)` pair.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure (including JSON encoding
+/// Returns `persistence_core::DbError::Database` on query failure (including JSON encoding
 /// of `mismatched_dimensions`, encoded via `sqlx::types::Json`).
 pub async fn upsert(pool: &SqlitePool, params: UpsertParams<'_>) -> DbResult<()> {
     let at = params.assigned_at.map_or_else(Timestamp::now_iso, str::to_owned);
@@ -119,7 +119,7 @@ pub async fn upsert(pool: &SqlitePool, params: UpsertParams<'_>) -> DbResult<()>
 /// Returns `true` when a row was deleted, `false` when none existed.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn delete(pool: &SqlitePool, session_id: &str, calibration_type: &str) -> DbResult<bool> {
     let result = sqlx::query(
         "DELETE FROM calibration_assignment WHERE session_id = ? AND calibration_type = ?",
@@ -137,7 +137,7 @@ pub async fn delete(pool: &SqlitePool, session_id: &str, calibration_type: &str)
 /// Returns `None` when no assignment exists.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get(
     pool: &SqlitePool,
     session_id: &str,
@@ -161,7 +161,7 @@ pub async fn get(
 /// List all assignments for a session.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_for_session(
     pool: &SqlitePool,
     session_id: &str,
@@ -199,7 +199,7 @@ pub async fn list_for_session(
 /// yet); `Some(state)` is one of `present` / `missing` / `user_resolved_missing`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn master_artifact_state(pool: &SqlitePool, master_id: &str) -> DbResult<Option<String>> {
     let row: Option<(String,)> = sqlx::query_as(
         "SELECT pa.state
@@ -219,7 +219,7 @@ pub async fn master_artifact_state(pool: &SqlitePool, master_id: &str) -> DbResu
 /// member frame (`frame_ids`) whose `file_record.state = 'missing'`?
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn master_has_missing_source_frame(pool: &SqlitePool, master_id: &str) -> DbResult<bool> {
     let (count,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*)
@@ -242,7 +242,7 @@ pub async fn master_has_missing_source_frame(pool: &SqlitePool, master_id: &str)
 /// to exactly the assignments a raw-frame reconcile outcome affects.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_by_source_frame(
     pool: &SqlitePool,
     frame_id: &str,
@@ -269,7 +269,7 @@ pub async fn find_by_source_frame(
 /// artifact reconcile outcome affects.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_by_source_artifact(
     pool: &SqlitePool,
     artifact_id: &str,

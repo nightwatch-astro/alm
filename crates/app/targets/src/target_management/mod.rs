@@ -14,11 +14,11 @@
 //! - §III Metadata/identity only — no image processing.
 //! - §V SQLite (resolution cache / canonical_target) is the durable record.
 //!
-//! Split by responsibility (refactor sweep #986): [`detail`] is `target.get`;
-//! [`list`] is `target.list` (+ session-count enrichment); [`alias`] is
-//! `target.alias.add`/`.remove`; [`display_alias`] is `.set`/`.clear`;
-//! [`sessions_projects`] is spec 023 US2/US3 (`target.sessions.list` /
-//! `target.projects.list`); [`note`] is spec 023 US4 (`target.note.get`/
+//! Split by responsibility (refactor sweep #986): `detail` is `target.get`;
+//! [`list`] is `target.list` (+ session-count enrichment); `alias` is
+//! `target.alias.add`/`.remove`; `display_alias` is `.set`/`.clear`;
+//! `sessions_projects` is spec 023 US2/US3 (`target.sessions.list` /
+//! `target.projects.list`); `note` is spec 023 US4 (`target.note.get`/
 //! `.update`). Error mapping and DTO conversion helpers used by more than one
 //! use case stay here.
 

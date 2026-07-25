@@ -165,7 +165,7 @@ fn classify_item(
 
 /// Verify a `PreparedSourceView`'s links without mutating anything.
 ///
-/// See [`classify_item`] for the per-item resolution rules.
+/// See `classify_item` for the per-item resolution rules.
 ///
 /// # Errors
 ///
@@ -199,7 +199,7 @@ pub async fn verify_source_view(
 
 /// Stale-detection sweep (spec 026 US3, T014/T015): recompute every item's
 /// [`ItemObservedState`] from the live filesystem + inventory (same
-/// [`classify_item`] logic as [`verify_source_view`]) and persist it, then
+/// `classify_item` logic as [`verify_source_view`]) and persist it, then
 /// derive and persist the view's own `state` from the aggregate.
 ///
 /// Read-only on the filesystem — it only ever `stat`s paths, never writes,

@@ -14,7 +14,7 @@ use super::ProjectChannelRow;
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on transaction failure.
+/// Returns `persistence_core::DbError::Database` on transaction failure.
 pub async fn replace_project_channels(
     pool: &SqlitePool,
     project_id: &str,
@@ -49,7 +49,7 @@ pub async fn replace_project_channels(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_project_channels(
     pool: &SqlitePool,
     project_id: &str,

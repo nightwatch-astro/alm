@@ -130,7 +130,7 @@ fn ensure_row_affected(rows_affected: u64, entity: &str, id: &str) -> DbResult<(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_cameras(pool: &SqlitePool) -> DbResult<Vec<Camera>> {
     let rows: Vec<CameraRow> = sqlx::query_as(
         "SELECT id, name, aliases, auto_detected, sensor_type, passband, \
@@ -147,7 +147,7 @@ pub async fn list_cameras(pool: &SqlitePool) -> DbResult<Vec<Camera>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violation.
+/// Returns `persistence_core::DbError::Database` on constraint violation.
 pub async fn create_camera(pool: &SqlitePool, req: &CreateCamera) -> DbResult<Camera> {
     let id = Uuid::new_v4().to_string();
     let aliases_json = encode_aliases(&req.aliases);
@@ -246,7 +246,7 @@ pub async fn delete_camera(pool: &SqlitePool, id: &str) -> DbResult<()> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_camera_by_alias(pool: &SqlitePool, alias: &str) -> DbResult<Option<Camera>> {
     // SQLite JSON: match an exact alias value inside the aliases JSON array.
     // `EXISTS` rather than a `json_each` cross join so the selected columns
@@ -271,7 +271,7 @@ pub async fn find_camera_by_alias(pool: &SqlitePool, alias: &str) -> DbResult<Op
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_telescopes(pool: &SqlitePool) -> DbResult<Vec<Telescope>> {
     let rows: Vec<(String, String, String, Option<i32>, i32)> = sqlx::query_as(
         "SELECT id, name, aliases, focal_length_mm, auto_detected FROM telescopes ORDER BY name ASC",
@@ -295,7 +295,7 @@ pub async fn list_telescopes(pool: &SqlitePool) -> DbResult<Vec<Telescope>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violation.
+/// Returns `persistence_core::DbError::Database` on constraint violation.
 pub async fn create_telescope(pool: &SqlitePool, req: &CreateTelescope) -> DbResult<Telescope> {
     let id = Uuid::new_v4().to_string();
     let aliases_json = encode_aliases(&req.aliases);
@@ -371,7 +371,7 @@ pub async fn delete_telescope(pool: &SqlitePool, id: &str) -> DbResult<()> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_telescope_by_alias(
     pool: &SqlitePool,
     alias: &str,
@@ -450,7 +450,7 @@ async fn fetch_train_fov_deg(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_optical_trains(pool: &SqlitePool) -> DbResult<Vec<OpticalTrain>> {
     // LEFT JOIN: a train with no camera, or a camera with no recorded
     // geometry, still lists — it just reports no FOV.
@@ -480,7 +480,7 @@ pub async fn list_optical_trains(pool: &SqlitePool) -> DbResult<Vec<OpticalTrain
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violation.
+/// Returns `persistence_core::DbError::Database` on constraint violation.
 pub async fn create_optical_train(
     pool: &SqlitePool,
     req: &CreateOpticalTrain,
@@ -568,7 +568,7 @@ pub async fn delete_optical_train(pool: &SqlitePool, id: &str) -> DbResult<()> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_filters(pool: &SqlitePool) -> DbResult<Vec<Filter>> {
     let rows: Vec<(String, String, String, i32)> =
         sqlx::query_as("SELECT id, name, category, auto_detected FROM filters ORDER BY name ASC")
@@ -590,7 +590,7 @@ pub async fn list_filters(pool: &SqlitePool) -> DbResult<Vec<Filter>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violation (e.g. duplicate name).
+/// Returns `persistence_core::DbError::Database` on constraint violation (e.g. duplicate name).
 pub async fn create_filter(pool: &SqlitePool, req: &CreateFilter) -> DbResult<Filter> {
     let id = Uuid::new_v4().to_string();
     let category_str = category_to_str(req.category);
