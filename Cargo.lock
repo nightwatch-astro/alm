@@ -256,6 +256,7 @@ dependencies = [
  "contracts_core",
  "domain_core",
  "fs_inventory",
+ "hex",
  "patterns",
  "persistence_calibration",
  "persistence_core",
@@ -1981,14 +1982,17 @@ dependencies = [
  "filetime",
  "fs4",
  "fs_pathsafe",
+ "hex",
  "path-clean",
  "project_structure",
  "serde",
+ "sha2 0.10.9",
  "tempfile",
  "time",
  "tokio",
  "tracing",
  "trash",
+ "uuid",
 ]
 
 [[package]]

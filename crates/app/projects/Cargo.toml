@@ -32,6 +32,7 @@ persistence_targets = { path = "../../persistence/targets" }
 project_structure = { path = "../../project/structure" }
 # #1218: source snapshots read the session key, whose format this crate owns.
 sessions = { path = "../../sessions" }
+hex.workspace = true
 sha2.workspace = true
 simbad-resolver = "0.5.0"
 workflow_profiles = { path = "../../workflow/profiles" }

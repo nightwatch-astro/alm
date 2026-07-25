@@ -24,3 +24,4 @@ pub mod source_view_generate;
 pub mod source_view_verify;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub mod update_view;
