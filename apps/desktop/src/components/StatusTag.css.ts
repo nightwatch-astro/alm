@@ -28,21 +28,13 @@ export const dot = style({
 });
 
 export const variantStyles = styleVariants({
-  ok: [base, { selectors: { '& > .dot': { background: vars.ok } } }],
-  warn: [base, { selectors: { '& > .dot': { background: vars.warn } } }],
-  danger: [
-    base,
-    {
-      color: vars.danger,
-      selectors: { '& > .dot': { background: vars.danger } },
-    },
-  ],
-  info: [base, { selectors: { '& > .dot': { background: vars.info } } }],
-  accent: [base, { selectors: { '& > .dot': { background: vars.accent } } }],
-  neutral: [
-    base,
-    { selectors: { '& > .dot': { background: vars.textMuted } } },
-  ],
+  ok: [base],
+  warn: [base],
+  // danger variant tints the label text in addition to the dot
+  danger: [base, { color: vars.danger }],
+  info: [base],
+  accent: [base],
+  neutral: [base],
   ghost: [base],
 });
 
