@@ -59,6 +59,16 @@ export const queryKeys = {
     master: (id: string) => ['calibration', 'masters', id] as const,
     matches: (sid: string) => ['calibration', 'matches', sid] as const,
     settings: () => ['calibration', 'settings'] as const,
+    // spec-062 US4 — candidate / handoff / equipment keys (ic9h.20 will
+    // replace these seam calls with generated bindings; keep key shapes stable)
+    candidates: (requirementId: string) =>
+      ['calibration', 'candidates', requirementId] as const,
+    handoff: (handoffId: string) =>
+      ['calibration', 'handoff', handoffId] as const,
+    handoffOperation: (operationId: string) =>
+      ['calibration', 'handoff', 'operation', operationId] as const,
+    equipmentResolution: (sessionId: string) =>
+      ['calibration', 'equipment', 'resolution', sessionId] as const,
   },
   targets: {
     list: () => ['targets'] as const,
