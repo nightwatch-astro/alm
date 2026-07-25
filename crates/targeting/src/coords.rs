@@ -25,7 +25,7 @@
 
 #![allow(clippy::doc_markdown)] // domain terminology (RA/Dec, FOV) is not backtick-suited
 
-use skymath::{Angle, Equatorial};
+use skymath::Equatorial;
 use target_match::{Field, Optics, RadiusPolicy};
 
 /// A sky pointing in ICRS J2000 decimal degrees.
@@ -90,17 +90,16 @@ pub struct Candidate {
 ///
 /// A non-finite input on either pointing yields `NaN` (matching the previous
 /// permissive behaviour), rather than the domain-validation error
-/// `skymath::Equatorial::at_epoch` would otherwise raise.
+/// `skymath::Equatorial::j2000_lenient` would otherwise raise.
 #[must_use]
 pub fn angular_separation_deg(a: Pointing, b: Pointing) -> f64 {
-    if !a.ra_deg.is_finite()
-        || !a.dec_deg.is_finite()
-        || !b.ra_deg.is_finite()
-        || !b.dec_deg.is_finite()
-    {
+    let (Ok(ea), Ok(eb)) = (
+        Equatorial::j2000_lenient(a.ra_deg, a.dec_deg),
+        Equatorial::j2000_lenient(b.ra_deg, b.dec_deg),
+    ) else {
         return f64::NAN;
-    }
-    skymath::separation(to_equatorial(a), to_equatorial(b)).degrees()
+    };
+    skymath::separation(ea, eb).degrees()
 }
 
 /// Build a `skymath::Equatorial` from a [`Pointing`], wrapping RA into
@@ -114,9 +113,8 @@ pub fn angular_separation_deg(a: Pointing, b: Pointing) -> f64 {
 /// first; [`angular_separation_deg`] does this internally.
 #[must_use]
 pub fn to_equatorial(p: Pointing) -> Equatorial {
-    let ra = Angle::from_degrees(p.ra_deg).normalized_0_360();
-    let dec = Angle::from_degrees(p.dec_deg.clamp(-90.0, 90.0));
-    Equatorial::j2000(ra, dec).expect("ra normalized to [0, 360), dec clamped to [-90, 90]")
+    Equatorial::j2000_lenient(p.ra_deg, p.dec_deg)
+        .expect("Pointing must be finite; callers filter non-finite before calling")
 }
 
 /// Build a `target_match::Field` from optics + sensor pixel counts
@@ -384,5 +382,34 @@ mod tests {
         let out = rank_candidates(M31, &cat, 2.0);
         assert_eq!(out.len(), 1, "the far 'M 31'-named entry must NOT match by name");
         assert_eq!(out[0].target_id, "id-right", "only the coordinate match is returned");
+    }
+
+    // ── angular_separation_deg boundary / equivalence ────────────────────────
+
+    #[test]
+    fn separation_nan_on_non_finite_inputs() {
+        // Non-finite RA or Dec on either side must propagate NaN, never panic.
+        let good = Pointing::new(10.0, 20.0);
+        assert!(angular_separation_deg(Pointing::new(f64::NAN, 0.0), good).is_nan());
+        assert!(angular_separation_deg(Pointing::new(0.0, f64::INFINITY), good).is_nan());
+        assert!(angular_separation_deg(good, Pointing::new(f64::NAN, 0.0)).is_nan());
+        assert!(angular_separation_deg(good, Pointing::new(0.0, f64::NEG_INFINITY)).is_nan());
+    }
+
+    #[test]
+    fn separation_out_of_domain_finite_ra_is_normalized() {
+        // RA=370 wraps to 10; points are identical so separation is 0.
+        let a = Pointing::new(10.0, 20.0);
+        let b = Pointing::new(370.0, 20.0);
+        assert!(angular_separation_deg(a, b) < 1e-9, "RA 370 wraps to 10, same point");
+    }
+
+    #[test]
+    fn separation_near_south_pole_with_large_ra_gap() {
+        // At dec=-89.9, 180° apart in RA is only ~0.2° on the sphere.
+        let a = Pointing::new(0.0, -89.9);
+        let b = Pointing::new(180.0, -89.9);
+        let sep = angular_separation_deg(a, b);
+        assert!(sep < 0.3, "expected small south-polar separation, got {sep}");
     }
 }
