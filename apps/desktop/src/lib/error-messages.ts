@@ -94,6 +94,14 @@ export const ERROR_MESSAGES: Record<ErrorCode, () => string> = {
   'lifecycle.last_confirmed_source': m.err_lifecycle_last_confirmed_source,
   'project.not_found': m.err_project_not_found,
   'project.read_only': m.err_project_read_only,
+  // spec 062 — project session membership.
+  'project.session_already_pinned': m.err_project_session_already_pinned,
+  'project.session_not_pinned': m.err_project_session_not_pinned,
+  'project.lifecycle_disallows_session_add':
+    m.err_project_lifecycle_disallows_session_add,
+  'project.reclassification_revision_invalid':
+    m.err_project_reclassification_revision_invalid,
+  'project.membership_conflict': m.err_project_membership_conflict,
   'view.mixed_kind': m.err_view_mixed_kind,
   'view.not_found': m.err_view_not_found,
   'view.unsupported_kind': m.err_view_unsupported_kind,
