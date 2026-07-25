@@ -158,6 +158,8 @@ type RestoreState = 'idle' | 'restoring' | 'done';
  * then re-fetches the scope so controls reflect the restored values. Panes
  * backed by a different store pass `onRestore` to run their own reset instead.
  */
+const FEEDBACK_MS = 1500;
+
 export function RestoreDefaultsBtn({
   keys,
   onRestored,
@@ -180,7 +182,7 @@ export function RestoreDefaultsBtn({
         onRestored?.(fresh.values as Record<string, unknown>);
       }
       setState('done');
-      setTimeout(() => setState('idle'), 1500);
+      setTimeout(() => setState('idle'), FEEDBACK_MS);
     } catch {
       setState('idle');
     }

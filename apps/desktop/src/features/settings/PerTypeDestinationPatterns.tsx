@@ -28,6 +28,8 @@ import {
 } from './naming-model';
 import { PerTypePatternChipsEditor } from './PerTypePatternChipsEditor';
 
+const SAVE_DEBOUNCE_MS = 300;
+
 export function PerTypeDestinationPatterns() {
   // Override map: class → chip list. Empty array = built-in default.
   const [chipsByClass, setChipsByClass] =
@@ -176,7 +178,7 @@ export function PerTypeDestinationPatterns() {
           setBackendErrors(errs);
         },
       );
-    }, 300);
+    }, SAVE_DEBOUNCE_MS);
   }, []);
 
   const handleChipsChange = (cls: FrameTypeClass, chips: PathChip[]) => {
