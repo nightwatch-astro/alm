@@ -73,6 +73,16 @@ export interface QueryState<T> {
 /** `useTargets()`'s state plus a manual refetch (e.g. after "Add target"). */
 export interface TargetsListState extends QueryState<TargetListItem[]> {
   refetch: () => void;
+  /**
+   * `true` whenever a fetch is in flight, INCLUDING background refetches that
+   * keep the previous data visible (unlike `loading`, which mirrors `isLoading`
+   * and is false during those refetches). The stale-`?selected=` cleanup gate
+   * in `TargetsPage` needs this: after "Add target" the list refetches with the
+   * old rows still shown, and the just-added id is legitimately absent until
+   * the refetch lands — clearing the selection during that window drops the
+   * navigation the add flow just performed.
+   */
+  fetching: boolean;
 }
 
 // ── Query hooks ───────────────────────────────────────────────────────────────
@@ -93,7 +103,7 @@ export interface TargetsListState extends QueryState<TargetListItem[]> {
  */
 export function useTargets(search?: string): TargetsListState {
   const normalizedSearch = search?.trim() || null;
-  const { data, isLoading, error, refetch } = useQuery({
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
     // Include normalizedSearch in the key so each query is cached independently;
     // keepPreviousData prevents the table from flashing a skeleton while a
     // new search key resolves — the previous page stays visible.
@@ -107,6 +117,7 @@ export function useTargets(search?: string): TargetsListState {
     // would be true on every background refetch including search key changes,
     // which would flash a skeleton during type-ahead with keepPreviousData.
     loading: isLoading,
+    fetching: isFetching,
     error: error ?? undefined,
     refetch: () => void refetch(),
   };

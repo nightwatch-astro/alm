@@ -733,4 +733,42 @@ describe('TargetsPage stale-selection cleanup (#735)', () => {
       ),
     );
   });
+
+  // #1584 regression: the add-target E2E journey (targets_ui_add_target_
+  // no_duplicate_on_reconfirm) hung because the list uses `keepPreviousData`,
+  // so while a fetch for a fresh query key is in flight the OLD rows stay
+  // visible (status 'loaded') and `isLoading` is false. An id that is
+  // legitimately not-yet-in the stale rows must NOT be cleared during that
+  // fetch window, or the cleanup drops the navigation the add flow just made
+  // and the E2E `wait_url_contains("selected=")` times out.
+  it('keeps a not-yet-present ?selected= while a fetch for a new query key is in flight', async () => {
+    const newId = '550e8400-e29b-41d4-a716-4466554403aa';
+    // Initial list resolves with the stale rows (no newId); the next fetch
+    // (triggered by the search-key change below) never resolves, so the query
+    // sits in the isFetching-with-stale-data window the E2E add flow lands in.
+    mockListTargets
+      .mockResolvedValueOnce(ok(listItems))
+      .mockReturnValue(new Promise(() => {}));
+
+    render(<TargetsPage />);
+    await waitFor(() =>
+      expect(screen.getByText('NGC 7000')).toBeInTheDocument(),
+    );
+
+    mockNavigate.mockClear();
+    // Model the add flow: the new id becomes selected AS the refetch starts.
+    // A search change forks a new query key; keepPreviousData keeps the stale
+    // rows on screen while the new fetch (never resolving) is in flight, so the
+    // status is 'loaded' with the just-added id still absent.
+    mockSelectedId.current = newId;
+    fireEvent.change(screen.getByPlaceholderText('Search targets…'), {
+      target: { value: 'anything' },
+    });
+
+    // The selection must survive: no stale-cleanup navigate while fetching.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ replace: true }),
+    );
+  });
 });

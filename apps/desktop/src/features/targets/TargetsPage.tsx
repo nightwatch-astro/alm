@@ -184,9 +184,16 @@ export function TargetsPage() {
 
   // #735: stale-id cleanup — matched against the FULL query data rather than
   // the progressively-revealed slice.
+  //
+  // #1584: also treat any in-flight fetch as "not yet settled". The list uses
+  // `keepPreviousData`, so during the post-"Add target" refetch the status is
+  // still 'loaded' with the OLD rows — the just-added id is absent until the
+  // refetch lands. Without this guard the cleanup would clear the `?selected=`
+  // the add flow just navigated to, hanging the add-target E2E journey.
   useStaleSelectionCleanup(
     selected,
-    listState.status !== 'loaded' ||
+    targetsQuery.fetching ||
+      listState.status !== 'loaded' ||
       listState.items.some((t) => t.id === selected),
     clearSelection,
   );
