@@ -174,7 +174,7 @@ function ShellInner() {
 
 export function Shell() {
   return (
-    <OperationStatusProvider>
+    <OperationStatusProvider data-testid="shell">
       <PageStatusProvider>
         <LogPanelProvider>
           <ShellInner />
