@@ -7,6 +7,7 @@
 //! surface declared in [`commands::lifecycle`]. Type-safe TypeScript bindings
 //! are emitted at test time by `tests/bindings.rs` via tauri-specta.
 
+pub mod clean_shutdown;
 pub mod commands;
 pub mod data_dir;
 pub mod resolve_cache;
@@ -326,9 +327,19 @@ pub fn run_app(app: tauri::App, db_url: String, data_dir: std::path::PathBuf) {
     // FK-disabled migration chain.
     let runtime = tokio::runtime::Handle::current();
     let handle = app.handle().clone();
+    // astro-plan-kyo7.48: the exit hook writes the clean-shutdown marker, so it
+    // needs its own copy of the data root before `data_dir` moves into boot.
+    let exit_data_dir = data_dir.clone();
     std::thread::spawn(move || runtime.block_on(boot(handle, db_url, data_dir)));
 
-    app.run(|_handle, _event| {});
+    app.run(move |_handle, event| {
+        // `RunEvent::Exit` is the final, non-cancellable event-loop hook — it
+        // fires on graceful shutdown but never on SIGKILL/crash/power loss, so
+        // a present marker at next boot reliably means "exited cleanly".
+        if let tauri::RunEvent::Exit = event {
+            clean_shutdown::write(&exit_data_dir);
+        }
+    });
 }
 
 /// Report an unrecoverable startup failure and terminate.
@@ -500,6 +511,12 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         return fatal(&app, &format!("failed to run migrations on {db_url}: {error}"));
     }
     let pool = db.pool().clone();
+
+    // Unclean-shutdown detection (astro-plan-kyo7.48): consume the clean-shutdown
+    // marker written on the previous graceful exit. Absent marker => the process
+    // was killed or crashed. Captured here, before the async sweep, and exposed
+    // to the recovery prompt via the managed `UncleanShutdown` flag.
+    let unclean_shutdown = !clean_shutdown::take_was_clean(&data_dir);
 
     // Startup sweep + boot reconciliation (constitution v1.1.0 §V). Any plan
     // left in 'applying' with no live executor (e.g. after a hard crash) is
@@ -770,6 +787,10 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
     // fail at runtime with "state not managed for field `pool`" — which is why
     // the Inbox scan/classify pipeline only ever worked under mock mode.
     app.manage(pool.clone());
+
+    // astro-plan-kyo7.48: the boot-time unclean-shutdown verdict, read by the
+    // `recovery_status` command that drives the recovery prompt.
+    app.manage(clean_shutdown::UncleanShutdown(unclean_shutdown));
 
     let repo = Arc::new(SqliteLifecycleRepository::new(pool, bus.clone()));
     let state = AppState::new(repo, bus, caches, resolve_cache, resolve_cache_path, cache_warming);

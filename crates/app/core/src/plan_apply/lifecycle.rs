@@ -30,6 +30,19 @@ pub async fn sweep_crashed_applying_plans(
     apply_repo::sweep_crashed_applying_plans(pool).await
 }
 
+/// List plans interrupted by an unclean shutdown (still `applying`, or `paused`
+/// with a `crash` reason), for the recovery prompt. Order-independent with
+/// respect to the async boot sweep.
+///
+/// # Errors
+///
+/// Returns [`persistence_core::DbError`] on connection failure.
+pub async fn list_crash_interrupted_plans(
+    pool: &SqlitePool,
+) -> Result<Vec<String>, persistence_core::DbError> {
+    apply_repo::list_crash_interrupted_plans(pool).await
+}
+
 // ── cancel_plan ───────────────────────────────────────────────────────────────
 
 /// Cancel an in-flight plan apply (US3, T032).

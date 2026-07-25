@@ -787,6 +787,29 @@ pub async fn sweep_crashed_applying_plans(pool: &SqlitePool) -> DbResult<Vec<Str
     Ok(ids)
 }
 
+/// List the plan ids interrupted by an unclean shutdown, for the recovery
+/// prompt. A plan qualifies when it is still `applying` (the boot sweep has not
+/// yet run) or already `paused` with `pause_reason = 'crash'` (the sweep ran).
+/// This is order-independent with respect to the async startup sweep, so the
+/// recovery command returns the same set whether it is queried before or after
+/// the sweep completes.
+///
+/// # Errors
+///
+/// Returns [`DbError::Database`] on connection failure.
+pub async fn list_crash_interrupted_plans(pool: &SqlitePool) -> DbResult<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "SELECT p.id FROM plans p \
+         WHERE p.state = 'applying' \
+            OR (p.state = 'paused' AND EXISTS ( \
+                 SELECT 1 FROM plan_apply_runs r \
+                 WHERE r.plan_id = p.id AND r.pause_reason = 'crash')) \
+         ORDER BY p.id ASC",
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
 // ── Boot reconciliation ───────────────────────────────────────────────────────
 
 /// A non-terminal plan item awaiting boot reconciliation against the filesystem.
@@ -1355,5 +1378,38 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(ambiguous_code, Some("reconcile.ambiguous".to_owned()));
+    }
+
+    /// list_crash_interrupted_plans must return the same set before and after
+    /// the sweep runs (applying, then paused+crash), and exclude non-crash
+    /// paused plans.
+    #[tokio::test]
+    async fn list_crash_interrupted_is_order_independent_with_sweep() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+
+        // pc: crashed mid-apply. pn: paused for a non-crash reason.
+        setup_with_approved_plan(&db, "pc", 1).await;
+        setup_with_approved_plan(&db, "pn", 1).await;
+        cas_approved_to_applying(db.pool(), "pc", "run-pc", "tok", 1, 1).await.unwrap();
+        cas_approved_to_applying(db.pool(), "pn", "run-pn", "tok", 1, 1).await.unwrap();
+        pause_run(db.pool(), "pn", "run-pn", "item.stale", 0, 1, 0, 0, 0).await.unwrap();
+
+        // Before the sweep: pc is still 'applying'.
+        let before = list_crash_interrupted_plans(db.pool()).await.unwrap();
+        assert_eq!(
+            before,
+            vec!["pc".to_owned()],
+            "applying plan is interrupted; non-crash pause is not"
+        );
+
+        // After the sweep: pc is 'paused' with reason 'crash' — still returned.
+        sweep_crashed_applying_plans(db.pool()).await.unwrap();
+        let after = list_crash_interrupted_plans(db.pool()).await.unwrap();
+        assert_eq!(
+            after,
+            vec!["pc".to_owned()],
+            "crash-paused plan stays in the set after the sweep"
+        );
     }
 }

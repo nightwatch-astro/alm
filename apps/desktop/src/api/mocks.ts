@@ -1779,6 +1779,10 @@ const mockHandlers = {
       (_args as { planId?: string } | undefined)?.planId ?? 'mock-plan';
     return { planId, itemsConfirmed: 1 };
   },
+  recovery_status: async () => {
+    // Mock mode never has a crashed prior process.
+    return { uncleanShutdown: false, interruptedPlanIds: [] };
+  },
   cleanup_policy_get: async () => {
     return mockCleanupPolicy;
   },
