@@ -23,7 +23,7 @@ import type { MoonAvoidanceParams } from './astro/moon-avoidance';
 import { recommendationLabel } from './FilterBadges';
 import { m } from '@/lib/i18n';
 import type { DimensionAccessor } from '@/lib/grouping';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 
 // ── Sort model ────────────────────────────────────────────────────────────────
 

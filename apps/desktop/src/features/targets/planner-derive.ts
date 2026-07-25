@@ -36,7 +36,7 @@ import {
   type TimeWindow,
   computeNightObservability,
 } from './planner-astronomy';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import {
   BANDS,
   BROADBAND_BANDS,

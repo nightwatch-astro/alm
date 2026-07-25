@@ -23,7 +23,7 @@ import { filterByCatalogues, type CatalogueId } from './planner-catalog';
 import {
   DEFAULT_ENABLED_CATALOGUES,
   loadDefaultCatalogues,
-} from './catalogue-settings';
+} from '@/shared/planner/catalogue-settings';
 import { DEFAULT_TARGET_SORT } from './TargetsTable';
 import type { TargetSort, TargetSortCol } from './TargetsTable';
 import { useFavourites } from './useFavourites';

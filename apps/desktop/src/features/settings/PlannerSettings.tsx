@@ -36,9 +36,9 @@ import {
   setAltitudeThreshold,
   ALTITUDE_THRESHOLD_MIN,
   ALTITUDE_THRESHOLD_MAX,
-} from '@/features/targets/altitude-settings';
+} from '@/shared/planner/altitude-settings';
 import { USABLE_ALT_DEG } from '@/features/targets/planner-altitude';
-import { ObservingSites } from '@/features/targets/observing-sites/ObservingSites';
+import { ObservingSites } from '@/shared/observing-sites/ObservingSites';
 import {
   useGuidanceParams,
   saveGuidanceParams,
@@ -47,7 +47,7 @@ import {
   DISTANCE_MAX,
   WIDTH_MIN,
   WIDTH_MAX,
-} from '@/features/targets/guidance-settings';
+} from '@/shared/planner/guidance-settings';
 import { BANDS, type Band } from '@/features/targets/astro/moon-avoidance';
 
 export function PlannerSettings() {

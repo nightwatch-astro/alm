@@ -52,7 +52,7 @@ import {
   SearchHourAngle,
   SearchRiseSet,
 } from 'astronomy-engine';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import { angleBetweenDeg, targetUnitVector } from './astro/lunar-separation';
 import { moonStateAt } from './astro/moon-state';
 

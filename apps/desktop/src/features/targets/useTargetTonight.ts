@@ -17,11 +17,11 @@ import {
 } from './planner-altitude';
 import { BANDS } from './astro/moon-avoidance';
 import type { SensorConfig } from './planner-derive';
-import { useActiveSite } from './observing-sites/site-store';
+import { useActiveSite } from '@/shared/observing-sites/site-store';
 import { usePlannerDateMs } from './planner-date-store';
 import { deriveRowMoonPlanning } from './astro/row-planning';
 import type { ObservingNight } from './astro/moon-state';
-import { useGuidanceParams } from './guidance-settings';
+import { useGuidanceParams } from '@/shared/planner/guidance-settings';
 import { bestMoonDate } from './astro/best-moon-date';
 import type { AltPoint } from './AltitudeGraph';
 

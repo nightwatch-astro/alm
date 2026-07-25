@@ -18,7 +18,7 @@ import {
   DEFAULT_ENABLED_CATALOGUES,
   loadDefaultCatalogues,
   saveDefaultCatalogues,
-} from '@/features/targets/catalogue-settings';
+} from '@/shared/planner/catalogue-settings';
 import { m } from '@/lib/i18n';
 import { SettingsRow, RestoreDefaultsBtn } from './SettingsKit';
 

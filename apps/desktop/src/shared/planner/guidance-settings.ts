@@ -25,7 +25,7 @@ import {
   type Band,
   type BandParams,
   type MoonAvoidanceParams,
-} from './astro/moon-avoidance';
+} from '@/features/targets/astro/moon-avoidance';
 
 /** Settings scope + key for the per-band Moon-avoidance params. */
 export const PLANNER_SCOPE = 'planner';

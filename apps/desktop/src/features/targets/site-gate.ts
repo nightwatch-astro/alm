@@ -18,7 +18,7 @@
  * phase/lunar separation/filter guidance/opposition (047) against it.
  */
 
-import { activeSite, useActiveSite } from './observing-sites/site-store';
+import { activeSite, useActiveSite } from '@/shared/observing-sites/site-store';
 
 /** Test-only override; `null` = use the real binding. */
 let testOverride: boolean | null = null;

@@ -31,8 +31,8 @@
  */
 
 import type { TargetListItem } from '@/bindings/index';
-import type { ObserverSite } from './observing-sites/observer-site';
-import { activeSite } from './observing-sites/site-store';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
+import { activeSite } from '@/shared/observing-sites/site-store';
 import {
   deriveObservability,
   getNightObservability,
