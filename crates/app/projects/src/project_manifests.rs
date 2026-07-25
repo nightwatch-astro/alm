@@ -431,6 +431,12 @@ pub fn spawn_workflow_run_subscriber(
             match rx.recv().await {
                 Ok(env) if env.topic == TOPIC_WORKFLOW_RUN_COMPLETED => {
                     handle_workflow_run_event(&pool, &bus, &env.payload).await;
+                    // Advance cursor so the next lag replay doesn't restart from 0.
+                    if let Ok(id) =
+                        persistence_lifecycle::repositories::events::max_event_id(bus.pool()).await
+                    {
+                        cursor = id;
+                    }
                 }
                 Ok(_) => {}
                 Err(RecvError::Lagged(n)) => {
@@ -491,40 +497,47 @@ async fn handle_workflow_run_event(pool: &SqlitePool, bus: &EventBus, payload: &
 }
 
 /// Replay `workflow.run_completed` events from the durable table since `cursor`.
-/// Returns the updated cursor.
-async fn replay_workflow_events_since(pool: &SqlitePool, bus: &EventBus, cursor: i64) -> i64 {
+/// Pages in chunks of [`REPLAY_PAGE_SIZE`] to bound memory. Returns the updated
+/// cursor (highest processed `event_id`, or the incoming cursor on error).
+async fn replay_workflow_events_since(pool: &SqlitePool, bus: &EventBus, mut cursor: i64) -> i64 {
     use audit::event_bus::TOPIC_WORKFLOW_RUN_COMPLETED;
-
-    let rows = persistence_lifecycle::repositories::events::list_since_by_topic(
-        bus.pool(),
-        cursor,
-        TOPIC_WORKFLOW_RUN_COMPLETED,
-    )
-    .await;
-
-    let rows = match rows {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!(error = %e, "workflow_run_subscriber: replay query failed");
-            return cursor;
-        }
+    use persistence_lifecycle::repositories::events::{
+        list_since_by_topic_paged, REPLAY_PAGE_SIZE,
     };
 
-    let mut new_cursor = cursor;
-    for row in &rows {
-        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&row.payload) {
-            handle_workflow_run_event(pool, bus, &payload).await;
+    loop {
+        let rows = list_since_by_topic_paged(
+            bus.pool(),
+            cursor,
+            TOPIC_WORKFLOW_RUN_COMPLETED,
+            REPLAY_PAGE_SIZE,
+        )
+        .await;
+
+        let rows = match rows {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(error = %e, "workflow_run_subscriber: replay query failed");
+                break;
+            }
+        };
+
+        if rows.is_empty() {
+            break;
         }
-        new_cursor = row.event_id;
+
+        for row in &rows {
+            if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&row.payload) {
+                handle_workflow_run_event(pool, bus, &payload).await;
+            }
+            cursor = row.event_id;
+        }
+        tracing::info!(replayed = rows.len(), cursor, "workflow_run_subscriber: replay page");
+        if rows.len() < usize::try_from(REPLAY_PAGE_SIZE).unwrap_or(usize::MAX) {
+            break; // last page
+        }
     }
-    if !rows.is_empty() {
-        tracing::info!(
-            replayed = rows.len(),
-            new_cursor,
-            "workflow_run_subscriber: replay complete"
-        );
-    }
-    new_cursor
+    cursor
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

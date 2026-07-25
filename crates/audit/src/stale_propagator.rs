@@ -75,6 +75,17 @@ impl StalePropagator {
                     Ok(env) => {
                         if env.topic == TOPIC_LIFECYCLE_TRANSITION_APPLIED {
                             let _errors = self.dispatch(&env);
+                            // Advance cursor so the next lag replay doesn't restart from 0.
+                            // Hooks are idempotent, but avoiding full table replay matters on
+                            // large libraries.
+                            if let Ok(id) =
+                                persistence_lifecycle::repositories::events::max_event_id(
+                                    bus.pool(),
+                                )
+                                .await
+                            {
+                                cursor = id;
+                            }
                         }
                     }
                     Err(RecvError::Lagged(n)) => {
@@ -92,39 +103,51 @@ impl StalePropagator {
     }
 
     /// Replay lifecycle-transition events from the durable table since `cursor`,
-    /// dispatching each through registered hooks. Returns the new cursor.
-    async fn replay_since(&self, bus: &EventBus, cursor: i64) -> i64 {
-        let rows = persistence_lifecycle::repositories::events::list_since_by_topic(
-            bus.pool(),
-            cursor,
-            TOPIC_LIFECYCLE_TRANSITION_APPLIED,
-        )
-        .await;
-
-        let rows = match rows {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!(error = %e, "stale_propagator: replay query failed");
-                return cursor;
-            }
+    /// dispatching each through registered hooks. Pages in chunks of
+    /// [`REPLAY_PAGE_SIZE`] to bound memory on large event tables. Returns the
+    /// new cursor (highest processed `event_id`, or the incoming cursor on error).
+    async fn replay_since(&self, bus: &EventBus, mut cursor: i64) -> i64 {
+        use persistence_lifecycle::repositories::events::{
+            list_since_by_topic_paged, REPLAY_PAGE_SIZE,
         };
+        loop {
+            let rows = list_since_by_topic_paged(
+                bus.pool(),
+                cursor,
+                TOPIC_LIFECYCLE_TRANSITION_APPLIED,
+                REPLAY_PAGE_SIZE,
+            )
+            .await;
 
-        let mut new_cursor = cursor;
-        for row in &rows {
-            if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&row.payload) {
-                let env = EventEnvelope::new(
-                    TOPIC_LIFECYCLE_TRANSITION_APPLIED,
-                    crate::event_bus::Source::Restore,
-                    payload,
-                );
-                let _errors = self.dispatch(&env);
+            let rows = match rows {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::error!(error = %e, "stale_propagator: replay query failed");
+                    break;
+                }
+            };
+
+            if rows.is_empty() {
+                break;
             }
-            new_cursor = row.event_id;
+
+            for row in &rows {
+                if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&row.payload) {
+                    let env = EventEnvelope::new(
+                        TOPIC_LIFECYCLE_TRANSITION_APPLIED,
+                        crate::event_bus::Source::Restore,
+                        payload,
+                    );
+                    let _errors = self.dispatch(&env);
+                }
+                cursor = row.event_id;
+            }
+            tracing::info!(replayed = rows.len(), cursor, "stale_propagator: replay page");
+            if rows.len() < usize::try_from(REPLAY_PAGE_SIZE).unwrap_or(usize::MAX) {
+                break; // last page
+            }
         }
-        if !rows.is_empty() {
-            tracing::info!(replayed = rows.len(), new_cursor, "stale_propagator: replay complete");
-        }
-        new_cursor
+        cursor
     }
 }
 
@@ -374,10 +397,10 @@ mod tests {
 
     /// Verify that on Lagged the propagator replays from the durable events table.
     ///
-    /// Strategy: publish all 4 events before the task gets any CPU (no yields
-    /// between publishes), so the broadcast channel overflows and the task sees
-    /// Lagged on its first recv.  Cursor=0, so replay covers all 4 durable rows.
-    /// Wait with a deadline-yield loop rather than a fixed sleep.
+    /// Strategy: pre-seed the durable table directly (no broadcast) so cursor=0
+    /// at lag time, then trigger a lag via `broadcast_only` (synchronous — no
+    /// yield between the two calls so the subscriber cannot run in between).
+    /// Using a different topic for the heartbeat keeps the counter clean.
     #[tokio::test]
     async fn lagged_replays_from_durable_events() {
         let counter = Arc::new(AtomicUsize::new(0));
@@ -388,7 +411,6 @@ mod tests {
             Ok(())
         }));
 
-        // Capacity=1 guarantees Lagged when we publish 4 without yielding.
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS events (\
@@ -399,33 +421,35 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        let bus = EventBus::new(pool, 1);
+        let bus = EventBus::new(pool.clone(), 1);
 
         let handle = propagator.spawn(&bus);
 
-        // All 4 publishes happen without yielding to the spawned task,
-        // so the broadcast channel overflows (capacity=1) and the task sees Lagged.
+        // Let the subscriber start and begin waiting on rx.recv().
+        tokio::task::yield_now().await;
+
+        // Pre-seed 4 durable rows (not via bus.publish, so no broadcast).
+        // cursor=0 at this point — no live events processed.
         for _ in 0..4 {
-            bus.publish(
+            persistence_lifecycle::repositories::events::insert_event(
+                &pool,
                 TOPIC_LIFECYCLE_TRANSITION_APPLIED,
-                Source::User,
-                LifecycleTransitionApplied {
-                    entity_type: EntityType::Project,
-                    entity_id: "test".to_owned(),
-                    from_state: "ready".to_owned(),
-                    to_state: "processing".to_owned(),
-                    actor: "user".to_owned(),
-                    at: Timestamp::now_utc(),
-                    project_id: Some("test".to_owned()),
-                },
+                "system",
+                "2026-01-01T00:00:00Z",
+                "{}",
             )
             .await
             .unwrap();
         }
 
-        // Deadline-yield loop: give the task up to 2 s to process live + replay.
-        // With cursor=0 all 4 durable rows are replayed regardless of how many
-        // the task saw live, so the total count is >= 4.
+        // Trigger a lag deterministically: broadcast_only is synchronous, so the
+        // subscriber cannot run between the two calls.  The channel (capacity=1)
+        // overflows and the receiver gets Lagged(1).  A different topic keeps the
+        // dispatch counter clean.
+        let _ = bus.broadcast_only("tick.heartbeat");
+        let _ = bus.broadcast_only("tick.heartbeat");
+
+        // Deadline-yield loop: replay from cursor=0 must dispatch all 4 rows.
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
         loop {
             tokio::task::yield_now().await;
@@ -440,9 +464,111 @@ mod tests {
 
         assert!(
             counter.load(Ordering::SeqCst) >= 4,
-            "expected at least 4 dispatches (live + replayed), got {}",
+            "expected at least 4 dispatches (replayed), got {}",
             counter.load(Ordering::SeqCst)
         );
+    }
+
+    /// After the subscriber processes a live Ok(env) event the cursor must advance
+    /// so a subsequent Lagged replay does not restart from 0 and re-dispatch the
+    /// entire events table.
+    ///
+    /// Strategy:
+    ///   1. Publish 1 event via bus.publish and yield until the subscriber sees
+    ///      it live — cursor advances to that event's `max_event_id`.
+    ///   2. Pre-seed 4 more durable rows directly (no broadcast), so cursor does
+    ///      NOT advance again.
+    ///   3. Trigger a lag via two synchronous `broadcast_only` calls (no yield
+    ///      between them → subscriber cannot run in between → Lagged(1)).
+    ///   4. Replay should page from cursor (after event 1) and dispatch exactly
+    ///      4 rows.  Total = 1 live + 4 replay = 5.
+    ///      If cursor had not advanced, replay would have dispatched all 5 rows
+    ///      instead of 4, yielding total >= 6.
+    #[tokio::test]
+    async fn cursor_advances_after_live_events_so_next_lag_is_bounded() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let propagator = StalePropagator::new().with_hook(Arc::new(move |_env| {
+            counter_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS events (\
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,\
+             topic TEXT NOT NULL, source TEXT NOT NULL,\
+             emitted_at TEXT NOT NULL, payload TEXT NOT NULL)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let bus = EventBus::new(pool.clone(), 1);
+        let handle = propagator.spawn(&bus);
+
+        // Step 1: publish 1 event via the bus (writes durable row + broadcasts).
+        bus.publish(
+            TOPIC_LIFECYCLE_TRANSITION_APPLIED,
+            Source::User,
+            LifecycleTransitionApplied {
+                entity_type: EntityType::Project,
+                entity_id: "test".to_owned(),
+                from_state: "ready".to_owned(),
+                to_state: "processing".to_owned(),
+                actor: "user".to_owned(),
+                at: Timestamp::now_utc(),
+                project_id: Some("test".to_owned()),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Yield until the subscriber has processed the live event and advanced cursor.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            tokio::task::yield_now().await;
+            if counter.load(Ordering::SeqCst) >= 1 {
+                break;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "live event not processed in time");
+        }
+
+        // Step 2: insert 4 more durable rows directly — no broadcast, cursor stays put.
+        for _ in 0..4 {
+            persistence_lifecycle::repositories::events::insert_event(
+                &pool,
+                TOPIC_LIFECYCLE_TRANSITION_APPLIED,
+                "system",
+                "2026-01-01T00:00:00Z",
+                "{}",
+            )
+            .await
+            .unwrap();
+        }
+
+        // Step 3: trigger Lagged deterministically (no yield between calls).
+        let _ = bus.broadcast_only("tick.heartbeat");
+        let _ = bus.broadcast_only("tick.heartbeat");
+
+        // Step 4: wait for replay to dispatch the 4 new rows.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            tokio::task::yield_now().await;
+            if counter.load(Ordering::SeqCst) >= 5 {
+                break;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                break;
+            }
+        }
+        handle.abort();
+
+        let total = counter.load(Ordering::SeqCst);
+        assert!(total >= 5, "expected at least 5 total dispatches, got {total}");
+        // Without cursor advancement replay would start from 0 (all 5 rows),
+        // yielding 1 live + 5 replay = 6.  With it, 1 live + 4 replay = 5.
+        assert_eq!(total, 5, "cursor advancement must prevent replay from re-dispatching the already-live event; got {total}");
     }
 
     #[tokio::test]

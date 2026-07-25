@@ -102,6 +102,32 @@ pub async fn list_since_by_topic(
     Ok(rows)
 }
 
+/// Page size for bounded replay loops in durable-event subscribers.
+pub const REPLAY_PAGE_SIZE: i64 = 500;
+
+/// Like [`list_since_by_topic`] but limited to `limit` rows (ascending by
+/// event_id). Use in subscriber replay loops to bound memory per iteration.
+///
+/// # Errors
+/// Returns [`DbError::Database`] on query failure.
+pub async fn list_since_by_topic_paged(
+    pool: &SqlitePool,
+    since_id: i64,
+    topic: &str,
+    limit: i64,
+) -> DbResult<Vec<EventRow>> {
+    let rows = sqlx::query_as::<_, EventRow>(
+        "SELECT event_id, topic, emitted_at, payload \
+         FROM events WHERE event_id > ? AND topic = ? ORDER BY event_id ASC LIMIT ?",
+    )
+    .bind(since_id)
+    .bind(topic)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// Most-recent `limit` events with `event_id > since_id`, newest first
 /// (caller reverses for oldest-first display — mirrors the former
 /// `log_stream::recent_entries` query shape).
@@ -249,7 +275,8 @@ mod tests {
 
     use super::{
         count_events, insert_event, list_by_emitted_at_range, list_recent_since, list_since,
-        list_since_by_topic, max_event_id, min_event_id, prune_events_older_than,
+        list_since_by_topic, list_since_by_topic_paged, max_event_id, min_event_id,
+        prune_events_older_than,
     };
 
     async fn setup() -> SqlitePool {
@@ -410,5 +437,18 @@ mod tests {
         let deleted =
             prune_events_older_than(&pool, "2026-01-01T00:00:00Z").await.expect("prune empty");
         assert_eq!(deleted, 0);
+    }
+
+    #[tokio::test]
+    async fn list_since_by_topic_paged_respects_limit() {
+        let pool = setup().await;
+        for i in 0..5 {
+            insert_event(&pool, "t.a", "system", &format!("2026-01-01T00:00:0{i}Z"), "{}")
+                .await
+                .unwrap();
+        }
+        let page = list_since_by_topic_paged(&pool, 0, "t.a", 3).await.expect("paged");
+        assert_eq!(page.len(), 3, "limit=3 must return at most 3 rows");
+        assert!(page[0].event_id < page[2].event_id, "ascending order");
     }
 }
