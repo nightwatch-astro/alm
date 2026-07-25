@@ -377,9 +377,8 @@ fn envelope_schema_rejects_missing_required_fields() {
     let validator = envelope_validator();
     // An empty object matches none of the oneOf branches.
     let bad = json!({});
-    let errors: Vec<_> = validator.iter_errors(&bad).collect();
     assert!(
-        !errors.is_empty(),
+        validator.iter_errors(&bad).next().is_some(),
         "envelope schema should reject an empty object but found no errors"
     );
 }
@@ -395,9 +394,8 @@ fn log_entry_schema_rejects_unknown_source_value() {
         "source": "unknown_source_xyz",
         "message": "test"
     });
-    let errors: Vec<_> = validator.iter_errors(&bad).collect();
     assert!(
-        !errors.is_empty(),
+        validator.iter_errors(&bad).next().is_some(),
         "log entry schema should reject unknown source value 'unknown_source_xyz'"
     );
 }
