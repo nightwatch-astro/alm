@@ -38,7 +38,7 @@ export function StatusBar() {
   const isActive = opStatus !== 'idle';
 
   return (
-    <div className="pv-frame__statusbar">
+    <div className="pv-frame__statusbar" data-testid="status-bar">
       {/* LEFT — current operation */}
       <div className="pv-statusbar__op">
         {isActive ? (

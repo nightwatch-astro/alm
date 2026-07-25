@@ -15,11 +15,7 @@ import type { PillVariant } from '@/ui';
 // formatExposureSeconds move to lib/ as the single source of truth.
 import { resolveRevealPath, basename, parentSegment } from '@/lib/path';
 import { formatExposureSeconds } from '@/lib/format';
-export {
-  resolveRevealPath as resolveInboxRevealPath,
-  basename,
-  parentSegment,
-};
+export { resolveRevealPath as resolveInboxRevealPath, basename, parentSegment };
 export { formatExposureSeconds };
 
 /** "exposureS" → "exposure S" (best-effort label for a registry key with no i18n entry). */
@@ -94,4 +90,3 @@ export function buildRootLabels(
   }
   return labels;
 }
-
