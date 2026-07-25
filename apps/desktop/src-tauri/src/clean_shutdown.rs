@@ -31,6 +31,7 @@ fn marker_path(data_dir: &Path) -> PathBuf {
 /// clean (marker present, now removed), `false` when it was unclean (marker
 /// absent). Clearing on read means the next boot defaults to "unclean" unless
 /// a graceful exit re-writes it.
+#[must_use]
 pub fn take_was_clean(data_dir: &Path) -> bool {
     let path = marker_path(data_dir);
     match std::fs::remove_file(&path) {
