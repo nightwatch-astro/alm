@@ -8,13 +8,18 @@
  * - Oldest entries are evicted first when capacity is exceeded.
  * - `dropped` counter increments correctly.
  * - Deduplication by `id` prevents double-appending.
+ *
+ * The listener-notification test runs in an isolated module instance
+ * (vi.resetModules + dynamic import) because logStore is a process singleton
+ * and orphan requestAnimationFrame callbacks from other test files in the same
+ * vitest worker can fire during this test, inflating the listener call count.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   appendLog,
   getLogSnapshot,
   resetLogStore,
-  subscribeLog,
+  type subscribeLog,
   LOG_BUFFER_SIZE,
   type LogEntry,
 } from './logStore';
@@ -106,24 +111,39 @@ describe('logStore ring buffer', () => {
     expect(entries.length).toBe(1);
   });
 
-  it('notifies listeners on append (async via rAF batch)', async () => {
-    vi.useFakeTimers();
+  // Listener notification test is in a nested describe with its own fresh
+  // module instance so orphan rAF callbacks from other test files cannot
+  // inflate the call count (logStore singleton shared across vitest worker).
+  describe('listener notification (isolated module)', () => {
+    let isolatedAppendLog: typeof appendLog;
+    let isolatedSubscribeLog: typeof subscribeLog;
 
-    let callCount = 0;
-    const unsub = subscribeLog(() => {
-      callCount++;
+    beforeEach(async () => {
+      vi.resetModules();
+      const mod = await import('./logStore');
+      isolatedAppendLog = mod.appendLog;
+      isolatedSubscribeLog = mod.subscribeLog;
     });
 
-    appendLog([makeEntry(1)]);
-    // notify() schedules a requestAnimationFrame — flush it.
-    await vi.runAllTimersAsync();
-    expect(callCount).toBe(1);
+    it('notifies listeners on append (async via rAF batch)', async () => {
+      vi.useFakeTimers();
 
-    appendLog([makeEntry(2)]);
-    await vi.runAllTimersAsync();
-    expect(callCount).toBe(2);
+      let callCount = 0;
+      const unsub = isolatedSubscribeLog(() => {
+        callCount++;
+      });
 
-    unsub();
-    vi.useRealTimers();
+      isolatedAppendLog([makeEntry(1)]);
+      // notify() schedules a requestAnimationFrame — flush it.
+      await vi.runAllTimersAsync();
+      expect(callCount).toBe(1);
+
+      isolatedAppendLog([makeEntry(2)]);
+      await vi.runAllTimersAsync();
+      expect(callCount).toBe(2);
+
+      unsub();
+      vi.useRealTimers();
+    });
   });
 });
