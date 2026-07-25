@@ -101,6 +101,10 @@ tauri-plugin-process = "2.3.1"
 tauri-plugin-prevent-default = "5.0.2"
 tauri-specta = { version = "2.0.0-rc.25", features = ["typescript"] }
 schemars = { version = "1", features = ["uuid1"] }
+# jsonschema 0.48 (MIT, draft-2020-12) — used in contract parity tests to
+# validate serialized Rust instances against the canonical packages/contracts/schemas/*.json.
+# resolve-http is disabled for offline determinism; all schemas are local files.
+jsonschema = { version = "0.48", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
