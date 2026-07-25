@@ -41,21 +41,12 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{scan_and_classify_one_item, write_minimal_fits_with_exposure, E2eApp};
+use common::{scan_and_classify_one_item, settle_first_run_redirect, write_minimal_fits_with_exposure, E2eApp};
 use serde_json::json;
 
 const UI_TIMEOUT: Duration = Duration::from_secs(20);
 const INVOKE_TIMEOUT: Duration = Duration::from_secs(30);
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// Wait for the fresh-DB first-run redirect to land on `/setup` before
-/// navigating anywhere (mirrors `inventory_journeys.rs`).
-async fn settle_first_run_redirect(app: &E2eApp) -> anyhow::Result<()> {
-    app.wait_url_contains("/setup", Duration::from_secs(15))
-        .await
-        .map(drop)
-        .map_err(|e| anyhow::anyhow!("expected a fresh DB to redirect to /setup: {e}"))
-}
 
 /// Poll a boolean-returning JS snippet through the WebDriver until it returns
 /// `true` or `timeout` elapses. Returns the final observed value.
