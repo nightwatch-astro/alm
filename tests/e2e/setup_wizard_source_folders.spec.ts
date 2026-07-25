@@ -130,13 +130,13 @@ test.describe('setup wizard · source-folder primitives at 320 CSS px', () => {
       });
       await expect(
         lightFrames.getByTestId('requirement-status-light_frames'),
-      ).toHaveClass(/pv-pill--ok/);
+      ).toHaveAttribute('data-variant', 'ok');
       await expect(
         lightFrames.getByTestId('requirement-status-light_frames'),
       ).toHaveText(labels.requiredStatus);
       await expect(
         calibration.getByTestId('requirement-status-calibration'),
-      ).toHaveClass(/pv-pill--ghost/);
+      ).toHaveAttribute('data-variant', 'ghost');
       await expect(
         calibration.getByTestId('requirement-status-calibration'),
       ).toHaveText(labels.optionalStatus);
@@ -145,10 +145,9 @@ test.describe('setup wizard · source-folder primitives at 320 CSS px', () => {
       const manualPath = lightFrames.getByTestId(
         'manual-path-input-light_frames',
       );
-      // The org-state select carries the shared select primitive, migrated
-      // from the global `.pv-select` rule to the vanilla-extract `selectBase`
-      // style (dev-server class `select_selectBase__<hash>`). The manual-path
-      // input still uses the un-migrated global `.pv-input`.
+      // The org-state select carries the VE selectBase style.
+      // The manual-path input still uses the global .pv-input class (re-declared
+      // as a globalStyle in field.css.ts after wave-2 dissolved target-search.css).
       await expect(organization).toHaveClass(/selectBase/);
       await expect(manualPath).toHaveClass(/pv-input/);
 

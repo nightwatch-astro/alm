@@ -7,7 +7,7 @@
  * Multi-consumer: various feature and component files reference these.
  */
 
-import { style } from '@vanilla-extract/css';
+import { style, globalStyle } from '@vanilla-extract/css';
 import { uvars, vars } from '@/styles/themes.css';
 
 export const label = style({
@@ -46,3 +46,25 @@ export const input = style({
     '&::placeholder': { color: vars.textFaint },
   },
 });
+
+// Backward-compat global alias: StepSourceFolders, NumberField, and similar
+// pre-migration callers still apply className="pv-input" directly. The rule
+// was in target-search.css (dissolved in wave 2); re-declare it here so those
+// consumers keep their theming until they are migrated to the `input` style.
+globalStyle('.pv-input', {
+  width: '100%',
+  height: uvars.controlH,
+  padding: `0 ${uvars.sp3}`,
+  border: `1px solid ${vars.controlBorder}`,
+  borderRadius: uvars.radiusSm,
+  fontSize: uvars.textSm,
+  background: vars.bg,
+  color: vars.text,
+  outline: 'none',
+  transition: `border-color ${uvars.transitionFast}`,
+});
+globalStyle('.pv-input:focus', {
+  borderColor: vars.accent,
+  boxShadow: vars.focusRing,
+});
+globalStyle('.pv-input::placeholder', { color: vars.textFaint });

@@ -24,7 +24,13 @@ export const Pill = forwardRef<HTMLSpanElement, PillProps>(function Pill(
 ) {
   const cls = [variantStyles[variant], className].filter(Boolean).join(' ');
   return (
-    <span ref={ref} className={cls} data-testid="pill" {...rest}>
+    <span
+      ref={ref}
+      className={cls}
+      data-testid="pill"
+      data-variant={variant}
+      {...rest}
+    >
       {children}
     </span>
   );
