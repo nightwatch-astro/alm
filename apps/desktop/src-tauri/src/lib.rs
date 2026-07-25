@@ -501,22 +501,42 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
     }
     let pool = db.pool().clone();
 
-    // Startup sweep: any plan left in 'applying' with no live executor (e.g.
-    // after a hard crash) is unreachable by `resume_plan` (which requires
-    // `paused` state). Flip them to `paused` with pause_reason='crash' so the
-    // user can resume or cancel them. The active_runs registry is always empty
+    // Startup sweep + boot reconciliation (constitution v1.1.0 §V). Any plan
+    // left in 'applying' with no live executor (e.g. after a hard crash) is
+    // unreachable by `resume_plan` (which requires `paused` state). Flip them to
+    // `paused` with pause_reason='crash', then reconcile each plan's
+    // intent-without-confirmed-outcome items against filesystem reality: heal
+    // the ones the filesystem shows completed, and flag ambiguous ones for the
+    // unclean-shutdown recovery prompt. The active_runs registry is always empty
     // at this point, so every applying plan qualifies.
     {
         let sweep_pool = pool.clone();
         tokio::spawn(async move {
-            match app_core::plan_apply::sweep_crashed_applying_plans(&sweep_pool).await {
-                Ok(ids) if !ids.is_empty() => tracing::info!(
-                    count = ids.len(),
-                    "startup: flipped {} applying plan(s) to paused (crash recovery)",
-                    ids.len()
+            let ids = match app_core::plan_apply::sweep_crashed_applying_plans(&sweep_pool).await {
+                Ok(ids) => {
+                    if !ids.is_empty() {
+                        tracing::info!(
+                            count = ids.len(),
+                            "startup: flipped {} applying plan(s) to paused (crash recovery)",
+                            ids.len()
+                        );
+                    }
+                    ids
+                }
+                Err(e) => {
+                    tracing::warn!("startup sweep for crashed applying plans failed: {e}");
+                    Vec::new()
+                }
+            };
+            match app_core::plan_apply::reconcile_crashed_plans(&sweep_pool, &ids).await {
+                Ok(report) if report.healed > 0 || report.needs_user_review() => tracing::info!(
+                    healed = report.healed,
+                    left_for_resume = report.left_for_resume,
+                    ambiguous_plans = report.ambiguous_plan_ids.len(),
+                    "startup: boot reconciliation classified crashed plan items"
                 ),
                 Ok(_) => {}
-                Err(e) => tracing::warn!("startup sweep for crashed applying plans failed: {e}"),
+                Err(e) => tracing::warn!("startup boot reconciliation failed: {e}"),
             }
         });
     }

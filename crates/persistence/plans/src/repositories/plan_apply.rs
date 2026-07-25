@@ -19,6 +19,26 @@ use persistence_core::{DbError, DbResult};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Force the WAL contents into the main database file and fsync it.
+///
+/// Tier-1 durability escalation (constitution v1.1.0 §V): the connection pool
+/// runs `synchronous = NORMAL`, under which a WAL commit is durable only to the
+/// WAL file, and the WAL is fsynced at checkpoint — not at every commit. So a
+/// power loss between an intent commit and the next automatic checkpoint could
+/// rewind the just-committed `applying`/run row while the executor has already
+/// begun mutating the filesystem, violating "intent committed before the fs
+/// action." Calling `wal_checkpoint(TRUNCATE)` immediately after the intent
+/// commit syncs the database file, closing that window with native SQLite
+/// durability rather than a userspace write-ahead journal.
+///
+/// A failed checkpoint (e.g. a reader holding the WAL open) is not fatal: the
+/// intent is already committed to the WAL, boot reconciliation is the backstop,
+/// and the next automatic checkpoint will sync it. Callers log and proceed.
+async fn checkpoint_intent(conn: &mut SqliteConnection) -> DbResult<()> {
+    sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(conn).await?;
+    Ok(())
+}
+
 // ── Row types ─────────────────────────────────────────────────────────────────
 
 /// Row returned from the `plan_apply_runs` table.
@@ -138,6 +158,15 @@ pub async fn cas_approved_to_applying(
     .await?;
 
     tx.commit().await?;
+
+    // Tier-1: sync the just-committed intent before the executor touches the
+    // filesystem (see `checkpoint_intent`). Best-effort: a failed checkpoint
+    // leaves the intent durable in the WAL, and boot reconciliation is the
+    // backstop, so the error is intentionally swallowed (the persistence layer
+    // carries no logging facade).
+    let mut conn = pool.acquire().await?;
+    let _ = checkpoint_intent(&mut conn).await;
+
     Ok(())
 }
 
@@ -281,6 +310,13 @@ pub async fn resume_run(pool: &SqlitePool, plan_id: &str, run_id: &str) -> DbRes
     .await?;
 
     tx.commit().await?;
+
+    // Tier-1: resume re-enters `applying` and the executor re-runs remaining
+    // items, so the same intent-durability guarantee as apply-start applies.
+    // Best-effort (see `cas_approved_to_applying`).
+    let mut conn = pool.acquire().await?;
+    let _ = checkpoint_intent(&mut conn).await;
+
     Ok(())
 }
 
@@ -751,6 +787,158 @@ pub async fn sweep_crashed_applying_plans(pool: &SqlitePool) -> DbResult<Vec<Str
     Ok(ids)
 }
 
+// ── Boot reconciliation ───────────────────────────────────────────────────────
+
+/// A non-terminal plan item awaiting boot reconciliation against the filesystem.
+///
+/// After [`sweep_crashed_applying_plans`] flips a crashed `applying` plan to
+/// `paused`, its items may still be `pending` (never reached — the group-commit
+/// design drops the per-item `applying` write) or `applying` (a mid-run retry).
+/// Each such row is an intent whose outcome may have been rewound under
+/// `synchronous = NORMAL`; the caller probes the filesystem to classify it.
+#[derive(Clone, Debug)]
+pub struct UnreconciledItem {
+    pub id: String,
+    pub plan_id: String,
+    pub action: String,
+    pub from_root_id: Option<String>,
+    pub from_relative_path: String,
+    pub to_root_id: Option<String>,
+    pub to_relative_path: String,
+    pub archive_path: Option<String>,
+}
+
+/// List the non-terminal items of the given plans (typically the ids returned
+/// by [`sweep_crashed_applying_plans`]) so the caller can probe filesystem
+/// reality and reconcile each intent's outcome.
+///
+/// Returns only `pending`/`applying` items — terminal items already recorded
+/// their outcome and need no reconciliation.
+///
+/// # Errors
+///
+/// Returns [`DbError::Database`] on connection failure.
+pub async fn list_unreconciled_items(
+    pool: &SqlitePool,
+    plan_ids: &[String],
+) -> DbResult<Vec<UnreconciledItem>> {
+    if plan_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as::<
+        _,
+        (String, String, String, Option<String>, String, Option<String>, String, Option<String>),
+    >(
+        "SELECT id, plan_id, action, from_root_id, from_relative_path, \
+                to_root_id, to_relative_path, archive_path \
+         FROM plan_items \
+         WHERE plan_id IN (SELECT value FROM json_each(?)) \
+           AND item_state IN ('pending', 'applying') \
+         ORDER BY plan_id ASC, item_index ASC",
+    )
+    .bind(serde_json::to_string(plan_ids).unwrap_or_default())
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                plan_id,
+                action,
+                from_root_id,
+                from_relative_path,
+                to_root_id,
+                to_relative_path,
+                archive_path,
+            )| {
+                UnreconciledItem {
+                    id,
+                    plan_id,
+                    action,
+                    from_root_id,
+                    from_relative_path,
+                    to_root_id,
+                    to_relative_path,
+                    archive_path,
+                }
+            },
+        )
+        .collect())
+}
+
+/// Persist the healed outcome of a boot-reconciled item.
+///
+/// `new_state` is a terminal `plan_items.item_state` (`succeeded` or `failed`);
+/// `failure_reason` carries the reconciliation verdict for ambiguous items. The
+/// per-plan counter is adjusted and an append-only `plan_apply_events` row is
+/// written recording the `prior_state -> new_state` transition with source
+/// `boot.reconcile`, so the audit trail shows recovery healed the row rather
+/// than the executor. `run_id` links the event to the crashed run.
+///
+/// # Errors
+///
+/// Returns [`DbError::Database`] on connection failure.
+pub async fn record_reconciled_outcome(
+    pool: &SqlitePool,
+    item: &UnreconciledItem,
+    prior_state: &str,
+    new_state: &str,
+    run_id: &str,
+    failure_reason: Option<&str>,
+    at: &str,
+    event_id: &str,
+) -> DbResult<()> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("UPDATE plan_items SET item_state = ?, failure_reason = ? WHERE id = ?")
+        .bind(new_state)
+        .bind(failure_reason)
+        .bind(&item.id)
+        .execute(&mut *tx)
+        .await?;
+
+    let (d_applied, d_failed) = match new_state {
+        "succeeded" => (1_i64, 0_i64),
+        _ => (0, 1),
+    };
+    sqlx::query(
+        "UPDATE plans SET \
+           items_applied = items_applied + ?, \
+           items_failed  = items_failed  + ?, \
+           items_pending = MAX(0, items_pending - 1) \
+         WHERE id = ?",
+    )
+    .bind(d_applied)
+    .bind(d_failed)
+    .bind(&item.plan_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let failure = failure_reason.map(|reason| EventFailure {
+        code: "reconcile.ambiguous",
+        message: reason,
+        recoverable: true,
+    });
+    append_event_conn(
+        &mut tx,
+        event_id,
+        run_id,
+        &item.plan_id,
+        Some(&item.id),
+        prior_state,
+        new_state,
+        at,
+        failure.as_ref(),
+        None,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1053,5 +1241,119 @@ mod tests {
         let found = get_last_stale_item(db.pool(), "ps1").await.unwrap();
         assert!(found.is_some(), "get_last_stale_item must find the stale item");
         assert_eq!(found.unwrap().id, "ps1-item-0");
+    }
+
+    #[tokio::test]
+    async fn list_unreconciled_returns_only_non_terminal_items() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        setup_with_approved_plan(&db, "pr1", 3).await;
+        cas_approved_to_applying(db.pool(), "pr1", "run-r1", "tok", 3, 3).await.unwrap();
+
+        // Flush one item to a terminal state; two remain pending.
+        let mut conn = db.pool().acquire().await.unwrap();
+        batch_flush_item_states(
+            &mut conn,
+            "pr1",
+            &[BatchItemState {
+                item_id: "pr1-item-0",
+                new_state: "succeeded",
+                failure_reason: None,
+                is_stale: false,
+            }],
+            1,
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+        drop(conn);
+
+        let items = list_unreconciled_items(db.pool(), &["pr1".to_owned()]).await.unwrap();
+        let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, vec!["pr1-item-1", "pr1-item-2"], "terminal items are excluded");
+        assert_eq!(items[0].action, "move");
+        assert_eq!(items[0].from_relative_path, "raw/file.fits");
+        assert_eq!(items[0].to_relative_path, "archive/file.fits");
+
+        // Empty plan-id list short-circuits to no rows.
+        assert!(list_unreconciled_items(db.pool(), &[]).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn record_reconciled_outcome_heals_and_appends_event() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        setup_with_approved_plan(&db, "pr2", 2).await;
+        cas_approved_to_applying(db.pool(), "pr2", "run-r2", "tok", 2, 2).await.unwrap();
+        sweep_crashed_applying_plans(db.pool()).await.unwrap();
+
+        let items = list_unreconciled_items(db.pool(), &["pr2".to_owned()]).await.unwrap();
+        assert_eq!(items.len(), 2);
+
+        // Heal the first item (filesystem showed the move completed).
+        record_reconciled_outcome(
+            db.pool(),
+            &items[0],
+            "pending",
+            "succeeded",
+            "run-r2",
+            None,
+            "2026-07-25T00:00:00Z",
+            "evt-heal-1",
+        )
+        .await
+        .unwrap();
+
+        // Flag the second item ambiguous.
+        record_reconciled_outcome(
+            db.pool(),
+            &items[1],
+            "pending",
+            "failed",
+            "run-r2",
+            Some("filesystem state ambiguous at boot; needs user resume/repair"),
+            "2026-07-25T00:00:01Z",
+            "evt-amb-1",
+        )
+        .await
+        .unwrap();
+
+        let healed: String = sqlx::query_scalar("SELECT item_state FROM plan_items WHERE id = ?")
+            .bind(&items[0].id)
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(healed, "succeeded");
+
+        let flagged: (String, Option<String>) =
+            sqlx::query_as("SELECT item_state, failure_reason FROM plan_items WHERE id = ?")
+                .bind(&items[1].id)
+                .fetch_one(db.pool())
+                .await
+                .unwrap();
+        assert_eq!(flagged.0, "failed");
+        assert!(flagged.1.unwrap().contains("ambiguous"));
+
+        let plan = plans_repo::get_plan(db.pool(), "pr2", false).await.unwrap();
+        assert_eq!(plan.items_applied, 1);
+        assert_eq!(plan.items_failed, 1);
+
+        // A boot.reconcile event was appended per item with the transition.
+        let events: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM plan_apply_events WHERE plan_id = ? AND prior_state = 'pending'",
+        )
+        .bind("pr2")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(events, 2);
+
+        let ambiguous_code: Option<String> =
+            sqlx::query_scalar("SELECT failure_code FROM plan_apply_events WHERE id = 'evt-amb-1'")
+                .fetch_one(db.pool())
+                .await
+                .unwrap();
+        assert_eq!(ambiguous_code, Some("reconcile.ambiguous".to_owned()));
     }
 }

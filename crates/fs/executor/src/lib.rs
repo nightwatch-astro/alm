@@ -20,9 +20,11 @@
 
 pub mod failure;
 pub mod ops;
+pub mod reconcile;
 pub mod run;
 
 pub use failure::{PlanItemFailure, RollbackOutcome};
+pub use reconcile::{classify, MutationShape, ReconcileVerdict};
 pub use run::{
     ApplyOutcome, CancellationToken, ExecutorCallbacks, ItemProgressEvent, RunConfig,
     TerminalCounts,
