@@ -158,12 +158,6 @@ pub fn reveal_success(selection: RevealSelection) -> RevealResponse {
     RevealResponse { revealed: true, selection }
 }
 
-/// Build a failure response for reveal (OS command failed).
-#[must_use]
-pub fn reveal_failed() -> RevealResponse {
-    RevealResponse { revealed: false, selection: RevealSelection::None }
-}
-
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -365,12 +359,5 @@ mod tests {
         let resp = reveal_success(RevealSelection::Target);
         assert!(resp.revealed);
         assert_eq!(resp.selection, RevealSelection::Target);
-    }
-
-    #[test]
-    fn reveal_failed_response() {
-        let resp = reveal_failed();
-        assert!(!resp.revealed);
-        assert_eq!(resp.selection, RevealSelection::None);
     }
 }

@@ -11,7 +11,6 @@
 //! The Tauri command layer hands the `AssignDecision` to the persistence
 //! repository to write the `calibration_assignment` row.
 
-use crate::candidate::MismatchedDim;
 use crate::ranking::MatchingRuleConfig;
 use crate::{CalibrationKind, Dimension, MasterInfo, SessionInfo};
 
@@ -179,12 +178,6 @@ fn compute_assign_confidence(
 }
 
 // ── Mismatch dim helper for assign response DTOs ──────────────────────────────
-
-/// Build `MismatchedDim` entries for the hard violations in an override assignment.
-#[must_use]
-pub fn hard_violations_to_mismatched(violations: &[Dimension]) -> Vec<MismatchedDim> {
-    violations.iter().map(|d| MismatchedDim::hard(*d)).collect()
-}
 
 /// Extract dimension name strings for contract DTOs.
 #[must_use]

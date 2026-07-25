@@ -8,10 +8,6 @@
 //!   `get_session`   -- backed by `acquisition_session` joined with related tables
 //!                      for calibration_matches and audit history.
 //!
-//! Stub placeholders (to be wired when domain logic is built):
-//!   `split_session` -- not yet implemented.
-//!   `merge_sessions` -- not yet implemented.
-//!
 //! # Architecture
 //!
 //! `acquisition_session` stores: id, session_key (pipe-delimited
@@ -232,32 +228,6 @@ pub async fn get_session(pool: &SqlitePool, id: &str) -> Result<SessionDetail, S
     })
 }
 
-// -- Stub placeholders --------------------------------------------------------
-
-/// Split a session by a given property, producing multiple new sessions.
-///
-/// # Errors
-///
-/// Currently returns a `NotImplemented` error.
-#[allow(clippy::unused_async)] // will await DB queries when wired
-pub async fn split_session(
-    _pool: &SqlitePool,
-    _session_id: &str,
-    _split_property: &str,
-) -> Result<Vec<String>, String> {
-    Err("session.split: not yet implemented".to_owned())
-}
-
-/// Merge multiple sessions into a single combined session.
-///
-/// # Errors
-///
-/// Currently returns a `NotImplemented` error.
-#[allow(clippy::unused_async)] // will await DB queries when wired
-pub async fn merge_sessions(_pool: &SqlitePool, _session_ids: &[String]) -> Result<String, String> {
-    Err("session.merge: not yet implemented".to_owned())
-}
-
 // -- Private helpers ----------------------------------------------------------
 
 /// Row from `acquisition_fingerprint` for supplementary metadata.
@@ -440,23 +410,6 @@ async fn load_history(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn split_session_returns_not_implemented() {
-        let pool = SqlitePool::connect("sqlite::memory:").await.expect("in-memory pool");
-        let result = split_session(&pool, "ses-001", "filter").await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not yet implemented"));
-    }
-
-    #[tokio::test]
-    async fn merge_sessions_returns_not_implemented() {
-        let pool = SqlitePool::connect("sqlite::memory:").await.expect("in-memory pool");
-        let ids = vec!["ses-001".to_owned(), "ses-002".to_owned()];
-        let result = merge_sessions(&pool, &ids).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not yet implemented"));
-    }
 
     #[test]
     fn parse_session_key_falls_back_to_fingerprint() {
