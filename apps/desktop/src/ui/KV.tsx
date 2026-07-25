@@ -23,8 +23,7 @@ export const KV = forwardRef<HTMLDivElement, KVProps>(function KV(
       <span className={kv.label}>{label}</span>
       <span
         className={kv.value}
-        // mono: override font to xs and switch to monospace — still
-        // token-driven via uvars, just conditional on the prop.
+        // eslint-disable-next-line no-restricted-syntax -- dynamic: conditional mono override uses token values, no static equivalent
         style={
           mono
             ? { fontFamily: vars.fontMono, fontSize: uvars.textXs }

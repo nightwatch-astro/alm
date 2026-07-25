@@ -185,7 +185,7 @@ export function PropertyTable({
 
             <span
               className={pt.cellValue}
-              // mono: inline font-family override — still token-driven via vars.fontMono
+              // eslint-disable-next-line no-restricted-syntax -- dynamic: conditional mono override uses token values, no static equivalent
               style={
                 prop.mono
                   ? { fontFamily: vars.fontMono, fontSize: 'var(--pv-text-xs)' }

@@ -212,7 +212,10 @@ export function ListPageLayout({
       <div className={page}>
         {topBar ?? (topBarProps && <PageTopBar {...topBarProps} />)}
 
-        <div className={`${lpl.body} ${lpl.bodyDual}`} data-testid="listpage-body-dual">
+        <div
+          className={`${lpl.body} ${lpl.bodyDual}`}
+          data-testid="listpage-body-dual"
+        >
           {/* Left column: main table + bottom strip stacked */}
           <div className={lpl.mainCol}>
             <div className={lpl.main}>{children}</div>
@@ -288,7 +291,10 @@ export function ListPageLayout({
     <div className={page}>
       {topBar ?? (topBarProps && <PageTopBar {...topBarProps} />)}
 
-      <div className={bodyClass} data-testid={isSide ? 'listpage-body-side' : 'listpage-body'}>
+      <div
+        className={bodyClass}
+        data-testid={isSide ? 'listpage-body-side' : 'listpage-body'}
+      >
         <div className={lpl.main}>{children}</div>
 
         {hasDetail && (

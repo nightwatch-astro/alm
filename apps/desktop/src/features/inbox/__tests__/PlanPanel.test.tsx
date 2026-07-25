@@ -237,7 +237,7 @@ describe('PlanPanel (aggregate surface)', { timeout: 15_000 }, () => {
     // its own aligned cell ("…/masters/darks").
     const summary = screen.getByTestId('plan-group-summary-g1');
     expect(summary).toHaveTextContent('2 darks');
-    const group = screen.getByTestId('plan-group-g1');
+    expect(screen.getByTestId('plan-group-g1')).toBeInTheDocument();
     expect(screen.getByTestId('plan-group-dest-g1')).toHaveTextContent(
       'masters/darks',
     );

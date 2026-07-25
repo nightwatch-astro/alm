@@ -72,7 +72,19 @@ const badgeBase = style({
 });
 
 export const sourceBadge = style([badgeBase]);
-export const sourceBadgeFits = style([badgeBase, { background: vars.infoBg, color: vars.info, borderColor: vars.infoBorder }]);
-export const sourceBadgeUser = style([badgeBase, { background: vars.okBg, color: vars.ok, borderColor: vars.okBorder }]);
-export const sourceBadgeInferred = style([badgeBase, { background: vars.warnBg, color: vars.warn, borderColor: vars.warnBorder }]);
-export const sourceBadgeDefault = style([badgeBase, { background: vars.bg3, color: vars.textMuted }]);
+export const sourceBadgeFits = style([
+  badgeBase,
+  { background: vars.infoBg, color: vars.info, borderColor: vars.infoBorder },
+]);
+export const sourceBadgeUser = style([
+  badgeBase,
+  { background: vars.okBg, color: vars.ok, borderColor: vars.okBorder },
+]);
+export const sourceBadgeInferred = style([
+  badgeBase,
+  { background: vars.warnBg, color: vars.warn, borderColor: vars.warnBorder },
+]);
+export const sourceBadgeDefault = style([
+  badgeBase,
+  { background: vars.bg3, color: vars.textMuted },
+]);

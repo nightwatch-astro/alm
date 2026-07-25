@@ -742,7 +742,9 @@ describe('TargetDetailV2', () => {
       ).toBeGreaterThanOrEqual(1),
     );
     // StatusTag renders the label text with a data-component attribute.
-    const tagEl = screen.getAllByText('Archived')[0].closest('[data-component="status-tag"]');
+    const tagEl = screen
+      .getAllByText('Archived')[0]
+      .closest('[data-component="status-tag"]');
     expect(tagEl).toHaveAttribute('data-variant', 'ok');
   });
 

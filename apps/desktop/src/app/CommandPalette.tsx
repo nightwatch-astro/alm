@@ -280,16 +280,21 @@ export function CommandPalette() {
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
-        <Dialog.Backdrop className={cp.backdrop} data-testid="command-palette-backdrop" />
+        <Dialog.Backdrop
+          className={cp.backdrop}
+          data-testid="command-palette-backdrop"
+        />
         <Dialog.Popup
-          className={cp.palette} data-testid="command-palette"
+          className={cp.palette}
+          data-testid="command-palette"
           aria-label={m.cmdk_aria_label()}
           initialFocus={inputRef}
         >
           <Command shouldFilter={false}>
             <Command.Input
               ref={inputRef}
-              className={cp.paletteInput} data-testid="palette-input"
+              className={cp.paletteInput}
+              data-testid="palette-input"
               placeholder={m.cmdk_placeholder()}
               value={query}
               onValueChange={setQuery}
@@ -302,13 +307,15 @@ export function CommandPalette() {
               )}
               {results.length > 0 && (
                 <Command.Group
-                  className={cp.paletteGroup} data-testid="palette-group"
+                  className={cp.paletteGroup}
+                  data-testid="palette-group"
                   heading={m.cmdk_group_results()}
                 >
                   {results.map((r) => (
                     <Command.Item
                       key={r.id}
-                      className={cp.paletteItem} data-testid="palette-item"
+                      className={cp.paletteItem}
+                      data-testid="palette-item"
                       onSelect={() => select(r.route)}
                     >
                       <span className={cp.paletteItemKind}>{r.kind}</span>
@@ -321,13 +328,15 @@ export function CommandPalette() {
                 </Command.Group>
               )}
               <Command.Group
-                className={cp.paletteGroup} data-testid="palette-group"
+                className={cp.paletteGroup}
+                data-testid="palette-group"
                 heading={m.cmdk_group_pages()}
               >
                 {visiblePages.map((p) => (
                   <Command.Item
                     key={p.route}
-                    className={cp.paletteItem} data-testid="palette-item"
+                    className={cp.paletteItem}
+                    data-testid="palette-item"
                     onSelect={() => select(p.route)}
                   >
                     <span className={cp.paletteItemLabel}>{p.label()}</span>
@@ -335,20 +344,23 @@ export function CommandPalette() {
                 ))}
               </Command.Group>
               <Command.Group
-                className={cp.paletteGroup} data-testid="palette-group"
+                className={cp.paletteGroup}
+                data-testid="palette-group"
                 heading={m.cmdk_group_actions()}
               >
                 {ALL_ACTIONS.map((a) => (
                   <Command.Item
                     key={a.label()}
-                    className={cp.paletteItem} data-testid="palette-item"
+                    className={cp.paletteItem}
+                    data-testid="palette-item"
                     onSelect={() => selectAction(a)}
                   >
                     <span className={cp.paletteItemLabel}>{a.label()}</span>
                   </Command.Item>
                 ))}
                 <Command.Item
-                  className={cp.paletteItem} data-testid="palette-item"
+                  className={cp.paletteItem}
+                  data-testid="palette-item"
                   onSelect={() => {
                     setOpen(false);
                     setQuery('');

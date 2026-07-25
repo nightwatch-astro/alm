@@ -124,7 +124,9 @@ describe('ProjectsTable', () => {
     expect(tags.length).toBeGreaterThan(0);
     // Each tag contains a dot span.
     tags.forEach((tag) => {
-      expect(tag.querySelector('[data-component="status-tag-dot"]')).toBeInTheDocument();
+      expect(
+        tag.querySelector('[data-component="status-tag-dot"]'),
+      ).toBeInTheDocument();
     });
   });
 

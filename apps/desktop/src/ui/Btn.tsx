@@ -26,7 +26,12 @@ export const Btn = forwardRef<HTMLButtonElement, BtnProps>(function Btn(
     .filter(Boolean)
     .join(' ');
   return (
-    <button ref={ref} className={cls} data-variant={variant ?? "default"} {...rest}>
+    <button
+      ref={ref}
+      className={cls}
+      data-variant={variant ?? 'default'}
+      {...rest}
+    >
       {children}
     </button>
   );

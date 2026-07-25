@@ -203,10 +203,7 @@ export function PlanGroupRow({
         >
           {allInPlace ? (
             <>
-              <span
-                className={pp.inplace}
-                data-testid="plan-panel-inplace"
-              >
+              <span className={pp.inplace} data-testid="plan-panel-inplace">
                 {m.inbox_inplace_label()}
               </span>
               <code

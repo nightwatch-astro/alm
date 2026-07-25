@@ -52,7 +52,15 @@ function* sourceFiles(dir) {
     if (statSync(path).isDirectory()) {
       if (entry === 'bindings') continue;
       yield* sourceFiles(path);
-    } else if (/\.tsx?$/.test(entry) && !entry.endsWith('.d.ts') && !entry.includes('.test.')) {
+    } else if (
+      /\.tsx?$/.test(entry) &&
+      !entry.endsWith('.d.ts') &&
+      !entry.includes('.test.') &&
+      // .css.ts files are VE stylesheets; their component-local custom
+      // properties are same-file-scoped (stylelint covers these, not this
+      // script).
+      !entry.endsWith('.css.ts')
+    ) {
       yield path;
     }
   }

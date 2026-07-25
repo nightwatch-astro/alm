@@ -338,16 +338,24 @@ async function openPalette() {
   render(<CommandPalette />);
   fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
   await waitFor(() => {
-    expect(document.querySelector('[data-testid="command-palette"]')).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="command-palette"]'),
+    ).not.toBeNull();
   });
 }
 
 describe('CommandPalette rendered smoke (#581)', () => {
   it('opens on Ctrl+K with the expected pv-palette* class structure', async () => {
     await openPalette();
-    expect(document.querySelector('[data-testid="command-palette-backdrop"]')).not.toBeNull();
-    expect(document.querySelector('[data-testid="palette-input"]')).not.toBeNull();
-    expect(document.querySelector('[data-testid="palette-list"]')).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="command-palette-backdrop"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="palette-input"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="palette-list"]'),
+    ).not.toBeNull();
     // Pages + Actions groups render without a query; each must carry the
     // styled class (the review blocker: cmdk only sets cmdk-group="",
     // so .pv-palette__group CSS was dead without an explicit className).
@@ -431,7 +439,9 @@ describe('CommandPalette targetList cache TTL', () => {
     fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
     fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
     await waitFor(() => {
-      expect(document.querySelector('[data-testid="command-palette"]')).not.toBeNull();
+      expect(
+        document.querySelector('[data-testid="command-palette"]'),
+      ).not.toBeNull();
     });
     expect(commands.targetList).toHaveBeenCalledTimes(1);
   });

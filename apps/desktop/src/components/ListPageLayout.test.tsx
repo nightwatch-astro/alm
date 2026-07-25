@@ -44,7 +44,7 @@ function resizeWindowTo(width: number) {
 
 describe('ListPageLayout', () => {
   it('defaults to the bottom dock (no side variant classes)', () => {
-    const { container } = render(
+    render(
       <ListPageLayout topBar={<div>bar</div>} detail={<div>detail</div>}>
         <div>main</div>
       </ListPageLayout>,
@@ -58,7 +58,7 @@ describe('ListPageLayout', () => {
   });
 
   it('does not render the detail panel when detail is null', () => {
-    const { container } = render(
+    render(
       <ListPageLayout topBar={<div>bar</div>}>
         <div>main</div>
       </ListPageLayout>,
@@ -67,7 +67,7 @@ describe('ListPageLayout', () => {
   });
 
   it('applies the side variant classes when detailPlacement="side"', () => {
-    const { container } = render(
+    render(
       <ListPageLayout
         topBar={<div>bar</div>}
         detail={<div>detail</div>}
@@ -106,7 +106,7 @@ describe('ListPageLayout', () => {
   // ── Task #104: side-and-bottom dual layout ───────────────────────────────
 
   it('(#104) dual: renders side panel from detail and bottom strip from bottomDetail', () => {
-    const { container } = render(
+    render(
       <ListPageLayout
         topBar={<div>bar</div>}
         detail={<div>side content</div>}
@@ -126,9 +126,7 @@ describe('ListPageLayout', () => {
       screen.getByRole('complementary', { name: 'Selected item details' }),
     ).toBeInTheDocument();
     // Body carries the dual modifier class.
-    expect(
-      screen.queryByTestId('listpage-body-dual'),
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-body-dual')).toBeInTheDocument();
     // Side panel and bottom strip use their own classes (not the old detail classes).
     expect(screen.queryByTestId('listpage-side')).toBeInTheDocument();
     expect(screen.queryByTestId('listpage-bottom')).toBeInTheDocument();
@@ -137,7 +135,7 @@ describe('ListPageLayout', () => {
   });
 
   it('(#104) dual: does not render side panel when detail is null', () => {
-    const { container } = render(
+    render(
       <ListPageLayout
         topBar={<div>bar</div>}
         bottomDetail={<div>bottom content</div>}
@@ -151,7 +149,7 @@ describe('ListPageLayout', () => {
   });
 
   it('(#104) dual: does not render bottom strip when bottomDetail is null', () => {
-    const { container } = render(
+    render(
       <ListPageLayout
         topBar={<div>bar</div>}
         detail={<div>side content</div>}
@@ -193,7 +191,7 @@ describe('ListPageLayout', () => {
   it('(#104) dual: backward-compatible — existing bottom/side paths unaffected', () => {
     // Sessions/Calibration/Targets use detailPlacement="bottom" (default) —
     // ensure they still get the original class names with no dual classes.
-    const { container } = render(
+    render(
       <ListPageLayout topBar={<div>bar</div>} detail={<div>detail</div>}>
         <div>main</div>
       </ListPageLayout>,
@@ -375,7 +373,7 @@ describe('ListPageLayout', () => {
 
     it('docks to the bottom under the threshold and to the side at/above it', () => {
       resizeWindowTo(1024);
-      const { container, rerender } = render(
+      const { rerender } = render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -418,7 +416,7 @@ describe('ListPageLayout', () => {
 
     it('pinning to side persists across remount (dockId-scoped preference)', () => {
       resizeWindowTo(1024);
-      const { container, unmount } = render(
+      const { unmount } = render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -431,7 +429,7 @@ describe('ListPageLayout', () => {
       expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
       unmount();
 
-      const { container: container2 } = render(
+      render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -450,7 +448,7 @@ describe('ListPageLayout', () => {
     // width rule was permanently dead for that dockId.
     it('returning to Auto clears the pin and resumes the width rule', () => {
       resizeWindowTo(1024);
-      const { container, unmount } = render(
+      const { unmount } = render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -471,7 +469,7 @@ describe('ListPageLayout', () => {
       // And Auto must survive a remount — i.e. the persisted pin was actually
       // cleared, not just overridden in component state.
       unmount();
-      const { container: container2 } = render(
+      render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
