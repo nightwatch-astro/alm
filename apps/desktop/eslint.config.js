@@ -204,6 +204,11 @@ export default tseslint.config(
       'vite.config.ts',
       'vitest.config.ts',
       'eslint.config.js',
+      // Custom rule files are plain JS executed by ESLint, not app source —
+      // they are not in any tsconfig include, so type-aware rules cannot run
+      // on them. Excluding here is equivalent to how eslint.config.js itself
+      // is excluded.
+      'eslint-rules/**',
     ],
   },
 );
