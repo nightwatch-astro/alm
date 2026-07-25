@@ -73,7 +73,7 @@ pub struct InsertArtifact<'a> {
 /// - `Ok(None)` — constraint violation silenced the insert (no row written).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on any DB failure that is not a
+/// Returns [`persistence_core::DbError::Database`] on any DB failure that is not a
 /// constraint violation (e.g. I/O errors, schema mismatches).
 pub async fn insert_artifact_if_absent(
     pool: &SqlitePool,
@@ -116,7 +116,7 @@ pub async fn insert_artifact_if_absent(
 /// Lookup an artifact by `(project_id, path)`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_artifact_by_path(
     pool: &SqlitePool,
     project_id: &str,
@@ -137,7 +137,7 @@ pub async fn get_artifact_by_path(
 /// `include_states` filters by state; if empty, returns all states.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn list_artifacts_for_project(
     pool: &SqlitePool,
     project_id: &str,
@@ -176,7 +176,7 @@ pub async fn list_artifacts_for_project(
 /// Update `last_seen_at` for a `present` artifact (reconcile seen pass).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn touch_artifact(pool: &SqlitePool, artifact_id: &str) -> DbResult<()> {
     let now = Timestamp::now_iso();
     sqlx::query("UPDATE processing_artifacts SET last_seen_at = ? WHERE id = ?")
@@ -190,7 +190,7 @@ pub async fn touch_artifact(pool: &SqlitePool, artifact_id: &str) -> DbResult<()
 /// Transition an artifact to `missing` state.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn mark_artifact_missing(pool: &SqlitePool, artifact_id: &str) -> DbResult<()> {
     sqlx::query("UPDATE processing_artifacts SET state = 'missing' WHERE id = ?")
         .bind(artifact_id)
@@ -202,7 +202,7 @@ pub async fn mark_artifact_missing(pool: &SqlitePool, artifact_id: &str) -> DbRe
 /// Transition an artifact from `missing` back to `present` and refresh size/hash.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn mark_artifact_recovered(
     pool: &SqlitePool,
     artifact_id: &str,
@@ -229,7 +229,7 @@ pub async fn mark_artifact_recovered(
 /// Mark a `missing` artifact as user-resolved.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn mark_artifact_user_resolved(pool: &SqlitePool, artifact_id: &str) -> DbResult<()> {
     sqlx::query(
         "UPDATE processing_artifacts SET state = 'user_resolved_missing' WHERE id = ? AND state = 'missing'"
@@ -243,7 +243,7 @@ pub async fn mark_artifact_user_resolved(pool: &SqlitePool, artifact_id: &str) -
 /// Update classification on an artifact (auto re-classification after override cleared, A6).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn update_classification(
     pool: &SqlitePool,
     artifact_id: &str,
@@ -281,7 +281,7 @@ pub struct ArtifactIdentityRow {
 /// fix-up input; small enough table that a full scan is fine).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn list_all_artifact_identities(pool: &SqlitePool) -> DbResult<Vec<ArtifactIdentityRow>> {
     let rows = sqlx::query_as::<_, ArtifactIdentityRow>(
         "SELECT id, project_id, path FROM processing_artifacts",
@@ -295,7 +295,7 @@ pub async fn list_all_artifact_identities(pool: &SqlitePool) -> DbResult<Vec<Art
 /// fix-up). Leaves every other field untouched.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn set_project_id(
     pool: &SqlitePool,
     artifact_id: &str,
@@ -312,7 +312,7 @@ pub async fn set_project_id(
 /// Update `tool_launch_id` for attribution (T022/T022b).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn set_tool_launch_id(
     pool: &SqlitePool,
     artifact_id: &str,
@@ -329,7 +329,7 @@ pub async fn set_tool_launch_id(
 /// Update the in-place rerun fields (A8): `content_hash`, `size_bytes`, `last_seen_at`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn update_artifact_inplace(
     pool: &SqlitePool,
     artifact_id: &str,
@@ -367,7 +367,7 @@ pub struct OverrideRow {
 /// Insert or replace a manual classification override (T014).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn upsert_override(
     pool: &SqlitePool,
     artifact_id: &str,
@@ -397,7 +397,7 @@ pub async fn upsert_override(
 /// Delete the manual override and return the deleted row if any (A6 clear path).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn clear_override(pool: &SqlitePool, artifact_id: &str) -> DbResult<Option<OverrideRow>> {
     let prior = sqlx::query_as::<_, OverrideRow>(
         "SELECT * FROM classification_overrides WHERE artifact_id = ?",
@@ -421,7 +421,7 @@ pub async fn clear_override(pool: &SqlitePool, artifact_id: &str) -> DbResult<Op
 /// is terminal (T022c). Only updates rows where `completed_at` is currently NULL.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn complete_tool_launch(
     pool: &SqlitePool,
     tool_launch_id: &str,
@@ -440,7 +440,7 @@ pub async fn complete_tool_launch(
 /// List artifact ids attributed to a given tool launch.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn list_artifact_ids_for_launch(
     pool: &SqlitePool,
     tool_launch_id: &str,

@@ -96,7 +96,7 @@ pub struct InsertEvidence<'a> {
 /// Upsert the `inbox_classifications` row for an item.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub async fn upsert_classification(
     pool: &SqlitePool,
     c: &UpsertClassification<'_>,
@@ -107,7 +107,7 @@ pub async fn upsert_classification(
 /// Connection-level variant of [`upsert_classification`].
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub async fn upsert_classification_conn(
     conn: &mut SqliteConnection,
     c: &UpsertClassification<'_>,
@@ -139,7 +139,7 @@ pub async fn upsert_classification_conn(
 /// Fetch the classification for an item, if any.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn get_classification(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -157,7 +157,7 @@ pub async fn get_classification(
 /// Insert a new evidence row.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub async fn insert_evidence(pool: &SqlitePool, ev: &InsertEvidence<'_>) -> DbResult<()> {
     insert_evidence_conn(pool.acquire().await?.as_mut(), ev).await
 }
@@ -165,7 +165,7 @@ pub async fn insert_evidence(pool: &SqlitePool, ev: &InsertEvidence<'_>) -> DbRe
 /// Connection-level variant of [`insert_evidence`].
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub async fn insert_evidence_conn(
     conn: &mut SqliteConnection,
     ev: &InsertEvidence<'_>,
@@ -204,7 +204,7 @@ const EVIDENCE_BATCH_SIZE: usize = 32766 / EVIDENCE_COLS;
 /// caller is expected to set `ev.id` before passing.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub async fn insert_evidence_batch(
     conn: &mut SqliteConnection,
     rows: &[InsertEvidence<'_>],
@@ -241,11 +241,11 @@ pub async fn insert_evidence_batch(
     Ok(())
 }
 
-/// Connection-level variant of [`delete_evidence_for_item`]. See [`insert_plan_conn`] in
+/// Connection-level variant of `delete_evidence_for_item`. See `insert_plan_conn` in
 /// `plans.rs` for the pattern.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn delete_evidence_for_item_conn(
     conn: &mut SqliteConnection,
     inbox_item_id: &str,
@@ -260,7 +260,7 @@ pub async fn delete_evidence_for_item_conn(
 /// Fetch all evidence rows for an item.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn list_evidence(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -338,7 +338,7 @@ pub async fn list_evidence(
 /// a proper source group and overrides can be re-applied via the UI.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn set_overrides(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -481,7 +481,7 @@ pub async fn set_overrides(
 /// evidence columns.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn set_file_override(
     pool: &SqlitePool,
     source_group_id: &str,
@@ -548,7 +548,7 @@ pub struct FileOverrideRow {
 /// they act on the staleness signal.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn list_file_overrides_for_group(
     pool: &SqlitePool,
     source_group_id: &str,
@@ -577,7 +577,7 @@ pub struct UpsertClassificationRow<'a> {
 /// Batch-upsert multiple classification rows in one statement per chunk.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub async fn upsert_classification_batch(
     conn: &mut SqliteConnection,
     rows: &[UpsertClassificationRow<'_>],
@@ -621,7 +621,7 @@ pub async fn upsert_classification_batch(
 /// SQLite's parameter limit.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn delete_evidence_for_items(
     conn: &mut SqliteConnection,
     inbox_item_ids: &[&str],
@@ -644,7 +644,7 @@ pub async fn delete_evidence_for_items(
 /// override was recorded — spec 041 R-4).
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn mark_override_stale(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -671,7 +671,7 @@ pub async fn mark_override_stale(
 /// taking a single `property_key`.
 ///
 /// # Errors
-/// Returns [\ `persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn mark_file_override_stale(
     pool: &SqlitePool,
     source_group_id: &str,
