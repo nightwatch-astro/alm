@@ -412,9 +412,8 @@ fn log_entry_schema_rejects_missing_required_id() {
         "source": "audit",
         "message": "test"
     });
-    let errors: Vec<_> = validator.iter_errors(&bad).collect();
     assert!(
-        !errors.is_empty(),
+        validator.iter_errors(&bad).next().is_some(),
         "log entry schema should reject instance missing required 'id' field"
     );
 }
