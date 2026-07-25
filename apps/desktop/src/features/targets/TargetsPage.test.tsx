@@ -444,38 +444,63 @@ describe('TargetsPage', () => {
   // server-side.  The wiring (search lifted above useTargets) must hold in
   // both worlds.
   it('H6. alias-only query "Caldwell 20" returns the NGC 7000 target via alias match', async () => {
-    mockListTargets.mockResolvedValue(
-      ok([
-        {
-          id: TARGET_ID,
-          effectiveLabel: 'NGC 7000',
-          primaryDesignation: 'NGC 7000',
-          objectType: 'emission_nebula',
-          raDeg: 314.75,
-          decDeg: 44.37,
-          // Caldwell 20 is the Caldwell alias for NGC 7000.
-          aliases: ['NGC 7000', 'Caldwell 20', 'C 20', 'North America Nebula'],
-          sessionCount: 0,
-        },
-        {
-          id: '550e8400-e29b-41d4-a716-446655440202',
-          effectiveLabel: 'M 31',
-          primaryDesignation: 'M 31',
-          objectType: 'galaxy',
-          aliases: ['M 31', 'NGC 224', 'Andromeda Galaxy'],
-          sessionCount: 0,
-        },
-      ]),
-    );
+    // Backend fixtures keep aliases (the real backend still searches them); the
+    // mock filters server-side over designation, label, AND aliases — mirroring
+    // `target.list(search)` (GF-11 / DS-16) — then strips `aliases` from the
+    // returned rows, which no longer cross the IPC boundary.
+    const backendRows = [
+      {
+        id: TARGET_ID,
+        effectiveLabel: 'NGC 7000',
+        primaryDesignation: 'NGC 7000',
+        objectType: 'emission_nebula',
+        raDeg: 314.75,
+        decDeg: 44.37,
+        // Caldwell 20 is the Caldwell alias for NGC 7000.
+        aliases: ['NGC 7000', 'Caldwell 20', 'C 20', 'North America Nebula'],
+        sessionCount: 0,
+      },
+      {
+        id: '550e8400-e29b-41d4-a716-446655440202',
+        effectiveLabel: 'M 31',
+        primaryDesignation: 'M 31',
+        objectType: 'galaxy',
+        aliases: ['M 31', 'NGC 224', 'Andromeda Galaxy'],
+        sessionCount: 0,
+      },
+    ];
+    mockListTargets.mockImplementation((search: string | null) => {
+      const rows = backendRows
+        .filter((t) => {
+          if (!search) return true;
+          const qNorm = normalizeDesig(search);
+          const qLower = search.toLowerCase();
+          return (
+            normalizeDesig(t.primaryDesignation).includes(qNorm) ||
+            normalizeDesig(t.effectiveLabel).includes(qNorm) ||
+            t.effectiveLabel.toLowerCase().includes(qLower) ||
+            t.aliases.some(
+              (a) =>
+                normalizeDesig(a).includes(qNorm) ||
+                a.toLowerCase().includes(qLower),
+            )
+          );
+        })
+        .map(({ aliases: _aliases, ...row }) => row);
+      return Promise.resolve(ok(rows));
+    });
     render(<TargetsPage />);
     await waitFor(() => screen.getByText('NGC 7000'));
 
     const searchInput = screen.getByPlaceholderText('Search targets…');
     fireEvent.change(searchInput, { target: { value: 'Caldwell 20' } });
 
-    // NGC 7000 matches via its alias; M 31 must NOT appear.
+    // Server-side search refetches asynchronously (GF-11 / DS-16): wait for the
+    // filtered list. NGC 7000 matches via its alias; M 31 must NOT appear.
+    await waitFor(() =>
+      expect(screen.queryByText('M 31')).not.toBeInTheDocument(),
+    );
     expect(screen.getByText('NGC 7000')).toBeInTheDocument();
-    expect(screen.queryByText('M 31')).not.toBeInTheDocument();
   });
 
   // ── MT: My Targets filter (#91) ──────────────────────────────────────────────

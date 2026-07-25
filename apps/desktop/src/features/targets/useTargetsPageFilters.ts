@@ -28,7 +28,6 @@ import { DEFAULT_TARGET_SORT } from './TargetsTable';
 import type { TargetSort, TargetSortCol } from './TargetsTable';
 import { useFavourites } from './useFavourites';
 import { deriveRowMoonPlanning } from './astro/row-planning';
-import { matchesSearch } from './target-search-helpers';
 import type { ObservingNight } from './astro/moon-state';
 import type {
   MoonAvoidanceParams,
@@ -166,12 +165,16 @@ export function useTargetsPageFilters(
     // #919: search must find any matching target immediately, even one not
     // yet revealed by the progressive-reveal loader — same carve-out
     // "My Targets" already gets.
-    const searchBase = q
+    //
+    // GF-11 / DS-16: the backend `target.list(search)` already scoped the list
+    // to the query (alias-aware, over the ~13k-alias catalog), so we do NOT
+    // re-filter with the client-side `matchesSearch` — that would drop
+    // alias-only matches whose designation/label don't contain the query.
+    let result = q
       ? myTargetsFilter === MY_TARGETS_VALUE
         ? tabTargets
         : plannerTargets
       : tabTargets;
-    let result = q ? searchBase.filter((t) => matchesSearch(t, q)) : tabTargets;
 
     // Filter-by-recommendation (spec 047 US3, FR-011): keep only targets whose
     // REAL derived recommendation is one of the selected categories.

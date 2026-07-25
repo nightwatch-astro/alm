@@ -10,7 +10,7 @@ use contracts_core::targets::TargetListItem;
 use contracts_core::ContractError;
 use targeting_resolver::cache;
 
-use super::{db_err, list_row_to_item};
+use super::{cache_err, db_err, list_row_to_item};
 
 /// `target.list` — list canonical targets (gen-3), ordered by
 /// `primary_designation`.
@@ -35,7 +35,7 @@ pub async fn list(
     let catalog = if let Some(cached) = crate::caches::catalog().load() {
         (*cached).clone()
     } else {
-        let rows = cache::list_all(pool).await.map_err(db_err)?;
+        let rows = cache::list_all(pool).await.map_err(cache_err)?;
         // #877: attach real session counts (planner Sessions column) — a target
         // with no linked session simply keeps the DTO default of 0.
         let session_counts = session_counts_by_target(pool).await?;
