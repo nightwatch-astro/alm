@@ -17,13 +17,12 @@ use thirtyfour::components::escape_string;
 use thirtyfour::prelude::*;
 
 use super::boot::{
-    app_binary_path, instance_env, pick_port_pair, LAUNCH_TIMEOUT, SCRIPT_TIMEOUT,
-    SCRIPT_TIMEOUT_PAGE_LOAD,
+    instance_env, pick_port_pair, LAUNCH_TIMEOUT, SCRIPT_TIMEOUT, SCRIPT_TIMEOUT_PAGE_LOAD,
 };
 use super::boot::{DEFAULT_FIND_TIMEOUT, APP_URL};
 use super::helpers::{
-    blocking_session_delete, drain_into, kill_driver_proc, preflight, reset_database,
-    reset_webview_storage, reset_window_state, spawn_tauri_webdriver, ProcLog,
+    app_binary_path, blocking_session_delete, drain_into, kill_driver_proc, preflight,
+    reset_database, reset_webview_storage, reset_window_state, spawn_tauri_webdriver, ProcLog,
 };
 #[cfg(target_os = "windows")]
 use super::helpers::{find_leveldb_dir, leveldb_data_size};
