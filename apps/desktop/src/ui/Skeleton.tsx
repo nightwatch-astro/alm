@@ -56,9 +56,9 @@ export const Skeleton = forwardRef<HTMLDivElement, SkeletonProps>(
   ) {
     const cssVars: CSSProperties = {
       ...style,
-      ...(len(width) ? { ['--pv-skel-w' as string]: len(width) } : null),
-      ...(len(height) ? { ['--pv-skel-h' as string]: len(height) } : null),
-      ...(radius ? { ['--pv-skel-r' as string]: radius } : null),
+      ...(len(width) ? { ['--skel-w' as string]: len(width) } : null),
+      ...(len(height) ? { ['--skel-h' as string]: len(height) } : null),
+      ...(radius ? { ['--skel-r' as string]: radius } : null),
     };
     return (
       <div

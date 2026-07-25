@@ -29,10 +29,10 @@ export const group = style({
 });
 
 // Base shimmer block — geometry overridden per-instance via CSS custom
-// properties set inline (--pv-skel-w / -h / -r).
+// properties set inline (--skel-w / -h / -r).
 const skeletonBase = {
   display: 'block',
-  width: 'var(--pv-skel-w, 100%)',
+  width: 'var(--skel-w, 100%)',
   backgroundColor: vars.chip,
   backgroundImage: `linear-gradient(90deg, ${vars.chip} 0%, ${vars.surfaceRaised} 50%, ${vars.chip} 100%)`,
   backgroundSize: '200% 100%',
@@ -49,19 +49,19 @@ const skeletonBase = {
 export const skeletonVariants = styleVariants({
   line: {
     ...skeletonBase,
-    height: 'var(--pv-skel-h, var(--pv-sp-3))',
-    borderRadius: 'var(--pv-skel-r, var(--pv-radius-sm))',
+    height: 'var(--skel-h, var(--pv-sp-3))',
+    borderRadius: 'var(--skel-r, var(--pv-radius-sm))',
   },
   block: {
     ...skeletonBase,
-    height: 'var(--pv-skel-h, var(--pv-row-height))',
-    borderRadius: 'var(--pv-skel-r, var(--pv-radius-md))',
+    height: 'var(--skel-h, var(--pv-row-height))',
+    borderRadius: 'var(--skel-r, var(--pv-radius-md))',
   },
   circle: {
     ...skeletonBase,
-    width: 'var(--pv-skel-w, var(--pv-row-height))',
-    height: 'var(--pv-skel-h, var(--pv-row-height))',
-    borderRadius: 'var(--pv-skel-r, 50%)',
+    width: 'var(--skel-w, var(--pv-row-height))',
+    height: 'var(--skel-h, var(--pv-row-height))',
+    borderRadius: 'var(--skel-r, 50%)',
     flex: 'none',
   },
 });

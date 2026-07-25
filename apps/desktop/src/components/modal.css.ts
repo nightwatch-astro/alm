@@ -29,7 +29,7 @@ export const popup = style({
   zIndex: 501,
   display: 'flex',
   flexDirection: 'column',
-  width: 'min(94vw, var(--pv-modal-w, 640px))',
+  width: 'min(94vw, var(--modal-w, 640px))',
   maxHeight: '88vh',
   background: vars.surfaceRaised,
   border: `1px solid ${vars.border}`,
@@ -40,10 +40,10 @@ export const popup = style({
 
 /** Width presets — keyed on ModalSize union. */
 export const sizeVariants = styleVariants({
-  sm: { '--pv-modal-w': '420px' } as Record<string, string>,
-  md: { '--pv-modal-w': '640px' } as Record<string, string>,
-  lg: { '--pv-modal-w': '920px' } as Record<string, string>,
-  xl: { '--pv-modal-w': '1200px' } as Record<string, string>,
+  sm: { '--modal-w': '420px' } as Record<string, string>,
+  md: { '--modal-w': '640px' } as Record<string, string>,
+  lg: { '--modal-w': '920px' } as Record<string, string>,
+  xl: { '--modal-w': '1200px' } as Record<string, string>,
   auto: { width: 'auto', maxWidth: '94vw' },
 });
 
