@@ -281,8 +281,8 @@ export function ArchivePage() {
         <TableStateGate
           loading={loading}
           error={error ? error.message : null}
-          isEmpty={entries.length === 0}
-          isFilteredEmpty={filtered.length === 0}
+          isEmpty={filtered.length === 0}
+          isFilteredEmpty={search.trim().length > 0 && filtered.length === 0}
           skeletonLabel={m.common_loading()}
           errorEmpty={<EmptyState title={m.archive_load_error()} />}
           empty={
