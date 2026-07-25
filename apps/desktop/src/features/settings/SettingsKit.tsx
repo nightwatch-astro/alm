@@ -203,6 +203,7 @@ export function RestoreDefaultsBtn({
       onClick={() => void handleClick()}
       title={scopeLabel}
       aria-label={scopeLabel ? `${label} — ${scopeLabel}` : undefined}
+      data-testid="restore-defaults-btn"
     >
       {label}
     </Btn>

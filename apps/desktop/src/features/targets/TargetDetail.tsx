@@ -160,7 +160,7 @@ export function TargetDetail({
 
   if (loadState.status === 'loading') {
     return (
-      <DetailPane>
+      <DetailPane data-testid="target-detail">
         <Skeleton count={5} label={m.common_loading()} />
       </DetailPane>
     );
@@ -168,7 +168,7 @@ export function TargetDetail({
 
   if (loadState.status === 'error') {
     return (
-      <DetailPane>
+      <DetailPane data-testid="target-detail">
         <EmptyState
           title={m.settings_advanced_log_error()}
           desc={loadState.message}
@@ -285,7 +285,12 @@ export function TargetDetail({
   );
 
   return (
-    <DetailPanel fill title={titleContent} titleExtra={titleExtraContent}>
+    <DetailPanel
+      fill
+      title={titleContent}
+      titleExtra={titleExtraContent}
+      data-testid="target-detail"
+    >
       {/* #816 → #1107: this div used to be the pane's own scroll region,
           because DetailPanel rendered `children` as a bare sibling of the
           header with nothing establishing overflow — so everything below

@@ -205,7 +205,10 @@ export function PerTypeDestinationPatterns() {
   };
 
   return (
-    <SettingsSection title={m.settings_naming_pertype_title()}>
+    <SettingsSection
+      title={m.settings_naming_pertype_title()}
+      data-testid="per-type-destination-patterns"
+    >
       {FRAME_TYPE_CLASSES.map((cls) => {
         const chips = chipsByClass[cls];
         const isOverridden = !chipsAreEmpty(chips);
