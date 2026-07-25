@@ -51,7 +51,6 @@ function item(
     objectType: 'other',
     raDeg,
     decDeg,
-    aliases: [],
     sessionCount: 0,
     ...overrides,
   };

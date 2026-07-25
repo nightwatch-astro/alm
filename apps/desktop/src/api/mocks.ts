@@ -1131,8 +1131,9 @@ const mockHandlers = {
     return mockCalibrationTolerances;
   },
   // ── gen-3 target commands (spec 036) ──────────────────────────────────────
-  target_list: async () => {
-    return [
+  target_list: async (_args) => {
+    const search = (_args as { search?: string | null } | undefined)?.search;
+    const items = [
       {
         id: 'tgt-m31',
         effectiveLabel: 'M 31',
@@ -1142,7 +1143,6 @@ const mockHandlers = {
         decDeg: 41.269,
         constellation: 'Andromeda',
         magnitude: 3.44,
-        aliases: ['M 31', 'NGC 224', 'Andromeda Galaxy'],
         sessionCount: 3,
       },
       {
@@ -1154,10 +1154,16 @@ const mockHandlers = {
         decDeg: 44.52,
         constellation: 'Cygnus',
         magnitude: 4.0,
-        aliases: ['NGC 7000', 'North America Nebula'],
         sessionCount: 5,
       },
     ];
+    if (!search) return items;
+    const q = search.toLowerCase();
+    return items.filter(
+      (t) =>
+        t.primaryDesignation.toLowerCase().includes(q) ||
+        t.effectiveLabel.toLowerCase().includes(q),
+    );
   },
   target_get: async (_args) => {
     // tauri-specta wraps every named parameter as a top-level object key, so
@@ -1549,6 +1555,11 @@ const mockHandlers = {
       bytes: 0,
     };
   },
+
+  entity_names: async () => ({
+    // Batch display-name lookup (GF-7 / DS-14). Returns empty map in stub.
+    names: {} as Record<string, string>,
+  }),
 
   // ── Archive commands (spec 017 WP-B) ──────────────────────────────────────
   archive_list: async () => {

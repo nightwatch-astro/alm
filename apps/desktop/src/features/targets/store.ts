@@ -91,11 +91,10 @@ export interface TargetsListState extends QueryState<TargetListItem[]> {
  * Subscribe to the targets (Planner catalogue) list.
  *
  * `search` is forwarded to the backend `target.list` endpoint (GF-11 / DS-16)
- * once the binding supports it (perf/ipc-surface, #1543) so alias-aware
- * filtering happens server-side. The query key includes the normalized search
- * so each distinct query is cached independently. Until #1543 lands the
- * backend ignores the arg and the client-side filter in useTargetsPageFilters
- * covers alias matching.
+ * so alias-aware filtering happens server-side rather than over the full
+ * ~13k-alias serialized payload. The query key includes the normalized search
+ * so each distinct query is cached independently. Pass `undefined` or `null`
+ * for the unfiltered catalog.
  *
  * `refetch` replaces the old manual `load()` re-fetch — `TargetsPage` calls it
  * after "Add target" and passes it as `TargetDetailV2`'s `onMutated` so an
@@ -108,7 +107,7 @@ export function useTargets(search?: string): TargetsListState {
     // keepPreviousData prevents the table from flashing a skeleton while a
     // new search key resolves — the previous page stays visible.
     queryKey: [...queryKeys.targets.list(), normalizedSearch],
-    queryFn: async () => unwrap(await commands.targetList()),
+    queryFn: async () => unwrap(await commands.targetList(normalizedSearch)),
     placeholderData: keepPreviousData,
   });
   return {

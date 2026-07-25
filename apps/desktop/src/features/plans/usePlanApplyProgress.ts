@@ -11,6 +11,12 @@
  * `tauri::ipc::Channel<OperationEvent>` long-operation contract: the backend
  * (or the mock IPC) emits per-item events as the filesystem plan is applied and
  * this hook surfaces a live item counter + terminal outcome to the UI.
+ *
+ * DS-16 throttle: high-frequency `item_applied` / `item_failed` / `progress`
+ * events are accumulated in a ref and flushed on rAF (or a 200 ms fallback
+ * when rAF is unavailable) to keep React re-renders below one per animation
+ * frame during large plan applies.  Terminal and warning events always flush
+ * immediately.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -36,6 +42,9 @@ const TERMINAL_PLAN_STATES = new Set([
  * event channel (see `resume` below). Matches the Inbox review overlay's
  * own open-plan poll cadence (InboxPage.tsx) for one consistent rhythm. */
 const RESUME_POLL_MS = 1000;
+
+/** Flush interval cap when rAF is unavailable (e.g. background tabs). */
+const RAF_FALLBACK_MS = 200;
 
 export interface PlanApplyProgress {
   /** Whether an apply is currently streaming. */
@@ -107,6 +116,17 @@ function readStringField(payload: unknown, field: string): string | null {
   return null;
 }
 
+/**
+ * Pending delta accumulated between rAF flushes (DS-16).
+ * Carries ONLY the counters that can batch safely; flags that need immediate
+ * attention (paused, terminal) always trigger a synchronous flush.
+ */
+interface PendingDelta {
+  appliedDelta: number;
+  failedDelta: number;
+  lastEventType: OperationEvent['eventType'] | null;
+}
+
 export function usePlanApplyProgress() {
   const [progress, setProgress] = useState<PlanApplyProgress>(IDLE);
   // Issue #744 (FR-002): `plan.resume` returns no event channel, so a
@@ -115,6 +135,12 @@ export function usePlanApplyProgress() {
   // `stopResumePolling` is stable across renders and effect cleanup always
   // sees the current timer.
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // DS-16: accumulated counter delta between rAF flushes.
+  const pendingRef = useRef<PendingDelta | null>(null);
+  // rAF / fallback timer handle for the throttle flush.
+  const flushHandleRef = useRef<number | ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const stopResumePolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
@@ -123,14 +149,59 @@ export function usePlanApplyProgress() {
     }
   }, []);
 
+  // Cancel any pending rAF/timeout flush and clear the delta on unmount or
+  // reset so stale deltas never land after a new run starts.
+  const cancelPendingFlush = useCallback(() => {
+    if (flushHandleRef.current !== null) {
+      if (typeof flushHandleRef.current === 'number') {
+        cancelAnimationFrame(flushHandleRef.current);
+      } else {
+        clearTimeout(flushHandleRef.current);
+      }
+      flushHandleRef.current = null;
+    }
+    pendingRef.current = null;
+  }, []);
+
   // Stop polling if the component unmounts mid-resume (e.g. the overlay
   // closes) — never let an interval outlive its hook instance.
-  useEffect(() => stopResumePolling, [stopResumePolling]);
+  useEffect(
+    () => () => {
+      stopResumePolling();
+      cancelPendingFlush();
+    },
+    [stopResumePolling, cancelPendingFlush],
+  );
 
   const reset = useCallback(() => {
     stopResumePolling();
+    cancelPendingFlush();
     setProgress(IDLE);
-  }, [stopResumePolling]);
+  }, [stopResumePolling, cancelPendingFlush]);
+
+  /** Flush the pending delta into React state. */
+  const flushPending = useCallback(() => {
+    flushHandleRef.current = null;
+    const delta = pendingRef.current;
+    pendingRef.current = null;
+    if (!delta) return;
+    setProgress((prev) => ({
+      ...prev,
+      applied: prev.applied + delta.appliedDelta,
+      failed: prev.failed + delta.failedDelta,
+      lastEventType: delta.lastEventType ?? prev.lastEventType,
+    }));
+  }, []);
+
+  /** Schedule a rAF flush if one is not already queued. */
+  const scheduleFlush = useCallback(() => {
+    if (flushHandleRef.current !== null) return;
+    if (typeof requestAnimationFrame !== 'undefined') {
+      flushHandleRef.current = requestAnimationFrame(flushPending);
+    } else {
+      flushHandleRef.current = setTimeout(flushPending, RAF_FALLBACK_MS);
+    }
+  }, [flushPending]);
 
   const run = useCallback(
     async (args: {
@@ -138,75 +209,119 @@ export function usePlanApplyProgress() {
       approvalToken?: string;
     }): Promise<PlanApplyResponse | null> => {
       stopResumePolling();
+      cancelPendingFlush();
       setProgress({ ...IDLE, running: true });
       try {
         const response = await applyPlan({
           id: args.id,
           approvalToken: args.approvalToken,
           onEvent: (event: OperationEvent) => {
-            setProgress((prev) => {
-              const next: PlanApplyProgress = {
-                ...prev,
-                lastEventType: event.eventType,
-              };
-              switch (event.eventType) {
-                case 'item_started': {
-                  const total = readItemsTotal(event.payload);
-                  if (total != null) next.total = total;
-                  const runId = readStringField(event.payload, 'runId');
-                  if (runId != null) next.runId = runId;
-                  break;
-                }
-                case 'progress': {
-                  // Batch progress tick from the group-commit flush (kyo7.52).
-                  // Only itemsApplied is carried here — failures are counted
-                  // by individual item_failed emits to avoid double-counting
-                  // (itemsFailed is always 0 in the Progress envelope).
-                  const p = event.payload as Record<string, unknown>;
-                  if (typeof p.itemsApplied === 'number')
-                    next.applied = prev.applied + p.itemsApplied;
-                  break;
-                }
-                case 'item_applied':
-                  next.applied = prev.applied + 1;
-                  break;
-                case 'item_failed':
-                  next.failed = prev.failed + 1;
-                  break;
-                case 'warning': {
-                  // Pause condition (R-Pause-1): volume unavailable, disk
-                  // full, or a stale source file. The run has halted; it
-                  // stays `running` (busy) until cancelled or resumed.
-                  next.paused = true;
-                  next.pauseReason = readStringField(
-                    event.payload,
-                    'pauseReason',
-                  );
-                  const runId = readStringField(event.payload, 'runId');
-                  if (runId != null) next.runId = runId;
-                  break;
-                }
-                case 'completed':
-                  next.running = false;
-                  next.terminal = 'completed';
-                  break;
-                case 'failed':
-                  next.running = false;
-                  next.terminal = 'failed';
-                  break;
-                default:
-                  break;
+            switch (event.eventType) {
+              case 'item_started': {
+                // item_started is infrequent and carries the total count —
+                // flush any pending delta immediately, then apply.
+                flushPending();
+                const total = readItemsTotal(event.payload);
+                const runId = readStringField(event.payload, 'runId');
+                setProgress((prev) => ({
+                  ...prev,
+                  lastEventType: event.eventType,
+                  total: total ?? prev.total,
+                  runId: runId ?? prev.runId,
+                }));
+                break;
               }
-              return next;
-            });
+
+              case 'progress': {
+                // Batch progress tick from the group-commit flush (kyo7.52).
+                // Accumulate in the delta ref; flush on next rAF.
+                const p = event.payload as Record<string, unknown>;
+                const delta = pendingRef.current ?? {
+                  appliedDelta: 0,
+                  failedDelta: 0,
+                  lastEventType: null,
+                };
+                if (typeof p.itemsApplied === 'number')
+                  delta.appliedDelta += p.itemsApplied;
+                delta.lastEventType = event.eventType;
+                pendingRef.current = delta;
+                scheduleFlush();
+                break;
+              }
+
+              case 'item_applied': {
+                const delta = pendingRef.current ?? {
+                  appliedDelta: 0,
+                  failedDelta: 0,
+                  lastEventType: null,
+                };
+                delta.appliedDelta += 1;
+                delta.lastEventType = event.eventType;
+                pendingRef.current = delta;
+                scheduleFlush();
+                break;
+              }
+
+              case 'item_failed': {
+                const delta = pendingRef.current ?? {
+                  appliedDelta: 0,
+                  failedDelta: 0,
+                  lastEventType: null,
+                };
+                delta.failedDelta += 1;
+                delta.lastEventType = event.eventType;
+                pendingRef.current = delta;
+                scheduleFlush();
+                break;
+              }
+
+              case 'warning': {
+                // Pause condition (R-Pause-1): always flush immediately so the
+                // UI reflects the pause before the next animation frame.
+                flushPending();
+                const pauseReason = readStringField(
+                  event.payload,
+                  'pauseReason',
+                );
+                const runId = readStringField(event.payload, 'runId');
+                setProgress((prev) => ({
+                  ...prev,
+                  lastEventType: event.eventType,
+                  paused: true,
+                  pauseReason,
+                  runId: runId ?? prev.runId,
+                }));
+                break;
+              }
+
+              case 'completed':
+              case 'failed': {
+                // Terminal: flush pending counts, then set terminal state.
+                flushPending();
+                setProgress((prev) => ({
+                  ...prev,
+                  lastEventType: event.eventType,
+                  running: false,
+                  terminal:
+                    event.eventType === 'completed' ? 'completed' : 'failed',
+                }));
+                break;
+              }
+
+              default:
+                break;
+            }
           },
         });
-        // Ensure the running flag clears even if no terminal event arrived.
+        // Flush any remaining delta and ensure running clears even when no
+        // terminal event arrived.
+        flushPending();
         setProgress((prev) =>
           prev.running ? { ...prev, running: false } : prev,
         );
         return response;
       } catch {
+        flushPending();
         setProgress((prev) => ({
           ...prev,
           running: false,
@@ -215,7 +330,7 @@ export function usePlanApplyProgress() {
         return null;
       }
     },
-    [stopResumePolling],
+    [stopResumePolling, cancelPendingFlush, flushPending, scheduleFlush],
   );
 
   /**

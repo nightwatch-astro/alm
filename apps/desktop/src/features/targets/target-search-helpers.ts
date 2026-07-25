@@ -25,16 +25,17 @@ export function normalizeDesig(s: string): string {
 }
 
 /**
- * Alias-aware search (#103b, #29): tests whether a target row matches a query.
+ * Designation- and label-aware match for the client-side filter.
  *
  * Matching strategy:
  *  1. Normalized exact/prefix/substring match on the collapsed designation and
  *     label (so "M31" matches "M 31" and vice versa).
  *  2. Unnormalized substring on effectiveLabel for proper names
  *     ("Andromeda" substring of "Andromeda Galaxy").
- *  3. Normalized and unnormalized substring over each alias in `t.aliases`
- *     so a proper-name query ("Andromeda") resolves to M31 even when
- *     effectiveLabel is the bare designation.
+ *
+ * Alias matching moved server-side via `target.list(search)` (GF-11 / DS-16):
+ * `aliases` is no longer serialized on `TargetListItem`, so the backend owns
+ * the alias-aware pass over the ~13k-alias catalog.
  */
 export function matchesSearch(t: TargetListItem, query: string): boolean {
   const qNorm = normalizeDesig(query);
@@ -44,11 +45,5 @@ export function matchesSearch(t: TargetListItem, query: string): boolean {
   // Plain lowercase substring on effectiveLabel for proper names
   // ("andromeda" in "Andromeda Galaxy") without whitespace collapsing.
   if (t.effectiveLabel.toLowerCase().includes(qLower)) return true;
-  // Search over all aliases carried on the list item (backend-enriched since #29).
-  const aliases = t.aliases ?? [];
-  for (const alias of aliases) {
-    if (normalizeDesig(alias).includes(qNorm)) return true;
-    if (alias.toLowerCase().includes(qLower)) return true;
-  }
   return false;
 }

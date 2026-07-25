@@ -58,32 +58,11 @@ vi.mock('@/bindings/index', () => ({
   commands: {
     auditList: mockList,
     auditExport: mockExport,
-    projectsGet: vi.fn().mockResolvedValue({
-      status: 'error',
-      error: {
-        code: 'entity.not_found',
-        message: 'not found',
-        severity: 'warning',
-        retryable: false,
-      },
-    }),
-    targetsGet: vi.fn().mockResolvedValue({
-      status: 'error',
-      error: {
-        code: 'entity.not_found',
-        message: 'not found',
-        severity: 'warning',
-        retryable: false,
-      },
-    }),
-    plansGet: vi.fn().mockResolvedValue({
-      status: 'error',
-      error: {
-        code: 'entity.not_found',
-        message: 'not found',
-        severity: 'warning',
-        retryable: false,
-      },
+    // #809 (GF-7): entity.names batch — default to empty map so unresolved
+    // refs fall back to the raw `entityType · entityId` text.
+    entityNames: vi.fn().mockResolvedValue({
+      status: 'ok',
+      data: { names: {} },
     }),
     inventoryList: vi.fn().mockResolvedValue({
       status: 'ok',
@@ -436,9 +415,9 @@ describe('AuditLog', () => {
 
   it('resolves a project entity to its display name (#803)', async () => {
     const { commands } = await import('@/bindings/index');
-    vi.mocked(commands.projectsGet).mockResolvedValueOnce({
+    vi.mocked(commands.entityNames).mockResolvedValueOnce({
       status: 'ok',
-      data: { id: 'proj-abc', name: 'J5 Lifecycle Test' } as never,
+      data: { names: { 'project:proj-abc': 'J5 Lifecycle Test' } },
     });
     mockList.mockResolvedValue({
       status: 'ok',

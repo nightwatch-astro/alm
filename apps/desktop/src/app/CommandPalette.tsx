@@ -183,7 +183,7 @@ export function CommandPalette() {
     if (Date.now() - targetsFetchedAtRef.current < TARGET_CACHE_TTL_MS) return;
     let cancelled = false;
     commands
-      .targetList()
+      .targetList(null)
       .then(unwrap)
       .then((items) => {
         if (cancelled) return;

@@ -32,7 +32,7 @@ use crate::commands::artifacts::{
     artifact_classify, artifact_list, artifact_mark_resolved, artifact_watcher_attach,
     artifact_watcher_detach, artifact_watcher_refresh,
 };
-use crate::commands::audit::{audit_export, audit_list};
+use crate::commands::audit::{audit_export, audit_list, entity_names};
 use crate::commands::calibration::{
     calibration_masters_archive_plan_generate, calibration_masters_archive_plan_generate_restore,
     calibration_masters_get, calibration_masters_list, calibration_match_assign,
@@ -289,6 +289,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         // audit
         audit_list,
         audit_export,
+        entity_names,
         // log stream (spec 019)
         log_recent,
         log_export,
@@ -538,6 +539,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         // audit
         audit_list,
         audit_export,
+        entity_names,
         // log stream (spec 019)
         log_recent,
         log_export,
