@@ -248,6 +248,15 @@ pub async fn write_settings_refusal(
 
 // ── restore_defaults ──────────────────────────────────────────────────────
 
+/// A settings key whose current value differs from its default, staged for the
+/// single all-or-nothing restore transaction in `restore_defaults`.
+struct PendingWrite {
+    key: String,
+    current_val: Value,
+    default_val: Value,
+    is_protection_default: bool,
+}
+
 /// Restore one or more settings keys to their in-code defaults (T027).
 ///
 /// - Empty `keys` slice restores all v1 keys.
@@ -286,13 +295,6 @@ pub async fn restore_defaults(
 
     // Read current values outside the transaction — reads are cheap and
     // non-destructive; only the writes must be atomic.
-    struct PendingWrite {
-        key: String,
-        current_val: Value,
-        default_val: Value,
-        is_protection_default: bool,
-    }
-
     let mut pending: Vec<PendingWrite> = Vec::new();
     let mut already_at_default = Vec::new();
 
@@ -311,7 +313,12 @@ pub async fn restore_defaults(
         if settings_value_eq(&current_val, &default_val) {
             already_at_default.push(key.clone());
         } else {
-            pending.push(PendingWrite { key: key.clone(), current_val, default_val, is_protection_default });
+            pending.push(PendingWrite {
+                key: key.clone(),
+                current_val,
+                default_val,
+                is_protection_default,
+            });
         }
     }
 
@@ -321,7 +328,7 @@ pub async fn restore_defaults(
         for pw in &pending {
             if pw.is_protection_default {
                 protection_repo::set_protection_default_with_conn(
-                    &mut *tx,
+                    &mut tx,
                     GLOBAL_PROTECTION_DEFAULT_SCOPE,
                     &pw.key,
                     &pw.default_val,
@@ -329,9 +336,7 @@ pub async fn restore_defaults(
                 .await
                 .map_err(db_err)?;
             } else {
-                repo::set_raw_with_conn(&mut *tx, &pw.key, &pw.default_val)
-                    .await
-                    .map_err(db_err)?;
+                repo::set_raw_with_conn(&mut tx, &pw.key, &pw.default_val).await.map_err(db_err)?;
             }
         }
         tx.commit().await.map_err(|e| db_err(e.into()))?;
