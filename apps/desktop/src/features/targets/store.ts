@@ -11,7 +11,12 @@
  * props (`onMutated`).
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import { queryKeys } from '@/data/queryKeys';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
@@ -68,25 +73,51 @@ export interface QueryState<T> {
 /** `useTargets()`'s state plus a manual refetch (e.g. after "Add target"). */
 export interface TargetsListState extends QueryState<TargetListItem[]> {
   refetch: () => void;
+  /**
+   * `true` whenever a fetch is in flight, INCLUDING background refetches that
+   * keep the previous data visible (unlike `loading`, which mirrors `isLoading`
+   * and is false during those refetches). The stale-`?selected=` cleanup gate
+   * in `TargetsPage` needs this: after "Add target" the list refetches with the
+   * old rows still shown, and the just-added id is legitimately absent until
+   * the refetch lands — clearing the selection during that window drops the
+   * navigation the add flow just performed.
+   */
+  fetching: boolean;
 }
 
 // ── Query hooks ───────────────────────────────────────────────────────────────
 
 /**
- * Subscribe to the full targets (Planner catalogue) list.
+ * Subscribe to the targets (Planner catalogue) list.
+ *
+ * `search` is forwarded to the backend `target.list` endpoint (GF-11 / DS-16)
+ * once the binding supports it (perf/ipc-surface, #1543) so alias-aware
+ * filtering happens server-side. The query key includes the normalized search
+ * so each distinct query is cached independently. Until #1543 lands the
+ * backend ignores the arg and the client-side filter in useTargetsPageFilters
+ * covers alias matching.
  *
  * `refetch` replaces the old manual `load()` re-fetch — `TargetsPage` calls it
  * after "Add target" and passes it as `TargetDetailV2`'s `onMutated` so an
  * alias/display-alias edit refreshes the list's search/label data too.
  */
-export function useTargets(): TargetsListState {
-  const { data, isFetching, error, refetch } = useQuery({
-    queryKey: queryKeys.targets.list(),
+export function useTargets(search?: string): TargetsListState {
+  const normalizedSearch = search?.trim() || null;
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
+    // Include normalizedSearch in the key so each query is cached independently;
+    // keepPreviousData prevents the table from flashing a skeleton while a
+    // new search key resolves — the previous page stays visible.
+    queryKey: [...queryKeys.targets.list(), normalizedSearch],
     queryFn: async () => unwrap(await commands.targetList()),
+    placeholderData: keepPreviousData,
   });
   return {
     data,
-    loading: isFetching,
+    // isLoading is true only on the very first load (no data yet); isFetching
+    // would be true on every background refetch including search key changes,
+    // which would flash a skeleton during type-ahead with keepPreviousData.
+    loading: isLoading,
+    fetching: isFetching,
     error: error ?? undefined,
     refetch: () => void refetch(),
   };

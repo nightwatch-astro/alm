@@ -408,6 +408,47 @@ describe('TargetsPage', () => {
     expect(screen.queryByText('NGC 7000')).not.toBeInTheDocument();
   });
 
+  // H6: alias-only query — the server search path (GF-11 / DS-16) requires that
+  // typing an alias that is NOT the primary designation or effectiveLabel still
+  // resolves the target.  On main the aliases field on TargetListItem covers
+  // this client-side; once perf/ipc-surface (#1543) lands the backend filters
+  // server-side.  The wiring (search lifted above useTargets) must hold in
+  // both worlds.
+  it('H6. alias-only query "Caldwell 20" returns the NGC 7000 target via alias match', async () => {
+    mockListTargets.mockResolvedValue(
+      ok([
+        {
+          id: TARGET_ID,
+          effectiveLabel: 'NGC 7000',
+          primaryDesignation: 'NGC 7000',
+          objectType: 'emission_nebula',
+          raDeg: 314.75,
+          decDeg: 44.37,
+          // Caldwell 20 is the Caldwell alias for NGC 7000.
+          aliases: ['NGC 7000', 'Caldwell 20', 'C 20', 'North America Nebula'],
+          sessionCount: 0,
+        },
+        {
+          id: '550e8400-e29b-41d4-a716-446655440202',
+          effectiveLabel: 'M 31',
+          primaryDesignation: 'M 31',
+          objectType: 'galaxy',
+          aliases: ['M 31', 'NGC 224', 'Andromeda Galaxy'],
+          sessionCount: 0,
+        },
+      ]),
+    );
+    render(<TargetsPage />);
+    await waitFor(() => screen.getByText('NGC 7000'));
+
+    const searchInput = screen.getByPlaceholderText('Search targets…');
+    fireEvent.change(searchInput, { target: { value: 'Caldwell 20' } });
+
+    // NGC 7000 matches via its alias; M 31 must NOT appear.
+    expect(screen.getByText('NGC 7000')).toBeInTheDocument();
+    expect(screen.queryByText('M 31')).not.toBeInTheDocument();
+  });
+
   // ── MT: My Targets filter (#91) ──────────────────────────────────────────────
 
   it('MT1. My Targets filter toggles between full catalog and stub empty state', async () => {
@@ -690,6 +731,44 @@ describe('TargetsPage stale-selection cleanup (#735)', () => {
       expect(mockNavigate).toHaveBeenCalledWith(
         expect.objectContaining({ replace: true }),
       ),
+    );
+  });
+
+  // #1584 regression: the add-target E2E journey (targets_ui_add_target_
+  // no_duplicate_on_reconfirm) hung because the list uses `keepPreviousData`,
+  // so while a fetch for a fresh query key is in flight the OLD rows stay
+  // visible (status 'loaded') and `isLoading` is false. An id that is
+  // legitimately not-yet-in the stale rows must NOT be cleared during that
+  // fetch window, or the cleanup drops the navigation the add flow just made
+  // and the E2E `wait_url_contains("selected=")` times out.
+  it('keeps a not-yet-present ?selected= while a fetch for a new query key is in flight', async () => {
+    const newId = '550e8400-e29b-41d4-a716-4466554403aa';
+    // Initial list resolves with the stale rows (no newId); the next fetch
+    // (triggered by the search-key change below) never resolves, so the query
+    // sits in the isFetching-with-stale-data window the E2E add flow lands in.
+    mockListTargets
+      .mockResolvedValueOnce(ok(listItems))
+      .mockReturnValue(new Promise(() => {}));
+
+    render(<TargetsPage />);
+    await waitFor(() =>
+      expect(screen.getByText('NGC 7000')).toBeInTheDocument(),
+    );
+
+    mockNavigate.mockClear();
+    // Model the add flow: the new id becomes selected AS the refetch starts.
+    // A search change forks a new query key; keepPreviousData keeps the stale
+    // rows on screen while the new fetch (never resolving) is in flight, so the
+    // status is 'loaded' with the just-added id still absent.
+    mockSelectedId.current = newId;
+    fireEvent.change(screen.getByPlaceholderText('Search targets…'), {
+      target: { value: 'anything' },
+    });
+
+    // The selection must survive: no stale-cleanup navigate while fetching.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ replace: true }),
     );
   });
 });

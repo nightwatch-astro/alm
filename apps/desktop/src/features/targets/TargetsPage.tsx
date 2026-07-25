@@ -134,7 +134,13 @@ export function TargetsPage() {
     void loadGuidanceParams();
   }, []);
 
-  const targetsQuery = useTargets();
+  // search state is lifted above useTargets() so the query can be forwarded to
+  // the backend (GF-11 / DS-16, lands with perf/ipc-surface #1543). Currently
+  // the backend binding ignores it and client-side alias matching covers
+  // this path; once #1543's bindings land the store passes it through.
+  const [search, setSearch] = useState('');
+
+  const targetsQuery = useTargets(search);
   const load = targetsQuery.refetch;
   const listState: ListState = targetsQuery.error
     ? { status: 'error', message: m.targets_page_error_load() }
@@ -145,8 +151,6 @@ export function TargetsPage() {
   const {
     myTargetsFilter,
     setMyTargetsFilter,
-    search,
-    setSearch,
     sort,
     handleSort,
     enabledCatalogues,
@@ -158,7 +162,13 @@ export function TargetsPage() {
     favouriteIds,
     toggleFavourite,
     isMyTargets,
-  } = useTargetsPageFilters(listState, night, guidanceParams);
+  } = useTargetsPageFilters(
+    listState,
+    night,
+    guidanceParams,
+    search,
+    setSearch,
+  );
 
   const onSelect = (id: string) =>
     navigate({ search: (prev) => ({ ...prev, selected: id }) });
@@ -174,9 +184,16 @@ export function TargetsPage() {
 
   // #735: stale-id cleanup — matched against the FULL query data rather than
   // the progressively-revealed slice.
+  //
+  // #1584: also treat any in-flight fetch as "not yet settled". The list uses
+  // `keepPreviousData`, so during the post-"Add target" refetch the status is
+  // still 'loaded' with the OLD rows — the just-added id is absent until the
+  // refetch lands. Without this guard the cleanup would clear the `?selected=`
+  // the add flow just navigated to, hanging the add-target E2E journey.
   useStaleSelectionCleanup(
     selected,
-    listState.status !== 'loaded' ||
+    targetsQuery.fetching ||
+      listState.status !== 'loaded' ||
       listState.items.some((t) => t.id === selected),
     clearSelection,
   );
