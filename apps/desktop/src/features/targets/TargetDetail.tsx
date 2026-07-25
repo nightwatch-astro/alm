@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * TargetDetailV2 — spec 036 gen-3 detail pane for a single canonical target.
+ * TargetDetail — spec 036 gen-3 detail pane for a single canonical target.
  *
  * Split by responsibility (refactor sweep #982): `AltitudeGraph.tsx` is the
  * self-contained tonight-altitude SVG chart; `target-detail-format.ts` is
@@ -79,9 +79,9 @@ type LoadState =
   | { status: 'error'; message: string }
   | { status: 'loaded'; data: TargetDetailV3 };
 
-// ── TargetDetailV2 ────────────────────────────────────────────────────────────
+// ── TargetDetail ────────────────────────────────────────────────────────────
 
-export function TargetDetailV2({
+export function TargetDetail({
   targetId,
   item = null,
   usableAltDeg = USABLE_ALT_DEG,
@@ -160,7 +160,7 @@ export function TargetDetailV2({
 
   if (loadState.status === 'loading') {
     return (
-      <DetailPane>
+      <DetailPane data-testid="target-detail">
         <Skeleton count={5} label={m.common_loading()} />
       </DetailPane>
     );
@@ -168,7 +168,7 @@ export function TargetDetailV2({
 
   if (loadState.status === 'error') {
     return (
-      <DetailPane>
+      <DetailPane data-testid="target-detail">
         <EmptyState
           title={m.settings_advanced_log_error()}
           desc={loadState.message}
@@ -285,7 +285,12 @@ export function TargetDetailV2({
   );
 
   return (
-    <DetailPanel fill title={titleContent} titleExtra={titleExtraContent}>
+    <DetailPanel
+      fill
+      title={titleContent}
+      titleExtra={titleExtraContent}
+      data-testid="target-detail"
+    >
       {/* #816 → #1107: this div used to be the pane's own scroll region,
           because DetailPanel rendered `children` as a bare sibling of the
           header with nothing establishing overflow — so everything below

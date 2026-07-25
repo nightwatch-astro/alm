@@ -3,7 +3,7 @@
 
 /// <reference types="@testing-library/jest-dom" />
 /**
- * TargetDetailV2 component tests — spec 036 gen-3 detail pane + spec 023 US2/US3/US4.
+ * TargetDetail component tests — spec 036 gen-3 detail pane + spec 023 US2/US3/US4.
  *
  * Tests:
  *  1. Shows loading state while fetch is in flight.
@@ -49,7 +49,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { m } from '@/lib/i18n';
 
-// TargetDetailV2 is now backed by TanStack Query (store.ts) — every render
+// TargetDetail is now backed by TanStack Query (store.ts) — every render
 // needs a QueryClientProvider ancestor. Shadowing `render` here (instead of
 // touching every one of this file's ~30 call sites) keeps the diff mechanical.
 function render(ui: ReactElement) {
@@ -166,7 +166,7 @@ vi.mock('./astro/best-moon-date', async (importOriginal) => {
 
 // ── Import under test (after mocks) ──────────────────────────────────────────
 
-import { TargetDetailV2 } from './TargetDetailV2';
+import { TargetDetail } from './TargetDetail';
 import { assertDefined } from '@/test/assertDefined';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -246,16 +246,16 @@ beforeEach(() => {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('TargetDetailV2', () => {
+describe('TargetDetail', () => {
   it('1. shows loading state while fetch is in flight', () => {
     mockGetTargetDetail.mockReturnValue(new Promise(() => {}));
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     // Loading now renders a skeleton (role="status") instead of text.
     expect(screen.getByTestId('skeleton')).toBeInTheDocument();
   });
 
   it('2. renders effectiveLabel in header', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     // NGC 7000 appears in header and identity section; either is fine
     await waitFor(() => {
       const els = screen.getAllByText('NGC 7000');
@@ -267,7 +267,7 @@ describe('TargetDetailV2', () => {
     mockGetTargetDetail.mockResolvedValue(
       ok(makeDetail({ displayAlias: 'My NGC 7000' })),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => {
       const els = screen.getAllByText('My NGC 7000');
       expect(els.length).toBeGreaterThanOrEqual(1);
@@ -275,7 +275,7 @@ describe('TargetDetailV2', () => {
   });
 
   it('3. renders primaryDesignation in identity section', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     // Scoped to the identity PropertyTable's "Designation" row specifically
     // (not "NGC 7000 appears somewhere on the page", which test 2 already
     // covers for the header) — this fails if primaryDesignation stopped
@@ -288,7 +288,7 @@ describe('TargetDetailV2', () => {
   });
 
   it('4. renders alias rows with kind badge', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => {
       // NGC 7000 appears multiple times (header + alias + identity); just confirm presence
       expect(screen.getAllByText('NGC 7000').length).toBeGreaterThanOrEqual(1);
@@ -298,7 +298,7 @@ describe('TargetDetailV2', () => {
   });
 
   it('5. user aliases show remove button; SIMBAD aliases do not', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByLabelText('Remove alias My Nebula'));
 
     expect(screen.getByLabelText('Remove alias My Nebula')).toBeInTheDocument();
@@ -311,7 +311,7 @@ describe('TargetDetailV2', () => {
   });
 
   it('6. clicking × on user alias calls removeTargetAlias with alias id', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByLabelText('Remove alias My Nebula'));
 
     fireEvent.click(screen.getByLabelText('Remove alias My Nebula'));
@@ -325,7 +325,7 @@ describe('TargetDetailV2', () => {
   });
 
   it('7. add-alias form calls addTargetAlias with correct args', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByRole('textbox', { name: /new alias/i }));
 
     fireEvent.change(screen.getByRole('textbox', { name: /new alias/i }), {
@@ -342,7 +342,7 @@ describe('TargetDetailV2', () => {
   });
 
   it('8. add-alias Enter keydown triggers addTargetAlias', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByRole('textbox', { name: /new alias/i }));
 
     fireEvent.change(screen.getByRole('textbox', { name: /new alias/i }), {
@@ -356,7 +356,7 @@ describe('TargetDetailV2', () => {
   });
 
   it('9. blank alias shows inline error without calling addTargetAlias', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByRole('button', { name: /^add$/i }));
 
     fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
@@ -370,7 +370,7 @@ describe('TargetDetailV2', () => {
       code: 'alias.blank',
       message: 'blank',
     });
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByRole('textbox', { name: /new alias/i }));
 
     fireEvent.change(screen.getByRole('textbox', { name: /new alias/i }), {
@@ -388,7 +388,7 @@ describe('TargetDetailV2', () => {
       code: 'alias.not_removable',
       message: 'not removable',
     });
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByLabelText('Remove alias My Nebula'));
 
     fireEvent.click(screen.getByLabelText('Remove alias My Nebula'));
@@ -402,14 +402,14 @@ describe('TargetDetailV2', () => {
 
   it('12. shows error state when getTargetDetail rejects', async () => {
     mockGetTargetDetail.mockRejectedValueOnce(new Error('network error'));
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(screen.getByText('Could not load target.')).toBeInTheDocument(),
     );
   });
 
   it('13. sessions empty-state renders (single mid-page surface)', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(screen.getByText(/No linked sessions yet/i)).toBeInTheDocument(),
     );
@@ -418,7 +418,7 @@ describe('TargetDetailV2', () => {
   });
 
   it('14. projects empty-state renders (single mid-page surface)', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(screen.getByText('No projects linked yet.')).toBeInTheDocument(),
     );
@@ -445,7 +445,7 @@ describe('TargetDetailV2', () => {
       .mockResolvedValueOnce(ok(makeDetail()))
       .mockResolvedValueOnce(ok(updated));
 
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByRole('textbox', { name: /new alias/i }));
 
     fireEvent.change(screen.getByRole('textbox', { name: /new alias/i }), {
@@ -465,7 +465,7 @@ describe('TargetDetailV2', () => {
     // fetch and the post-add reload — avoids polluting the mockResolvedValueOnce
     // queue for later tests (clearAllMocks doesn't drain unconsumed once-values).
 
-    render(<TargetDetailV2 targetId={TARGET_ID} onMutated={onMutated} />);
+    render(<TargetDetail targetId={TARGET_ID} onMutated={onMutated} />);
     await waitFor(() => screen.getByRole('textbox', { name: /new alias/i }));
 
     fireEvent.change(screen.getByRole('textbox', { name: /new alias/i }), {
@@ -491,7 +491,7 @@ describe('TargetDetailV2', () => {
       .mockResolvedValueOnce(ok(makeDetail()))
       .mockResolvedValueOnce(ok(updated));
 
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByLabelText('Remove alias My Nebula'));
 
     fireEvent.click(screen.getByLabelText('Remove alias My Nebula'));
@@ -508,7 +508,7 @@ describe('TargetDetailV2', () => {
     // ...]) — an unqualified invalidateQueries() on detail(id) would fuzzy-
     // match and refetch all four. Asserts store.ts's invalidateTarget() uses
     // `exact: true` so an alias mutation costs exactly one extra detail fetch.
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByRole('textbox', { name: /new alias/i }));
     expect(mockListTargetSessions).toHaveBeenCalledTimes(1);
     expect(mockListTargetProjects).toHaveBeenCalledTimes(1);
@@ -533,7 +533,7 @@ describe('TargetDetailV2', () => {
   });
 
   it('17. display-alias Set/Edit button is visible', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: /^set$/i }),
@@ -548,7 +548,7 @@ describe('TargetDetailV2', () => {
     // (clearAllMocks doesn't drain the once-queue).
     mockGetTargetDetail.mockResolvedValueOnce(ok(makeDetail()));
 
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByRole('button', { name: /^set$/i }));
 
     fireEvent.click(screen.getByRole('button', { name: /^set$/i }));
@@ -583,7 +583,7 @@ describe('TargetDetailV2', () => {
     // mount fetch, mockSetDisplayAlias for the save) — avoids polluting the
     // mockResolvedValueOnce queue for later tests.
 
-    render(<TargetDetailV2 targetId={TARGET_ID} onMutated={onMutated} />);
+    render(<TargetDetail targetId={TARGET_ID} onMutated={onMutated} />);
     await waitFor(() => screen.getByRole('button', { name: /^set$/i }));
     fireEvent.click(screen.getByRole('button', { name: /^set$/i }));
     await waitFor(() =>
@@ -605,7 +605,7 @@ describe('TargetDetailV2', () => {
       ok(makeDetail({ displayAlias: null })),
     );
 
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     // Wait for at least one Edit button (display-alias + notes may both show Edit)
     await waitFor(() =>
       expect(
@@ -653,7 +653,7 @@ describe('TargetDetailV2', () => {
         },
       ]),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     // Slow-runner headroom now comes from the file-wide configure/setConfig
     // above (this test flaked on windows-latest while 22 below passed).
     await waitFor(() =>
@@ -673,7 +673,7 @@ describe('TargetDetailV2', () => {
         },
       ]),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => expect(screen.getByText('Ha')).toBeInTheDocument());
   });
 
@@ -689,7 +689,7 @@ describe('TargetDetailV2', () => {
         },
       ]),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(screen.getByText(/5 frames/i)).toBeInTheDocument(),
     );
@@ -719,7 +719,7 @@ describe('TargetDetailV2', () => {
     mockListTargetProjects.mockResolvedValue(
       ok([{ id: 'proj-1', name: 'Horsehead 2026', lifecycle: 'ready' }]),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(
         screen.getAllByText('Horsehead 2026').length,
@@ -735,7 +735,7 @@ describe('TargetDetailV2', () => {
     mockListTargetProjects.mockResolvedValue(
       ok([{ id: 'proj-1', name: 'Old Horsehead', lifecycle: 'archived' }]),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(
         screen.getAllByText('Old Horsehead').length,
@@ -751,7 +751,7 @@ describe('TargetDetailV2', () => {
     mockListTargetProjects.mockResolvedValue(
       ok([{ id: 'proj-1', name: 'Horsehead 2026', lifecycle: 'ready' }]),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(
         screen.getAllByText('Horsehead 2026').length,
@@ -778,7 +778,7 @@ describe('TargetDetailV2', () => {
     mockListTargetProjects.mockResolvedValue(
       ok([{ id: 'proj-1', name: 'Horsehead 2026', lifecycle: 'ready' }]),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(
         screen.getAllByText('Horsehead 2026').length,
@@ -804,7 +804,7 @@ describe('TargetDetailV2', () => {
   // ── #612: "+ New project here" carries the target id ──────────────────────
 
   it('25c. (#612) "+ New project here" navigates to /projects/new with the target id', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByText('+ New project here'));
 
     fireEvent.click(screen.getByText('+ New project here'));
@@ -836,7 +836,7 @@ describe('TargetDetailV2', () => {
         }),
       ),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(
         screen.getAllByText('2MASX J13295269+4711429', { exact: false }).length,
@@ -853,7 +853,7 @@ describe('TargetDetailV2', () => {
 
   it('26. (US4) notes empty placeholder renders when no notes', async () => {
     mockGetTargetNote.mockResolvedValue(ok({ notes: null }));
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(screen.getByTestId('target-notes-empty')).toBeInTheDocument(),
     );
@@ -866,7 +866,7 @@ describe('TargetDetailV2', () => {
     mockGetTargetNote.mockResolvedValue(
       ok({ notes: 'Great transparency last night.' }),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() =>
       expect(screen.getByTestId('target-notes-body')).toHaveTextContent(
         'Great transparency last night.',
@@ -877,7 +877,7 @@ describe('TargetDetailV2', () => {
   it('28. (US4) edit → save calls updateTargetNote and reflects result', async () => {
     mockGetTargetNote.mockResolvedValue(ok({ notes: 'Old note' }));
     mockUpdateTargetNote.mockResolvedValue(ok({ notes: 'Updated note' }));
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByTestId('target-notes-body'));
 
     // Click Edit button (label reuses projects_detail_edit_btn = "Edit")
@@ -904,7 +904,7 @@ describe('TargetDetailV2', () => {
 
   it('29. (US4) edit → cancel restores original notes without calling update', async () => {
     mockGetTargetNote.mockResolvedValue(ok({ notes: 'Original note' }));
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByTestId('target-notes-body'));
 
     fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
@@ -926,7 +926,7 @@ describe('TargetDetailV2', () => {
   it('30. (US4) save error shows banner message', async () => {
     mockGetTargetNote.mockResolvedValue(ok({ notes: null }));
     mockUpdateTargetNote.mockRejectedValue(new Error('db error'));
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => screen.getByTestId('target-notes-empty'));
 
     // Open edit with the notes "Edit" button (last Edit button on page is notes section)
@@ -947,7 +947,7 @@ describe('TargetDetailV2', () => {
 
 // ── spec 044 Track B: US6/T015 no-site prompt, T018 tests ──────────────────────
 
-describe('TargetDetailV2 — no-site prompt (US6/T015/T018)', () => {
+describe('TargetDetail — no-site prompt (US6/T015/T018)', () => {
   beforeEach(async () => {
     const { __setObservingStateForTest } = await import(
       './observing-sites/site-store'
@@ -956,7 +956,7 @@ describe('TargetDetailV2 — no-site prompt (US6/T015/T018)', () => {
   });
 
   it('31. shows a no-site prompt in the Tonight column when there is no active site', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => {
       const els = screen.getAllByText(
         /Add an observing site.*see tonight's real altitude/i,
@@ -985,7 +985,7 @@ describe('TargetDetailV2 — no-site prompt (US6/T015/T018)', () => {
       activeSiteId: 'site-1',
       defaultSiteId: 'site-1',
     });
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
     await waitFor(() => {
       expect(
         screen.queryByText(
@@ -1012,7 +1012,7 @@ const SITE_744 = {
   minHorizonAltDeg: 0,
 };
 
-describe('TargetDetailV2 — needs-coordinates degrade + Moon-separation trio (#757/#758)', () => {
+describe('TargetDetail — needs-coordinates degrade + Moon-separation trio (#757/#758)', () => {
   beforeEach(async () => {
     const { __setObservingStateForTest } = await import(
       './observing-sites/site-store'
@@ -1032,7 +1032,7 @@ describe('TargetDetailV2 — needs-coordinates degrade + Moon-separation trio (#
     mockGetTargetDetail.mockResolvedValue(
       ok(makeDetail({ raDeg: null, decDeg: null })),
     );
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
 
     await waitFor(() =>
       expect(
@@ -1057,7 +1057,7 @@ describe('TargetDetailV2 — needs-coordinates degrade + Moon-separation trio (#
       moonAtBest: { illumPct: 48, sepDeg: 98.4 },
       moonAtOpposition: { illumPct: 100, sepDeg: 2.2 },
     });
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
 
     await waitFor(() =>
       expect(screen.getByText('Best date')).toBeInTheDocument(),
@@ -1082,7 +1082,7 @@ describe('TargetDetailV2 — needs-coordinates degrade + Moon-separation trio (#
       moonAtBest: { illumPct: 1, sepDeg: 169.1 },
       moonAtOpposition: { illumPct: 1, sepDeg: 169.1 },
     });
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
 
     await waitFor(() =>
       expect(screen.getByText('Best date')).toBeInTheDocument(),
@@ -1105,7 +1105,7 @@ describe('TargetDetailV2 — needs-coordinates degrade + Moon-separation trio (#
       moonAtBest: { illumPct: 99, sepDeg: 10 },
       moonAtOpposition: { illumPct: 99, sepDeg: 10 },
     });
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
 
     await waitFor(() =>
       expect(screen.getByText('Best date')).toBeInTheDocument(),
@@ -1120,7 +1120,7 @@ describe('TargetDetailV2 — needs-coordinates degrade + Moon-separation trio (#
   });
 
   it('34. (#758) renders the Moon-separation trio (at transit / min over dark / dark midpoint) once tonight is available', async () => {
-    render(<TargetDetailV2 targetId={TARGET_ID} />);
+    render(<TargetDetail targetId={TARGET_ID} />);
 
     await waitFor(() =>
       expect(screen.getByText('Moon separation')).toBeInTheDocument(),

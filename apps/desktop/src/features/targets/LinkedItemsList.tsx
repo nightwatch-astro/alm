@@ -4,7 +4,7 @@
 /**
  * LinkedItemsList — renders a list of linked sessions OR projects with
  * navigation. Parameterized to eliminate the twin map bodies in
- * TargetDetailV2.
+ * TargetDetail.
  */
 
 import { useNavigate } from '@tanstack/react-router';

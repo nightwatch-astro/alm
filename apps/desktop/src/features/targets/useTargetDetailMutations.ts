@@ -4,7 +4,7 @@
 /**
  * `useTargetDetailMutations` — the alias add/remove, display-alias set/clear,
  * and observing-notes (spec 023 US4) edit state + mutation handlers behind
- * `TargetDetailV2`. Split out of the component (refactor sweep #982) so the
+ * `TargetDetail`. Split out of the component (refactor sweep #982) so the
  * render stays render-only; this hook owns every local draft/editing/error
  * field these three edit surfaces need.
  */

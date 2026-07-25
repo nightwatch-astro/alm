@@ -205,7 +205,7 @@ export function WizardPage() {
   // In mock mode, allow skipping all validation to walk through the wizard quickly
   const devSkip = import.meta.env.VITE_USE_MOCKS === 'true';
 
-  // #612/#783: a caller (e.g. TargetDetailV2's "+ New project here") can pass
+  // #612/#783: a caller (e.g. TargetDetail's "+ New project here") can pass
   // a real target id via `?targetId=`. `strict: false` reads it without this
   // route declaring its own search schema. Resolve it to a real target once
   // and prefill the name-step target picker, instead of the prior behaviour

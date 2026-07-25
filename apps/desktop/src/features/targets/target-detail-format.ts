@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Pure display-formatting helpers for `TargetDetailV2` (refactor sweep
+ * Pure display-formatting helpers for `TargetDetail` (refactor sweep
  * #982): no React, no state — split out so the format rules can be reasoned
  * about (and, if needed, unit-tested) independently of the component.
  */

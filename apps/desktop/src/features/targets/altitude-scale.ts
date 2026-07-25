@@ -4,7 +4,7 @@
 /**
  * altitude-scale.ts — shared altitude/night-hour scale helpers (spec 044
  * Track B, T035). ONE domain definition + `@visx/scale` factory used by both
- * `AltitudeSparkline.tsx` (per-row inline sparkline) and `TargetDetailV2.tsx`'s
+ * `AltitudeSparkline.tsx` (per-row inline sparkline) and `TargetDetail.tsx`'s
  * detail-pane altitude graph, so the two charts never drift out of sync and
  * neither hand-rolls its own linear-interpolation math.
  */

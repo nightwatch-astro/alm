@@ -5,7 +5,7 @@
  * useTargetTonight — derives tonight planner data (altitude curve, imaging
  * time, moon separation, best-date) for a single target.
  *
- * Extracted from TargetDetailV2.tsx to isolate the computation from rendering.
+ * Extracted from TargetDetail.tsx to isolate the computation from rendering.
  */
 
 import type { TargetListItem } from '@/bindings/index';

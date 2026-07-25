@@ -5,7 +5,7 @@
  * Maps a target-operation `ContractError.code` to a user-readable, localized
  * message.
  *
- * Extracted from `TargetDetailV2.tsx` so the mapping can be unit-tested directly
+ * Extracted from `TargetDetail.tsx` so the mapping can be unit-tested directly
  * (see `target-identity.test.ts`) instead of via a hand-copied mirror that
  * silently drifts from production.
  */

@@ -1202,7 +1202,7 @@ const mockHandlers = {
   target_moon_opposition_batch: async (_args) => {
     // #634: mock mode reuses the SAME TS ephemeris (`astro/moon-state.ts` +
     // `astro/lunar-separation.ts` + `astro/opposition.ts`) the detail panel
-    // (`TargetDetailV2`'s Best-date tooltip, still TS per ADR-0001's
+    // (`TargetDetail`'s Best-date tooltip, still TS per ADR-0001's
     // interactive-ephemeris boundary) computes independently — a
     // hand-rolled placeholder here would diverge from the detail panel's
     // value and break the "list Opposition == detail Best date" mock-mode

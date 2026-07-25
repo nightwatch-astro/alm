@@ -150,7 +150,7 @@ const projectsRoute = createRoute({
   path: '/projects',
   validateSearch: makeValidateSearch({
     // spec 023: project IDs are UUIDs (strings). Switched from legacy numeric
-    // index so linked-project deep-links from TargetDetailV2 work correctly.
+    // index so linked-project deep-links from TargetDetail work correctly.
     selected: parseString,
     lifecycle: parseCsvEnum(PROJECT_STATES),
   }),

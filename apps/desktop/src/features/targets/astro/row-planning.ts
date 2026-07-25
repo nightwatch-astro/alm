@@ -18,7 +18,7 @@
  * `target.moon_opposition.batch` command (never per-row round trips) and
  * passes the looked-up result in explicitly (`null` = fetch not resolved yet
  * / unknown coordinates, same "never fabricate" contract as everything else
- * here). Every OTHER caller (`TargetDetailV2`'s single-target planner,
+ * here). Every OTHER caller (`TargetDetail`'s single-target planner,
  * `TargetsPage`'s synchronous full-catalogue filter-count pass, and this
  * file's own tests) omits the 4th argument and keeps the original synchronous
  * TS-ephemeris path unchanged — this is a purely additive, backward-compatible

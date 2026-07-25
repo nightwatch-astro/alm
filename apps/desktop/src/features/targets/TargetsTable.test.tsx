@@ -47,7 +47,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 // The no-site banner (spec 044 US3) links to Settings via `Link`, which needs
 // a router context this test doesn't provide. Stub it as a plain anchor —
-// consistent with TargetDetailV2.test.tsx's `@tanstack/react-router` mock.
+// consistent with TargetDetail.test.tsx's `@tanstack/react-router` mock.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
@@ -65,7 +65,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 // #634: real lunar separation + opposition now come from ONE batched
 // `target.moon_opposition.batch` IPC call instead of synchronous TS
-// `astronomy-engine` math — mock it (mirrors `TargetDetailV2.test.tsx`'s
+// `astronomy-engine` math — mock it (mirrors `TargetDetail.test.tsx`'s
 // `targetAstroFormatBatch` mock). `moonSeparationDeg: raDeg` reproduces the
 // exact degrees the old synchronous test fixtures assumed (a Dec-0 target's
 // separation from a Moon at RA0/Dec0 equals its RA), without hardcoding by id.

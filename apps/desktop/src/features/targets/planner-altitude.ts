@@ -176,7 +176,7 @@ export interface AltitudeSubject {
  *   thousands of rows) — computing the Moon time-series for every row there
  *   is a real perf cliff (found via a Layer-2 CI timeout against the full
  *   ~13k-entry bundled seed catalogue). Defaults to `true` (single-target
- *   callers: `TargetDetailV2`, and the per-visible-row recompute for
+ *   callers: `TargetDetail`, and the per-visible-row recompute for
  *   `GuidanceCell`). `false` zeroes `separationScalars`/`moonFreeMinutesByBand`
  *   (never fabricating a non-zero value) — `bestDate` is unaffected, it's
  *   cheap (Sun-RA-table based) and always computed regardless of this flag.
