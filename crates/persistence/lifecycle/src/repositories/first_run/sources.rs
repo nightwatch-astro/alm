@@ -22,7 +22,7 @@ use super::{
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_sources_by_path(
     pool: &SqlitePool,
     path: &str,
@@ -51,7 +51,7 @@ pub async fn find_sources_by_path(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violation (e.g. duplicate
+/// Returns `persistence_core::DbError::Database` on constraint violation (e.g. duplicate
 /// kind+path).
 pub async fn register_source(
     pool: &SqlitePool,
@@ -104,7 +104,7 @@ pub async fn register_source(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] only for catastrophic connection failures.
+/// Returns `persistence_core::DbError::Database` only for catastrophic connection failures.
 /// Per-item errors are captured in the response.
 pub async fn register_source_batch(
     pool: &SqlitePool,
@@ -182,7 +182,7 @@ pub async fn register_source_batch(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_sources(pool: &SqlitePool) -> DbResult<Vec<RegisterSourceResponse>> {
     let rows: Vec<(String, String, String, String, String)> = sqlx::query_as(
         "SELECT id, kind, path, created_at, organization_state \

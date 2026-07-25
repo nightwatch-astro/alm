@@ -236,7 +236,7 @@ pub struct InsertHandoffOperation<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_handoff(
     conn: &mut SqliteConnection,
     params: &InsertHandoff<'_>,
@@ -260,7 +260,7 @@ pub async fn insert_handoff(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_handoff_snapshot(
     conn: &mut SqliteConnection,
     params: &InsertHandoffSnapshot<'_>,
@@ -302,8 +302,8 @@ pub async fn insert_handoff_snapshot(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] when `expected_generation` does not match.
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::CasFailed` when `expected_generation` does not match.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn advance_handoff_head(
     conn: &mut SqliteConnection,
     handoff_row_id: i64,
@@ -334,7 +334,7 @@ pub async fn advance_handoff_head(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_handoff_requirement(
     conn: &mut SqliteConnection,
     params: &InsertHandoffRequirement<'_>,
@@ -362,7 +362,7 @@ pub async fn insert_handoff_requirement(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_snapshot_requirement_mapping(
     conn: &mut SqliteConnection,
     snapshot_row_id: i64,
@@ -389,7 +389,7 @@ pub async fn insert_snapshot_requirement_mapping(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_handoff_candidate_evidence(
     conn: &mut SqliteConnection,
     params: &InsertHandoffCandidateEvidence<'_>,
@@ -443,7 +443,7 @@ pub async fn insert_handoff_candidate_evidence(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_handoff_selection(
     conn: &mut SqliteConnection,
     params: &InsertHandoffSelection<'_>,
@@ -471,7 +471,7 @@ pub async fn insert_handoff_selection(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_snapshot_selection_mapping(
     conn: &mut SqliteConnection,
     snapshot_row_id: i64,
@@ -497,7 +497,7 @@ pub async fn insert_snapshot_selection_mapping(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_handoff_frame(
     conn: &mut SqliteConnection,
     params: &InsertHandoffFrame<'_>,
@@ -530,7 +530,7 @@ pub async fn insert_handoff_frame(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_handoff_operation(
     conn: &mut SqliteConnection,
     params: &InsertHandoffOperation<'_>,
@@ -559,7 +559,7 @@ pub async fn insert_handoff_operation(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] when `expected_state_version` does not match.
+/// Returns `persistence_core::DbError::CasFailed` when `expected_state_version` does not match.
 pub async fn transition_handoff_operation_state(
     conn: &mut SqliteConnection,
     operation_row_id: i64,
@@ -600,7 +600,7 @@ pub async fn transition_handoff_operation_state(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn update_handoff_operation_progress(
     conn: &mut SqliteConnection,
     operation_row_id: i64,
@@ -691,7 +691,7 @@ pub async fn get_operation_by_public_id(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_snapshot_requirements(
     pool: &SqlitePool,
     snapshot_row_id: i64,
@@ -716,7 +716,7 @@ pub async fn list_snapshot_requirements(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_snapshot_selections(
     pool: &SqlitePool,
     snapshot_row_id: i64,
@@ -742,7 +742,7 @@ pub async fn list_snapshot_selections(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_selection_frames(
     pool: &SqlitePool,
     selection_row_id: i64,

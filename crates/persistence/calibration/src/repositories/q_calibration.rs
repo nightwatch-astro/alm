@@ -19,7 +19,7 @@ use persistence_core::DbResult;
 /// Mark a camera row as auto-detected (`cameras.auto_detected = 1`).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn mark_camera_auto_detected(pool: &SqlitePool, id: &str) -> DbResult<()> {
     sqlx::query("UPDATE cameras SET auto_detected = 1 WHERE id = ?").bind(id).execute(pool).await?;
     Ok(())
@@ -28,7 +28,7 @@ pub async fn mark_camera_auto_detected(pool: &SqlitePool, id: &str) -> DbResult<
 /// Mark a telescope row as auto-detected (`telescopes.auto_detected = 1`).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn mark_telescope_auto_detected(pool: &SqlitePool, id: &str) -> DbResult<()> {
     sqlx::query("UPDATE telescopes SET auto_detected = 1 WHERE id = ?")
         .bind(id)
@@ -40,7 +40,7 @@ pub async fn mark_telescope_auto_detected(pool: &SqlitePool, id: &str) -> DbResu
 /// Mark a filter row as auto-detected (`filters.auto_detected = 1`).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn mark_filter_auto_detected(pool: &SqlitePool, id: &str) -> DbResult<()> {
     sqlx::query("UPDATE filters SET auto_detected = 1 WHERE id = ?").bind(id).execute(pool).await?;
     Ok(())
@@ -116,7 +116,7 @@ pub struct CalibrationMasterViewRow {
 /// Whether an `acquisition_session` row exists for `session_id`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn acquisition_session_exists(pool: &SqlitePool, session_id: &str) -> DbResult<bool> {
     let row: Option<(String,)> = sqlx::query_as("SELECT id FROM acquisition_session WHERE id = ?")
         .bind(session_id)
@@ -128,7 +128,7 @@ pub async fn acquisition_session_exists(pool: &SqlitePool, session_id: &str) -> 
 /// Load the `acquisition_fingerprint` row for a session id, if present.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_acquisition_fingerprint(
     pool: &SqlitePool,
     session_id: &str,
@@ -152,7 +152,7 @@ pub async fn get_acquisition_fingerprint(
 /// a calibration master's "compatible sessions" list — #868).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_light_acquisition_fingerprints(
     pool: &SqlitePool,
 ) -> DbResult<Vec<AcquisitionFingerprintRow>> {
@@ -176,7 +176,7 @@ pub async fn list_light_acquisition_fingerprints(
 /// behavior: SQL restricts to the fixed dark/flat/bias set).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_calibration_fingerprints(
     pool: &SqlitePool,
 ) -> DbResult<Vec<CalibrationFingerprintRow>> {
@@ -197,7 +197,7 @@ pub async fn list_calibration_fingerprints(
 /// Load a single `calibration_fingerprint` row by id.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_calibration_fingerprint(
     pool: &SqlitePool,
     master_id: &str,
@@ -227,7 +227,7 @@ pub async fn get_calibration_fingerprint(
 /// [`get_calibration_master`] can still resolve an archived master's detail.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_calibration_masters(
     pool: &SqlitePool,
 ) -> DbResult<Vec<CalibrationMasterViewRow>> {
@@ -249,7 +249,7 @@ pub async fn list_calibration_masters(
 /// master, so its detail view / future unarchive can still see it.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_calibration_master(
     pool: &SqlitePool,
     master_id: &str,
@@ -271,7 +271,7 @@ pub async fn get_calibration_master(
 /// List `session_id`s from `calibration_assignment` rows assigned to a master.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_assignment_session_ids(
     pool: &SqlitePool,
     master_id: &str,
@@ -288,7 +288,7 @@ pub async fn list_assignment_session_ids(
 /// assigned a given calibration master.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_assignment_project_ids(
     pool: &SqlitePool,
     master_id: &str,
@@ -314,7 +314,7 @@ pub async fn list_assignment_project_ids(
 /// (Constitution II: reviewable-plan discipline).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn set_master_archived(
     pool: &SqlitePool,
     master_id: &str,
@@ -337,7 +337,7 @@ pub async fn set_master_archived(
 /// plan finishes applying.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn clear_master_archived(pool: &SqlitePool, master_id: &str) -> DbResult<()> {
     sqlx::query(
         "UPDATE calibration_session SET archived_at = NULL, archived_via_plan_id = NULL \
@@ -351,7 +351,7 @@ pub async fn clear_master_archived(pool: &SqlitePool, master_id: &str) -> DbResu
 
 /// One archived-master row for the Archive surface (#886), joined with the
 /// owning archive plan for the display reason + bytes moved — mirrors
-/// [`crate::repositories::projects::ArchivedProjectRow`].
+/// `crate::repositories::projects::ArchivedProjectRow`.
 #[derive(Debug, Clone)]
 pub struct ArchivedMasterRow {
     pub id: String,
@@ -367,7 +367,7 @@ pub struct ArchivedMasterRow {
 /// List every `calibration_master_view` row currently archived.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_archived_masters(pool: &SqlitePool) -> DbResult<Vec<ArchivedMasterRow>> {
     #[allow(clippy::type_complexity)]
     let rows: Vec<(

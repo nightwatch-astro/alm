@@ -31,7 +31,7 @@ pub struct CalibrationTolerancesRow {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure (including the unexpected
+/// Returns `persistence_core::DbError::Database` on query failure (including the unexpected
 /// case where the migration-0008 seed row is missing).
 pub async fn get(pool: &SqlitePool) -> DbResult<CalibrationTolerancesRow> {
     let row: (f64, f64, i64, i64, i64, i64, i64) = sqlx::query_as(
@@ -68,7 +68,7 @@ pub async fn get(pool: &SqlitePool) -> DbResult<CalibrationTolerancesRow> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn update(
     pool: &SqlitePool,
     row: &CalibrationTolerancesRow,

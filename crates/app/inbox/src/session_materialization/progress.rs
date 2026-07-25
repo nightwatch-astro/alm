@@ -20,7 +20,7 @@ pub struct MaterializationProgress {
     pub total_frames: i64,
     processed_sessions: AtomicI64,
     processed_frames: AtomicI64,
-    /// Set by [`cancel`] to signal the apply loop to stop after the current
+    /// Set by [`Self::request_cancel`] to signal the apply loop to stop after the current
     /// session commit.
     pub cancel_requested: AtomicBool,
 }

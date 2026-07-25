@@ -18,7 +18,7 @@
 //! to linked projects) stays in `app_core_targets`; this module is query/exec
 //! only. `library_root`/`registered_sources` root-path lookups reuse
 //! [`crate::repositories::inventory::get_library_root_path`] and
-//! [`crate::repositories::first_run::get_source_path`] rather than
+//! `crate::repositories::first_run::get_source_path` rather than
 //! duplicating them.
 //!
 //! Constitution §I: read/write SQLite metadata only; no filesystem mutations.
@@ -87,7 +87,7 @@ pub struct UnlinkedAcquisitionSessionRow {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn upsert_file_record(
     pool: &SqlitePool,
     root_id: &str,
@@ -146,7 +146,7 @@ pub async fn upsert_file_record(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_ingest_resolution_id(
     pool: &SqlitePool,
     image_id: &str,
@@ -169,7 +169,7 @@ pub async fn find_ingest_resolution_id(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_ingest_resolution(
     pool: &SqlitePool,
     id: &str,
@@ -196,7 +196,7 @@ pub async fn insert_ingest_resolution(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn mark_ingest_resolution_resolved(
     pool: &SqlitePool,
     row_id: &str,
@@ -214,7 +214,7 @@ pub async fn mark_ingest_resolution_resolved(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn mark_ingest_resolution_unresolved(
     pool: &SqlitePool,
     row_id: &str,
@@ -233,7 +233,7 @@ pub async fn mark_ingest_resolution_unresolved(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_pending_ingest_resolutions(
     pool: &SqlitePool,
     limit: i64,
@@ -256,7 +256,7 @@ pub async fn list_pending_ingest_resolutions(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_resolved_ingest_resolutions(
     pool: &SqlitePool,
 ) -> DbResult<Vec<ResolvedIngestResolutionRow>> {
@@ -278,7 +278,7 @@ pub async fn list_resolved_ingest_resolutions(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_applied_light_plan_items(
     pool: &SqlitePool,
     plan_id: &str,
@@ -305,7 +305,7 @@ pub async fn list_applied_light_plan_items(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_library_root_mirror(
     pool: &SqlitePool,
     root_id: &str,
@@ -332,7 +332,7 @@ pub async fn insert_library_root_mirror(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_acquisition_session_by_key(
     pool: &SqlitePool,
     key: &str,
@@ -352,7 +352,7 @@ pub async fn find_acquisition_session_by_key(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn append_acquisition_session_frames_with_target(
     pool: &SqlitePool,
     id: &str,
@@ -380,7 +380,7 @@ pub async fn append_acquisition_session_frames_with_target(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn append_acquisition_session_frames(
     pool: &SqlitePool,
     id: &str,
@@ -404,7 +404,7 @@ pub async fn append_acquisition_session_frames(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_acquisition_session(
     pool: &SqlitePool,
@@ -439,7 +439,7 @@ pub async fn insert_acquisition_session(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_unlinked_acquisition_sessions(
     pool: &SqlitePool,
 ) -> DbResult<Vec<UnlinkedAcquisitionSessionRow>> {
@@ -456,7 +456,7 @@ pub async fn list_unlinked_acquisition_sessions(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn set_acquisition_session_canonical_target_if_null(
     pool: &SqlitePool,
     session_id: &str,

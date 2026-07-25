@@ -55,7 +55,7 @@ pub struct UpsertSourceGroup<'a> {
 /// (auto-commit) or `&mut Transaction` (batched commit).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn upsert_inbox_source_group<'e, E>(
     executor: E,
     group: &UpsertSourceGroup<'_>,
@@ -101,7 +101,7 @@ where
 /// rows (never scanned) are simply absent from the returned map.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn last_scanned_by_root(
     pool: &SqlitePool,
 ) -> DbResult<std::collections::HashMap<String, String>> {
@@ -115,10 +115,10 @@ pub async fn last_scanned_by_root(
 
 // ── InboxItem CRUD ────────────────────────────────────────────────────────────
 
-/// Connection-level variant of [`update_source_group_child_count`].
+/// Connection-level variant of `update_source_group_child_count`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn update_source_group_child_count_conn(
     conn: &mut SqliteConnection,
     source_group_id: &str,
@@ -172,7 +172,7 @@ pub struct InboxSourceGroupListRow {
 /// here.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn list_unclassified_source_groups(
     pool: &SqlitePool,
     limit: i64,

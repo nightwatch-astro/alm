@@ -373,7 +373,7 @@ pub(super) fn spawn_executor_run(params: SpawnExecutorParams) {
 ///   Tauri-internal plumbing from a test, so the harness deliberately does
 ///   not. This variant is the supported route instead.
 /// - Any archive/cleanup UI surface that only needs a fire-and-poll apply
-///   (poll [`get_apply_status`] for the durable terminal counts) rather than
+///   (poll `get_apply_status` for the durable terminal counts) rather than
 ///   a live progress stream.
 ///
 /// This mirrors the auto-approve-then-apply pattern `inbox_plan::

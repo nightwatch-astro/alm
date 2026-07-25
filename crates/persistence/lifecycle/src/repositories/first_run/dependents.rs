@@ -37,7 +37,7 @@ use persistence_core::DbResult;
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn relative_paths_for_root(pool: &SqlitePool, root_id: &str) -> DbResult<Vec<String>> {
     let rows: Vec<(String,)> = sqlx::query_as(
         "SELECT relative_path FROM file_record WHERE root_id = ? \
@@ -62,7 +62,7 @@ pub async fn relative_paths_for_root(pool: &SqlitePool, root_id: &str) -> DbResu
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn count_root_dependents(
     pool: &SqlitePool,
     root_id: &str,

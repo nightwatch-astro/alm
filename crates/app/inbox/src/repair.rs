@@ -22,7 +22,7 @@ use targeting_resolver::simbad::ResolveCache;
 /// deleting the now-stale `inbox_plan_links` row.
 ///
 /// An `applied` plan runs the full applied path via
-/// [`crate::plan_listener::complete_applied_plan`] — calibration-master
+/// `crate::plan_listener::complete_applied_plan` — calibration-master
 /// registration and light-frame ingest included. Resolving without them would
 /// delete the link row, which is the only record that the work is outstanding,
 /// so the master would never be registered and the frames never ingested.

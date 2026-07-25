@@ -12,10 +12,10 @@
 //! references it. `app_core` re-exports this crate at `app_core::first_run` so the
 //! public surface stays byte-identical.
 //!
-//! Split by responsibility (refactor sweep #975): [`sources`] is
-//! register/list/remove + the batch pipeline; [`wizard`] is the
-//! `first_run_state` singleton (get/complete/restart); [`root_remap`] is
-//! P6a (`roots.remap`/`.apply`); [`root_ops`] is P6b (active toggle +
+//! Split by responsibility (refactor sweep #975): `sources` is
+//! register/list/remove + the batch pipeline; `wizard` is the
+//! `first_run_state` singleton (get/complete/restart); `root_remap` is
+//! P6a (`roots.remap`/`.apply`); `root_ops` is P6b (active toggle +
 //! delete). Path validation, error mapping, and the shared audit-writing
 //! helpers used by more than one use case stay here.
 #![allow(clippy::doc_markdown)] // spec/domain terminology not appropriate for backticks

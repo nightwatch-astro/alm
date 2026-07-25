@@ -121,7 +121,7 @@ pub struct InsertPlanItem<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub async fn insert_plan(pool: &SqlitePool, plan: &InsertPlan<'_>) -> DbResult<i64> {
     let mut conn = pool.acquire().await?;
     insert_plan_conn(&mut conn, plan).await
@@ -135,7 +135,7 @@ pub async fn insert_plan(pool: &SqlitePool, plan: &InsertPlan<'_>) -> DbResult<i
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub(crate) async fn insert_plan_conn(
     conn: &mut SqliteConnection,
     plan: &InsertPlan<'_>,
@@ -173,7 +173,7 @@ pub(crate) async fn insert_plan_conn(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub async fn insert_plan_item(pool: &SqlitePool, item: &InsertPlanItem<'_>) -> DbResult<()> {
     let mut conn = pool.acquire().await?;
     insert_plan_item_conn(&mut conn, item).await
@@ -183,7 +183,7 @@ pub async fn insert_plan_item(pool: &SqlitePool, item: &InsertPlanItem<'_>) -> D
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns [`persistence_core::DbError::Database`] on constraint or connection failure.
 pub(crate) async fn insert_plan_item_conn(
     conn: &mut SqliteConnection,
     item: &InsertPlanItem<'_>,
@@ -234,8 +234,8 @@ pub(crate) async fn insert_plan_item_conn(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::NotFound`] if no matching row exists.
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::NotFound`] if no matching row exists.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn get_plan(
     pool: &SqlitePool,
     plan_id: &str,
@@ -263,7 +263,7 @@ pub async fn get_plan(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn list_plans(
     pool: &SqlitePool,
     state_filter: &[String],
@@ -314,7 +314,7 @@ pub async fn list_plans(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn list_plan_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<PlanItemRow>> {
     Ok(sqlx::query_as("SELECT * FROM plan_items WHERE plan_id = ? ORDER BY item_index ASC")
         .bind(plan_id)
@@ -335,7 +335,7 @@ pub async fn list_plan_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<P
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn confirm_plan_destructive_items(pool: &SqlitePool, plan_id: &str) -> DbResult<u64> {
     let result = sqlx::query(
         "UPDATE plan_items SET destructive_confirmed = 1 \
@@ -356,8 +356,8 @@ pub async fn confirm_plan_destructive_items(pool: &SqlitePool, plan_id: &str) ->
 ///
 /// # Errors
 ///
-/// Returns [`DbError::NotFound`] if no plan with `plan_id` exists.
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::NotFound`] if no plan with `plan_id` exists.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn update_plan_state(pool: &SqlitePool, plan_id: &str, state: &str) -> DbResult<()> {
     let mut conn = pool.acquire().await?;
     update_plan_state_conn(&mut conn, plan_id, state).await
@@ -367,8 +367,8 @@ pub async fn update_plan_state(pool: &SqlitePool, plan_id: &str, state: &str) ->
 ///
 /// # Errors
 ///
-/// Returns [`DbError::NotFound`] if no plan with `plan_id` exists.
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::NotFound`] if no plan with `plan_id` exists.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub(crate) async fn update_plan_state_conn(
     conn: &mut SqliteConnection,
     plan_id: &str,
@@ -392,7 +392,7 @@ pub(crate) async fn update_plan_state_conn(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn set_approved(
     pool: &SqlitePool,
     plan_id: &str,
@@ -419,7 +419,7 @@ pub async fn set_approved(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn set_chosen_framing_id(
     pool: &SqlitePool,
     plan_id: &str,
@@ -437,7 +437,7 @@ pub async fn set_chosen_framing_id(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn get_chosen_framing_id(pool: &SqlitePool, plan_id: &str) -> DbResult<Option<String>> {
     let row: Option<(Option<String>,)> =
         sqlx::query_as("SELECT chosen_framing_id FROM plans WHERE id = ?")
@@ -453,8 +453,8 @@ pub async fn get_chosen_framing_id(pool: &SqlitePool, plan_id: &str) -> DbResult
 ///
 /// # Errors
 ///
-/// Returns [`DbError::NotFound`] if no matching plan exists.
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::NotFound`] if no matching plan exists.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn soft_delete_plan(
     pool: &SqlitePool,
     plan_id: &str,
@@ -476,7 +476,7 @@ pub async fn soft_delete_plan(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn update_item_fs_snapshot(
     pool: &SqlitePool,
     item_id: &str,

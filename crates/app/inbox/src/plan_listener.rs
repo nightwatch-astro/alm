@@ -84,7 +84,7 @@ fn plan_completion_lock(plan_id: &str) -> Arc<Mutex<()>> {
 /// (`handle_plan_completed` → `ingest_light_frames`) can emit `target.resolved`
 /// events for inline cache hits. `resolve_cache` (also cheap to clone — an
 /// `Arc` handle) is threaded through to
-/// [`ingest_light_frames_if_applicable`], which uses it to trigger an
+/// `ingest_light_frames_if_applicable`, which uses it to trigger an
 /// immediate ingest-resolution drain pass after a plan's light frames are
 /// ingested (issue #1256) instead of waiting on the periodic backstop.
 pub fn start_inbox_plan_listener(pool: SqlitePool, bus: &EventBus, resolve_cache: ResolveCache) {
@@ -209,7 +209,7 @@ async fn handle_plan_completed(
 /// `Ok` — a propagated registration error leaves both the link and the
 /// `plan_open` state in place so the next sweep retries.
 ///
-/// [`ingest_light_frames_if_applicable`] deliberately does not participate in
+/// `ingest_light_frames_if_applicable` deliberately does not participate in
 /// that guard: it logs and swallows its errors (spec 035 US4/T042, R12), so a
 /// per-frame metadata/IO problem never strands the inbox item.
 pub(crate) async fn complete_applied_plan(

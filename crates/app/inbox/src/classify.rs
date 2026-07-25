@@ -1088,7 +1088,7 @@ pub fn mandatory_set_for(ft: FrameType) -> Vec<&'static str> {
 ///
 /// Single shared formula for the `target` arm of both mandatory-attribute
 /// gates — [`check_mandatory_missing`] here and
-/// [`crate::metadata::compute_missing_mandatory`] — so the two consumers
+/// `crate::metadata::compute_missing_mandatory` — so the two consumers
 /// agree on "target missing" **by construction**, not because every caller
 /// happens to pass the same `target_resolved` constant (issue #1132).
 ///

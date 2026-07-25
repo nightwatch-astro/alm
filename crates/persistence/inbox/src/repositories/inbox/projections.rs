@@ -63,7 +63,7 @@ pub struct InboxStatsRow {
 /// Rows with NULL effective type (unclassified) are excluded.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn inbox_stats(pool: &SqlitePool) -> DbResult<Vec<InboxStatsRow>> {
     // sqlx does not derive FromRow for plain tuples with more than 3 elements
     // in some configurations, so we map manually via a named intermediate.
@@ -115,7 +115,7 @@ pub async fn inbox_stats(pool: &SqlitePool) -> DbResult<Vec<InboxStatsRow>> {
 /// [`list_unacknowledged_across_roots`].
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn count_distinct_inbox_folders(pool: &SqlitePool) -> DbResult<i64> {
     let sql = format!(
         "SELECT COUNT(DISTINCT i.id)
@@ -187,7 +187,7 @@ pub struct InboxListRow {
 /// Pass `limit` to cap the result set (FR-006 bounding).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn list_unacknowledged_across_roots(
     pool: &SqlitePool,
     limit: i64,
@@ -320,7 +320,7 @@ fn label_from_distinct(distinct: i64, value: Option<String>) -> Option<String> {
 /// `DATE-OBS` value truncated to its first 10 chars (`YYYY-MM-DD`).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn grouping_keys_for_items(
     pool: &SqlitePool,
     item_ids: &[String],

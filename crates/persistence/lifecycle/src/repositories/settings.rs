@@ -19,7 +19,7 @@ use sqlx::SqlitePool;
 use persistence_core::{DbError, DbResult};
 
 /// Settings key holding the per-frame-type destination pattern overrides
-/// (spec 041 FR-026b). Stored as a JSON object mapping a [`FrameTypeClass`]
+/// (spec 041 FR-026b). Stored as a JSON object mapping a [`patterns::FrameTypeClass`]
 /// name to a pattern string. Only explicit overrides are persisted; missing
 /// entries fall back to [`default_pattern`] on read.
 pub const PATTERNS_BY_TYPE_KEY: &str = "patternsByType";
@@ -32,7 +32,7 @@ pub const PATTERNS_BY_TYPE_KEY: &str = "patternsByType";
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_raw(pool: &SqlitePool, key: &str) -> DbResult<Option<Value>> {
     let row: Option<(Json<Value>,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
         .bind(key)
@@ -46,8 +46,8 @@ pub async fn get_raw(pool: &SqlitePool, key: &str) -> DbResult<Option<Value>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
-/// Returns [`DbError::Serialise`] if the value cannot be serialised.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Serialise`] if the value cannot be serialised.
 pub async fn set_raw(pool: &SqlitePool, key: &str, value: &Value) -> DbResult<()> {
     let now = Timestamp::now_iso();
 
@@ -71,7 +71,7 @@ pub async fn set_raw(pool: &SqlitePool, key: &str, value: &Value) -> DbResult<()
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn set_raw_with_conn(
     conn: &mut SqliteConnection,
     key: &str,
@@ -98,7 +98,7 @@ pub async fn set_raw_with_conn(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn delete_key(pool: &SqlitePool, key: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM settings WHERE key = ?").bind(key).execute(pool).await?;
     Ok(())
@@ -108,7 +108,7 @@ pub async fn delete_key(pool: &SqlitePool, key: &str) -> DbResult<()> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_all_raw(pool: &SqlitePool) -> DbResult<Vec<(String, Value)>> {
     let rows: Vec<(String, Json<Value>)> =
         sqlx::query_as("SELECT key, value FROM settings ORDER BY key ASC").fetch_all(pool).await?;
@@ -124,7 +124,7 @@ pub async fn get_all_raw(pool: &SqlitePool) -> DbResult<Vec<(String, Value)>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_all_by_prefix(pool: &SqlitePool, prefix: &str) -> DbResult<Vec<(String, Value)>> {
     // SQLite LIKE pattern: append '%' to the prefix. The prefix itself may
     // contain literal '%' or '_' — escape them so they are matched literally.
@@ -148,7 +148,7 @@ pub async fn get_all_by_prefix(pool: &SqlitePool, prefix: &str) -> DbResult<Vec<
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn load_settings(pool: &SqlitePool) -> DbResult<SettingsState> {
     let stored = get_all_raw(pool).await?;
     merge_with_defaults(stored)
@@ -241,7 +241,7 @@ settings_key_table! {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`] if
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`] if
 /// the stored value is not a string→string object.
 pub async fn get_patterns_by_type(pool: &SqlitePool) -> DbResult<BTreeMap<String, String>> {
     match get_raw(pool, PATTERNS_BY_TYPE_KEY).await? {
@@ -255,13 +255,13 @@ pub async fn get_patterns_by_type(pool: &SqlitePool) -> DbResult<BTreeMap<String
 /// built-in [`default_pattern`].
 ///
 /// Returns `None` only when `frame_type` does not map to a known
-/// [`FrameTypeClass`] (e.g. an unclassified frame). Callers (spec 041 confirm,
+/// [`patterns::FrameTypeClass`] (e.g. an unclassified frame). Callers (spec 041 confirm,
 /// T052) treat `None` as "no destination pattern" and surface it via the
 /// needs-review flow.
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`] if
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`] if
 /// the stored override map is malformed.
 pub async fn effective_pattern_for(
     pool: &SqlitePool,
@@ -286,7 +286,7 @@ pub async fn effective_pattern_for(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn set_source_override(
     pool: &SqlitePool,
     source_id: &str,
@@ -313,7 +313,7 @@ pub async fn set_source_override(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_source_override_raw(
     pool: &SqlitePool,
     source_id: &str,

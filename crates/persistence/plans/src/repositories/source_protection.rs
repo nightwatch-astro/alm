@@ -73,7 +73,7 @@ fn parse_categories(json: Option<&str>) -> DbResult<Vec<String>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`]
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`]
 /// on JSON encoding failure.
 pub async fn upsert_source_protection(
     pool: &SqlitePool,
@@ -114,7 +114,7 @@ pub async fn upsert_source_protection(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_source_protection_row(
     pool: &SqlitePool,
     source_id: &str,
@@ -139,7 +139,7 @@ pub async fn get_source_protection_row(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`]
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`]
 /// on JSON decode failure.
 pub async fn resolve_protection(
     pool: &SqlitePool,
@@ -193,7 +193,7 @@ pub async fn resolve_protection(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_protection_default(
     pool: &SqlitePool,
     scope: &str,
@@ -213,7 +213,7 @@ pub async fn get_protection_default(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`]
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`]
 /// on JSON encoding failure.
 pub async fn set_protection_default(
     pool: &SqlitePool,
@@ -244,7 +244,7 @@ pub async fn set_protection_default(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`]
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`]
 /// on JSON encoding failure.
 pub async fn set_protection_default_with_conn(
     conn: &mut SqliteConnection,

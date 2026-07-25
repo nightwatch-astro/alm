@@ -29,7 +29,7 @@
 //! handle (cloned out before the swap, so it keeps warming the same
 //! underlying store regardless of what `AppState::resolve_cache` is swapped
 //! to next), plus a second clone of the whole [`ResolveCache`] (not just its
-//! erased `.cache()`) to call [`ResolveCache::flush`] on once both phases
+//! erased `.cache()`) to call `ResolveCache::flush` on once both phases
 //! finish — the one fsync that persists every `Eventual` chunk.
 //!
 //! Chunking each phase's warm means nothing in a given chunk is visible to a

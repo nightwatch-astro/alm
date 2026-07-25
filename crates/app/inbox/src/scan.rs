@@ -146,7 +146,7 @@ impl ScannedInboxItem {
     /// score 0 so `list_unclassified_source_groups` does not surface it as a
     /// scanned-but-unclassified row *in addition to* its master rows. The
     /// subtraction is sound only because `masters` is built by filtering
-    /// `fits_files ∪ xisf_files` (see [`scan_dir`]); it is saturating so a
+    /// `fits_files ∪ xisf_files` (see `scan_dir`); it is saturating so a
     /// future violation of that subset relation degrades to 0 rather than
     /// panicking.
     #[must_use]
@@ -187,7 +187,7 @@ pub struct ScanOptions {
     /// (see `crates/tools/perf-bench`).
     ///
     /// `Some(N)` where N > 1 enables the parallel path capped at
-    /// [`MAX_SCAN_WORKERS`]. Intended for rotational HDD libraries where
+    /// `MAX_SCAN_WORKERS`. Intended for rotational HDD libraries where
     /// per-file seek latency amortises across threads.
     pub workers: Option<usize>,
 }
@@ -327,7 +327,7 @@ struct LeafDir {
 /// # Panics
 ///
 /// Panics only if a scan worker thread panics due to an internal bug
-/// (e.g. a logic error in [`process_leaf`]). Per-file I/O failures
+/// (e.g. a logic error in `process_leaf`). Per-file I/O failures
 /// (unreadable files, parse errors) are silently skipped and do not panic.
 pub fn scan_root(root: &Path, options: &ScanOptions) -> Result<ScanOutput, String> {
     if !root.is_dir() {

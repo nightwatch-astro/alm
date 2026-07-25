@@ -115,7 +115,7 @@ pub struct UpsertFileMetadata<'a> {
 /// Returns `None` when no row has been persisted yet (file not yet classified).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn get_file_metadata(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -133,10 +133,10 @@ pub async fn get_file_metadata(
 
 // ── Breakdown CRUD ────────────────────────────────────────────────────────────
 
-/// Connection-level variant of [`delete_breakdown_for_item`].
+/// Connection-level variant of `delete_breakdown_for_item`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn delete_breakdown_for_item_conn(
     conn: &mut SqliteConnection,
     inbox_item_id: &str,
@@ -151,7 +151,7 @@ pub async fn delete_breakdown_for_item_conn(
 /// Upsert a single breakdown row.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn upsert_breakdown_row(
     pool: &SqlitePool,
     id: &str,
@@ -176,7 +176,7 @@ pub async fn upsert_breakdown_row(
 /// Connection-level variant of [`upsert_breakdown_row`].
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn upsert_breakdown_row_conn(
     conn: &mut SqliteConnection,
     id: &str,
@@ -209,7 +209,7 @@ pub async fn upsert_breakdown_row_conn(
 /// Fetch breakdown rows for an item.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn list_breakdown(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -230,7 +230,7 @@ pub async fn list_breakdown(
 /// Called from the classify/reclassify loop alongside the evidence row.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn upsert_inbox_file_metadata(
     pool: &SqlitePool,
     m: &UpsertFileMetadata<'_>,
@@ -241,7 +241,7 @@ pub async fn upsert_inbox_file_metadata(
 /// Connection-level variant of [`upsert_inbox_file_metadata`].
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn upsert_inbox_file_metadata_conn(
     conn: &mut SqliteConnection,
     m: &UpsertFileMetadata<'_>,
@@ -334,7 +334,7 @@ const FILE_META_BATCH_SIZE: usize = 32766 / FILE_META_COLS;
 /// Chunks at `32766 / 32 = 1023` rows.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn upsert_inbox_file_metadata_batch(
     conn: &mut SqliteConnection,
     rows: &[UpsertFileMetadata<'_>],
@@ -436,7 +436,7 @@ pub async fn upsert_inbox_file_metadata_batch(
 /// Batch-delete file-metadata rows for a set of item ids.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn delete_file_metadata_for_items(
     conn: &mut SqliteConnection,
     inbox_item_ids: &[&str],
@@ -457,7 +457,7 @@ pub async fn delete_file_metadata_for_items(
 /// Batch-delete breakdown rows for a set of item ids.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn delete_breakdown_for_items(
     conn: &mut SqliteConnection,
     inbox_item_ids: &[&str],
@@ -476,10 +476,10 @@ pub async fn delete_breakdown_for_items(
     Ok(())
 }
 
-/// Connection-level variant of [`delete_file_metadata_for_item`].
+/// Connection-level variant of `delete_file_metadata_for_item`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn delete_file_metadata_for_item_conn(
     conn: &mut SqliteConnection,
     inbox_item_id: &str,
@@ -494,7 +494,7 @@ pub async fn delete_file_metadata_for_item_conn(
 /// Fetch all per-file metadata rows for an item, ordered by relative path.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn list_inbox_file_metadata(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -534,7 +534,7 @@ pub struct InboxAttributionGeometryRow {
 /// Read per-file attribution geometry for an inbox item (F-Framing-5).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn list_inbox_attribution_geometry(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -595,7 +595,7 @@ pub struct InboxPointingRow {
 /// `object` is carried as a display hint only.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn list_inbox_pointing(
     pool: &SqlitePool,
     inbox_item_id: &str,

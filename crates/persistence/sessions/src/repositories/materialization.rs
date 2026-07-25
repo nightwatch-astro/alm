@@ -77,7 +77,7 @@ pub struct InsertMaterializationResultSnapshot<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_materialization_operation(
     conn: &mut SqliteConnection,
     params: &InsertMaterializationOperation<'_>,
@@ -104,8 +104,8 @@ pub async fn insert_materialization_operation(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] on version mismatch, or
-/// [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::CasFailed` on version mismatch, or
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn transition_operation_to_applying(
     conn: &mut SqliteConnection,
     operation_row_id: i64,
@@ -153,8 +153,8 @@ pub struct ApplyOperationResult<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] on version mismatch, or
-/// [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::CasFailed` on version mismatch, or
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn transition_operation_to_applied(
     conn: &mut SqliteConnection,
     params: &ApplyOperationResult<'_>,
@@ -196,8 +196,8 @@ pub async fn transition_operation_to_applied(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] on version mismatch, or
-/// [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::CasFailed` on version mismatch, or
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn transition_operation_to_failed(
     conn: &mut SqliteConnection,
     operation_row_id: i64,
@@ -236,7 +236,7 @@ pub async fn transition_operation_to_failed(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_result_snapshot(
     conn: &mut SqliteConnection,
     params: &InsertMaterializationResultSnapshot<'_>,
@@ -268,7 +268,7 @@ pub async fn insert_result_snapshot(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no matching row exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_operation_by_public_id(
     pool: &SqlitePool,
     public_id: &str,
@@ -292,7 +292,7 @@ pub async fn get_operation_by_public_id(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no snapshot exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_result_snapshot_by_operation_public_id(
     pool: &SqlitePool,
     operation_public_id: &str,
@@ -319,8 +319,8 @@ pub async fn get_result_snapshot_by_operation_public_id(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] on version mismatch, or
-/// [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::CasFailed` on version mismatch, or
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn transition_operation_to_cancelled(
     conn: &mut SqliteConnection,
     operation_row_id: i64,
@@ -352,7 +352,7 @@ pub async fn transition_operation_to_cancelled(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no matching row exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_operation_public_id_by_row_id(pool: &SqlitePool, row_id: i64) -> DbResult<String> {
     let row: (String,) =
         sqlx::query_as("SELECT public_id FROM session_materialization_operation WHERE row_id = ?")

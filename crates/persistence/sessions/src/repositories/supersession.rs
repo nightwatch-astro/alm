@@ -44,7 +44,7 @@ pub struct InsertSupersession<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_supersession(
     conn: &mut SqliteConnection,
     params: &InsertSupersession<'_>,
@@ -71,7 +71,7 @@ pub async fn insert_supersession(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_supersession_successors(
     pool: &SqlitePool,
     predecessor_session_row_id: i64,
@@ -93,7 +93,7 @@ pub async fn list_supersession_successors(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_supersession_predecessors(
     pool: &SqlitePool,
     replacement_session_row_id: i64,
@@ -117,7 +117,7 @@ pub async fn list_supersession_predecessors(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn is_session_current(pool: &SqlitePool, session_row_id: i64) -> DbResult<bool> {
     let count: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM session_supersession
@@ -138,8 +138,8 @@ pub async fn is_session_current(pool: &SqlitePool, session_row_id: i64) -> DbRes
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] when a cycle is detected, or
-/// [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::CasFailed` when a cycle is detected, or
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn assert_no_supersession_cycle(
     conn: &mut SqliteConnection,
     predecessor_row_id: i64,

@@ -3120,7 +3120,7 @@ export type Camera = {
 	passband: string[] | null,
 	/**
 	 *  Pixel pitch in micrometres; `None` = not recorded. Square pixels are
-	 *  assumed on both axes, matching [`sessions::fov_diagonal_deg`].
+	 *  assumed on both axes, matching `sessions::fov_diagonal_deg`.
 	 */
 	pixelSizeUm?: number | null,
 	/**  Unbinned sensor width in pixels (FITS `NAXIS1`); `None` = not recorded. */
@@ -7277,7 +7277,7 @@ export type PathPatternPreviewResponse = {
  * 
  *  Re-exported from `crates/contracts/core` so the Tauri command layer can
  *  reference it without importing `crates/patterns` directly. The shape matches
- *  [`patterns::PatternPart`] exactly.
+ *  `patterns::PatternPart` exactly.
  */
 export type PatternPartDto = {
 	/**  Stable client-side identifier. */
@@ -7766,7 +7766,7 @@ export type PlanType = "split" | "restructure" | "cleanup" | "archive" | "source
 "source_view_generation";
 
 /**
- *  Coordinate-source quality for a derived [`Pointing`] (FR-012).
+ *  Coordinate-source quality for a derived pointing (FR-012).
  * 
  *  `Wcs` (plate-solved `CRVAL1/2`) is high confidence; `Mount` (`OBJCTRA`/
  *  `OBJCTDEC` or decimal `RA`/`DEC`) is medium; `None` means no reliable

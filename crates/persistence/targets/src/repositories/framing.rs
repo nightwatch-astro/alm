@@ -72,7 +72,7 @@ pub struct InsertFraming<'a> {
 /// Insert a new framing row. Returns the `created_at`/`updated_at` timestamp.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint violation (e.g. unknown
+/// Returns `persistence_core::DbError::Database` on constraint violation (e.g. unknown
 /// `project_id`/`target_id`) or query failure.
 pub async fn insert_framing(pool: &SqlitePool, data: &InsertFraming<'_>) -> DbResult<String> {
     let now = Timestamp::now_iso();
@@ -105,7 +105,7 @@ pub async fn insert_framing(pool: &SqlitePool, data: &InsertFraming<'_>) -> DbRe
 ///
 /// # Errors
 /// Returns [`DbError::NotFound`] when no framing with the given id exists.
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_framing(pool: &SqlitePool, id: &str) -> DbResult<FramingRow> {
     sqlx::query_as::<_, FramingRow>(
         "SELECT id, project_id, target_id, optic_train_key,
@@ -123,7 +123,7 @@ pub async fn get_framing(pool: &SqlitePool, id: &str) -> DbResult<FramingRow> {
 /// List all framings for a project (creation order).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_framings_by_project(
     pool: &SqlitePool,
     project_id: &str,
@@ -147,7 +147,7 @@ pub async fn list_framings_by_project(
 /// target/mosaic checks in Rust — this is the coarse, cheap SQL-level cut.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_framings_by_optic_train_key(
     pool: &SqlitePool,
     optic_train_key: &str,
@@ -172,7 +172,7 @@ pub async fn list_framings_by_optic_train_key(
 /// framing back. Returns the new `updated_at` timestamp.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn update_framing_clustering(
     pool: &SqlitePool,
     id: &str,
@@ -194,7 +194,7 @@ pub async fn update_framing_clustering(
 /// survivor. No-op (not an error) when the id does not exist.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn delete_framing(pool: &SqlitePool, id: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM framing WHERE id = ?").bind(id).execute(pool).await?;
     Ok(())
@@ -209,7 +209,7 @@ pub async fn delete_framing(pool: &SqlitePool, id: &str) -> DbResult<()> {
 /// prior membership before reassigning (F-Framing-3's `framing.reassign`).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint violation (unknown ids, or the
+/// Returns `persistence_core::DbError::Database` on constraint violation (unknown ids, or the
 /// session is already a member of a framing) or query failure.
 pub async fn add_session_to_framing(
     pool: &SqlitePool,
@@ -230,7 +230,7 @@ pub async fn add_session_to_framing(
 /// when the pair does not exist.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn remove_session_from_framing(
     pool: &SqlitePool,
     framing_id: &str,
@@ -247,7 +247,7 @@ pub async fn remove_session_from_framing(
 /// List the member session ids of a framing, in the order they were added.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_session_ids_for_framing(
     pool: &SqlitePool,
     framing_id: &str,
@@ -265,7 +265,7 @@ pub async fn list_session_ids_for_framing(
 /// `framing_session.session_id` UNIQUE constraint).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_framing_id_for_session(
     pool: &SqlitePool,
     session_id: &str,
@@ -287,7 +287,7 @@ pub async fn get_framing_id_for_session(
 /// four fields `None`).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_session_geometry(
     pool: &SqlitePool,
     session_id: &str,
@@ -308,7 +308,7 @@ pub async fn get_session_geometry(
 /// sentinel for missing header data (Q16 FR-136 — "missing is missing").
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn set_session_geometry(
     pool: &SqlitePool,
     session_id: &str,

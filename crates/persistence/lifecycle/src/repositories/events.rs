@@ -25,7 +25,7 @@ pub struct EventRow {
 /// Append a durable event row. Returns the assigned `event_id`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_event(
     pool: &SqlitePool,
     topic: &str,
@@ -48,7 +48,7 @@ pub async fn insert_event(
 /// transaction). Returns the assigned `event_id`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_event_conn(
     conn: &mut SqliteConnection,
     topic: &str,
@@ -70,7 +70,7 @@ pub async fn insert_event_conn(
 /// List all events with `event_id > since_id`, oldest first.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_since(pool: &SqlitePool, since_id: i64) -> DbResult<Vec<EventRow>> {
     let rows = sqlx::query_as::<_, EventRow>(
         "SELECT event_id, topic, emitted_at, payload \
@@ -85,7 +85,7 @@ pub async fn list_since(pool: &SqlitePool, since_id: i64) -> DbResult<Vec<EventR
 /// List events on a single topic with `event_id > since_id`, oldest first.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_since_by_topic(
     pool: &SqlitePool,
     since_id: i64,
@@ -107,7 +107,7 @@ pub async fn list_since_by_topic(
 /// `log_stream::recent_entries` query shape).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_recent_since(
     pool: &SqlitePool,
     since_id: i64,
@@ -129,7 +129,7 @@ pub async fn list_recent_since(
 /// query shape.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_by_emitted_at_range(
     pool: &SqlitePool,
     since: Option<&str>,
@@ -179,7 +179,7 @@ pub async fn list_by_emitted_at_range(
 /// live forwarder's cursor so only events emitted after subscribe are sent.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn max_event_id(pool: &SqlitePool) -> DbResult<i64> {
     let (max_id,): (i64,) =
         sqlx::query_as("SELECT COALESCE(MAX(event_id), 0) FROM events").fetch_one(pool).await?;
@@ -191,7 +191,7 @@ pub async fn max_event_id(pool: &SqlitePool) -> DbResult<i64> {
 /// row still on disk.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn min_event_id(pool: &SqlitePool) -> DbResult<Option<i64>> {
     let min_id: Option<i64> =
         sqlx::query_scalar("SELECT MIN(event_id) FROM events").fetch_one(pool).await?;
@@ -202,7 +202,7 @@ pub async fn min_event_id(pool: &SqlitePool) -> DbResult<Option<i64>> {
 /// decide whether a prune pass is warranted.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 #[allow(dead_code)] // retention pruner will call this; no production caller yet
 pub(crate) async fn count_events(pool: &SqlitePool) -> DbResult<i64> {
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM events").fetch_one(pool).await?;
@@ -234,7 +234,7 @@ pub(crate) async fn count_events(pool: &SqlitePool) -> DbResult<i64> {
 /// Returns the number of rows deleted.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn prune_events_older_than(pool: &SqlitePool, older_than_iso: &str) -> DbResult<u64> {
     let result = sqlx::query("DELETE FROM events WHERE emitted_at < ?")
         .bind(older_than_iso)

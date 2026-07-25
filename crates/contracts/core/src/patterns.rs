@@ -25,7 +25,7 @@ use specta::Type;
 ///
 /// Re-exported from `crates/contracts/core` so the Tauri command layer can
 /// reference it without importing `crates/patterns` directly. The shape matches
-/// [`patterns::PatternPart`] exactly.
+/// `patterns::PatternPart` exactly.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PatternPartDto {

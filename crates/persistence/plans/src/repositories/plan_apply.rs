@@ -176,7 +176,7 @@ pub async fn cas_approved_to_applying(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn complete_run(
     pool: &SqlitePool,
     plan_id: &str,
@@ -234,7 +234,7 @@ pub async fn complete_run(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn pause_run(
     pool: &SqlitePool,
@@ -279,8 +279,8 @@ pub async fn pause_run(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] if plan is not in `paused` state.
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::CasFailed`] if plan is not in `paused` state.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn resume_run(pool: &SqlitePool, plan_id: &str, run_id: &str) -> DbResult<()> {
     let mut tx = pool.begin().await?;
 
@@ -327,7 +327,7 @@ pub async fn resume_run(pool: &SqlitePool, plan_id: &str, run_id: &str) -> DbRes
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn item_retry_applying(pool: &SqlitePool, item_id: &str, plan_id: &str) -> DbResult<()> {
     let mut tx = pool.begin().await?;
 
@@ -356,7 +356,7 @@ pub async fn item_retry_applying(pool: &SqlitePool, item_id: &str, plan_id: &str
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn list_pending_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<String>> {
     let ids: Vec<String> = sqlx::query_scalar(
         "SELECT id FROM plan_items WHERE plan_id = ? AND item_state = 'pending' ORDER BY item_index ASC",
@@ -371,7 +371,7 @@ pub async fn list_pending_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Ve
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn batch_cancel_pending_items(pool: &SqlitePool, plan_id: &str) -> DbResult<i64> {
     let mut tx = pool.begin().await?;
 
@@ -418,7 +418,7 @@ pub async fn batch_cancel_pending_items(pool: &SqlitePool, plan_id: &str) -> DbR
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn cancel_orphaned_applying_items(
     pool: &SqlitePool,
     plan_id: &str,
@@ -460,7 +460,7 @@ pub async fn cancel_orphaned_applying_items(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn append_event(
     pool: &SqlitePool,
@@ -515,7 +515,7 @@ pub async fn append_event(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn get_active_run(pool: &SqlitePool, plan_id: &str) -> DbResult<Option<PlanApplyRunRow>> {
     Ok(sqlx::query_as(
         "SELECT * FROM plan_apply_runs \
@@ -538,7 +538,7 @@ pub async fn get_active_run(pool: &SqlitePool, plan_id: &str) -> DbResult<Option
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn get_last_stale_item(
     pool: &SqlitePool,
     plan_id: &str,
@@ -560,7 +560,7 @@ pub async fn get_last_stale_item(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn get_last_item_with_failure_prefix(
     pool: &SqlitePool,
     plan_id: &str,
@@ -606,7 +606,7 @@ pub struct BatchItemState<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn batch_flush_item_states(
     conn: &mut SqliteConnection,
     plan_id: &str,
@@ -666,7 +666,7 @@ pub async fn batch_flush_item_states(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn append_event_conn(
     conn: &mut SqliteConnection,
@@ -728,7 +728,7 @@ pub async fn append_event_conn(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn sweep_crashed_applying_plans(pool: &SqlitePool) -> DbResult<Vec<String>> {
     let mut tx = pool.begin().await?;
 
@@ -769,7 +769,7 @@ pub async fn sweep_crashed_applying_plans(pool: &SqlitePool) -> DbResult<Vec<Str
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn list_crash_interrupted_plans(pool: &SqlitePool) -> DbResult<Vec<String>> {
     Ok(sqlx::query_scalar(
         "SELECT p.id FROM plans p \
@@ -813,7 +813,7 @@ pub struct UnreconciledItem {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn list_unreconciled_items(
     pool: &SqlitePool,
     plan_ids: &[String],
@@ -875,7 +875,7 @@ pub async fn list_unreconciled_items(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn record_reconciled_outcome(
     pool: &SqlitePool,
     item: &UnreconciledItem,

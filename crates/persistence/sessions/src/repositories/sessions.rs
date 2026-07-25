@@ -135,7 +135,7 @@ pub struct SessionListCursor {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_session(
     conn: &mut SqliteConnection,
     params: &InsertSession<'_>,
@@ -169,7 +169,7 @@ pub async fn insert_session(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations.
+/// Returns `persistence_core::DbError::Database` on constraint violations.
 pub async fn insert_session_frame(
     conn: &mut SqliteConnection,
     params: &InsertSessionFrame<'_>,
@@ -198,7 +198,7 @@ pub async fn insert_session_frame(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations.
+/// Returns `persistence_core::DbError::Database` on constraint violations.
 pub async fn insert_light_session_identity(
     conn: &mut SqliteConnection,
     params: &InsertLightSessionIdentity<'_>,
@@ -244,7 +244,7 @@ pub async fn insert_light_session_identity(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no matching row exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_session_by_public_id(pool: &SqlitePool, public_id: &str) -> DbResult<SessionRow> {
     sqlx::query_as::<_, SessionRow>(
         "SELECT row_id, public_id, materialization_operation_row_id, kind,
@@ -266,7 +266,7 @@ pub async fn get_session_by_public_id(pool: &SqlitePool, public_id: &str) -> DbR
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn current_change_sequence(pool: &SqlitePool) -> DbResult<i64> {
     let seq: (i64,) = sqlx::query_as("SELECT COALESCE(MAX(sequence), 0) FROM repository_change")
         .fetch_one(pool)
@@ -286,7 +286,7 @@ pub async fn current_change_sequence(pool: &SqlitePool) -> DbResult<i64> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 #[allow(clippy::too_many_arguments)]
 pub async fn list_sessions_at_watermark(
     pool: &SqlitePool,
@@ -366,7 +366,7 @@ pub async fn list_sessions_at_watermark(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if the session `public_id` does not exist, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_session_frames(
     pool: &SqlitePool,
     session_public_id: &str,
@@ -392,7 +392,7 @@ pub async fn list_session_frames(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_session_visibility(
     conn: &mut SqliteConnection,
     session_row_id: i64,

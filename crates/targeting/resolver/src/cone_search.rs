@@ -180,7 +180,7 @@ pub fn dedup_candidates(candidates: Vec<ConeCandidate>) -> Vec<ConeCandidate> {
 /// ranking. Order candidates by (not-excluded first, then prominence tier
 /// descending, then separation ascending) before truncating, so excluded/
 /// niche clutter can never crowd out a higher-tier candidate regardless of
-/// its raw separation; then guarantee `primary` — [`primary_index`]'s own
+/// its raw separation; then guarantee `primary` — `primary_index`'s own
 /// nearest-to-centre, prominence-tie-broken pick (OQ-1, unchanged by this
 /// function) — survives the cut even in the residual case where `limit`
 /// non-excluded, equal-or-higher-tier candidates all sit nearer to centre
