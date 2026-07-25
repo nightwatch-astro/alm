@@ -117,6 +117,12 @@ async fn apply_inner(
 }
 
 /// Drive the install loop synchronously (for tests / Tauri adapter).
+/// Drive the install loop synchronously (for tests / Tauri adapter).
+///
+/// `path_resolver(frame_row_id, destination_root_row_id)` returns the resolved
+/// absolute source path and destination root path for a plan item. The Tauri
+/// adapter supplies these from the registered library-root and destination-root
+/// paths. Tests may supply a closure that returns real temp-dir paths.
 pub async fn run_apply_loop(
     pool: &SqlitePool,
     plan_id: &str,
@@ -124,6 +130,7 @@ pub async fn run_apply_loop(
     lease_owner: &str,
     lease_generation: i64,
     callbacks: &impl InstallerCallbacks,
+    path_resolver: &(impl Fn(i64, i64) -> (camino::Utf8PathBuf, camino::Utf8PathBuf) + Sync),
 ) -> Result<(), ContractError> {
     let now = Timestamp::now_iso();
     let mut conn = pool.acquire().await.map_err(|e| app_core_errors::db_err(e.into()))?;
@@ -161,6 +168,8 @@ pub async fn run_apply_loop(
             continue;
         }
 
+        let (source_abs_path, dest_root_abs_path) =
+            path_resolver(entry.frame_row_id, entry.destination_root_row_id);
         let item = InstallItem {
             item_row_id: entry.row_id,
             item_public_id: entry.public_id.clone(),
@@ -170,6 +179,8 @@ pub async fn run_apply_loop(
             destination_relative_path: entry.relative_path.clone(),
             approved_fingerprint: entry.approved_fingerprint.clone(),
             ordinal: entry.ordinal,
+            source_abs_path,
+            dest_root_abs_path,
         };
 
         match run_install(

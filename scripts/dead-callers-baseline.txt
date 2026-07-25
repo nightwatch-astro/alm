@@ -216,7 +216,6 @@ list_update_view_items
 list_update_view_overlay_mappings
 # Persistence helpers for Update View install-intent/journal — wired by ic9h.20.
 complete_item_journal
-install_item
 list_incomplete_intents
 mark_intent_installed
 upsert_install_intent

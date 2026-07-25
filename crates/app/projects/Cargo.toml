@@ -17,6 +17,7 @@ app_core_errors = { path = "../errors" }
 app_core_targets = { path = "../targets" }
 audit = { path = "../../audit" }
 camino = { workspace = true }
+fs_executor = { path = "../../fs/executor" }
 contracts_core = { path = "../../contracts/core" }
 domain_core = { path = "../../domain/core" }
 fs_inventory = { path = "../../fs/inventory" }

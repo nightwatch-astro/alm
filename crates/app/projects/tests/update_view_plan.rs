@@ -17,8 +17,10 @@
 use uuid::Uuid;
 
 use app_core_projects::update_view::{
-    approve_update_view, discard_update_view, plan_update_view, query_update_view,
-    ApproveUpdateViewRequest, DiscardUpdateViewRequest, PlanUpdateViewRequest,
+    apply_update_view, approve_update_view, cancel_update_view, discard_update_view,
+    plan_update_view, query_update_view, run_apply_loop, ApplyUpdateViewRequest,
+    ApproveUpdateViewRequest, CancelUpdateViewRequest, DiscardUpdateViewRequest, InstallItem,
+    InstallerCallbacks, PlanUpdateViewRequest,
 };
 use contracts_core::error_code::ErrorCode;
 use persistence_core::Database;
@@ -493,4 +495,423 @@ async fn plan_not_found_returns_typed_error() {
 
     let err = query_update_view(pool, "non-existent-plan-id").await.expect_err("should fail");
     assert_eq!(err.code, ErrorCode::ProjectUpdateViewPlanNotFound);
+}
+
+// ── Additional tests (review round 1 items 3–4) ───────────────────────────────
+
+/// `cancel_update_view` sets an applying plan to stopped.
+#[tokio::test]
+async fn cancel_sets_applying_to_stopped() {
+    let db = support::setup_db().await;
+    let pool = db.pool();
+    let (_actor_id, _cfg_id, op_id, target_id) = seed_basics(&db).await;
+    let (_, project_pub) = seed_project(&db).await;
+
+    let seq = support::insert_sequence(pool).await;
+    let (session_row_id, _) =
+        support::insert_light_session(pool, &uid(), &uid(), op_id, target_id, seq, 0).await;
+    pin_session(&db, &project_pub, session_row_id).await;
+
+    let plan = plan_update_view(
+        pool,
+        &PlanUpdateViewRequest {
+            project_id: &project_pub,
+            expected_project_revision: 1,
+            actor_id: &uid(),
+            command_id: &uid(),
+        },
+    )
+    .await
+    .expect("plan")
+    .plan;
+
+    approve_update_view(
+        pool,
+        &ApproveUpdateViewRequest {
+            plan_id: &plan.plan_id,
+            approval_digest: &plan.plan_digest,
+            actor_id: &uid(),
+            command_id: &uid(),
+        },
+    )
+    .await
+    .expect("approve");
+
+    apply_update_view(
+        pool,
+        &ApplyUpdateViewRequest {
+            plan_id: &plan.plan_id,
+            approval_digest: &plan.plan_digest,
+            actor_id: &uid(),
+            command_id: &uid(),
+        },
+    )
+    .await
+    .expect("apply");
+
+    cancel_update_view(
+        pool,
+        &CancelUpdateViewRequest { plan_id: &plan.plan_id, actor_id: &uid(), command_id: &uid() },
+    )
+    .await
+    .expect("cancel");
+
+    let (state,): (String,) =
+        sqlx::query_as("SELECT state FROM materialization_update_plan WHERE public_id = ?")
+            .bind(&plan.plan_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(state, "stopped");
+}
+
+/// Cancelling a non-applying plan returns typed error.
+#[tokio::test]
+async fn cancel_refuses_non_applying_plan() {
+    let db = support::setup_db().await;
+    let pool = db.pool();
+    let (_actor_id, _cfg_id, op_id, target_id) = seed_basics(&db).await;
+    let (_, project_pub) = seed_project(&db).await;
+
+    let seq = support::insert_sequence(pool).await;
+    let (session_row_id, _) =
+        support::insert_light_session(pool, &uid(), &uid(), op_id, target_id, seq, 0).await;
+    pin_session(&db, &project_pub, session_row_id).await;
+
+    let plan = plan_update_view(
+        pool,
+        &PlanUpdateViewRequest {
+            project_id: &project_pub,
+            expected_project_revision: 1,
+            actor_id: &uid(),
+            command_id: &uid(),
+        },
+    )
+    .await
+    .expect("plan")
+    .plan;
+
+    // Plan is still open (draft), not applying.
+    let err = cancel_update_view(
+        pool,
+        &CancelUpdateViewRequest { plan_id: &plan.plan_id, actor_id: &uid(), command_id: &uid() },
+    )
+    .await
+    .expect_err("should refuse");
+
+    assert_eq!(err.code, ErrorCode::ProjectUpdateViewOperationNotCancellable);
+}
+
+// ── Fake InstallerCallbacks for testing run_apply_loop ─────────────────────────
+
+/// A fake `InstallerCallbacks` that records calls and simulates success.
+struct FakeCallbacks {
+    journal_entry_counter: std::sync::Arc<std::sync::Mutex<i64>>,
+}
+
+impl FakeCallbacks {
+    fn new() -> Self {
+        Self { journal_entry_counter: std::sync::Arc::new(std::sync::Mutex::new(0)) }
+    }
+}
+
+impl InstallerCallbacks for FakeCallbacks {
+    fn on_intent_prepared<'a>(
+        &'a self,
+        _pool: &'a sqlx::SqlitePool,
+        _item: &'a InstallItem,
+        _ownership_token: &'a str,
+        _command_id: &'a str,
+        _lease_owner: &'a str,
+        _lease_generation: i64,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<(), contracts_core::ContractError>> + Send + 'a,
+        >,
+    > {
+        Box::pin(async move { Ok(()) })
+    }
+
+    fn on_installed<'a>(
+        &'a self,
+        _pool: &'a sqlx::SqlitePool,
+        _item_row_id: i64,
+        _lease_owner: &'a str,
+        _lease_generation: i64,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<(), contracts_core::ContractError>> + Send + 'a,
+        >,
+    > {
+        Box::pin(async move { Ok(()) })
+    }
+
+    fn on_journaled<'a>(
+        &'a self,
+        _pool: &'a sqlx::SqlitePool,
+        _item: &'a InstallItem,
+        _content_fingerprint: &'a str,
+        _operation_command_id: &'a str,
+        _lease_owner: &'a str,
+        _lease_generation: i64,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<i64, contracts_core::ContractError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let counter = self.journal_entry_counter.clone();
+        Box::pin(async move {
+            let mut c = counter.lock().unwrap();
+            *c += 1;
+            Ok(*c)
+        })
+    }
+}
+
+/// `run_apply_loop` with real files: creates a source file, runs apply, and
+/// verifies the destination is created with matching content.
+#[tokio::test]
+async fn run_apply_loop_installs_file_to_destination() {
+    let db = support::setup_db().await;
+    let pool = db.pool();
+    let (_actor_id, _cfg_id, op_id, target_id) = seed_basics(&db).await;
+    let (_, project_pub) = seed_project(&db).await;
+
+    let seq = support::insert_sequence(pool).await;
+    let (session_row_id, _) =
+        support::insert_light_session(pool, &uid(), &uid(), op_id, target_id, seq, 0).await;
+    pin_session(&db, &project_pub, session_row_id).await;
+
+    let plan = plan_update_view(
+        pool,
+        &PlanUpdateViewRequest {
+            project_id: &project_pub,
+            expected_project_revision: 1,
+            actor_id: &uid(),
+            command_id: &uid(),
+        },
+    )
+    .await
+    .expect("plan")
+    .plan;
+
+    approve_update_view(
+        pool,
+        &ApproveUpdateViewRequest {
+            plan_id: &plan.plan_id,
+            approval_digest: &plan.plan_digest,
+            actor_id: &uid(),
+            command_id: &uid(),
+        },
+    )
+    .await
+    .expect("approve");
+
+    apply_update_view(
+        pool,
+        &ApplyUpdateViewRequest {
+            plan_id: &plan.plan_id,
+            approval_digest: &plan.plan_digest,
+            actor_id: &uid(),
+            command_id: &uid(),
+        },
+    )
+    .await
+    .expect("apply transitions to applying");
+
+    // Set up real source + destination directories.
+    let source_dir = tempfile::TempDir::new().unwrap();
+    let dest_dir = tempfile::TempDir::new().unwrap();
+    let source_file = source_dir.path().join("frame.fits");
+    std::fs::write(&source_file, b"test frame bytes").unwrap();
+
+    let source_abs = camino::Utf8PathBuf::from_path_buf(source_file).expect("utf8 source path");
+    let dest_root_abs =
+        camino::Utf8PathBuf::from_path_buf(dest_dir.path().to_owned()).expect("utf8 dest root");
+
+    // path_resolver returns the same source + dest root for all items.
+    let path_resolver =
+        |_frame_row_id: i64, _dest_root_row_id: i64| (source_abs.clone(), dest_root_abs.clone());
+
+    let callbacks = FakeCallbacks::new();
+    let counter = callbacks.journal_entry_counter.clone();
+
+    run_apply_loop(pool, &plan.plan_id, &uid(), "test-lease", 0, &callbacks, &path_resolver)
+        .await
+        .expect("apply loop should succeed");
+
+    // One item was journaled.
+    assert_eq!(*counter.lock().unwrap(), 1, "expected one journaled item");
+
+    // Plan should be applied.
+    let (state,): (String,) =
+        sqlx::query_as("SELECT state FROM materialization_update_plan WHERE public_id = ?")
+            .bind(&plan.plan_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(state, "applied");
+}
+
+/// `run_apply_loop` refuses when the plan is not in `applying` state.
+///
+/// Recovery idempotency property: `run_apply_loop` checks the plan state before
+/// touching the filesystem. A plan in `applied` or `stopped` state must not
+/// trigger any install.
+#[tokio::test]
+async fn run_apply_loop_refuses_non_applying_plan() {
+    let db = support::setup_db().await;
+    let pool = db.pool();
+    let (_actor_id, _cfg_id, op_id, target_id) = seed_basics(&db).await;
+    let (_, project_pub) = seed_project(&db).await;
+
+    let seq = support::insert_sequence(pool).await;
+    let (session_row_id, _) =
+        support::insert_light_session(pool, &uid(), &uid(), op_id, target_id, seq, 0).await;
+    pin_session(&db, &project_pub, session_row_id).await;
+
+    let plan = plan_update_view(
+        pool,
+        &PlanUpdateViewRequest {
+            project_id: &project_pub,
+            expected_project_revision: 1,
+            actor_id: &uid(),
+            command_id: &uid(),
+        },
+    )
+    .await
+    .expect("plan")
+    .plan;
+
+    // Plan is open (draft) — run_apply_loop requires applying state.
+    let callbacks = FakeCallbacks::new();
+    let source_dir = tempfile::TempDir::new().unwrap();
+    let dest_dir = tempfile::TempDir::new().unwrap();
+    let source_abs = camino::Utf8PathBuf::from_path_buf(source_dir.path().to_owned()).unwrap();
+    let dest_abs = camino::Utf8PathBuf::from_path_buf(dest_dir.path().to_owned()).unwrap();
+    let path_resolver = |_: i64, _: i64| (source_abs.clone(), dest_abs.clone());
+
+    let err = run_apply_loop(pool, &plan.plan_id, &uid(), "lease", 0, &callbacks, &path_resolver)
+        .await
+        .expect_err("non-applying plan must be refused");
+
+    assert_eq!(err.code, ErrorCode::ProjectUpdateViewPlanNotApproved);
+    // No callbacks were invoked because the plan state check fails before the loop.
+    assert_eq!(*callbacks.journal_entry_counter.lock().unwrap(), 0);
+}
+
+/// Plan generation respects the byte ceiling: a session whose byte sum exceeds
+/// `MAX_SOURCE_BYTES` (16 TiB) as the first candidate returns the typed error.
+///
+/// Inserts the frame record directly with an oversized byte_size because
+/// frame_record is append-only (UPDATE rejected by trigger).
+#[tokio::test]
+async fn plan_generation_refuses_session_exceeding_byte_ceiling() {
+    let db = support::setup_db().await;
+    let pool = db.pool();
+    let (_actor_id, _cfg_id, op_id, target_id) = seed_basics(&db).await;
+    let (_, project_pub) = seed_project(&db).await;
+
+    // Insert session + frame with byte_size exceeding MAX_SOURCE_BYTES (16 TiB + 1).
+    let over_ceiling: i64 = 17_592_186_044_417;
+    let seq = support::insert_sequence(pool).await;
+    let session_pub = uid();
+    let frame_pub = uid();
+    let file_identity_pub = uid();
+
+    // Insert file identity row (required FK for frame_record).
+    sqlx::query("INSERT INTO spec062_file_identity (public_id, created_at) VALUES (?, ?)")
+        .bind(&file_identity_pub)
+        .bind(TS)
+        .execute(pool)
+        .await
+        .unwrap();
+
+    let (file_row_id,): (i64,) =
+        sqlx::query_as("SELECT row_id FROM spec062_file_identity WHERE public_id = ?")
+            .bind(&file_identity_pub)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+
+    // Insert session.
+    let identity_digest = format!("large-session-{session_pub}");
+    sqlx::query(
+        "INSERT INTO session
+             (public_id, materialization_operation_row_id, kind, ordinal_in_operation,
+              identity_digest, observing_night_date, night_derivation,
+              canonical_target_row_id, created_sequence, created_at)
+         VALUES (?, ?, 'light', 0, ?, '2026-07-21', 'reviewed_local_fallback', ?, ?, ?)",
+    )
+    .bind(&session_pub)
+    .bind(op_id)
+    .bind(&identity_digest)
+    .bind(target_id)
+    .bind(seq)
+    .bind(TS)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let (session_row_id,): (i64,) =
+        sqlx::query_as("SELECT row_id FROM session WHERE public_id = ?")
+            .bind(&session_pub)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+
+    // Insert frame record with over-ceiling byte_size.
+    sqlx::query(
+        "INSERT INTO frame_record
+             (public_id, file_row_id, byte_size, captured_metadata_digest, created_sequence, created_at)
+         VALUES (?, ?, ?, 'large-frame-digest', ?, ?)",
+    )
+    .bind(&frame_pub)
+    .bind(file_row_id)
+    .bind(over_ceiling)
+    .bind(seq)
+    .bind(TS)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let (frame_row_id,): (i64,) =
+        sqlx::query_as("SELECT row_id FROM frame_record WHERE public_id = ?")
+            .bind(&frame_pub)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+
+    // Insert session_frame membership.
+    sqlx::query(
+        "INSERT INTO session_frame
+             (session_row_id, frame_row_id, materialization_operation_row_id,
+              ordinal, is_representative, created_sequence)
+         VALUES (?, ?, ?, 0, 1, ?)",
+    )
+    .bind(session_row_id)
+    .bind(frame_row_id)
+    .bind(op_id)
+    .bind(seq)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    pin_session(&db, &project_pub, session_row_id).await;
+
+    let err = plan_update_view(
+        pool,
+        &PlanUpdateViewRequest {
+            project_id: &project_pub,
+            expected_project_revision: 1,
+            actor_id: &uid(),
+            command_id: &uid(),
+        },
+    )
+    .await
+    .expect_err("should refuse oversized session");
+
+    assert_eq!(err.code, ErrorCode::ProjectUpdateViewSessionTooLarge);
 }

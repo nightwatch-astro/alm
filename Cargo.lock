@@ -255,6 +255,7 @@ dependencies = [
  "camino",
  "contracts_core",
  "domain_core",
+ "fs_executor",
  "fs_inventory",
  "hex",
  "patterns",

@@ -57,12 +57,8 @@ pub fn install_item(
     let source_abs = resolve_no_follow(source_root, source_rel_path, true)?;
     let dest_abs = resolve_no_follow(dest_root, dest_rel_path, false)?;
 
-    if dest_abs.exists() {
-        return Err(InstallError {
-            code: InstallErrorCode::DestinationExists,
-            message: format!("destination already exists: {dest_abs}"),
-        });
-    }
+    // No pre-flight exists() check — persist_noclobber below is the sole atomic
+    // no-clobber gate (TOCTOU-safe). Callers map RaceConflict as the collision code.
 
     if let Some(parent) = dest_abs.parent() {
         std::fs::create_dir_all(parent).map_err(|e| InstallError {
@@ -185,4 +181,126 @@ fn derive_ownership_token(dest: &Utf8PathBuf) -> String {
     #[cfg(not(unix))]
     let _ = dest;
     format!("uuid:{}", uuid::Uuid::new_v4())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use camino::Utf8PathBuf;
+    use sha2::Sha256;
+
+    fn utf8(p: std::path::PathBuf) -> Utf8PathBuf {
+        Utf8PathBuf::from_path_buf(p).expect("utf8 path")
+    }
+
+    #[test]
+    fn happy_path_installs_file_with_correct_fingerprint() {
+        let src_dir = tempfile::TempDir::new().unwrap();
+        let dest_dir = tempfile::TempDir::new().unwrap();
+        let content = b"hello update view";
+        let src_file = src_dir.path().join("frame.fits");
+        std::fs::write(&src_file, content).unwrap();
+
+        let outcome = install_item(
+            &utf8(src_dir.path().to_owned()),
+            "frame.fits",
+            &utf8(dest_dir.path().to_owned()),
+            "session-a/frame.fits",
+        )
+        .expect("install should succeed");
+
+        // Destination file must exist with correct content.
+        let dest_path = dest_dir.path().join("session-a").join("frame.fits");
+        assert!(dest_path.exists(), "destination file must exist");
+        assert_eq!(std::fs::read(&dest_path).unwrap(), content);
+
+        let mut h = Sha256::new();
+        sha2::Digest::update(&mut h, content);
+        let expected = format!("sha256:{}", hex::encode(sha2::Digest::finalize(h)));
+        assert_eq!(outcome.content_fingerprint, expected);
+
+        // Ownership token must be non-empty.
+        assert!(!outcome.ownership_token.is_empty());
+    }
+
+    #[test]
+    fn race_conflict_when_destination_already_exists() {
+        let src_dir = tempfile::TempDir::new().unwrap();
+        let dest_dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(src_dir.path().join("f.fits"), b"data").unwrap();
+
+        // Pre-create destination file to trigger no-clobber conflict.
+        let dest_subdir = dest_dir.path().join("s");
+        std::fs::create_dir_all(&dest_subdir).unwrap();
+        std::fs::write(dest_subdir.join("f.fits"), b"existing").unwrap();
+
+        let err = install_item(
+            &utf8(src_dir.path().to_owned()),
+            "f.fits",
+            &utf8(dest_dir.path().to_owned()),
+            "s/f.fits",
+        )
+        .expect_err("should fail with conflict");
+
+        // persist_noclobber returns AlreadyExists → RaceConflict.
+        assert_eq!(
+            err.code,
+            InstallErrorCode::RaceConflict,
+            "expected RaceConflict not {:?}",
+            err.code
+        );
+    }
+
+    #[test]
+    fn symlink_in_source_is_rejected() {
+        let src_dir = tempfile::TempDir::new().unwrap();
+        let dest_dir = tempfile::TempDir::new().unwrap();
+        let real_file = src_dir.path().join("real.fits");
+        std::fs::write(&real_file, b"data").unwrap();
+        // Create a symlink as the source file.
+        let link = src_dir.path().join("link.fits");
+        std::os::unix::fs::symlink(&real_file, &link).unwrap();
+
+        let err = install_item(
+            &utf8(src_dir.path().to_owned()),
+            "link.fits",
+            &utf8(dest_dir.path().to_owned()),
+            "out.fits",
+        )
+        .expect_err("symlink should be rejected");
+
+        assert_eq!(err.code, InstallErrorCode::SourcePathUnsafe);
+    }
+
+    #[test]
+    fn path_traversal_in_source_is_rejected() {
+        let src_dir = tempfile::TempDir::new().unwrap();
+        let dest_dir = tempfile::TempDir::new().unwrap();
+
+        let err = install_item(
+            &utf8(src_dir.path().to_owned()),
+            "../escape.fits", // traversal
+            &utf8(dest_dir.path().to_owned()),
+            "out.fits",
+        )
+        .expect_err("traversal should be rejected");
+
+        assert_eq!(err.code, InstallErrorCode::SourcePathUnsafe);
+    }
+
+    #[test]
+    fn source_not_found_returns_unavailable() {
+        let src_dir = tempfile::TempDir::new().unwrap();
+        let dest_dir = tempfile::TempDir::new().unwrap();
+
+        let err = install_item(
+            &utf8(src_dir.path().to_owned()),
+            "nonexistent.fits",
+            &utf8(dest_dir.path().to_owned()),
+            "out.fits",
+        )
+        .expect_err("missing source should fail");
+
+        assert_eq!(err.code, InstallErrorCode::SourceUnavailable);
+    }
 }
