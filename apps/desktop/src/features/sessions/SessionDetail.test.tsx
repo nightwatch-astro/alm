@@ -170,7 +170,7 @@ describe('SessionDetail calibration linkage — un-assign (#875)', () => {
     await screen.findByText('Remove this assignment?');
     expect(commands.calibrationMatchUnassign).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByTestId('session-calib-unassign-confirm-btn'));
+    fireEvent.click(screen.getByTestId('session-calib-unassign-confirm-confirm-btn'));
 
     await waitFor(() =>
       expect(commands.calibrationMatchUnassign).toHaveBeenCalledWith(

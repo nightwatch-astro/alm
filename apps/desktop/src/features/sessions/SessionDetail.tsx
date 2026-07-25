@@ -27,9 +27,9 @@ import type {
   SessionCalibrationMatch,
 } from '@/bindings/index';
 import {
+  ConfirmModal,
   DetailPane,
   DetailPanel,
-  Modal,
   PropertyTable,
   type PropertyDef,
 } from '@/components';
@@ -149,30 +149,16 @@ function CalibrationLinkage({
 
       {/* Confirm gate (#875, journey J11 "first-class action"): mirrors the
           calibration Archive in-use-confirm modal (MasterDetail.tsx). */}
-      <Modal
+      <ConfirmModal
         open={pendingUnassign !== null}
         onClose={() => setPendingUnassign(null)}
         title={m.sessions_calib_unassign_confirm_title()}
-        size="sm"
-        ariaLabel={m.sessions_calib_unassign_confirm_title()}
-        footer={
-          <>
-            <Btn variant="ghost" onClick={() => setPendingUnassign(null)}>
-              {m.common_cancel()}
-            </Btn>
-            <Btn
-              variant="destructive"
-              disabled={unassigning}
-              onClick={() => void handleConfirmUnassign()}
-              data-testid="session-calib-unassign-confirm-btn"
-            >
-              {m.sessions_calib_unassign_btn()}
-            </Btn>
-          </>
-        }
-      >
-        <p>{m.sessions_calib_unassign_confirm_desc()}</p>
-      </Modal>
+        message={m.sessions_calib_unassign_confirm_desc()}
+        actionLabel={m.sessions_calib_unassign_btn()}
+        busy={unassigning}
+        onConfirm={() => void handleConfirmUnassign()}
+        data-testid="session-calib-unassign-confirm"
+      />
     </>
   );
 }

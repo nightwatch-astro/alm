@@ -10,8 +10,7 @@
  * gates the second (review/apply), and neither makes sense without the other.
  */
 
-import { Modal } from '@/components';
-import { Btn } from '@/ui';
+import { ConfirmModal } from '@/components';
 import { m } from '@/lib/i18n';
 import { PlanReviewOverlay } from '@/features/plans/PlanReviewOverlay';
 
@@ -44,29 +43,16 @@ export function MasterArchiveFlow({
   return (
     <>
       {/* #886: in-use warn + confirm gate before archiving (decisions.md). */}
-      <Modal
+      <ConfirmModal
         open={inUseConfirmOpen}
         onClose={onCloseConfirm}
         title={m.calibration_archive_in_use_confirm_title()}
-        size="sm"
-        ariaLabel={m.calibration_archive_in_use_confirm_title()}
-        footer={
-          <>
-            <Btn variant="ghost" onClick={onCloseConfirm}>
-              {m.common_cancel()}
-            </Btn>
-            <Btn
-              variant="destructive"
-              disabled={archivePending}
-              onClick={onConfirmArchiveInUse}
-            >
-              {m.calibration_action_archive()}
-            </Btn>
-          </>
-        }
-      >
-        <p>{m.calibration_archive_in_use_confirm_desc()}</p>
-      </Modal>
+        message={m.calibration_archive_in_use_confirm_desc()}
+        actionLabel={m.calibration_action_archive()}
+        busy={archivePending}
+        onConfirm={onConfirmArchiveInUse}
+        data-testid="master-archive-in-use-confirm"
+      />
 
       {/* Archive plan review overlay (#886): shares the same review → approve
           → apply kit every other plan-gated flow uses. */}

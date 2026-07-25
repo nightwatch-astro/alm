@@ -13,6 +13,7 @@
  * imports from this one module.
  */
 
+import type { ZodType } from 'zod';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
 import { ipcArgs } from '@/lib/ipc-args';
@@ -117,6 +118,33 @@ export async function getSettings(args: {
   scope: string;
 }): Promise<SettingsData> {
   return unwrap(await commands.settingsGet(args.scope));
+}
+
+/**
+ * Type-safe variant of `getSettings` (C-5). Calls `settingsGet` and passes
+ * `data.values` through a Zod `.partial()` schema so callers receive a typed
+ * object rather than `Record<string, unknown>`. Unknown/extra keys are dropped
+ * by `.strip()`. Returns the schema defaults for missing or invalid fields
+ * rather than throwing — settings reads are always best-effort.
+ *
+ * Usage:
+ *   const vals = await getSettingsTyped('advanced', AdvancedSettingsSchema);
+ *   if (vals.logLevel) setLogLevel(vals.logLevel);
+ */
+export async function getSettingsTyped<T extends Record<string, unknown>>(
+  scope: string,
+  schema: ZodType<T>,
+): Promise<T> {
+  const data = await getSettings({ scope });
+  const result = schema.safeParse(data.values ?? {});
+  if (result.success) return result.data;
+  // On validation failure (e.g. backend schema changed), parse an empty object
+  // so callers get schema-defined defaults rather than throwing — settings reads
+  // are always best-effort. All per-scope schemas use .partial() so {} is valid.
+  const fallback = schema.safeParse({});
+  if (fallback.success) return fallback.data;
+  // If even {} fails (non-partial schema), return a cast rather than throwing.
+  return {} as T;
 }
 
 export async function updateSettings(args: {
