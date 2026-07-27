@@ -41,19 +41,33 @@ const listMode = process.argv.includes('--list');
 let madgeOut;
 try {
   madgeOut = execSync(
-    'node_modules/.bin/madge --circular --no-spinner --no-color --extensions ts,tsx src',
-    { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    'node_modules/.bin/madge --circular --json --no-spinner --extensions ts,tsx src',
+    { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
   );
 } catch (err) {
   // madge exits 1 when cycles are found — capture stdout anyway.
   madgeOut = /** @type {any} */ (err).stdout ?? '';
 }
 
-// Parse "N) a/b.tsx > a/c.ts" lines from madge output.
-const cycleLines = madgeOut
-  .split('\n')
-  .map((l) => l.replace(/^\d+\)\s*/, '').trim())
-  .filter((l) => l.includes(' > '));
+// `--json` is the only stable machine format: madge's human output carries ANSI
+// styling even under `--no-color`, which defeats string comparison against the
+// allowlist.  Unparseable output means madge did not run (e.g. dependencies not
+// installed) — fail rather than report a vacuous pass.
+/** @type {string[][]} */
+let cycles;
+try {
+  cycles = JSON.parse(madgeOut);
+  if (!Array.isArray(cycles)) throw new Error('expected an array');
+} catch (err) {
+  process.stderr.write(
+    `CIRCULAR DEP GATE FAILED — could not parse madge --json output: ${
+      /** @type {Error} */ (err).message
+    }\nRun \`pnpm install\` in apps/desktop and retry.\n`,
+  );
+  process.exit(1);
+}
+
+const cycleLines = cycles.map((c) => c.join(' > '));
 
 if (listMode) {
   for (const c of cycleLines) process.stdout.write(`${c}\n`);
