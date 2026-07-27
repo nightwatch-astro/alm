@@ -17,11 +17,18 @@
 //!   (T022c).
 
 use domain_core::ids::Timestamp;
-use sqlx::SqlitePool;
+use sqlx::{SqliteConnection, SqlitePool};
 
 use persistence_core::DbResult;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// SQLite has no array binding; batch id filters bind a JSON array and expand
+/// it with `json_each`, the same shape [`list_artifacts_for_project`] uses for
+/// its state filter.
+fn id_json(ids: &[String]) -> String {
+    serde_json::to_string(ids).unwrap_or_else(|_| "[]".to_owned())
+}
 
 // ── Row types ─────────────────────────────────────────────────────────────────
 
@@ -113,6 +120,65 @@ pub async fn insert_artifact_if_absent(
     }
 }
 
+/// Rows per multi-row INSERT: SQLite's 32766-parameter limit divided by the
+/// 14 bound columns.
+const ARTIFACT_INSERT_BATCH_SIZE: usize = 32766 / 14;
+
+/// Insert many `processing_artifacts` rows with `INSERT OR IGNORE`, on a caller
+/// supplied connection so the whole batch commits once.
+///
+/// Rows silenced by a constraint violation (a concurrent inserter won the
+/// `(project_id, path)` race) are not reported: `rows_affected` cannot identify
+/// which of a multi-row insert landed. Callers that need per-row identity
+/// re-query the batch's paths once.
+///
+/// # Errors
+/// Returns [`persistence_core::DbError::Database`] on any DB failure that is not
+/// a constraint violation.
+pub async fn insert_artifacts_if_absent(
+    conn: &mut SqliteConnection,
+    rows: &[InsertArtifact<'_>],
+) -> DbResult<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    for chunk in rows.chunks(ARTIFACT_INSERT_BATCH_SIZE) {
+        let placeholders =
+            std::iter::repeat_n("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", chunk.len()).collect::<Vec<_>>();
+        let sql = format!(
+            "INSERT OR IGNORE INTO processing_artifacts
+                (id, project_id, tool_launch_id, path, kind, tool,
+                 detected_at, last_seen_at, state,
+                 classification_confidence, classification_source,
+                 size_bytes, file_mtime, content_hash)
+             VALUES {}",
+            placeholders.join(",")
+        );
+        // AssertSqlSafe: `sql` interpolates only a generated placeholder list;
+        // every value is bound.
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for data in chunk {
+            query = query
+                .bind(data.id)
+                .bind(data.project_id)
+                .bind(data.tool_launch_id)
+                .bind(data.path)
+                .bind(data.kind)
+                .bind(data.tool)
+                .bind(data.detected_at)
+                .bind(data.detected_at)
+                .bind(data.state)
+                .bind(data.classification_confidence)
+                .bind(data.classification_source)
+                .bind(data.size_bytes)
+                .bind(data.file_mtime)
+                .bind(data.content_hash);
+        }
+        query.execute(&mut *conn).await?;
+    }
+    Ok(())
+}
+
 /// Lookup an artifact by `(project_id, path)`.
 ///
 /// # Errors
@@ -187,6 +253,28 @@ pub async fn touch_artifact(pool: &SqlitePool, artifact_id: &str) -> DbResult<()
     Ok(())
 }
 
+/// Update `last_seen_at` for every id in `artifact_ids` in one statement
+/// (reconcile seen phase; Tier 2 re-derivable state, so a single batched write
+/// replaces one commit per row).
+///
+/// # Errors
+/// Returns [`persistence_core::DbError::Database`] on query failure.
+pub async fn touch_artifacts(pool: &SqlitePool, artifact_ids: &[String]) -> DbResult<()> {
+    if artifact_ids.is_empty() {
+        return Ok(());
+    }
+    let now = Timestamp::now_iso();
+    sqlx::query(
+        "UPDATE processing_artifacts SET last_seen_at = ? \
+         WHERE id IN (SELECT value FROM json_each(?))",
+    )
+    .bind(&now)
+    .bind(id_json(artifact_ids))
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Transition an artifact to `missing` state.
 ///
 /// # Errors
@@ -196,6 +284,25 @@ pub async fn mark_artifact_missing(pool: &SqlitePool, artifact_id: &str) -> DbRe
         .bind(artifact_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+/// Transition every id in `artifact_ids` to `missing` state in one statement
+/// (reconcile gone phase).
+///
+/// # Errors
+/// Returns [`persistence_core::DbError::Database`] on query failure.
+pub async fn mark_artifacts_missing(pool: &SqlitePool, artifact_ids: &[String]) -> DbResult<()> {
+    if artifact_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        "UPDATE processing_artifacts SET state = 'missing' \
+         WHERE id IN (SELECT value FROM json_each(?))",
+    )
+    .bind(id_json(artifact_ids))
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -328,14 +435,20 @@ pub async fn set_tool_launch_id(
 
 /// Update the in-place rerun fields (A8): `content_hash`, `size_bytes`, `last_seen_at`.
 ///
+/// Generic over the executor so the reconcile detect phase can run many of
+/// these inside one transaction.
+///
 /// # Errors
 /// Returns [`persistence_core::DbError::Database`] on query failure.
-pub async fn update_artifact_inplace(
-    pool: &SqlitePool,
+pub async fn update_artifact_inplace<'e, E>(
+    executor: E,
     artifact_id: &str,
     size_bytes: i64,
     content_hash: Option<&str>,
-) -> DbResult<()> {
+) -> DbResult<()>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
     let now = Timestamp::now_iso();
     sqlx::query(
         "\
@@ -348,7 +461,7 @@ pub async fn update_artifact_inplace(
     .bind(content_hash)
     .bind(&now)
     .bind(artifact_id)
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
 }
@@ -564,6 +677,67 @@ mod tests {
         let row2 = get_artifact_by_path(pool, "p1", "out/img.xisf").await.unwrap().unwrap();
         assert_eq!(row2.state, "present");
         assert_eq!(row2.size_bytes, 2048);
+    }
+
+    #[tokio::test]
+    async fn batch_writes_match_their_single_row_forms() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        let pool = db.pool();
+
+        let mut conn = pool.acquire().await.unwrap();
+        insert_artifacts_if_absent(
+            &mut conn,
+            &[
+                art("b1", "p1", "out/a.xisf", "intermediate"),
+                art("b2", "p1", "out/b.xisf", "final"),
+            ],
+        )
+        .await
+        .unwrap();
+        drop(conn);
+        assert_eq!(list_artifacts_for_project(pool, "p1", &[]).await.unwrap().len(), 2);
+
+        let ids = vec!["b1".to_owned(), "b2".to_owned()];
+        mark_artifacts_missing(pool, &ids).await.unwrap();
+        assert_eq!(list_artifacts_for_project(pool, "p1", &["missing"]).await.unwrap().len(), 2);
+
+        // touch_artifacts refreshes last_seen_at without changing state.
+        touch_artifacts(pool, &ids).await.unwrap();
+        let rows = list_artifacts_for_project(pool, "p1", &[]).await.unwrap();
+        assert!(rows.iter().all(|r| r.state == "missing"));
+        assert!(rows.iter().all(|r| r.last_seen_at != r.detected_at));
+
+        // Empty input is a no-op on every batch form.
+        touch_artifacts(pool, &[]).await.unwrap();
+        mark_artifacts_missing(pool, &[]).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        insert_artifacts_if_absent(&mut conn, &[]).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn batch_insert_ignores_duplicate_paths() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        let pool = db.pool();
+
+        insert_artifact_if_absent(pool, art("d1", "p1", "out/dup.xisf", "intermediate"))
+            .await
+            .unwrap();
+
+        let mut conn = pool.acquire().await.unwrap();
+        insert_artifacts_if_absent(
+            &mut conn,
+            &[art("d2", "p1", "out/dup.xisf", "final"), art("d3", "p1", "out/fresh.xisf", "final")],
+        )
+        .await
+        .unwrap();
+        drop(conn);
+
+        let rows = list_artifacts_for_project(pool, "p1", &[]).await.unwrap();
+        assert_eq!(rows.len(), 2, "duplicate path silenced, fresh path inserted");
+        assert!(rows.iter().any(|r| r.id == "d1"), "original row survives the conflict");
+        assert!(rows.iter().any(|r| r.id == "d3"));
     }
 
     #[tokio::test]
