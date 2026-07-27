@@ -51,7 +51,11 @@ interface EquipmentProps {
 // The add/edit form shell (field grid + error line + cancel/save actions) now
 // lives in `SettingsKit.tsx` as `SettingsFormShell`, shared with other panes'
 // CRUD lists (e.g. observing-site management, spec 044 US3) — no per-pane
-// clone (shared-component mandate).
+/**
+ * Renders settings controls for managing optical trains, cameras, telescopes, and filters.
+ *
+ * @param save - Persistence handler supplied to the equipment state hook.
+ */
 
 export function Equipment({ save: _save }: EquipmentProps) {
   const {

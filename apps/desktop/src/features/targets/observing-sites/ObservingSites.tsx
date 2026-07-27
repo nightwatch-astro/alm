@@ -106,6 +106,9 @@ function newSiteId(): string {
   return `site-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * Manages observing sites, including creation, editing, selection, and removal.
+ */
 export function ObservingSites() {
   const { sites, defaultSiteId, activeSiteId } = useObservingState();
   const [form, setForm] = useState<SiteForm | null>(null);

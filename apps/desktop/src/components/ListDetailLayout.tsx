@@ -18,6 +18,11 @@ export interface ListDetailLayoutProps {
   sidebar?: ReactNode;
 }
 
+/**
+ * Renders a list and detail layout with an optional sidebar and top bar.
+ *
+ * @returns The rendered two-pane or three-pane layout.
+ */
 export function ListDetailLayout({
   topBar,
   list,

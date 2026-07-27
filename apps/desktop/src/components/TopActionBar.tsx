@@ -17,6 +17,14 @@ export interface TopActionBarProps {
   children?: ReactNode;
 }
 
+/**
+ * Renders a top action bar with a title, optional subtitle, content, and right-aligned actions.
+ *
+ * @param title - The action bar title
+ * @param subtitle - Optional subtitle displayed beside the title
+ * @param right - Optional content displayed in the action area
+ * @param children - Additional content rendered within the action bar
+ */
 export function TopActionBar({
   title,
   subtitle,

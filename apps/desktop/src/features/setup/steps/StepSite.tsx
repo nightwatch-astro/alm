@@ -117,6 +117,12 @@ function parsedCoord(text: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Renders the observing site details step of the first-run wizard.
+ *
+ * @param state - The current site details and coordinate input values
+ * @param onChange - Updates the site details state
+ */
 export function StepSite({ state, onChange }: StepSiteProps) {
   const timezones = ianaTimezones();
   const errors = siteStepErrors(state);

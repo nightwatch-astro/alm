@@ -69,6 +69,11 @@ const DEFAULTS: UpdateIngestionSettings = {
   defaultFilter: null,
 };
 
+/**
+ * Renders ingestion settings controls and persists user changes.
+ *
+ * @returns The ingestion settings interface.
+ */
 export function Ingestion(_props: IngestionProps) {
   // Full persisted state, including fields this pane doesn't render — needed
   // so `persist()` can send a complete `UpdateIngestionSettings` without

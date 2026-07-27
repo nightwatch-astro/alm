@@ -58,6 +58,14 @@ function levelHint(level: ProtectionLevel, inherits: boolean): string {
   }
 }
 
+/**
+ * Displays a source's protection level and optionally its level editor.
+ *
+ * @param sourceId - The backend identifier of the source.
+ * @param open - Whether the protection level editor is visible.
+ * @param onOpenChange - Called when the editor requests a change to its open state.
+ * @param onSaved - Called with the new protection level after it is saved successfully.
+ */
 export function SourceProtectionOverride({
   sourceId,
   onSaved,

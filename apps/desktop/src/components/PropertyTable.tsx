@@ -72,6 +72,11 @@ export interface PropertyTableProps {
   showConfirm?: boolean;
 }
 
+/**
+ * Renders an editor for a property based on its configured input type.
+ *
+ * @param prop - The property definition containing the value, input type, and change handler
+ */
 function PropertyValueEditor({ prop }: { prop: PropertyDef }) {
   const { type = 'text', value, onChange, options } = prop;
 

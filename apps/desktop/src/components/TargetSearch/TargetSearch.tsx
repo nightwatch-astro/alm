@@ -130,7 +130,23 @@ export interface TargetSearchProps {
   onOverride?: (suggestion: TargetSuggestion) => void;
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+/**
+ * Provides an accessible search interface for selecting catalogue targets.
+ *
+ * @param onSelect - Called when a suggestion is selected.
+ * @param catalogFilter - Optional catalogue restriction.
+ * @param typeFilter - Optional object-type restriction.
+ * @param limit - Maximum number of suggestions to request.
+ * @param label - Label for the search input.
+ * @param placeholder - Placeholder text for the search input.
+ * @param hideLabel - Whether to visually hide the label.
+ * @param inputId - Optional id for the search input.
+ * @param autoFocus - Whether the search input receives focus automatically.
+ * @param inputRef - Ref forwarded to the search input.
+ * @param showFilters - Whether to display catalogue and object-type filters.
+ * @param enableOverride - Whether to display controls for correcting a suggestion.
+ * @param onOverride - Called when a suggestion is corrected.
+ */
 
 export function TargetSearch({
   onSelect,

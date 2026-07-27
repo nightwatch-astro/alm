@@ -83,6 +83,16 @@ export interface ModalProps {
   'data-testid'?: string;
 }
 
+/**
+ * Renders a controlled modal dialog with optional title, content, footer, and dismissal controls.
+ *
+ * @param open - Whether the modal is open.
+ * @param onClose - Called when the modal requests closing.
+ * @param initialFocus - Element or focus behaviour to use when the modal opens.
+ * @param closeOnBackdrop - Whether clicking the backdrop closes the modal.
+ * @param hideClose - Whether to hide the close button.
+ * @param ariaLabel - Accessible label for the dialog.
+ */
 export function Modal({
   open,
   onClose,

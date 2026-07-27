@@ -47,6 +47,14 @@ function formatStarted(iso: string): string {
   }
 }
 
+/**
+ * Renders a table of recent contract calls with outcomes and available actions.
+ *
+ * @param calls - Contract calls to display
+ * @param contracts - Contract metadata used to determine replay eligibility
+ * @param onViewSchema - Handler for viewing a call's contract schema
+ * @param onReplay - Handler for replaying a call
+ */
 export function CallList({
   calls,
   contracts,

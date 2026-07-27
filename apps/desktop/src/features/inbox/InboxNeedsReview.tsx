@@ -26,6 +26,15 @@ export interface InboxNeedsReviewProps {
   rows: Record<string, React.ReactNode>[];
 }
 
+/**
+ * Renders the inbox section for files requiring review, including selection,
+ * bulk overrides, pending overrides, and related feedback.
+ *
+ * @param reclassify - State and actions for managing file reclassification
+ * @param itemFrameType - Frame type used to filter applicable bulk-editable properties
+ * @param columns - Columns to render in the unclassified-files table
+ * @param rows - Rows to render in the unclassified-files table
+ */
 export function InboxNeedsReview({
   reclassify,
   itemFrameType,

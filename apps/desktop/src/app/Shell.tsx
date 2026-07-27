@@ -39,6 +39,11 @@ const OrientationWalk = lazy(() =>
   })),
 );
 
+/**
+ * Renders the application shell with navigation, routed content, global controls, and conditional panels.
+ *
+ * @returns The application shell layout.
+ */
 function ShellInner() {
   const prefs = usePreferences();
   const onboarding = useOnboardingState();

@@ -119,7 +119,18 @@ function destinationLabel(plan: PlanDetail_Serialize): string {
     : m.plans_dest_archive();
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+/**
+ * Reviews and applies a generated plan in a modal overlay.
+ *
+ * @param planId - The identifier of the plan to review, or `null` when no plan is selected
+ * @param open - Whether the overlay is visible
+ * @param onClose - Called when the overlay is closed
+ * @param title - Optional overlay title
+ * @param onApplied - Called when applying the plan completes successfully
+ * @param onDiscarded - Called after the plan is discarded
+ * @param onRetryCreated - Called with the identifier of a newly generated retry plan
+ * @param emptyReason - Optional explanation shown when the plan contains no items
+ */
 
 export function PlanReviewOverlay({
   planId,

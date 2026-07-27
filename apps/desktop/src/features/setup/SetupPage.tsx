@@ -9,6 +9,11 @@ import { m } from '@/lib/i18n';
 import { SetupWizard } from './SetupWizard';
 import { page } from '@/ui/page-layout.css';
 
+/**
+ * Renders the setup page or redirects to the inbox when setup is complete.
+ *
+ * @returns A loading view while setup status is checked, or the setup wizard.
+ */
 export function SetupPage() {
   const [setupCompleted] = usePreference('setupCompleted');
   const [density] = usePreference('density');

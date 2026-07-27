@@ -48,6 +48,11 @@ type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
 const RESET_FEEDBACK_MS = 3000;
 
+/**
+ * Renders advanced settings, including log-level configuration, onboarding controls, update actions, and preference reset controls.
+ *
+ * @param save - Persists updated advanced settings
+ */
 export function Advanced({ save }: AdvancedProps) {
   const navigate = useNavigate();
   const [logLevel, setLogLevel] = useState<LogLevel>('info');

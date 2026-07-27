@@ -53,6 +53,12 @@ interface SourceViewsProps {
   save: (scope: string, values: Record<string, unknown>) => void;
 }
 
+/**
+ * Renders controls for configuring source-view link kinds across and within drives.
+ *
+ * @param save - Persists updates to the source views settings
+ * @returns The Source Views settings section
+ */
 export function SourceViews({ save }: SourceViewsProps) {
   const [intraDrive, setIntraDrive] = useState<LinkKind>('hardlink');
   const [crossDrive, setCrossDrive] = useState<LinkKind>('symlink');

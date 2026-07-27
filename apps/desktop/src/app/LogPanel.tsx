@@ -54,7 +54,9 @@ import {
 } from './logpanel.css';
 import { virtualInner, virtualScroll } from '@/ui/page-layout.css';
 
-// ── LogPanel component ────────────────────────────────────────────────────────
+/**
+ * Displays a filterable, virtualised log panel with tail following, navigation, and export controls.
+ */
 
 export function LogPanel() {
   const {

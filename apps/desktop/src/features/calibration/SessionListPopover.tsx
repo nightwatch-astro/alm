@@ -27,6 +27,13 @@ interface Props {
   names: string[];
 }
 
+/**
+ * Displays a searchable popover containing session names.
+ *
+ * @param label - The label displayed for the session group
+ * @param names - The session names shown in the popover
+ * @returns The session list popover
+ */
 export function SessionListPopover({ label, names }: Props) {
   const [query, setQuery] = useState('');
   const inputId = useId();
