@@ -402,6 +402,22 @@ jobs:
         if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
         run: just hot-read
 
+      # Lifecycle string-comparison ratchet: sealed at zero raw
+      # `.lifecycle == "..."` comparisons in production Rust (#1534, #1556).
+      # Local-only until now, so raw comparisons could reach main through CI.
+      # Pure grep, no compile — same Linux-only gating as the ratchets above.
+      - name: Lifecycle string ratchet
+        if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
+        run: just lifecycle-strings
+
+      # .pv-* selector ratchet: sealed at zero class selectors in e2e test
+      # files (Playwright TS under tests/e2e/ and Rust journeys under
+      # crates/e2e-tests/), which the eslint alm/require-root-testid rule
+      # cannot reach. Gated on frontend too, because tests/e2e/ is TS.
+      - name: .pv-* selector ratchet
+        if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.scripts == 'true')
+        run: just pv-selector-ratchet
+
       # Compilation warnings/lints are OS-agnostic; running clippy on all 3 legs
       # is pure redundancy — the nextest step below builds the workspace anyway.
       - name: Clippy (workspace, all targets, deny warnings)
