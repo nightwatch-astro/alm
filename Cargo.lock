@@ -8534,6 +8534,8 @@ name = "workflow_profiles"
 version = "0.1.0"
 dependencies = [
  "itertools",
+ "project_structure",
+ "tempfile",
  "winreg 0.56.0",
 ]
 
