@@ -66,19 +66,33 @@ describe('writeLocalStorage', () => {
   // string "undefined", which `readLocalStorage` then reports as corrupt
   // rather than absent.
   describe('values JSON cannot represent', () => {
-    let setItem: ReturnType<typeof vi.spyOn>;
-    let removeItem: ReturnType<typeof vi.spyOn>;
+    // Install a recording stub rather than spying on the ambient
+    // `localStorage`: which object that is varies by environment (jsdom's
+    // Storage, Node's experimental global, or vitest.setup.ts's Map-backed
+    // replacement), and a spy attached to the wrong one records nothing —
+    // which made an earlier version of these tests pass locally and fail in
+    // CI. Replacing the global makes the assertion environment-independent.
+    const setItem = vi.fn<(key: string, value: string) => void>();
+    const removeItem = vi.fn<(key: string) => void>();
+    let original: Storage;
 
     beforeEach(() => {
-      // Spy on the instance, not `Storage.prototype`: this environment's
-      // `localStorage` is not necessarily a `Storage` instance, so a prototype
-      // spy would never intercept.
-      setItem = vi.spyOn(localStorage, 'setItem');
-      removeItem = vi.spyOn(localStorage, 'removeItem');
+      setItem.mockClear();
+      removeItem.mockClear();
+      original = globalThis.localStorage;
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: { ...original, setItem, removeItem },
+        writable: true,
+        configurable: true,
+      });
     });
 
     afterEach(() => {
-      vi.restoreAllMocks();
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: original,
+        writable: true,
+        configurable: true,
+      });
     });
 
     it('removes the key for undefined instead of calling setItem', () => {
