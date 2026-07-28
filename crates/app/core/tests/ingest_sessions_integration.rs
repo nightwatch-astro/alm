@@ -319,3 +319,81 @@ async fn unknown_object_session_backfills_after_resolve() {
     let sessions = session_rows(pool).await;
     assert!(sessions[0].2.is_some(), "canonical_target_id back-filled after resolve");
 }
+
+// ── T008 (spec 048): real ingest path populates session size totals ──────────────
+
+/// The ingest path (`plan.apply` completion → frame records → session) must
+/// carry real on-disk sizes through to `total_size_bytes`. Frames get different
+/// sizes so a sum is distinguishable from `count * size` or a single frame's size.
+#[tokio::test]
+async fn ingested_session_total_size_is_sum_of_real_frame_sizes() {
+    let (db, _repo, bus) = support::setup().await;
+    let pool = db.pool();
+    let tmp = tempfile::tempdir().unwrap();
+    let root_id = "src-raw";
+    register_source(pool, root_id, tmp.path().to_str().unwrap()).await;
+
+    write_fits(
+        tmp.path(),
+        "s1.fits",
+        "Light Frame",
+        Some("M 31"),
+        Some("Ha"),
+        Some("2026-06-21T22:00:00"),
+    );
+    write_fits(
+        tmp.path(),
+        "s2.fits",
+        "Light Frame",
+        Some("M 31"),
+        Some("Ha"),
+        Some("2026-06-21T23:00:00"),
+    );
+    // Pad the second frame by one FITS block so the two sizes differ.
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(tmp.path().join("s2.fits"))
+        .unwrap()
+        .write_all(&[0u8; 2880])
+        .unwrap();
+
+    let expected_total: u64 = ["s1.fits", "s2.fits"]
+        .iter()
+        .map(|name| std::fs::metadata(tmp.path().join(name)).unwrap().len())
+        .sum();
+
+    build_applied_plan(pool, "plan-3", root_id, &["s1.fits", "s2.fits"]).await;
+
+    app_core::inbox::plan_listener::start_inbox_plan_listener(
+        pool.clone(),
+        &bus,
+        targeting_resolver::simbad::ResolveCache::in_memory().unwrap(),
+    );
+    publish_applied(&bus, "plan-3").await;
+    support::poll_until(
+        || async {
+            let rows = session_rows(pool).await;
+            let ready = rows.iter().any(|(_id, frame_ids, _ct)| {
+                let frames: Vec<String> = serde_json::from_str(frame_ids).unwrap_or_default();
+                frames.len() >= 2
+            });
+            ready.then_some(())
+        },
+        "acquisition_session with 2 frames never appeared after plan-3 apply-completed event",
+    )
+    .await;
+
+    let listed = app_core::sessions::list_sessions(pool).await.unwrap();
+    assert_eq!(listed.len(), 1, "both frames share one capture identity");
+    assert_eq!(listed[0].frame_count, 2);
+    assert_eq!(
+        listed[0].total_size_bytes, expected_total,
+        "list total must be the sum of the real on-disk frame sizes"
+    );
+
+    let detail = app_core::sessions::get_session(pool, &listed[0].id).await.unwrap();
+    assert_eq!(
+        detail.total_size_bytes, expected_total,
+        "detail total must match the same real sum"
+    );
+}
