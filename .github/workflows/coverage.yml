@@ -86,6 +86,24 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
+      # The workspace test run includes Rust tests that shell out to `node` for
+      # cross-language contract parity — `spec062_portable_contracts` spawns
+      # `packages/contracts/tests/utf8-byte-keywords.test.mjs`, which imports
+      # `ajv/dist/2020`. Without the JS deps installed those tests fail with
+      # MODULE_NOT_FOUND, so this job needs the same Node setup as ci.yml's
+      # integration job even though it is nominally Rust-only.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.17.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
       - name: Collect coverage (workspace, all tests + doctests)
         run: |
           cargo llvm-cov \
