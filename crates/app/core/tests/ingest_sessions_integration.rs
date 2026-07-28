@@ -92,9 +92,18 @@ async fn register_source(pool: &sqlx::SqlitePool, id: &str, path: &str) {
     .unwrap();
 }
 
-/// Build an applied (state=applied) plan whose `move` items target `root_id` at
-/// the given relative paths, all marked `item_state='succeeded'`.
-async fn build_applied_plan(pool: &sqlx::SqlitePool, plan_id: &str, root_id: &str, rels: &[&str]) {
+/// Build an applied (state=applied) plan over `root_id`, one succeeded item per
+/// `(relative_path, action, has_destination)` triple.
+///
+/// `has_destination = false` writes the item with a NULL `to_root_id` and an
+/// empty `to_relative_path` — the catalogue-in-place row shape whose resolution
+/// must fall back to `from_root_id`/`from_relative_path` (spec 048 T013).
+async fn build_applied_plan(
+    pool: &sqlx::SqlitePool,
+    plan_id: &str,
+    root_id: &str,
+    items: &[(&str, &str, bool)],
+) {
     plans_repo::insert_plan(
         pool,
         &plans_repo::InsertPlan {
@@ -111,7 +120,7 @@ async fn build_applied_plan(pool: &sqlx::SqlitePool, plan_id: &str, root_id: &st
     .await
     .unwrap();
 
-    for (i, rel) in rels.iter().enumerate() {
+    for (i, (rel, action, has_destination)) in items.iter().enumerate() {
         let item_id = format!("{plan_id}-item-{i}");
         plans_repo::insert_plan_item(
             pool,
@@ -120,11 +129,11 @@ async fn build_applied_plan(pool: &sqlx::SqlitePool, plan_id: &str, root_id: &st
                 plan_id,
                 item_index: i64::try_from(i).unwrap(),
                 name: "[LIGHT] frame.fits",
-                action: "move",
+                action,
                 from_root_id: Some(root_id),
                 from_relative_path: rel,
-                to_root_id: Some(root_id),
-                to_relative_path: rel,
+                to_root_id: has_destination.then_some(root_id),
+                to_relative_path: if *has_destination { rel } else { "" },
                 reason: "inbox_split",
                 protection: "normal",
                 linked_entity: None,
@@ -203,7 +212,13 @@ async fn two_m31_frames_group_into_one_linked_session() {
         Some("2026-06-21T23:00:00"),
     );
 
-    build_applied_plan(pool, "plan-1", root_id, &["a.fits", "b.fits"]).await;
+    build_applied_plan(
+        pool,
+        "plan-1",
+        root_id,
+        &[("a.fits", "move", true), ("b.fits", "move", true)],
+    )
+    .await;
 
     app_core::inbox::plan_listener::start_inbox_plan_listener(
         pool.clone(),
@@ -255,6 +270,108 @@ async fn two_m31_frames_group_into_one_linked_session() {
     );
 }
 
+// ── spec 048 T010/T013: catalogue-in-place parity with a move ────────────────────
+
+/// The `file_record` columns a frame's own identity does not depend on. `id` and
+/// `relative_path` are excluded because they legitimately differ per frame;
+/// `first_seen_at`/`last_seen_at` are excluded because they are wall-clock write
+/// times, not properties of the frame.
+#[derive(Debug, Eq, PartialEq, sqlx::FromRow)]
+struct PathIndependentFrameRecord {
+    root_id: String,
+    size_bytes: i64,
+    mtime: String,
+    content_hash: Option<String>,
+    state: String,
+}
+
+async fn frame_record(
+    pool: &sqlx::SqlitePool,
+    relative_path: &str,
+) -> Option<PathIndependentFrameRecord> {
+    sqlx::query_as(
+        "SELECT root_id, size_bytes, mtime, content_hash, state
+         FROM file_record WHERE relative_path = ?",
+    )
+    .bind(relative_path)
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+}
+
+/// Constitution §I (local-first custody): catalogue-in-place is the path a user
+/// with an already-organized library takes, so a catalogued frame MUST be
+/// recorded exactly as richly as a moved one — same real size, same mtime, same
+/// state, same root. A catalogue plan item carries no destination
+/// (`to_root_id IS NULL`), so its `file_record` is only written if resolution
+/// falls back to the source path (`plan_listener::resolve_applied_frame_path` /
+/// `ingest_sessions::ingest_light_frames`); a regression there records nothing
+/// at all, or records it with the `size_bytes = 0` placeholder spec 048 removed.
+#[tokio::test]
+async fn catalogued_frame_is_recorded_identically_to_a_moved_frame() {
+    let (db, _repo, bus) = support::setup().await;
+    let pool = db.pool();
+    let tmp = tempfile::tempdir().unwrap();
+    let root_id = "src-raw";
+    register_source(pool, root_id, tmp.path().to_str().unwrap()).await;
+    upsert_resolved(pool, &m31()).await.unwrap();
+
+    // Byte-identical frames, so `size_bytes` is comparable. Their mtimes are
+    // then forced equal: two files created in sequence otherwise differ by the
+    // filesystem's timestamp granularity, which would make the mtime assertion
+    // test the clock rather than the writer.
+    for name in ["moved.fits", "catalogued.fits"] {
+        write_fits(
+            tmp.path(),
+            name,
+            "Light Frame",
+            Some("M 31"),
+            Some("Ha"),
+            Some("2026-06-21T22:00:00"),
+        );
+        filetime::set_file_mtime(
+            tmp.path().join(name),
+            filetime::FileTime::from_unix_time(1_750_000_000, 0),
+        )
+        .unwrap();
+    }
+
+    build_applied_plan(
+        pool,
+        "plan-parity",
+        root_id,
+        &[("moved.fits", "move", true), ("catalogued.fits", "catalogue", false)],
+    )
+    .await;
+
+    app_core::inbox::plan_listener::start_inbox_plan_listener(
+        pool.clone(),
+        &bus,
+        targeting_resolver::simbad::ResolveCache::in_memory().unwrap(),
+    );
+    publish_applied(&bus, "plan-parity").await;
+    support::poll_until(
+        || async {
+            let count: (i64,) =
+                sqlx::query_as("SELECT COUNT(*) FROM file_record").fetch_one(pool).await.unwrap();
+            (count.0 >= 2).then_some(())
+        },
+        "both frame records never appeared after plan-parity apply-completed event",
+    )
+    .await;
+
+    let moved = frame_record(pool, "moved.fits").await.expect("moved frame recorded");
+    let catalogued = frame_record(pool, "catalogued.fits")
+        .await
+        .expect("catalogued frame recorded — resolution must fall back to the source path");
+
+    assert_eq!(
+        catalogued, moved,
+        "catalogued and moved frames must agree on every path-independent field"
+    );
+    assert!(moved.size_bytes > 0, "real on-disk size, never the 0 placeholder (spec 048 FR-001)");
+}
+
 // ── T046: unknown OBJECT → pending → back-fill ───────────────────────────────────
 
 #[tokio::test]
@@ -274,7 +391,7 @@ async fn unknown_object_session_backfills_after_resolve() {
         Some("L"),
         Some("2026-06-21T22:00:00"),
     );
-    build_applied_plan(pool, "plan-2", root_id, &["u.fits"]).await;
+    build_applied_plan(pool, "plan-2", root_id, &[("u.fits", "move", true)]).await;
 
     app_core::inbox::plan_listener::start_inbox_plan_listener(
         pool.clone(),

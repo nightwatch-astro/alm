@@ -59,6 +59,9 @@ uuid = { version = "1", features = ["serde", "v4", "v5"] }
 [dev-dependencies]
 app_core_cache = { path = "../cache" }
 tempfile = { workspace = true }
+# spec 048 T010: forces two fixture frames to a single mtime so the
+# moved-vs-catalogued `file_record` comparison tests the writer, not the clock.
+filetime = "0.2"
 rstest = { workspace = true }
 proptest = { workspace = true }
 # spec 052 P1 (resolution_e2e.rs): computes the same deterministic UUIDv5 the
