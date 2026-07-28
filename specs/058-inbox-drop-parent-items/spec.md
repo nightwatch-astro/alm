@@ -4,7 +4,13 @@
 
 **Created**: 2026-07-19
 
-**Status**: Draft
+**Status**: Implemented (post-hoc record, verified 2026-07-28). Placeholder
+creation is removed, `inbox_classify_source_group` ships, source groups render
+with a Classify action, `"mixed"` is retired from the classifier, and the
+migration citations are corrected. The unchecked and `BLOCKED` annotations in
+`tasks.md` describe a state HEAD has since resolved; that file is legacy paper
+and task state lives in beads. Outstanding verification gates (`T030`, `T042`,
+`T048`) and the e2e helper split (`T014`-`T016`) are tracked as beads.
 
 **Input**: Product-owner decision: "Drop the concept of parent inbox items
 entirely. A folder produces one or more real inbox items, never a parent plus

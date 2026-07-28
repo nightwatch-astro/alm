@@ -2,7 +2,10 @@
 
 **Feature Branch**: `042-stdlib-adoption`
 **Created**: 2026-06-20
-**Status**: Draft
+**Status**: Implemented (post-hoc record, verified 2026-07-28). All substantive
+adoption work ships at HEAD. The remaining unchecked boxes in `tasks.md` are
+commit-bookkeeping checkpoints plus one manual Windows verification, not code
+gaps. That file is legacy paper; task state for this spec lives in beads.
 **Input**: User description: "Discover hand-rolled code across the repo (Rust + TS/React) that has a well-established standard-library replacement, then spec, plan, task, implement, and verify the migrations — anchored on replacing the homegrown desktop state store with TanStack Query. Maximal adoption appetite; harden the Rust↔TypeScript boundary; de-duplicate copy-pasted helpers; make narrow crate-structure fixes."
 
 ## Overview
