@@ -479,7 +479,13 @@ async fn ingested_session_total_size_is_sum_of_real_frame_sizes() {
         .map(|name| std::fs::metadata(tmp.path().join(name)).unwrap().len())
         .sum();
 
-    build_applied_plan(pool, "plan-3", root_id, &["s1.fits", "s2.fits"]).await;
+    build_applied_plan(
+        pool,
+        "plan-3",
+        root_id,
+        &[("s1.fits", "move", true), ("s2.fits", "move", true)],
+    )
+    .await;
 
     app_core::inbox::plan_listener::start_inbox_plan_listener(
         pool.clone(),
