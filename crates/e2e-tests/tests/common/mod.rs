@@ -54,7 +54,12 @@
 //!
 //! See `crates/e2e-tests/README.md` for the full run procedure.
 
-#![allow(dead_code)]
+// Each test binary under `tests/` compiles this module separately and uses only
+// the subset of the harness it needs, so items and re-exports that are live for
+// one binary are genuinely unused in another. `dead_code` covers the
+// definitions; `unused_imports` covers the re-exports below, which otherwise
+// fail the `-D warnings` clippy gate on whichever binary happens not to use one.
+#![allow(dead_code, unused_imports)]
 
 mod app;
 mod boot;
