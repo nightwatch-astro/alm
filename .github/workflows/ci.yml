@@ -233,17 +233,22 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "changes: rust=$rust frontend=$frontend frontend_full=$frontend_full docs_only=$docs_only scripts=${{ steps.filter.outputs.scripts }}"
 
-  # Two lanes share this matrix (Rust and frontend), each with its own step-level
-  # gate, so it is NOT split into two jobs: whenever either lane is active every
-  # OS leg still runs real work — `Rust tests` + `Generated contract/binding
-  # drift` are OS-agnostic under the Rust lane, as are the frontend lint / unit
-  # test / typecheck steps under the frontend lane. The job-level gate below
-  # therefore fires only when BOTH lanes are idle, which is exactly the case
-  # where the job had nothing to do and must not report `success`.
+  # Three lanes share this matrix (Rust, frontend, scripts), each with its own
+  # step-level gate, so it is NOT split into separate jobs: whenever any lane is
+  # active every OS leg still runs real work — `Rust tests` + `Generated
+  # contract/binding drift` are OS-agnostic under the Rust lane, as are the
+  # frontend lint / unit test / typecheck steps under the frontend lane, and the
+  # ratchet steps under the scripts lane. The job-level gate below therefore
+  # fires only when ALL lanes are idle, which is exactly the case where the job
+  # had nothing to do and must not report `success`.
+  #
+  # `scripts` must appear here as well as on the ratchet steps: those steps gate
+  # on it, so without it a scripts-only PR skips this job entirely and silently
+  # bypasses every ratchet it was meant to trigger.
   integration:
     name: Unit + integration (L1+L2) — ${{ matrix.os }}
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.scripts == 'true'
     strategy:
       fail-fast: false # report each platform distinctly (FR-011)
       matrix:

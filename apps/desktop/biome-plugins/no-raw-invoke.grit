@@ -12,7 +12,10 @@ language js
 
 call_expression($function, $arguments) where {
   $function <: `invoke`,
-  $arguments <: contains string(),
+  // `string()` does not match template literals, so a backtick command name
+  // slips past a `contains string()`-only guard. The regex branch covers both
+  // the plain and the generic `invoke<T>(`cmd`)` forms.
+  $arguments <: or { contains string(), r"[^\n]*`[^`\n]*`[^\n]*" },
   register_diagnostic(
     span = $arguments,
     message = "Hand-written `invoke('...')` calls are confined to the dispatch switcher (spec 037 SC-001). Call the generated `commands.*` bindings instead.",
