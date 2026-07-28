@@ -12,7 +12,8 @@
 //   node scripts/check-circular.mjs              # CI / lint gate
 //   node scripts/check-circular.mjs --list       # print all current cycles
 
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -38,21 +39,32 @@ const ALLOWLIST = new Set([
 
 const listMode = process.argv.includes('--list');
 
-let madgeOut;
+// Resolve madge's CLI through Node rather than invoking `node_modules/.bin/madge`
+// through a shell: the bin shim is not executable by cmd.exe, so the shell form
+// fails on Windows with "'node_modules' is not recognized".  Running the real
+// entry point under the current node binary works identically on every platform.
 /** @type {string} */
-let madgeErr = '';
+let madgeCli;
 try {
-  madgeOut = execSync(
-    'node_modules/.bin/madge --circular --json --no-spinner --extensions ts,tsx src',
-    { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  madgeCli = createRequire(`${ROOT}/`).resolve('madge/bin/cli.js');
+} catch {
+  process.stderr.write(
+    'CIRCULAR DEP GATE FAILED — cannot resolve madge.\n' +
+      'Run `pnpm install` in apps/desktop and retry.\n',
   );
-} catch (err) {
-  // madge exits 1 when cycles are found — capture stdout anyway.  Keep stderr
-  // too: when stdout turns out to be unparseable, madge's own diagnostic is the
-  // only thing that explains why.
-  madgeOut = /** @type {any} */ (err).stdout ?? '';
-  madgeErr = /** @type {any} */ (err).stderr ?? '';
+  process.exit(1);
 }
+
+// madge exits 1 when cycles are found, so a non-zero status is expected — read
+// stdout regardless.  Capture stderr too: when stdout turns out to be
+// unparseable, madge's own diagnostic is the only thing that explains why.
+const madge = spawnSync(
+  process.execPath,
+  [madgeCli, '--circular', '--json', '--no-spinner', '--extensions', 'ts,tsx', 'src'],
+  { cwd: ROOT, encoding: 'utf8' },
+);
+const madgeOut = madge.stdout ?? '';
+const madgeErr = madge.error ? String(madge.error.message) : (madge.stderr ?? '');
 
 // `--json` is the only stable machine format: madge's human output carries ANSI
 // styling even under `--no-color`, which defeats string comparison against the
