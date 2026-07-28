@@ -231,27 +231,23 @@ fn inventory_list_request_with_filters_validates_against_inventory_list_schema()
     assert_validates(&validator, &instance, "InventoryListRequest (with filters)");
 }
 
-// ── PARITY DIVERGENCE (bead astro-plan-kyo7.23) ──────────────────────────────
+// ── PARITY RESOLVED (was bead astro-plan-kyo7.23) ────────────────────────────
 //
-// `inventory.list.schema.json §$defs.InventorySession` requires a `"state"`
-// field (the spec 002 six-value session state), but `contracts_core::inventory::
-// InventorySession` no longer has that field.  It was removed in spec 041
-// FR-051 (T076, Phase 13): sessions on this surface are derived,
-// already-confirmed inventory — the review-state machine was removed and the
-// field is now absent from the Rust type.
+// `inventory.list.schema.json §$defs.InventorySession` used to require a
+// `"state"` field (the spec 002 six-value session state) that
+// `contracts_core::inventory::InventorySession` no longer has: it was removed in
+// spec 041 FR-051 (T076, Phase 13), because sessions on this surface are
+// derived, already-confirmed inventory, so the review-state machine went away.
 //
-// The JSON Schema has not been updated to match.  This is the authoritative
-// record of the divergence.  Tracked for schema update as a follow-up to this
-// bead.
+// The schema was updated to match on 2026-07-28 (spec 006 T506): `state` is gone
+// from `InventorySession.required` and its properties, and the now-unreferenced
+// `$defs.SessionState` was deleted from this schema. `SessionState` still lives
+// in `inventory.session.review.schema.json`, where the review-state machine —
+// and its `priorState`/`newState` transitions — remain real.
 //
-// The test is `#[ignore]` so `cargo test` stays green while the divergence is
-// visible.  Run with `--include-ignored` to confirm the failing assertion:
-//   cargo test --test contract_jsonschema_roundtrip -- --include-ignored
+// The test is no longer `#[ignore]`, so this parity is now enforced on every run
+// rather than recorded in a comment.
 #[test]
-#[ignore = "SCHEMA DRIFT: inventory.list.schema.json InventorySession.state required \
-            but Rust InventorySession has no state field (removed spec 041 FR-051). \
-            Update packages/contracts/schemas/inventory.list.schema.json to remove \
-            the state field from InventorySession.required and $defs.SessionState."]
 fn inventory_list_response_validates_against_inventory_list_schema() {
     let validator = inventory_list_validator();
     let session = InventorySession {
