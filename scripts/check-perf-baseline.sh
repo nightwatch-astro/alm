@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Perf regression guard — enforces the SQL statement budget for the inbox hot paths.
+# Perf regression guard — enforces the SQL statement budget for the measured hot paths.
 #
 # Invariant: sqlx_stmts counts per scenario are deterministic (same fixture
 # size → same query plan every run). Wall time is noisy on CI runners and only
@@ -21,6 +21,15 @@
 #
 # CI gate: run only when ci-affected-crates.sh output contains
 # app_core_inbox, persistence_inbox, or fs-inventory (see .github/workflows/ci.yml).
+#
+# COVERAGE GAP (astro-plan-9l04): three scenarios added for spec 007 T033,
+# spec 025 T045, and spec 048 T043a measure crates the trigger list above does
+# NOT name — app_core (reconcile + plan-apply progress), app_core_calibration
+# (suggest), fs_executor, and persistence_plans. A change confined to any of
+# those skips this gate entirely, so their statement budgets are only enforced
+# when an inbox/fs_inventory crate happens to be co-affected. Widening the
+# trigger grep is a CI-policy change and was deliberately left out of that
+# bead; the full harness takes ~23s locally, so cost is not the blocker.
 
 set -euo pipefail
 

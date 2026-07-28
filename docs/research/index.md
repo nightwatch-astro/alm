@@ -11,6 +11,7 @@ live in this directory; feature-scoped research lives under
 - [implementation-dependencies.md](./implementation-dependencies.md) — cross-feature implementation dependencies.
 - [lifecycle-state-model.md](./lifecycle-state-model.md) — data lifecycle state model.
 - [044-frontend-astronomy-libraries.md](./044-frontend-astronomy-libraries.md) — astronomy/charting library selection for the planner (astronomy-engine, visx, react-table, moon filter model, FITS/XISF crate split); handover for spec 044 + orchestrator.
+- [007-025-048-perf-gate-measurements.md](./007-025-048-perf-gate-measurements.md) — measured perf-gate results for calibration suggest (spec 007 T033), plan-apply progress (spec 025 T045), and 10k-frame reconcile (spec 048 SC-005).
 
 ## Feature research decisions
 

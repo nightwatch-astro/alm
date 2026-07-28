@@ -4,10 +4,10 @@
     "n": 500,
     "scenario": "scan_root",
     "sqlx_stmts": 0,
-    "wall_ms": 1095,
+    "wall_ms": 177,
     "workers": null,
     "stmts_budget": 0,
-    "wall_ms_budget": 1095
+    "wall_ms_budget": 177
   },
   {
     "classified_ok": 10,
@@ -15,8 +15,44 @@
     "n": 500,
     "scenario": "classify_source_groups",
     "sqlx_stmts": 660,
-    "wall_ms": 1507,
+    "wall_ms": 169,
     "stmts_budget": 660,
-    "wall_ms_budget": 1507
+    "wall_ms_budget": 169
+  },
+  {
+    "n": 10000,
+    "newly_missing": 0,
+    "present": 10000,
+    "scanned": 10000,
+    "scenario": "reconcile_root_frames",
+    "size_backfilled": 0,
+    "sqlx_stmts": 9,
+    "wall_ms": 7780,
+    "stmts_budget": 9,
+    "wall_ms_budget": 7780
+  },
+  {
+    "first_event_ms": 42,
+    "items_applied": 10000,
+    "max_progress_gap_ms": 42,
+    "n": 10000,
+    "operation_events": 102,
+    "plan_state": "applied",
+    "progress_events": 100,
+    "scenario": "plan_apply_progress",
+    "sqlx_stmts": 40113,
+    "wall_ms": 1064,
+    "stmts_budget": 40113,
+    "wall_ms_budget": 1064
+  },
+  {
+    "matches": 334,
+    "n": 1000,
+    "scenario": "calibration_suggest_1k_masters",
+    "sqlx_stmts": 10,
+    "suggest_status": "Ambiguous",
+    "wall_ms": 3,
+    "stmts_budget": 10,
+    "wall_ms_budget": 3
   }
 ]
