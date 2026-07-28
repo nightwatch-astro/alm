@@ -602,7 +602,7 @@ impl E2eApp {
         P: FnMut(&T) -> bool,
     {
         let deadline = Instant::now() + timeout;
-        let mut last_err: Option<anyhow::Error> = None;
+        let mut last_err: Option<anyhow::Error>;
         let mut last_value: Option<String> = None;
         loop {
             match self.invoke::<T>(command, args.clone()).await {
@@ -610,10 +610,19 @@ impl E2eApp {
                 Ok(value) => {
                     let dump = format!("{value:?}");
                     last_value = Some(if dump.len() > 4096 {
-                        format!("{}...[truncated]", &dump[..4096])
+                        // Truncate on a char boundary: `&dump[..4096]` panics
+                        // when byte 4096 lands inside a multi-byte UTF-8
+                        // character, turning a diagnostic aid into a crash.
+                        let end = (0..=4096).rev().find(|&i| dump.is_char_boundary(i)).unwrap_or(0);
+                        format!("{}...[truncated]", &dump[..end])
                     } else {
                         dump
                     });
+                    // A successful decode clears any earlier error: otherwise
+                    // one transient early invoke failure suppresses the
+                    // `last_value` dump for the rest of the poll budget, which
+                    // is precisely the diagnostic the doc comment promises.
+                    last_err = None;
                 }
                 Err(e) => last_err = Some(e),
             }

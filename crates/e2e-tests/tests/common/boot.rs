@@ -98,10 +98,7 @@ impl PrewarmedCache {
 pub(super) fn prewarmed_cache() -> &'static PrewarmedCache {
     static CACHE: OnceLock<PrewarmedCache> = OnceLock::new();
     CACHE.get_or_init(|| {
-        PrewarmedCache::build().expect(
-            "failed to build the pre-warmed resolve cache — \
-             E2E boot will fall back to full seed warm (slower but functional)",
-        )
+        PrewarmedCache::build().expect("failed to build the pre-warmed resolve cache for E2E boot")
     })
 }
 
@@ -221,7 +218,7 @@ pub(super) fn instance_env() -> &'static InstanceEnv {
     ENV.get_or_init(|| {
         InstanceEnv::new().expect(
             "failed to allocate an isolated E2E instance environment \
-             (temp dir creation or ephemeral port binding failed)",
+             (temp dir creation or pre-warmed cache copy failed)",
         )
     })
 }
