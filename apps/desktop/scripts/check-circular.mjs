@@ -39,20 +39,26 @@ const ALLOWLIST = new Set([
 const listMode = process.argv.includes('--list');
 
 let madgeOut;
+/** @type {string} */
+let madgeErr = '';
 try {
   madgeOut = execSync(
     'node_modules/.bin/madge --circular --json --no-spinner --extensions ts,tsx src',
-    { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
   );
 } catch (err) {
-  // madge exits 1 when cycles are found — capture stdout anyway.
+  // madge exits 1 when cycles are found — capture stdout anyway.  Keep stderr
+  // too: when stdout turns out to be unparseable, madge's own diagnostic is the
+  // only thing that explains why.
   madgeOut = /** @type {any} */ (err).stdout ?? '';
+  madgeErr = /** @type {any} */ (err).stderr ?? '';
 }
 
 // `--json` is the only stable machine format: madge's human output carries ANSI
 // styling even under `--no-color`, which defeats string comparison against the
-// allowlist.  Unparseable output means madge did not run (e.g. dependencies not
-// installed) — fail rather than report a vacuous pass.
+// allowlist.  Unparseable output means madge did not run — fail rather than
+// report a vacuous pass, and surface madge's own diagnostic so a genuine madge
+// failure is not misreported as a missing install.
 /** @type {string[][]} */
 let cycles;
 try {
@@ -62,8 +68,21 @@ try {
   process.stderr.write(
     `CIRCULAR DEP GATE FAILED — could not parse madge --json output: ${
       /** @type {Error} */ (err).message
-    }\nRun \`pnpm install\` in apps/desktop and retry.\n`,
+    }\n`,
   );
+  if (madgeErr.trim()) {
+    process.stderr.write(`madge stderr:\n${madgeErr.trimEnd()}\n`);
+  }
+  if (madgeOut.trim()) {
+    process.stderr.write(`madge stdout:\n${madgeOut.trimEnd().slice(0, 2000)}\n`);
+  } else {
+    // madge emitted no JSON at all, so it never ran to completion.  A missing
+    // install is the most common cause; the diagnostic above says which.
+    process.stderr.write(
+      'madge produced no JSON output — if it is not installed, run ' +
+        '`pnpm install` in apps/desktop and retry.\n',
+    );
+  }
   process.exit(1);
 }
 
