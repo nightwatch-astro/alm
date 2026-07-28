@@ -40,10 +40,11 @@
     "plan_state": "applied",
     "progress_events": 100,
     "scenario": "plan_apply_progress",
-    "sqlx_stmts": 40113,
+    "sqlx_stmts": 40116,
     "wall_ms": 1064,
-    "stmts_budget": 40113,
-    "wall_ms_budget": 1064
+    "stmts_budget": 40116,
+    "wall_ms_budget": 1064,
+    "stmts_timing_dependent": true
   },
   {
     "matches": 334,
