@@ -282,7 +282,11 @@ export function ArchivePage() {
           loading={loading}
           error={error ? error.message : null}
           isEmpty={filtered.length === 0}
-          isFilteredEmpty={search.trim().length > 0 && filtered.length === 0}
+          isFilteredEmpty={
+            entries.length > 0 &&
+            search.trim().length > 0 &&
+            filtered.length === 0
+          }
           skeletonLabel={m.common_loading()}
           errorEmpty={<EmptyState title={m.archive_load_error()} />}
           empty={

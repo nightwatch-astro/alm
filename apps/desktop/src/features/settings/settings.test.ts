@@ -22,10 +22,12 @@ const {
   mockUpdateSettings,
   mockSettingsRestoreDefaults,
   mockSettingsSourceOverrideSet,
+  mockSettingsGet,
 } = vi.hoisted(() => ({
   mockUpdateSettings: vi.fn(),
   mockSettingsRestoreDefaults: vi.fn(),
   mockSettingsSourceOverrideSet: vi.fn(),
+  mockSettingsGet: vi.fn(),
 }));
 
 vi.mock('@/bindings/index', () => ({
@@ -33,14 +35,17 @@ vi.mock('@/bindings/index', () => ({
     settingsUpdate: mockUpdateSettings,
     settingsRestoreDefaults: mockSettingsRestoreDefaults,
     settingsSourceOverrideSet: mockSettingsSourceOverrideSet,
+    settingsGet: mockSettingsGet,
   },
 }));
 
 import { useAutoSave } from './useAutoSave';
 import {
+  getSettingsTyped,
   settingsRestoreDefaults,
   settingsSourceOverrideSet,
 } from './settingsIpc';
+import { AdvancedSettingsSchema } from './settingsSchemas';
 
 // ── useAutoSave ───────────────────────────────────────────────────────────────
 
@@ -261,5 +266,62 @@ describe('settingsSourceOverrideSet', () => {
       value: false,
     });
     expect(result).toEqual({ sourceId: 'root-uuid-1', key: 'hashOnScan' });
+  });
+});
+
+// ── getSettingsTyped ──────────────────────────────────────────────────────────
+
+describe('getSettingsTyped', () => {
+  beforeEach(() => {
+    mockSettingsGet.mockReset();
+  });
+
+  const respond = (values: Record<string, unknown>) => {
+    mockSettingsGet.mockResolvedValue({ status: 'ok', data: { values } });
+  };
+
+  it('returns every field when the whole object validates', async () => {
+    respond({ logLevel: 'debug', rememberFollowLogs: true, devMode: false });
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({
+      logLevel: 'debug',
+      rememberFollowLogs: true,
+      devMode: false,
+    });
+  });
+
+  it('keeps the valid fields when one field is invalid', async () => {
+    // A stale enum member left by an older build must not discard its
+    // neighbours: whole-object safeParse would reject all three.
+    respond({
+      logLevel: 'verbose',
+      rememberFollowLogs: true,
+      devMode: false,
+    });
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({ rememberFollowLogs: true, devMode: false });
+  });
+
+  it('drops unknown keys', async () => {
+    respond({ logLevel: 'info', somethingRetired: 'x' });
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({ logLevel: 'info' });
+  });
+
+  it('returns an empty object when every field is invalid', async () => {
+    respond({ logLevel: 42, rememberFollowLogs: 'yes' });
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({});
+  });
+
+  it('returns an empty object when the scope has no values', async () => {
+    respond({});
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({});
   });
 });

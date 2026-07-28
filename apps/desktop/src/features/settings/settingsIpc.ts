@@ -123,9 +123,19 @@ export async function getSettings(args: {
 /**
  * Type-safe variant of `getSettings` (C-5). Calls `settingsGet` and passes
  * `data.values` through a Zod `.partial()` schema so callers receive a typed
- * object rather than `Record<string, unknown>`. Unknown/extra keys are dropped
- * by `.strip()`. Returns the schema defaults for missing or invalid fields
- * rather than throwing — settings reads are always best-effort.
+ * object rather than `Record<string, unknown>`. Unknown/extra keys are dropped.
+ * Never throws — settings reads are always best-effort.
+ *
+ * Validation is per field, not whole-object. `safeParse` on the whole object
+ * rejects it entirely when a single field is bad, which would discard every
+ * other valid persisted setting in the scope; a stale enum member left by an
+ * older build would silently reset the whole pane. Each key is validated
+ * against its own `schema.shape` entry instead, so a bad field is dropped and
+ * its neighbours survive.
+ *
+ * Note there is no "return the schema defaults" behaviour to fall back on: the
+ * per-scope schemas are `.partial()` with no `.default()`, so an absent field
+ * is simply absent and callers handle `undefined`.
  *
  * Usage:
  *   const vals = await getSettingsTyped('advanced', AdvancedSettingsSchema);
@@ -136,15 +146,30 @@ export async function getSettingsTyped<T extends Record<string, unknown>>(
   schema: ZodType<T>,
 ): Promise<T> {
   const data = await getSettings({ scope });
-  const result = schema.safeParse(data.values ?? {});
+  // Narrow to a plain object: a primitive or array here cannot carry named
+  // fields, and `in` is not valid against a primitive.
+  const raw: unknown = data.values;
+  const values: Record<string, unknown> =
+    typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+
+  const result = schema.safeParse(values);
   if (result.success) return result.data;
-  // On validation failure (e.g. backend schema changed), parse an empty object
-  // so callers get schema-defined defaults rather than throwing — settings reads
-  // are always best-effort. All per-scope schemas use .partial() so {} is valid.
-  const fallback = schema.safeParse({});
-  if (fallback.success) return fallback.data;
-  // If even {} fails (non-partial schema), return a cast rather than throwing.
-  return {} as T;
+
+  // Fall back to per-field salvage. `shape` exists on object schemas; if this
+  // is not one, there is nothing to iterate and the empty object is correct.
+  const shape = (schema as unknown as { shape?: Record<string, ZodType> })
+    .shape;
+  if (!shape) return {} as T;
+
+  const salvaged: Record<string, unknown> = {};
+  for (const [key, fieldSchema] of Object.entries(shape)) {
+    if (!(key in values)) continue;
+    const field = fieldSchema.safeParse(values[key]);
+    if (field.success) salvaged[key] = field.data;
+  }
+  return salvaged as T;
 }
 
 export async function updateSettings(args: {

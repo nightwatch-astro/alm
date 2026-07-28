@@ -45,10 +45,21 @@ export function readLocalStorage<T>(
 /**
  * Write a JSON value to localStorage. Silently no-ops when storage is full or
  * unavailable (matching the convention across all existing write sites).
+ *
+ * A value JSON cannot represent (`undefined`, a function, a symbol) makes
+ * `JSON.stringify` return `undefined`, which `setItem` would coerce to the
+ * literal string `"undefined"` — a value `readLocalStorage` then treats as
+ * corrupt rather than absent. Remove the key instead, so a subsequent read
+ * reports a clean miss and returns its fallback.
  */
 export function writeLocalStorage<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, serialized);
   } catch {
     // Storage full or unavailable — non-fatal.
   }
