@@ -1008,6 +1008,105 @@ mod tests {
         assert_eq!(run.items_total, 2);
     }
 
+    /// Spec 025 T025: a rollback attempt is durably recorded on the
+    /// `plan_apply_events` row, not just reported in memory.
+    ///
+    /// The executor only attempts a rollback on the cross-volume
+    /// copy-then-delete path (`crates/fs/executor/src/ops/move_op.rs`), whose
+    /// failure injection is private to that crate, so this asserts the audit
+    /// write itself: the three `rollback_*` columns round-trip the outcome that
+    /// `plan_apply::callbacks` passes down when `rollback_attempted` is set.
+    #[tokio::test]
+    async fn append_event_persists_rollback_attempt() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        setup_with_approved_plan(&db, "p-rollback", 1).await;
+        cas_approved_to_applying(db.pool(), "p-rollback", "run-rb", "test-token", 1, 1)
+            .await
+            .unwrap();
+
+        let failure = EventFailure {
+            code: "copy_succeeded_delete_failed_rollback_failed",
+            message: "delete of source failed after copy; rollback also failed",
+            recoverable: false,
+        };
+        let rollback = EventRollback {
+            attempted: true,
+            outcome: "failed",
+            message: Some("could not remove the copied destination file"),
+        };
+
+        append_event(
+            db.pool(),
+            "ev-rb-1",
+            "run-rb",
+            "p-rollback",
+            Some("p-rollback-item-0"),
+            "applying",
+            "failed",
+            "2026-06-01T00:00:01Z",
+            Some(&failure),
+            Some(&rollback),
+        )
+        .await
+        .unwrap();
+
+        let (attempted, outcome, message): (Option<i64>, Option<String>, Option<String>) =
+            sqlx::query_as(
+                "SELECT rollback_attempted, rollback_outcome, rollback_message \
+                 FROM plan_apply_events WHERE id = ?",
+            )
+            .bind("ev-rb-1")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+
+        assert_eq!(attempted, Some(1), "rollback_attempted must persist as true");
+        assert_eq!(outcome.as_deref(), Some("failed"));
+        assert_eq!(message.as_deref(), Some("could not remove the copied destination file"));
+    }
+
+    /// A non-rollback event leaves all three `rollback_*` columns NULL, so a
+    /// reader can distinguish "no rollback was needed" from "rollback failed".
+    #[tokio::test]
+    async fn append_event_without_rollback_leaves_columns_null() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        setup_with_approved_plan(&db, "p-norb", 1).await;
+        cas_approved_to_applying(db.pool(), "p-norb", "run-norb", "test-token", 1, 1)
+            .await
+            .unwrap();
+
+        append_event(
+            db.pool(),
+            "ev-norb-1",
+            "run-norb",
+            "p-norb",
+            Some("p-norb-item-0"),
+            "applying",
+            "applied",
+            "2026-06-01T00:00:01Z",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let (attempted, outcome, message): (Option<i64>, Option<String>, Option<String>) =
+            sqlx::query_as(
+                "SELECT rollback_attempted, rollback_outcome, rollback_message \
+                 FROM plan_apply_events WHERE id = ?",
+            )
+            .bind("ev-norb-1")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+
+        assert_eq!(attempted, None);
+        assert_eq!(outcome, None);
+        assert_eq!(message, None);
+    }
+
     #[tokio::test]
     async fn cas_fails_if_not_approved() {
         let db = Database::in_memory().await.unwrap();
