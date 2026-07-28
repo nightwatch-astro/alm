@@ -10,7 +10,9 @@
  * second idiom.
  */
 
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { errMessage } from '@/lib/errors';
 import { queryKeys } from '@/data/queryKeys';
 import * as ipc from './inventoryIpc';
 import type {
@@ -90,6 +92,37 @@ export function useSetRootConfig(rootId: string) {
       });
     },
   });
+}
+
+/**
+ * Bind a raw/calibration root's live and scheduled detection triggers to this
+ * component's lifetime (spec 048 T023/T026).
+ *
+ * Attach starts the root's configured triggers on the backend and runs its
+ * `on_open` reconcile; unmount detaches, so no OS watcher is held on a root
+ * whose surface is closed (research R2). Live events schedule a reconcile pass
+ * on the backend — they never write frame records.
+ *
+ * Best-effort, mirroring `useProjectArtifactWatcher`: attach/detach failures
+ * are logged, not surfaced, because detection is background enhancement on top
+ * of the always-available on-demand rescan.
+ */
+export function useRootFrameWatcher(rootId: string | null): void {
+  useEffect(() => {
+    if (!rootId) return undefined;
+    let cancelled = false;
+    ipc.inventoryWatcherAttach({ rootId }).catch((err: unknown) => {
+      if (!cancelled) {
+        console.warn('frame watcher attach failed', errMessage(err));
+      }
+    });
+    return () => {
+      cancelled = true;
+      ipc.inventoryWatcherDetach({ rootId }).catch((err: unknown) => {
+        console.warn('frame watcher detach failed', errMessage(err));
+      });
+    };
+  }, [rootId]);
 }
 
 /** On-demand raw sub-frame `cleanup.candidates.scan` (US3 T031). */

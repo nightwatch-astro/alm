@@ -20,11 +20,18 @@ import { m } from '@/lib/i18n';
 import { formatBytes } from '@/lib/format';
 import { errMessage } from '@/lib/errors';
 import { addToast } from '@/shared/toast';
-import { useFrameListScan, useRelinkFrame } from '@/features/inventory/store';
+import {
+  useFrameListScan,
+  useRelinkFrame,
+  useRootFrameWatcher,
+} from '@/features/inventory/store';
 import type { InventoryFrame } from '@/bindings/index';
 
 export interface SessionFrameInventoryProps {
   sessionId: string;
+  /** The session's owning library root, whose live detection triggers are
+   * attached for as long as this panel is mounted (spec 048 T023/T026). */
+  rootId: string;
 }
 
 function columns(): TableColumn[] {
@@ -121,7 +128,9 @@ function RelinkControl({
 
 export function SessionFrameInventory({
   sessionId,
+  rootId,
 }: SessionFrameInventoryProps) {
+  useRootFrameWatcher(rootId);
   const scan = useFrameListScan();
   const result = scan.data;
 

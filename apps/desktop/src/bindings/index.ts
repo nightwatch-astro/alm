@@ -1762,10 +1762,36 @@ export const commands = {
 	 *  `inventory.root_config.set` — write a (possibly partial) update to a
 	 *  root's reconcile/detection configuration.
 	 * 
+	 *  A currently-attached root is re-attached so the new detection triggers take
+	 *  effect immediately; without that, toggling `live` off would leave the OS
+	 *  watcher running until the surface closed.
+	 * 
 	 *  # Errors
 	 *  Returns `ContractError` on database failure.
 	 */
 	inventoryRootConfigSet: (req: RootConfigSetRequest_Deserialize) => typedError<RootInventoryConfig, ContractError_Serialize>(__TAURI_INVOKE("inventory_root_config_set", { req })),
+	/**
+	 *  `inventory.watcher.attach` — start the root's configured live and scheduled
+	 *  detection triggers, and run its `on_open` reconcile if enabled.
+	 * 
+	 *  Idempotent. An unavailable or unregistered root is not an error: nothing is
+	 *  attached and a later attach retries.
+	 * 
+	 *  # Errors
+	 *  Returns `ContractError` when the root's config cannot be read or its OS
+	 *  watcher cannot be started.
+	 */
+	inventoryWatcherAttach: (req: RootWatcherRequest) => typedError<null, ContractError_Serialize>(__TAURI_INVOKE("inventory_watcher_attach", { req })),
+	/**
+	 *  `inventory.watcher.detach` — stop the root's live watch and scheduled
+	 *  trigger so no watch is held on an idle root (research R2).
+	 * 
+	 *  Idempotent: detaching an unattached root is a silent no-op.
+	 * 
+	 *  # Errors
+	 *  Never fails; the `Result` matches the shared command shape.
+	 */
+	inventoryWatcherDetach: (req: RootWatcherRequest) => typedError<null, ContractError_Serialize>(__TAURI_INVOKE("inventory_watcher_detach", { req })),
 	/**
 	 *  `ingestion.settings.get` — returns current ingestion/scan settings,
 	 *  merging any persisted overrides with in-code defaults.
@@ -9228,6 +9254,16 @@ export type RootHealth = {
 export type RootInventoryConfig = {
 	reconcileMode: ReconcileMode,
 	detection: DetectionConfig,
+};
+
+/**
+ *  Request envelope for `inventory.watcher.attach` / `inventory.watcher.detach`
+ *  (spec 048 T023/T026): binds a root's live/scheduled detection triggers to the
+ *  lifetime of the surface showing its frame inventory, so no watch is held on
+ *  an idle root (research R2).
+ */
+export type RootWatcherRequest = {
+	rootId: string,
 };
 
 /**
