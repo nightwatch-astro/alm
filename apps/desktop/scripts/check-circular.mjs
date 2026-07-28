@@ -76,6 +76,17 @@ let cycles;
 try {
   cycles = JSON.parse(madgeOut);
   if (!Array.isArray(cycles)) throw new Error('expected an array');
+  // Validate every entry here, not at the `.join` below: `[null]` satisfies
+  // `Array.isArray` and would then throw an uncaught TypeError, losing the
+  // controlled diagnostic this branch exists to print.
+  const bad = cycles.findIndex(
+    (c) => !Array.isArray(c) || c.some((m) => typeof m !== 'string'),
+  );
+  if (bad !== -1) {
+    throw new Error(
+      `entry ${bad} is not an array of strings: ${JSON.stringify(cycles[bad])}`,
+    );
+  }
 } catch (err) {
   process.stderr.write(
     `CIRCULAR DEP GATE FAILED — could not parse madge --json output: ${
