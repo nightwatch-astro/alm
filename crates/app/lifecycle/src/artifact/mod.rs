@@ -9,7 +9,7 @@
 //! - [`list`]           — list artifacts for a project (for the drawer accordion).
 //! - [`classify_override`] — apply / clear a manual classification override.
 //! - [`mark_resolved`]  — mark a missing artifact as user-resolved.
-//! - [`mark_missing`]/[`mark_recovered`] — on-attach rescan: detect new files + mark gone files as missing.
+//! - [`mark_missing_batch`]/[`mark_recovered`] — on-attach rescan: detect new files + mark gone files as missing.
 //! - [`touch_seen`]/[`mark_missing_batch`]/[`detect_batch`] — the same three
 //!   reconcile phases, one transaction per phase (kyo7.54).
 //! - [`reattribute`]    — back-fill `tool_launch_id` after a new `tool.launch` event (T022b).
@@ -64,7 +64,7 @@ pub use classify::classify_override;
 pub use detect::detect;
 pub use launches::{complete_run, reattribute, sweep_stale_launches};
 pub use list::list;
-pub use missing_recovered::{mark_missing, mark_recovered, mark_resolved};
+pub use missing_recovered::{mark_recovered, mark_resolved};
 pub use reconcile_batch::{
     detect_batch, mark_missing_batch, touch_seen, DetectedFile, GoneArtifact,
 };

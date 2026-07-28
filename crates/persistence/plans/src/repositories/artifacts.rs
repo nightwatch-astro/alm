@@ -239,20 +239,6 @@ pub async fn list_artifacts_for_project(
     Ok(rows)
 }
 
-/// Update `last_seen_at` for a `present` artifact (reconcile seen pass).
-///
-/// # Errors
-/// Returns [`persistence_core::DbError::Database`] on query failure.
-pub async fn touch_artifact(pool: &SqlitePool, artifact_id: &str) -> DbResult<()> {
-    let now = Timestamp::now_iso();
-    sqlx::query("UPDATE processing_artifacts SET last_seen_at = ? WHERE id = ?")
-        .bind(&now)
-        .bind(artifact_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 /// Update `last_seen_at` for every id in `artifact_ids` in one statement
 /// (reconcile seen phase; Tier 2 re-derivable state, so a single batched write
 /// replaces one commit per row).
@@ -272,18 +258,6 @@ pub async fn touch_artifacts(pool: &SqlitePool, artifact_ids: &[String]) -> DbRe
     .bind(id_json(artifact_ids))
     .execute(pool)
     .await?;
-    Ok(())
-}
-
-/// Transition an artifact to `missing` state.
-///
-/// # Errors
-/// Returns [`persistence_core::DbError::Database`] on query failure.
-pub async fn mark_artifact_missing(pool: &SqlitePool, artifact_id: &str) -> DbResult<()> {
-    sqlx::query("UPDATE processing_artifacts SET state = 'missing' WHERE id = ?")
-        .bind(artifact_id)
-        .execute(pool)
-        .await?;
     Ok(())
 }
 
@@ -626,7 +600,7 @@ mod tests {
         insert_artifact_if_absent(pool, art("a2", "p1", "out/b.xisf", "master")).await.unwrap();
 
         // Transition a2 to missing.
-        mark_artifact_missing(pool, "a2").await.unwrap();
+        mark_artifacts_missing(pool, &["a2".to_owned()]).await.unwrap();
 
         let present = list_artifacts_for_project(pool, "p1", &["present"]).await.unwrap();
         assert_eq!(present.len(), 1);
@@ -668,7 +642,7 @@ mod tests {
         insert_artifact_if_absent(pool, art("a1", "p1", "out/img.xisf", "intermediate"))
             .await
             .unwrap();
-        mark_artifact_missing(pool, "a1").await.unwrap();
+        mark_artifacts_missing(pool, &["a1".to_owned()]).await.unwrap();
 
         let row = get_artifact_by_path(pool, "p1", "out/img.xisf").await.unwrap().unwrap();
         assert_eq!(row.state, "missing");
