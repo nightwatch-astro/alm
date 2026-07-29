@@ -121,10 +121,9 @@ export async function getSettings(args: {
 }
 
 /**
- * Type-safe variant of `getSettings` (C-5). Calls `settingsGet` and passes
- * `data.values` through a Zod `.partial()` schema so callers receive a typed
- * object rather than `Record<string, unknown>`. Unknown/extra keys are dropped.
- * Never throws — settings reads are always best-effort.
+ * Validate a raw settings-scope value bag against a per-scope Zod schema
+ * (C-5). Unknown/extra keys are dropped. Never throws — settings reads are
+ * always best-effort.
  *
  * Validation is per field, not whole-object. `safeParse` on the whole object
  * rejects it entirely when a single field is bad, which would discard every
@@ -137,18 +136,16 @@ export async function getSettings(args: {
  * per-scope schemas are `.partial()` with no `.default()`, so an absent field
  * is simply absent and callers handle `undefined`.
  *
- * Usage:
- *   const vals = await getSettingsTyped('advanced', AdvancedSettingsSchema);
- *   if (vals.logLevel) setLogLevel(vals.logLevel);
+ * Exported separately from `getSettingsTyped` because `RestoreDefaultsBtn`'s
+ * `onRestored` hands panes an already-fetched raw value bag, which must go
+ * through the same validation as the mount-time read.
  */
-export async function getSettingsTyped<T extends Record<string, unknown>>(
-  scope: string,
+export function parseSettingsValues<T extends Record<string, unknown>>(
+  raw: unknown,
   schema: ZodType<T>,
-): Promise<T> {
-  const data = await getSettings({ scope });
+): T {
   // Narrow to a plain object: a primitive or array here cannot carry named
   // fields, and `in` is not valid against a primitive.
-  const raw: unknown = data.values;
   const values: Record<string, unknown> =
     typeof raw === 'object' && raw !== null && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
@@ -170,6 +167,23 @@ export async function getSettingsTyped<T extends Record<string, unknown>>(
     if (field.success) salvaged[key] = field.data;
   }
   return salvaged as T;
+}
+
+/**
+ * Type-safe variant of `getSettings` (C-5): reads a scope and validates
+ * `data.values` with `parseSettingsValues`, so callers receive a typed object
+ * rather than `Record<string, unknown>`.
+ *
+ * Usage:
+ *   const vals = await getSettingsTyped('advanced', AdvancedSettingsSchema);
+ *   if (vals.logLevel) setLogLevel(vals.logLevel);
+ */
+export async function getSettingsTyped<T extends Record<string, unknown>>(
+  scope: string,
+  schema: ZodType<T>,
+): Promise<T> {
+  const data = await getSettings({ scope });
+  return parseSettingsValues(data.values, schema);
 }
 
 export async function updateSettings(args: {

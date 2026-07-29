@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Type-safe localStorage read helper (C-24).
+ * Type-safe localStorage read/write helpers (C-24).
  *
- * All four localStorage JSON-parsing sites (wizard draft, setup wizard state,
- * sources store, preferences) followed the same try/catch + JSON.parse +
- * fallback pattern but without schema validation. This helper consolidates
- * that pattern and adds Zod parse so corrupted / stale storage values fall
- * back to the default instead of propagating as silently-wrong shapes.
+ * Used by every localStorage JSON site in the app: the project wizard draft
+ * (`features/projects/wizard/WizardPage.tsx`), the setup wizard state
+ * (`features/setup/SetupWizard.tsx`), the setup sources store
+ * (`features/setup/sources-store.ts`), and app preferences
+ * (`data/preferences.ts`). Each passes a Zod schema, so a corrupted or stale
+ * stored value falls back to the default instead of propagating as a
+ * silently-wrong shape.
  */
 
 import type { ZodType } from 'zod';

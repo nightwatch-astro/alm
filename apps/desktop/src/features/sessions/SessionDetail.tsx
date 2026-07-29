@@ -157,6 +157,8 @@ function CalibrationLinkage({
         actionLabel={m.sessions_calib_unassign_btn()}
         busy={unassigning}
         onConfirm={() => void handleConfirmUnassign()}
+        // This dialog had a close button before it adopted ConfirmModal.
+        hideClose={false}
         data-testid="session-calib-unassign-confirm"
       />
     </>

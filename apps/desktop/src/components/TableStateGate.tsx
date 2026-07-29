@@ -6,13 +6,16 @@
  *
  * Renders a Skeleton while loading (with no data yet), an EmptyState on error,
  * an EmptyState when the list is empty, or the `children` when there is data.
- * Extracts a pattern that was hand-rolled in MastersTable, ProjectsTable,
- * SessionsTable, TargetsTable, and ArchivePage (C-28).
+ * Used by ArchivePage (C-28). MastersTable, ProjectsTable, SessionsTable and
+ * TargetsTable hand-roll the same three states.
  *
  * The "filtered empty" case (list has records, but the current filter matches
  * none) is a separate variant that callers can opt into via `filteredEmpty`.
  * When both `empty` and `filteredEmpty` nodes are given, `filteredEmpty` is
  * shown only when `isEmpty` is true after loading.
+ *
+ * The skeleton is gated on `loading && isEmpty`, so a refetch with data already
+ * on screen keeps the table visible instead of flashing a skeleton.
  */
 
 import type { ReactNode } from 'react';

@@ -51,6 +51,8 @@ export function MasterArchiveFlow({
         actionLabel={m.calibration_action_archive()}
         busy={archivePending}
         onConfirm={onConfirmArchiveInUse}
+        // This dialog had a close button before it adopted ConfirmModal.
+        hideClose={false}
         data-testid="master-archive-in-use-confirm"
       />
 

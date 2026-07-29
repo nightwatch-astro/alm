@@ -207,6 +207,43 @@ function renderWizard() {
   );
 }
 
+describe('persisted draft validation', () => {
+  const DRAFT_KEY = 'alm-project-wizard-draft';
+
+  function summaryName(container: HTMLElement): string {
+    return (
+      container.querySelector('.pv-wizard-page__summary-project-name')
+        ?.textContent ?? ''
+    );
+  }
+
+  it('restores a valid draft', () => {
+    localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({
+        name: { name: 'Draft target', workflowProfile: 'siril', target: null },
+      }),
+    );
+    const { container } = renderWizard();
+    expect(summaryName(container)).toContain('Draft target');
+  });
+
+  it('falls back to the initial draft for unparseable JSON', () => {
+    localStorage.setItem(DRAFT_KEY, '{not json');
+    const { container } = renderWizard();
+    expect(summaryName(container)).not.toContain('Draft target');
+    expect(screen.getByTestId('step-name')).toBeInTheDocument();
+  });
+
+  it('falls back to the initial draft for a valid-JSON wrong shape', () => {
+    // `name` must be an object; a bare string is a shape from no known version.
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ name: 'Draft target' }));
+    const { container } = renderWizard();
+    expect(summaryName(container)).not.toContain('Draft target');
+    expect(screen.getByTestId('step-name')).toBeInTheDocument();
+  });
+});
+
 describe('T078c: WizardPage renders inside main window with correct layout', () => {
   it('renders step 1 (Name & profile) by default', () => {
     renderWizard();

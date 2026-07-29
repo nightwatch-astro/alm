@@ -8,10 +8,10 @@
  * optional inline error, optional extra content (for disambiguation UI like a
  * fallback-site selector), and a footer with Cancel + action button.
  *
- * Extracted from six duplicated confirm dialogs across Equipment, DataSources,
- * ObservingSites, MasterArchiveFlow, and SessionDetail (C-13). All shared the
- * same skeleton: size="sm", hideClose, footer with ghost Cancel + typed action
- * button, optional inline field-error.
+ * Used by six confirm dialogs across Equipment, DataSources, ObservingSites,
+ * MasterArchiveFlow, and SessionDetail (C-13). All share the same skeleton:
+ * size="sm", a footer with a ghost Cancel plus a typed action button, and an
+ * optional inline field-error.
  */
 
 import type { ReactNode } from 'react';
@@ -55,6 +55,12 @@ export interface ConfirmModalProps {
    * a fallback destination picker when a delete requires choosing a replacement).
    */
   children?: ReactNode;
+  /**
+   * Hide the title-bar close button. DEFAULT `true` — Escape and Cancel remain
+   * available in either case. Pass `false` for a dialog that had a close button
+   * before adopting this component.
+   */
+  hideClose?: boolean;
   /** data-testid for the modal popup. */
   'data-testid'?: string;
 }
@@ -75,6 +81,7 @@ export function ConfirmModal({
   onConfirm,
   error,
   children,
+  hideClose = true,
   'data-testid': testId,
 }: ConfirmModalProps) {
   return (
@@ -83,7 +90,7 @@ export function ConfirmModal({
       onClose={onClose}
       title={title}
       size="sm"
-      hideClose
+      hideClose={hideClose}
       data-testid={testId}
       footer={
         <>

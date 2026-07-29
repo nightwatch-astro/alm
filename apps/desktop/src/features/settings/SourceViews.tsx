@@ -19,7 +19,13 @@
  * a pre-select achievability check.
  */
 import { useState, useEffect, useRef } from 'react';
-import { getSettings } from './settingsIpc';
+import { getSettingsTyped, parseSettingsValues } from './settingsIpc';
+import {
+  SourceViewsSettingsSchema,
+  INTRA_DRIVE_LINK_KINDS,
+  CROSS_DRIVE_LINK_KINDS,
+  type SourceViewsSettings,
+} from './settingsSchemas';
 import { m } from '@/lib/i18n';
 import {
   SettingsSection,
@@ -32,10 +38,9 @@ const SOURCE_VIEWS_KEYS = [
   'sourceViewLinkKindCrossDrive',
 ];
 
-type LinkKind = 'symlink' | 'hardlink' | 'junction';
-
-const INTRA_DRIVE_KINDS: LinkKind[] = ['hardlink', 'symlink', 'junction'];
-const CROSS_DRIVE_KINDS: LinkKind[] = ['symlink', 'junction'];
+// Derived from the schema enums so the persisted-value validator and the
+// selectable options cannot drift.
+type LinkKind = (typeof INTRA_DRIVE_LINK_KINDS)[number];
 
 function linkKindLabel(kind: LinkKind): string {
   switch (kind) {
@@ -60,18 +65,21 @@ export function SourceViews({ save }: SourceViewsProps) {
   // (same convention as Cleanup.tsx/DataSources.tsx).
   const editedRef = useRef(false);
 
+  function applyTyped(values: SourceViewsSettings) {
+    if (values.sourceViewLinkKindIntraDrive !== undefined) {
+      setIntraDrive(values.sourceViewLinkKindIntraDrive);
+    }
+    if (values.sourceViewLinkKindCrossDrive !== undefined) {
+      setCrossDrive(values.sourceViewLinkKindCrossDrive);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
-    getSettings({ scope: 'sourceViews' })
-      .then((data) => {
+    getSettingsTyped('sourceViews', SourceViewsSettingsSchema)
+      .then((values) => {
         if (cancelled || editedRef.current) return;
-        const values = data.values as Record<string, unknown>;
-        if (typeof values?.sourceViewLinkKindIntraDrive === 'string') {
-          setIntraDrive(values.sourceViewLinkKindIntraDrive as LinkKind);
-        }
-        if (typeof values?.sourceViewLinkKindCrossDrive === 'string') {
-          setCrossDrive(values.sourceViewLinkKindCrossDrive as LinkKind);
-        }
+        applyTyped(values);
       })
       .catch(() => {
         // Backend unavailable — stay with in-code defaults.
@@ -92,12 +100,7 @@ export function SourceViews({ save }: SourceViewsProps) {
           scopeLabel={m.settings_source_views_restore_scope()}
           onRestored={(values) => {
             editedRef.current = false;
-            if (typeof values.sourceViewLinkKindIntraDrive === 'string') {
-              setIntraDrive(values.sourceViewLinkKindIntraDrive as LinkKind);
-            }
-            if (typeof values.sourceViewLinkKindCrossDrive === 'string') {
-              setCrossDrive(values.sourceViewLinkKindCrossDrive as LinkKind);
-            }
+            applyTyped(parseSettingsValues(values, SourceViewsSettingsSchema));
           }}
         />
       }
@@ -118,7 +121,7 @@ export function SourceViews({ save }: SourceViewsProps) {
             save('sourceViews', { sourceViewLinkKindIntraDrive: v });
           }}
         >
-          {INTRA_DRIVE_KINDS.map((kind) => (
+          {INTRA_DRIVE_LINK_KINDS.map((kind) => (
             <option key={kind} value={kind}>
               {linkKindLabel(kind)}
             </option>
@@ -142,7 +145,7 @@ export function SourceViews({ save }: SourceViewsProps) {
             save('sourceViews', { sourceViewLinkKindCrossDrive: v });
           }}
         >
-          {CROSS_DRIVE_KINDS.map((kind) => (
+          {CROSS_DRIVE_LINK_KINDS.map((kind) => (
             <option key={kind} value={kind}>
               {linkKindLabel(kind)}
             </option>
