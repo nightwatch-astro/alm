@@ -12,11 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { DetailHeader } from './DetailHeader';
 import { subtitle as detailSubtitle } from './DetailHeader.css';
 import { TopActionBar } from './TopActionBar';
-import {
-  actionBarWrap,
-  actionsWrap,
-  spacerWrap,
-} from './TopActionBar.css';
+import { actionBarWrap, actionsWrap, spacerWrap } from './TopActionBar.css';
 import { EmptyState } from '../ui/EmptyState';
 import { empty } from '../ui/EmptyState.css';
 
@@ -59,9 +55,7 @@ describe('vanilla-extract class application', () => {
         right={<button type="button">Go</button>}
       />,
     );
-    expect(
-      wrapped.container.querySelector(`.${actionBarWrap}`),
-    ).not.toBeNull();
+    expect(wrapped.container.querySelector(`.${actionBarWrap}`)).not.toBeNull();
     expect(wrapped.container.querySelector(`.${spacerWrap}`)).not.toBeNull();
     expect(wrapped.container.querySelector(`.${actionsWrap}`)).not.toBeNull();
   });
