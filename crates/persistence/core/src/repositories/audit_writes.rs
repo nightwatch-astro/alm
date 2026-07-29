@@ -18,7 +18,7 @@ use crate::DbResult;
 /// which is best-effort.
 ///
 /// # Errors
-/// Returns [`crate::DbError`] if the insert fails.
+/// Returns `persistence_core::DbError` if the insert fails.
 pub async fn insert_audit_entry(pool: &SqlitePool, entry: &AuditLogEntry) -> DbResult<()> {
     let at_str = entry
         .at
@@ -56,7 +56,7 @@ pub async fn insert_audit_entry(pool: &SqlitePool, entry: &AuditLogEntry) -> DbR
 /// a transaction).
 ///
 /// # Errors
-/// Returns [`crate::DbError`] if the insert fails.
+/// Returns `persistence_core::DbError` if the insert fails.
 pub async fn insert_audit_entry_conn(
     conn: &mut SqliteConnection,
     entry: &AuditLogEntry,
@@ -97,7 +97,7 @@ pub async fn insert_audit_entry_conn(
 /// the pool.
 ///
 /// # Errors
-/// Returns [`crate::DbError`] on query failure.
+/// Returns `persistence_core::DbError` on query failure.
 pub async fn insert_project_auto_transition(
     pool: &SqlitePool,
     project_id: &str,
@@ -113,7 +113,7 @@ pub async fn insert_project_auto_transition(
 /// (for use inside a transaction).
 ///
 /// # Errors
-/// Returns [`crate::DbError`] on query failure.
+/// Returns `persistence_core::DbError` on query failure.
 pub async fn insert_project_auto_transition_conn(
     conn: &mut SqliteConnection,
     project_id: &str,
@@ -152,7 +152,7 @@ pub async fn insert_project_auto_transition_conn(
 /// Insert a target resolution audit row.
 ///
 /// # Errors
-/// Returns [`crate::DbError`] on query failure.
+/// Returns `persistence_core::DbError` on query failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_resolution_audit(
     pool: &SqlitePool,

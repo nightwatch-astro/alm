@@ -4,11 +4,11 @@
 //! Inbox plan use-cases (spec 041, US1).
 //!
 //! Entry points:
-//! - [`get_inbox_plan`]       — fetch the plan linked to an inbox item as `InboxPlanView`.
-//! - [`apply_inbox_plan`]     — auto-approve then apply the linked plan; on
+//! - `get_inbox_plan`       — fetch the plan linked to an inbox item as `InboxPlanView`.
+//! - `apply_inbox_plan`     — auto-approve then apply the linked plan; on
 //!   success marks the inbox item `resolved`.
-//! - [`apply_all_inbox_plans`]— apply every `plan_open` item's plan; per-plan results.
-//! - [`cancel_inbox_plan`]    — discard the linked plan; item returns to `classified`.
+//! - `apply_all_inbox_plans`— apply every `plan_open` item's plan; per-plan results.
+//! - `cancel_inbox_plan`    — discard the linked plan; item returns to `classified`.
 //!
 //! FR-003 / FR-003a / FR-005 / FR-006 / FR-007.
 //!

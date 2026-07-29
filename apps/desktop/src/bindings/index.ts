@@ -829,6 +829,15 @@ export const commands = {
 	 */
 	plansConfirmDestructive: (planId: string) => typedError<PlanDestructiveConfirmResponse, ContractError_Serialize>(__TAURI_INVOKE("plans_confirm_destructive", { planId })),
 	/**
+	 *  `recovery.status` — input for the unclean-shutdown recovery prompt.
+	 * 
+	 *  # Errors
+	 * 
+	 *  Returns [`ContractError`] on a database failure while listing interrupted
+	 *  plans.
+	 */
+	recoveryStatus: () => typedError<RecoveryStatus, ContractError_Serialize>(__TAURI_INVOKE("recovery_status")),
+	/**
 	 *  `audit.list` — returns paginated audit entries read from `audit_log_entry`.
 	 * 
 	 *  Applies a server-side default limit clamp (1..=500, default 100) to prevent
@@ -3111,7 +3120,7 @@ export type Camera = {
 	passband: string[] | null,
 	/**
 	 *  Pixel pitch in micrometres; `None` = not recorded. Square pixels are
-	 *  assumed on both axes, matching [`sessions::fov_diagonal_deg`].
+	 *  assumed on both axes, matching `sessions::fov_diagonal_deg`.
 	 */
 	pixelSizeUm?: number | null,
 	/**  Unbinned sensor width in pixels (FITS `NAXIS1`); `None` = not recorded. */
@@ -3877,7 +3886,7 @@ export type ErrorCode = "validation.request_envelope_invalid" | "dev_mode.disabl
  *  #886: `calibration.masters.get`/`.archive` target id has no matching
  *  `calibration_session` row.
  */
-"master.not_found" | "confirm.text.mismatch" | "no.items.to.retry" | "no_op" | "parent.not_found" | "parent.not_terminal" | "lifecycle.read_only" | "lifecycle.last_confirmed_source" | "project.not_found" | "project.read_only" | "project.session_already_pinned" | "project.session_not_pinned" | "project.lifecycle_disallows_session_add" | "project.reclassification_revision_invalid" | "project.membership_conflict" | "framing.not_found" | "framing.project_mismatch" | "framing.merge.requires_two" | "framing.merge.duplicate_id" | "framing.split.empty_selection" | "framing.split.invalid_session" | "framing.split.would_empty_source" | "framing.reassign.empty_selection" | "attribution.not_light_frame" | "attribution.geometry_unavailable" | "view.mixed_kind" | "view.not_found" | "view.unsupported_kind" | "no_selection" | "no_link_kind" | "destination.collision" | "destination.exists" | "profile.not_found" | "canonical_target.not_found" | "name.duplicate" | "name.empty" | "name.too_long" | "source.already.linked" | "source.not_found" | "source.invalid_organization_state" | 
+"master.not_found" | "confirm.text.mismatch" | "no.items.to.retry" | "no_op" | "parent.not_found" | "parent.not_terminal" | "lifecycle.read_only" | "lifecycle.last_confirmed_source" | "project.not_found" | "project.read_only" | "project.session_already_pinned" | "project.session_not_pinned" | "project.lifecycle_disallows_session_add" | "project.reclassification_revision_invalid" | "project.membership_conflict" | "project.update_view_no_additions" | "project.update_view_plan_not_found" | "project.update_view_plan_not_open" | "project.update_view_plan_not_approved" | "project.update_view_plan_stale" | "project.update_view_path_conflict" | "project.update_view_source_unavailable" | "project.update_view_root_changed" | "project.update_view_plan_digest_mismatch" | "project.update_view_session_too_large" | "project.update_view_operation_not_cancellable" | "framing.not_found" | "framing.project_mismatch" | "framing.merge.requires_two" | "framing.merge.duplicate_id" | "framing.split.empty_selection" | "framing.split.invalid_session" | "framing.split.would_empty_source" | "framing.reassign.empty_selection" | "attribution.not_light_frame" | "attribution.geometry_unavailable" | "view.mixed_kind" | "view.not_found" | "view.unsupported_kind" | "no_selection" | "no_link_kind" | "destination.collision" | "destination.exists" | "profile.not_found" | "canonical_target.not_found" | "name.duplicate" | "name.empty" | "name.too_long" | "source.already.linked" | "source.not_found" | "source.invalid_organization_state" | 
 /**
  *  Returned by `roots.delete` (P6b, decision D8) when dependent records
  *  (inbox items, plan items, file records, sessions) still reference the
@@ -7268,7 +7277,7 @@ export type PathPatternPreviewResponse = {
  * 
  *  Re-exported from `crates/contracts/core` so the Tauri command layer can
  *  reference it without importing `crates/patterns` directly. The shape matches
- *  [`patterns::PatternPart`] exactly.
+ *  `patterns::PatternPart` exactly.
  */
 export type PatternPartDto = {
 	/**  Stable client-side identifier. */
@@ -7757,7 +7766,7 @@ export type PlanType = "split" | "restructure" | "cleanup" | "archive" | "source
 "source_view_generation";
 
 /**
- *  Coordinate-source quality for a derived [`Pointing`] (FR-012).
+ *  Coordinate-source quality for a derived pointing (FR-012).
  * 
  *  `Wcs` (plate-solved `CRVAL1/2`) is high confidence; `Mount` (`OBJCTRA`/
  *  `OBJCTDEC` or decimal `RA`/`DEC`) is medium; `None` means no reliable
@@ -8885,6 +8894,19 @@ export type RecoveryAction_Serialize = {
 	code: string,
 	label: string,
 	description?: string | null,
+};
+
+/**
+ *  Response for `recovery.status` — the unclean-shutdown recovery prompt input.
+ * 
+ *  `unclean_shutdown` is true when the clean-shutdown marker was absent at
+ *  boot (the previous process did not exit gracefully). `interrupted_plan_ids`
+ *  lists plans left mid-apply by the crash (still `applying`, or `paused` with
+ *  a `crash` reason) — the recovery prompt offers these for review/resume.
+ */
+export type RecoveryStatus = {
+	uncleanShutdown: boolean,
+	interruptedPlanIds: string[],
 };
 
 /**  Request payload for `roots.register.batch`. */

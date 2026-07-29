@@ -55,7 +55,7 @@ use contracts_core::inventory_frame::{
 ///
 /// # Errors
 ///
-/// Returns `ContractError` per [`reconcile::run_reconcile`]. A failed
+/// Returns `ContractError` per `reconcile::run_reconcile`. A failed
 /// project-health check is retried on the next reconcile for the same root,
 /// because the frame-state writes have already committed by then.
 pub async fn run_reconcile(

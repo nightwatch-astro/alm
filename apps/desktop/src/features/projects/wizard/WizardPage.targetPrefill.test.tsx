@@ -3,7 +3,7 @@
 
 /// <reference types="@testing-library/jest-dom" />
 /**
- * Regression test for #612: "+ New project here" (TargetDetailV2) navigates
+ * Regression test for #612: "+ New project here" (TargetDetail) navigates
  * to the wizard with a real `?targetId=` search param. The wizard must
  * resolve it via `target.get`, prefill the name step with a real target
  * reference (not a guessed string), show the "From target" subbar chip, and

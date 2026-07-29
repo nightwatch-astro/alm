@@ -8,7 +8,7 @@
 //!
 //! Public surface:
 //! - [`CalibrationKind`] — dark / flat / bias (dark_flat reserved, not matched).
-//! - [`Dimension`] / [`SoftDimension`] / [`MatchingRuleConfig`] — rule configuration.
+//! - [`Dimension`] / [`MatchingRuleConfig`] — rule configuration.
 //! - [`CalibrationMatch`] — ranked suggestion with dimension breakdown.
 //! - [`SessionInfo`] / [`MasterInfo`] — pure-data input types (no DB row types).
 //! - [`suggest`] — fan-out dispatcher for single session.

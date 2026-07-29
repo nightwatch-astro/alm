@@ -29,7 +29,7 @@ targeting = { path = "../../../crates/targeting" }
 # target.moon_opposition.batch (#634): geocentric Sun/Moon position
 # (sun_position/moon_position — not re-exported by `targeting`, which only
 # re-exports the coordinate primitives).
-skymath = "0.6.0"
+skymath = "0.7.1"
 contracts_core = { path = "../../../crates/contracts/core" }
 domain_core = { path = "../../../crates/domain/core" }
 fs_inventory = { path = "../../../crates/fs/inventory" }

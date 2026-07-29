@@ -9,7 +9,7 @@
 //
 // `uuid` maps each fixture entry to the stable UUIDv5 used by the spec-013/023
 // backend.  When a row is selected in the list, its `uuid` is put into the URL
-// search param and passed to `TargetDetailV2` so the detail loads from the real
+// search param and passed to `TargetDetail` so the detail loads from the real
 // `target.get` backend command.
 
 export interface TargetFixture {

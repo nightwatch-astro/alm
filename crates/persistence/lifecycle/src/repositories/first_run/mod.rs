@@ -6,10 +6,10 @@
 //! Operates on `registered_sources` and `first_run_state` tables
 //! (migration 0006).
 //!
-//! Split by responsibility (refactor sweep #974): [`sources`] is
-//! register/list/find/remove; [`source_state`] is per-source organization
-//! state / path / active-flag get-set; [`dependents`] is the
-//! `roots.delete`/`roots.remap` dependency-counting pair; [`wizard_state`]
+//! Split by responsibility (refactor sweep #974): `sources` is
+//! register/list/find/remove; `source_state` is per-source organization
+//! state / path / active-flag get-set; `dependents` is the
+//! `roots.delete`/`roots.remap` dependency-counting pair; `wizard_state`
 //! is the `first_run_state` singleton (get/complete/restart).
 
 use domain_core::first_run::{OrganizationState, ScanDepth, SourceKind};

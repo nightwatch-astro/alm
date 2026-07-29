@@ -30,9 +30,9 @@ pub enum TokenTransform {
 /// Describes one token in the registry (data-model.md §TokenDefinition).
 #[derive(Clone, Debug)]
 pub struct TokenDefinition {
-    /// Token name as it appears in a [`PatternPart`] value, e.g. `"target"`.
+    /// Token name as it appears in a `PatternPart` value, e.g. `"target"`.
     pub name: &'static str,
-    /// The key in [`MetadataBundle`] that this token reads from.
+    /// The key in [`crate::resolver::MetadataBundle`] that this token reads from.
     pub source_field: &'static str,
     /// Value emitted when the source field is absent or sanitizes to empty.
     pub fallback: &'static str,

@@ -77,6 +77,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # tauri-action publishes the release and uploads bundles
+      id-token: write # OIDC identity that signs the attestation
+      attestations: write # publish the attestation to this repo
     steps:
       - uses: actions/checkout@v4
 
@@ -136,6 +140,7 @@ jobs:
       #   - assetNamePattern renamed to artifactNamePattern: we don't use it.
       #   - Tauri v1/unstable support dropped: we are on Tauri 2 stable.
       - name: Build, sign, and upload Tauri bundles
+        id: tauri
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -163,6 +168,68 @@ jobs:
           prerelease: false
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
+
+      # Build provenance for the bundles this matrix leg produced: a signed statement of
+      # which workflow run, at which commit, built these exact bytes. Complements the
+      # minisign updater signatures rather than replacing them — those are what the
+      # auto-updater checks against the app's embedded public key, offline and with no
+      # GitHub dependency. Verified with `gh attestation verify`.
+      #
+      # IMPORTANT on Windows: when ENABLE_WINDOWS_SIGNING is on, the sign-windows job
+      # below replaces the .exe/.msi on the release with Authenticode-signed copies via
+      # `--clobber`. Signing rewrites the file, so its digest changes and an attestation
+      # made here would NOT match what a user downloads. Those two extensions are
+      # therefore excluded here and attested in sign-windows instead, after signing.
+      # With signing off nothing clobbers them, so they are attested here.
+      #
+      # tauri-action emits artifactPaths as a JSON array STRING (its src/index.ts does
+      # JSON.stringify(artifacts.map(a => a.path))), which actions/attest cannot consume
+      # directly — subject-path wants a newline-separated list. Converting here also
+      # avoids hardcoding bundle filenames, which carry the version and would drift on
+      # every release.
+      - name: Collect artifact paths for attestation
+        id: subjects
+        shell: bash
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          # Only exclude the clobbered extensions on the leg that actually clobbers them.
+          SKIP_WINDOWS_BUNDLES: ${{ runner.os == 'Windows' && vars.ENABLE_WINDOWS_SIGNING == 'true' }}
+        run: |
+          # Drop .sig sidecars (signatures over the bundles, not artifacts in their own
+          # right) and latest.json (a pointer regenerated on every release, so a
+          # provenance claim over it ages out immediately).
+          filter='.[] | select(endswith(".sig") or endswith("latest.json") | not)'
+          if [ "${SKIP_WINDOWS_BUNDLES}" = "true" ]; then
+            filter="${filter} | select(endswith(\".exe\") or endswith(\".msi\") | not)"
+          fi
+          subjects="$(printf '%s' "${ARTIFACT_PATHS:-[]}" | jq -r "${filter}")"
+
+          # Fail loud rather than silently attesting nothing. If tauri-action changes its
+          # output shape, an empty list would leave every bundle unattested while the job
+          # still went green — the release would look provenance-covered when it was not.
+          # The Windows+signing leg is the one legitimate empty case: its only bundles are
+          # the .exe/.msi that sign-windows attests after signing.
+          if [ -z "${subjects}" ]; then
+            if [ "${SKIP_WINDOWS_BUNDLES}" = "true" ]; then
+              echo "No non-Windows bundles on this leg; .exe/.msi are attested in sign-windows."
+            else
+              echo "::error::no bundles found in artifactPaths; refusing to attest an empty subject set"
+              echo "artifactPaths was: ${ARTIFACT_PATHS:-<unset>}"
+              exit 1
+            fi
+          fi
+
+          {
+            echo 'paths<<SUBJECTS_EOF'
+            echo "${subjects}"
+            echo 'SUBJECTS_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        if: ${{ steps.subjects.outputs.paths != '' }}
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: ${{ steps.subjects.outputs.paths }}
 
       # Windows bundles above carry only the minisign updater signature, not an
       # Authenticode signature — Windows SmartScreen still shows "Unknown
@@ -197,6 +264,10 @@ jobs:
     needs: [release-please, build]
     if: ${{ needs.release-please.outputs.release_created == 'true' && vars.ENABLE_WINDOWS_SIGNING == 'true' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release upload --clobber
+      id-token: write # OIDC identity that signs the attestation
+      attestations: write # publish the attestation to this repo
     steps:
       - name: Download unsigned Windows bundles
         uses: actions/download-artifact@v4
@@ -231,6 +302,18 @@ jobs:
           github-artifact-id: ${{ steps.upload-for-signing.outputs.artifact-id }}
           wait-for-completion: true
           output-artifact-directory: signed
+
+      # Attest the SIGNED bundles, and do it before the upload below. Authenticode
+      # signing rewrites the file, so these digests differ from the unsigned copies the
+      # build job produced — which is exactly why build/ skips .exe/.msi when this job is
+      # enabled. Attesting here means the provenance matches the bytes that actually end
+      # up on the release.
+      - name: Attest signed Windows bundles
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: |
+            signed/*.exe
+            signed/*.msi
 
       # tauri-action already uploaded unsigned copies of these files to the
       # release in the `build` job; --clobber replaces them in place with the

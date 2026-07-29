@@ -10,25 +10,12 @@ use sqlx::SqlitePool;
 
 use persistence_core::DbResult;
 
-/// Whether a `file_record` row exists for `id` (spec 026 regenerate: checks
-/// inventory resolution before re-linking a prepared view item).
-///
-/// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
-pub async fn file_record_exists(pool: &SqlitePool, id: &str) -> DbResult<bool> {
-    let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM file_record WHERE id = ?")
-        .bind(id)
-        .fetch_one(pool)
-        .await?;
-    Ok(exists)
-}
-
 /// `(relative_path, state)` for a `file_record` row (spec 049 generation:
 /// resolves a session's frame ids to their current path + presence state).
 /// Returns `None` when no row exists.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_file_record_path_and_state(
     pool: &SqlitePool,
     id: &str,
@@ -55,7 +42,7 @@ pub struct AcquisitionSessionViewRow {
 /// exists (an unresolved project-linked source, spec 049 FR-019).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_acquisition_session_view(
     pool: &SqlitePool,
     session_id: &str,
@@ -74,7 +61,7 @@ pub async fn get_acquisition_session_view(
 /// type into a set).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn list_calibration_assignment_types(
     pool: &SqlitePool,
     session_id: &str,
@@ -93,7 +80,7 @@ pub async fn list_calibration_assignment_types(
 /// Returns `None` when no row exists.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_calibration_session_view(
     pool: &SqlitePool,
     master_id: &str,

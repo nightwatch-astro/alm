@@ -45,16 +45,6 @@ fn retry_action() -> RecoveryAction {
     }
 }
 
-/// Convert a `sqlx::Error` inline (command-handler shorthand).
-///
-/// Wraps the sqlx error as `persistence_core::DbError::Database` then delegates
-/// to `db_to_contract`.  Use this in command handlers that run inline sqlx
-/// queries instead of calling a repository function.
-#[must_use]
-pub fn sqlx_to_contract(e: sqlx::Error) -> ContractError {
-    db_to_contract(persistence_core::DbError::from(e))
-}
-
 /// Convert a database-layer error (`sqlx::Error` or
 /// [`persistence_core::DbError`]) to an `internal.database` `ContractError`
 /// while preserving the originating error and adding which operation failed.

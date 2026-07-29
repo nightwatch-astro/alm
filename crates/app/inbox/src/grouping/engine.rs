@@ -16,7 +16,7 @@ use super::result::{GroupKey, GroupLabel, GroupResult, GroupWarning};
 ///
 /// The key is a canonical serialization of `frame_type` followed by each
 /// **enabled** dimension's normalized/bucketed value, rendered in the fixed
-/// [`Dimension::order`] order. A missing value for an enabled dimension renders
+/// `Dimension::order` order. A missing value for an enabled dimension renders
 /// [`SENTINEL_MISSING`]. Identical `(metadata, config)` always yields an
 /// identical key (FR-042) — there is no clock, hashing of floats, or map
 /// iteration involved.

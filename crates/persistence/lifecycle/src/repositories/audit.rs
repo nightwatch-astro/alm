@@ -201,7 +201,7 @@ pub async fn count_audit_entries(pool: &SqlitePool, filter: &AuditLogFilter) -> 
 /// `request_id` UUIDs and the RFC3339 `at` timestamp.
 ///
 /// # Errors
-/// Returns [`DbError`](persistence_core::DbError) if the insert fails.
+/// Returns `persistence_core::DbError`(persistence_core::DbError) if the insert fails.
 pub async fn insert_project_auto_transition(
     pool: &SqlitePool,
     project_id: &str,
@@ -218,7 +218,7 @@ pub async fn insert_project_auto_transition(
 /// Delegates to [`persistence_core::repositories::audit_writes::insert_audit_entry`].
 ///
 /// # Errors
-/// Returns [`DbError`](persistence_core::DbError) if the insert fails.
+/// Returns `persistence_core::DbError`(persistence_core::DbError) if the insert fails.
 pub async fn insert_audit_entry(pool: &SqlitePool, entry: &AuditLogEntry) -> DbResult<()> {
     audit_writes::insert_audit_entry(pool, entry).await
 }

@@ -9,7 +9,9 @@
 //! - [`list`]           — list artifacts for a project (for the drawer accordion).
 //! - [`classify_override`] — apply / clear a manual classification override.
 //! - [`mark_resolved`]  — mark a missing artifact as user-resolved.
-//! - [`mark_missing`]/[`mark_recovered`] — on-attach rescan: detect new files + mark gone files as missing.
+//! - [`mark_missing_batch`]/[`mark_recovered`] — on-attach rescan: detect new files + mark gone files as missing.
+//! - [`touch_seen`]/[`mark_missing_batch`]/[`detect_batch`] — the same three
+//!   reconcile phases, one transaction per phase (kyo7.54).
 //! - [`reattribute`]    — back-fill `tool_launch_id` after a new `tool.launch` event (T022b).
 //! - [`complete_run`]   — set `ToolLaunch.completed_at` and emit `workflow.run_completed` (T022c).
 //! - [`resolve_project_id_for_path`] — path→project attribution by
@@ -29,10 +31,10 @@
 //! Constitution III: this module never opens, processes, or modifies observed files.
 //! Constitution V: the DB row is the durable record; the file index is reproducible.
 //!
-//! Split by responsibility (refactor sweep #980): [`attribution`] is the
+//! Split by responsibility (refactor sweep #980): `attribution` is the
 //! path→project resolver + startup fix-up; [`detect`] is the observe/insert
-//! pipeline; [`list`] is the read projection; [`classify`] is the manual
-//! override; [`missing_recovered`] handles the reconcile pass; [`launches`]
+//! pipeline; [`list`] is the read projection; `classify` is the manual
+//! override; `missing_recovered` handles the reconcile pass; `launches`
 //! covers re-attribution, run completion, and the stale-launch sweep.
 #![allow(clippy::doc_markdown)]
 
@@ -52,6 +54,7 @@ mod detect;
 mod launches;
 mod list;
 mod missing_recovered;
+mod reconcile_batch;
 
 #[cfg(test)]
 mod tests;
@@ -61,7 +64,10 @@ pub use classify::classify_override;
 pub use detect::detect;
 pub use launches::{complete_run, reattribute, sweep_stale_launches};
 pub use list::list;
-pub use missing_recovered::{mark_missing, mark_recovered, mark_resolved};
+pub use missing_recovered::{mark_recovered, mark_resolved};
+pub use reconcile_batch::{
+    detect_batch, mark_missing_batch, touch_seen, DetectedFile, GoneArtifact,
+};
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 

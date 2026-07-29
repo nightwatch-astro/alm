@@ -70,7 +70,7 @@ pub struct InsertMetadataResolutionFrame {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_metadata_resolution(
     conn: &mut SqliteConnection,
     params: &InsertMetadataResolution<'_>,
@@ -103,7 +103,7 @@ pub async fn insert_metadata_resolution(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_metadata_resolution_frame(
     conn: &mut SqliteConnection,
     params: &InsertMetadataResolutionFrame,
@@ -126,7 +126,7 @@ pub async fn insert_metadata_resolution_frame(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_metadata_resolution_head(
     conn: &mut SqliteConnection,
     session_row_id: i64,
@@ -146,13 +146,13 @@ pub async fn insert_metadata_resolution_head(
 
 /// Advance the metadata resolution head using CAS.
 ///
-/// Returns [`DbError::CasFailed`] when the current generation or head revision
+/// Returns `persistence_core::DbError::CasFailed` when the current generation or head revision
 /// does not match the expected values.
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] on optimistic-lock failure, or
-/// [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::CasFailed` on optimistic-lock failure, or
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn advance_metadata_resolution_head(
     conn: &mut SqliteConnection,
     session_row_id: i64,
@@ -187,7 +187,7 @@ pub async fn advance_metadata_resolution_head(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no head row exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_metadata_resolution_head(
     pool: &SqlitePool,
     session_row_id: i64,
@@ -210,7 +210,7 @@ pub async fn get_metadata_resolution_head(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no head or revision exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_accepted_metadata_resolution(
     pool: &SqlitePool,
     session_row_id: i64,
@@ -235,7 +235,7 @@ pub async fn get_accepted_metadata_resolution(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_metadata_resolution_frames(
     pool: &SqlitePool,
     resolution_row_id: i64,

@@ -47,7 +47,7 @@ pub struct TargetProjectRow {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_sessions_for_target(
     pool: &SqlitePool,
     target_id: &str,
@@ -72,7 +72,7 @@ pub async fn list_sessions_for_target(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_projects_for_target(
     pool: &SqlitePool,
     target_id: &str,
@@ -96,7 +96,7 @@ pub async fn list_projects_for_target(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_target_notes(pool: &SqlitePool, target_id: &str) -> DbResult<Option<String>> {
     let row: Option<(Option<String>,)> =
         sqlx::query_as("SELECT notes FROM canonical_target WHERE id = ?")
@@ -114,7 +114,7 @@ pub async fn get_target_notes(pool: &SqlitePool, target_id: &str) -> DbResult<Op
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn set_target_notes(
     pool: &SqlitePool,
     target_id: &str,

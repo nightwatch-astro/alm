@@ -9,8 +9,8 @@
 use std::collections::BTreeMap;
 
 use domain_core::ids::Timestamp;
-use domain_core::settings::{SettingsState, SourceOverride};
-use patterns::{default_pattern, validate_pattern_str, FrameTypeClass};
+use domain_core::settings::SettingsState;
+use patterns::{default_pattern, validate_pattern_str};
 use serde_json::Value;
 use sqlx::types::Json;
 use sqlx::SqliteConnection;
@@ -19,7 +19,7 @@ use sqlx::SqlitePool;
 use persistence_core::{DbError, DbResult};
 
 /// Settings key holding the per-frame-type destination pattern overrides
-/// (spec 041 FR-026b). Stored as a JSON object mapping a [`FrameTypeClass`]
+/// (spec 041 FR-026b). Stored as a JSON object mapping a [`patterns::FrameTypeClass`]
 /// name to a pattern string. Only explicit overrides are persisted; missing
 /// entries fall back to [`default_pattern`] on read.
 pub const PATTERNS_BY_TYPE_KEY: &str = "patternsByType";
@@ -32,7 +32,7 @@ pub const PATTERNS_BY_TYPE_KEY: &str = "patternsByType";
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_raw(pool: &SqlitePool, key: &str) -> DbResult<Option<Value>> {
     let row: Option<(Json<Value>,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
         .bind(key)
@@ -46,8 +46,8 @@ pub async fn get_raw(pool: &SqlitePool, key: &str) -> DbResult<Option<Value>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
-/// Returns [`DbError::Serialise`] if the value cannot be serialised.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Serialise`] if the value cannot be serialised.
 pub async fn set_raw(pool: &SqlitePool, key: &str, value: &Value) -> DbResult<()> {
     let now = Timestamp::now_iso();
 
@@ -71,7 +71,7 @@ pub async fn set_raw(pool: &SqlitePool, key: &str, value: &Value) -> DbResult<()
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn set_raw_with_conn(
     conn: &mut SqliteConnection,
     key: &str,
@@ -98,7 +98,7 @@ pub async fn set_raw_with_conn(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn delete_key(pool: &SqlitePool, key: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM settings WHERE key = ?").bind(key).execute(pool).await?;
     Ok(())
@@ -108,7 +108,7 @@ pub async fn delete_key(pool: &SqlitePool, key: &str) -> DbResult<()> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_all_raw(pool: &SqlitePool) -> DbResult<Vec<(String, Value)>> {
     let rows: Vec<(String, Json<Value>)> =
         sqlx::query_as("SELECT key, value FROM settings ORDER BY key ASC").fetch_all(pool).await?;
@@ -124,7 +124,7 @@ pub async fn get_all_raw(pool: &SqlitePool) -> DbResult<Vec<(String, Value)>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_all_by_prefix(pool: &SqlitePool, prefix: &str) -> DbResult<Vec<(String, Value)>> {
     // SQLite LIKE pattern: append '%' to the prefix. The prefix itself may
     // contain literal '%' or '_' — escape them so they are matched literally.
@@ -148,7 +148,7 @@ pub async fn get_all_by_prefix(pool: &SqlitePool, prefix: &str) -> DbResult<Vec<
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn load_settings(pool: &SqlitePool) -> DbResult<SettingsState> {
     let stored = get_all_raw(pool).await?;
     merge_with_defaults(stored)
@@ -241,7 +241,7 @@ settings_key_table! {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`] if
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`] if
 /// the stored value is not a string→string object.
 pub async fn get_patterns_by_type(pool: &SqlitePool) -> DbResult<BTreeMap<String, String>> {
     match get_raw(pool, PATTERNS_BY_TYPE_KEY).await? {
@@ -255,13 +255,13 @@ pub async fn get_patterns_by_type(pool: &SqlitePool) -> DbResult<BTreeMap<String
 /// built-in [`default_pattern`].
 ///
 /// Returns `None` only when `frame_type` does not map to a known
-/// [`FrameTypeClass`] (e.g. an unclassified frame). Callers (spec 041 confirm,
+/// [`patterns::FrameTypeClass`] (e.g. an unclassified frame). Callers (spec 041 confirm,
 /// T052) treat `None` as "no destination pattern" and surface it via the
 /// needs-review flow.
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`] if
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`] if
 /// the stored override map is malformed.
 pub async fn effective_pattern_for(
     pool: &SqlitePool,
@@ -280,55 +280,13 @@ pub async fn effective_pattern_for(
     Ok(Some(effective))
 }
 
-/// Set the destination pattern override for a single frame-type class.
-///
-/// The pattern is validated via [`validate_pattern_str`] before storage; an
-/// invalid (or empty) pattern is rejected with [`DbError::Serialise`] rather
-/// than persisted. To revert a class to its default, use [`reset_pattern_for`].
-///
-/// # Errors
-///
-/// Returns [`DbError::Serialise`] when `pattern` fails validation, or
-/// [`DbError::Database`] on query failure.
-pub async fn set_pattern_for(
-    pool: &SqlitePool,
-    class: FrameTypeClass,
-    pattern: &str,
-) -> DbResult<()> {
-    validate_pattern_str(pattern).map_err(|e| {
-        let err: serde_json::Error =
-            serde::de::Error::custom(format!("invalid pattern for {}: {e}", class.as_str()));
-        DbError::Serialise(err)
-    })?;
-    let mut overrides = get_patterns_by_type(pool).await?;
-    overrides.insert(class.as_str().to_owned(), pattern.to_owned());
-    let value = serde_json::to_value(&overrides).map_err(DbError::Serialise)?;
-    set_raw(pool, PATTERNS_BY_TYPE_KEY, &value).await
-}
-
-/// Reset a single frame-type class to its built-in default by removing its
-/// override entry. Idempotent — no error if no override exists.
-///
-/// # Errors
-///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`] if
-/// the stored override map is malformed.
-pub async fn reset_pattern_for(pool: &SqlitePool, class: FrameTypeClass) -> DbResult<()> {
-    let mut overrides = get_patterns_by_type(pool).await?;
-    if overrides.remove(class.as_str()).is_none() {
-        return Ok(());
-    }
-    let value = serde_json::to_value(&overrides).map_err(DbError::Serialise)?;
-    set_raw(pool, PATTERNS_BY_TYPE_KEY, &value).await
-}
-
 // ── Per-source overrides ──────────────────────────────────────────────────
 
 /// Upsert a per-source override.
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn set_source_override(
     pool: &SqlitePool,
     source_id: &str,
@@ -355,7 +313,7 @@ pub async fn set_source_override(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_source_override_raw(
     pool: &SqlitePool,
     source_id: &str,
@@ -371,36 +329,10 @@ pub async fn get_source_override_raw(
     Ok(row.map(|(Json(v),)| v))
 }
 
-/// List all source overrides for a given source.
-///
-/// # Errors
-///
-/// Returns [`DbError::Database`] on query failure.
-pub async fn list_source_overrides(
-    pool: &SqlitePool,
-    source_id: &str,
-) -> DbResult<Vec<SourceOverride>> {
-    let rows: Vec<(String, Json<Value>, String)> = sqlx::query_as(
-        "SELECT key, value, updated_at FROM source_overrides WHERE source_id = ? ORDER BY key ASC",
-    )
-    .bind(source_id)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .into_iter()
-        .map(|(key, Json(v), updated_at)| SourceOverride {
-            source_id: source_id.to_owned(),
-            key,
-            value: domain_core::JsonAny::from(v),
-            updated_at,
-        })
-        .collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use patterns::FrameTypeClass;
     use persistence_core::test_support::setup_db;
 
     #[tokio::test]
@@ -558,7 +490,9 @@ mod tests {
     #[tokio::test]
     async fn patterns_by_type_override_read_back() {
         let db = setup_db().await;
-        set_pattern_for(db.pool(), FrameTypeClass::Dark, "custom/{gain}/").await.unwrap();
+        set_raw(db.pool(), PATTERNS_BY_TYPE_KEY, &serde_json::json!({"dark": "custom/{gain}/"}))
+            .await
+            .unwrap();
         let got = effective_pattern_for(db.pool(), "dark", false).await.unwrap();
         assert_eq!(got.as_deref(), Some("custom/{gain}/"));
         // Other classes are untouched.
@@ -569,23 +503,19 @@ mod tests {
     #[tokio::test]
     async fn patterns_by_type_master_routing() {
         let db = setup_db().await;
-        set_pattern_for(db.pool(), FrameTypeClass::MasterDark, "m/{exposure}/").await.unwrap();
+        set_raw(
+            db.pool(),
+            PATTERNS_BY_TYPE_KEY,
+            &serde_json::json!({"master_dark": "m/{exposure}/"}),
+        )
+        .await
+        .unwrap();
         // is_master = true selects the master class.
         let master = effective_pattern_for(db.pool(), "dark", true).await.unwrap();
         assert_eq!(master.as_deref(), Some("m/{exposure}/"));
         // raw dark still defaults.
         let raw = effective_pattern_for(db.pool(), "dark", false).await.unwrap();
         assert_eq!(raw.as_deref(), Some(default_pattern(FrameTypeClass::Dark)));
-    }
-
-    #[tokio::test]
-    async fn set_pattern_rejects_invalid() {
-        let db = setup_db().await;
-        assert!(set_pattern_for(db.pool(), FrameTypeClass::Bias, "{telescope}/").await.is_err());
-        assert!(set_pattern_for(db.pool(), FrameTypeClass::Bias, "").await.is_err());
-        // Nothing persisted on rejection → still the default.
-        let got = effective_pattern_for(db.pool(), "bias", false).await.unwrap();
-        assert_eq!(got.as_deref(), Some(default_pattern(FrameTypeClass::Bias)));
     }
 
     #[tokio::test]
@@ -605,12 +535,15 @@ mod tests {
     #[tokio::test]
     async fn reset_pattern_restores_default() {
         let db = setup_db().await;
-        set_pattern_for(db.pool(), FrameTypeClass::Light, "{target}/x/").await.unwrap();
-        reset_pattern_for(db.pool(), FrameTypeClass::Light).await.unwrap();
+        // Set an override for light, then clear all overrides via delete_key.
+        set_raw(db.pool(), PATTERNS_BY_TYPE_KEY, &serde_json::json!({"light": "{target}/x/"}))
+            .await
+            .unwrap();
+        delete_key(db.pool(), PATTERNS_BY_TYPE_KEY).await.unwrap();
         let got = effective_pattern_for(db.pool(), "light", false).await.unwrap();
         assert_eq!(got.as_deref(), Some(default_pattern(FrameTypeClass::Light)));
-        // reset is idempotent.
-        reset_pattern_for(db.pool(), FrameTypeClass::Light).await.unwrap();
+        // delete is idempotent.
+        delete_key(db.pool(), PATTERNS_BY_TYPE_KEY).await.unwrap();
     }
 
     #[tokio::test]
@@ -622,7 +555,9 @@ mod tests {
     #[tokio::test]
     async fn load_settings_applies_patterns_by_type() {
         let db = setup_db().await;
-        set_pattern_for(db.pool(), FrameTypeClass::Flat, "f/{filter}/").await.unwrap();
+        set_raw(db.pool(), PATTERNS_BY_TYPE_KEY, &serde_json::json!({"flat": "f/{filter}/"}))
+            .await
+            .unwrap();
         let state = load_settings(db.pool()).await.unwrap();
         assert_eq!(state.patterns_by_type.get("flat").map(String::as_str), Some("f/{filter}/"));
     }

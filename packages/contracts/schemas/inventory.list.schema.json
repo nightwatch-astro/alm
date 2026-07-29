@@ -30,18 +30,6 @@
       "enum": ["light", "dark", "flat", "bias", "mixed"],
       "description": "dark_flat is reserved in the FrameType domain enum but is never returned in v1. mixed is a server-derived sentinel for post-promotion regressions."
     },
-    "SessionState": {
-      "type": "string",
-      "description": "Canonical spec 002 session state. No server-side presentational projection. UI maps display labels locally: discovered+candidate display as 'Needs review'.",
-      "enum": [
-        "discovered",
-        "candidate",
-        "needs_review",
-        "confirmed",
-        "rejected",
-        "ignored"
-      ]
-    },
     "ReviewFilter": {
       "type": "string",
       "description": "Filter token for the reviewFilter parameter. 'all' disables state filtering. 'ignored' surfaces ignored sessions that are otherwise excluded from the default ledger.",
@@ -156,8 +144,7 @@
         "type",
         "target",
         "filter",
-        "exposure",
-        "state"
+        "exposure"
       ],
       "additionalProperties": false,
       "properties": {
@@ -169,10 +156,6 @@
         "target": { "type": ["string", "null"] },
         "filter": { "type": ["string", "null"] },
         "exposure": { "type": ["string", "null"] },
-        "state": {
-          "$ref": "#/$defs/SessionState",
-          "description": "Canonical spec 002 state. UI maps display labels locally: discovered+candidate → 'Needs review'. ignored sessions only appear when reviewFilter='ignored'."
-        },
         "camera": { "type": "string" },
         "gain": { "type": "string" },
         "binning": { "type": "string" },

@@ -645,6 +645,76 @@ mod tests {
         assert!(session.notes.is_none());
     }
 
+    // ── provenance summary (spec 006 T204) ───────────────────────────────────
+
+    /// A session key carrying neither target nor filter yields no provenance
+    /// summary at all, rather than an all-`None` object. The UI relies on the
+    /// absent object to skip the provenance fact rows entirely.
+    #[tokio::test]
+    async fn list_session_without_target_or_filter_has_no_provenance_summary() {
+        let db = setup().await;
+        let pool = db.pool();
+        sqlx::query(
+            "INSERT INTO library_root (id, label, kind, current_path, state, created_at) \
+             VALUES ('root-np', 'Lib', 'local', '/lib', 'active', '2026-07-14T00:00:00Z')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO calibration_session (id, session_key, kind, root_id, frame_ids, created_at) \
+             VALUES ('cal-np', '||1x1|100|2026-01-01', 'dark', 'root-np', '[\"f1\"]', \
+                     '2026-07-14T00:00:00Z')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let sources = list(pool, None).await.unwrap();
+        let session = &sources[0].sessions[0];
+        assert!(session.target.is_none());
+        assert!(session.filter.is_none());
+        assert!(
+            session.provenance.is_none(),
+            "provenance must be absent when neither target nor filter is known"
+        );
+        // Binning/gain are still projected — they are not provenance inputs.
+        assert_eq!(session.binning.as_deref(), Some("1x1"));
+    }
+
+    /// The populated branch mirrors the same rule: `target`/`filter` are the
+    /// only fields the projection can derive. `inferred`/`confirmed_by` have no
+    /// source of truth (no writer populates `provenance_history_archive`, and
+    /// spec 041 FR-051 dropped the session review lifecycle), so they stay
+    /// `None` — see the T203 follow-up.
+    #[tokio::test]
+    async fn list_provenance_summary_carries_target_and_filter_only() {
+        let db = setup().await;
+        let pool = db.pool();
+        sqlx::query(
+            "INSERT INTO library_root (id, label, kind, current_path, state, created_at) \
+             VALUES ('root-pv', 'Lib', 'local', '/lib', 'active', '2026-07-14T00:00:00Z')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, root_id, frame_ids, created_at) \
+             VALUES ('acq-pv', 'M 51|L|1x1|100|2025-05-03', 'root-pv', '[\"f1\"]', \
+                     '2026-07-14T00:00:00Z')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let sources = list(pool, None).await.unwrap();
+        let prov = sources[0].sessions[0].provenance.as_ref().expect("provenance summary");
+        assert_eq!(prov.target.as_deref(), Some("M 51"));
+        assert_eq!(prov.filter.as_deref(), Some("L"));
+        assert!(prov.inferred.is_none());
+        assert!(prov.confirmed_by.is_none());
+    }
+
     #[tokio::test]
     async fn list_resolves_relative_frame_folder_from_first_frame() {
         let db = setup().await;

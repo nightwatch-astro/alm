@@ -9,7 +9,7 @@
 //! SIMBAD resolution MUST NOT overwrite it (FR-014).
 //!
 //! These functions take a borrowed [`sqlx::SqlitePool`] rather than owning a
-//! connection, matching the spec-013 loader ([`crate::load`]) and the
+//! connection, matching the spec-013 loader (`crate::load`) and the
 //! `persistence_db` repositories. Raw SQL lives in
 //! `persistence_targets::repositories::q_resolver` (db-boundary-zero); this module
 //! keeps the dedup/precedence/ranking business logic and converts between the

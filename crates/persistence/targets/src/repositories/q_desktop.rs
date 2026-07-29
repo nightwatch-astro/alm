@@ -21,7 +21,7 @@ use persistence_core::DbResult;
 /// (auto-commit) or `&mut Transaction` (batched commit).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_inbox_master_item<'e, E>(
     executor: E,
@@ -80,7 +80,7 @@ pub struct InboxMasterItemRow {
 /// transaction that wrote the row.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_inbox_master_item_row<'e, E>(
     executor: E,
     root_id: &str,
@@ -117,7 +117,7 @@ where
 /// suppression on either side (FR-026, SC-007).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn count_unacknowledged_inbox_items(pool: &SqlitePool) -> DbResult<i64> {
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM inbox_items i
@@ -132,7 +132,7 @@ pub async fn count_unacknowledged_inbox_items(pool: &SqlitePool) -> DbResult<i64
 /// Count all `acquisition_session` rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn count_acquisition_sessions(pool: &SqlitePool) -> DbResult<i64> {
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM acquisition_session").fetch_one(pool).await?;
@@ -142,7 +142,7 @@ pub async fn count_acquisition_sessions(pool: &SqlitePool) -> DbResult<i64> {
 /// Count all rows in the `calibration_master_view` projection.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn count_calibration_masters(pool: &SqlitePool) -> DbResult<i64> {
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM calibration_master_view").fetch_one(pool).await?;
@@ -155,7 +155,7 @@ pub use super::q_resolver::count_canonical_targets;
 /// Count all `projects` rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn count_projects(pool: &SqlitePool) -> DbResult<i64> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects").fetch_one(pool).await?;
     Ok(count)

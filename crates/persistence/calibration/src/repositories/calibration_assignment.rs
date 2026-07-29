@@ -78,7 +78,7 @@ fn row_to_struct(
 /// Replaces any existing row for the same `(session_id, calibration_type)` pair.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure (including JSON encoding
+/// Returns `persistence_core::DbError::Database` on query failure (including JSON encoding
 /// of `mismatched_dimensions`, encoded via `sqlx::types::Json`).
 pub async fn upsert(pool: &SqlitePool, params: UpsertParams<'_>) -> DbResult<()> {
     let at = params.assigned_at.map_or_else(Timestamp::now_iso, str::to_owned);
@@ -119,7 +119,7 @@ pub async fn upsert(pool: &SqlitePool, params: UpsertParams<'_>) -> DbResult<()>
 /// Returns `true` when a row was deleted, `false` when none existed.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn delete(pool: &SqlitePool, session_id: &str, calibration_type: &str) -> DbResult<bool> {
     let result = sqlx::query(
         "DELETE FROM calibration_assignment WHERE session_id = ? AND calibration_type = ?",
@@ -137,7 +137,7 @@ pub async fn delete(pool: &SqlitePool, session_id: &str, calibration_type: &str)
 /// Returns `None` when no assignment exists.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get(
     pool: &SqlitePool,
     session_id: &str,
@@ -161,7 +161,7 @@ pub async fn get(
 /// List all assignments for a session.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_for_session(
     pool: &SqlitePool,
     session_id: &str,
@@ -179,14 +179,6 @@ pub async fn list_for_session(
     .map_err(DbError::Database)?;
 
     Ok(rows.into_iter().map(row_to_struct).collect())
-}
-
-/// Parse the JSON `mismatched_dimensions` column as a `Vec<String>`.
-///
-/// Returns an empty vec on parse failure (defensive — schema enforces valid JSON).
-#[must_use]
-pub fn parse_mismatched_dimensions(json: &str) -> Vec<String> {
-    serde_json::from_str::<Vec<String>>(json).unwrap_or_default()
 }
 
 // ── Missing-frame awareness (spec 048 US5, FR-024/025) ─────────────────────────
@@ -207,7 +199,7 @@ pub fn parse_mismatched_dimensions(json: &str) -> Vec<String> {
 /// yet); `Some(state)` is one of `present` / `missing` / `user_resolved_missing`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn master_artifact_state(pool: &SqlitePool, master_id: &str) -> DbResult<Option<String>> {
     let row: Option<(String,)> = sqlx::query_as(
         "SELECT pa.state
@@ -227,7 +219,7 @@ pub async fn master_artifact_state(pool: &SqlitePool, master_id: &str) -> DbResu
 /// member frame (`frame_ids`) whose `file_record.state = 'missing'`?
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn master_has_missing_source_frame(pool: &SqlitePool, master_id: &str) -> DbResult<bool> {
     let (count,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*)
@@ -250,7 +242,7 @@ pub async fn master_has_missing_source_frame(pool: &SqlitePool, master_id: &str)
 /// to exactly the assignments a raw-frame reconcile outcome affects.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_by_source_frame(
     pool: &SqlitePool,
     frame_id: &str,
@@ -277,7 +269,7 @@ pub async fn find_by_source_frame(
 /// artifact reconcile outcome affects.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_by_source_artifact(
     pool: &SqlitePool,
     artifact_id: &str,
@@ -294,6 +286,32 @@ pub async fn find_by_source_artifact(
     .await
     .map_err(DbError::Database)?;
     Ok(rows.into_iter().map(row_to_struct).collect())
+}
+
+/// Batch form of [`find_by_source_artifact`] returning only
+/// `(artifact_id, match_id)` — one query for a whole reconcile phase instead of
+/// one per artifact. The audit emission needs no other assignment field.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn find_match_ids_by_source_artifacts(
+    pool: &SqlitePool,
+    artifact_ids: &[String],
+) -> DbResult<Vec<(String, String)>> {
+    if artifact_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT cm.artifact_id, ca.id
+         FROM calibration_assignment ca
+         JOIN calibration_master cm ON cm.source_session_id = ca.master_id
+         WHERE cm.artifact_id IN (SELECT value FROM json_each(?))",
+    )
+    .bind(serde_json::to_string(artifact_ids).unwrap_or_else(|_| "[]".to_owned()))
+    .fetch_all(pool)
+    .await
+    .map_err(DbError::Database)?;
+    Ok(rows)
 }
 
 #[cfg(test)]
@@ -361,7 +379,8 @@ mod tests {
         assert_eq!(row.master_id, "master-002");
         assert!(row.was_override);
         // Round-trips through the `sqlx::types::Json` write-side codec.
-        assert_eq!(parse_mismatched_dimensions(&row.mismatched_dimensions), override_dims);
+        let got: Vec<String> = serde_json::from_str(&row.mismatched_dimensions).unwrap_or_default();
+        assert_eq!(got, override_dims);
     }
 
     #[tokio::test]
@@ -388,25 +407,5 @@ mod tests {
         let result =
             upsert(&pool, params("a-df", "ses-001", "dark_flat", "m-1", 1.0, false, &[])).await;
         assert!(result.is_err(), "dark_flat should be rejected by DB CHECK constraint");
-    }
-
-    #[tokio::test]
-    async fn parse_mismatched_dimensions_valid() {
-        let dims = parse_mismatched_dimensions(r#"["gain","filter"]"#);
-        assert_eq!(dims, vec!["gain".to_owned(), "filter".to_owned()]);
-    }
-
-    #[tokio::test]
-    async fn parse_mismatched_dimensions_empty() {
-        let dims = parse_mismatched_dimensions("[]");
-        assert!(dims.is_empty());
-    }
-
-    /// Graceful-degradation site (spec `n4_jsoncodec`): a corrupt
-    /// `mismatched_dimensions` cell must degrade to empty, not panic/propagate.
-    #[tokio::test]
-    async fn parse_mismatched_dimensions_corrupt_degrades_to_empty() {
-        let dims = parse_mismatched_dimensions("not valid json");
-        assert!(dims.is_empty());
     }
 }

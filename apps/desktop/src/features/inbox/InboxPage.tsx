@@ -90,6 +90,8 @@ export type {
   ClassifiedGroupSelection,
 } from './inboxSelectionModel';
 
+const PLANS_POLL_MS = 1000;
+
 // #557: a shared, stable empty-array fallback. `listData?.items ?? []`
 // allocates a NEW array every render while the query is unresolved, which
 // cascades through every `useMemo` keyed on `items` (derivedStats, roots,
@@ -597,7 +599,7 @@ export function InboxPage() {
   // quiescent otherwise.
   useEffect(() => {
     if (!planOverlayOpen) return undefined;
-    const timer = setInterval(() => refreshOpenPlans(), 1000);
+    const timer = setInterval(() => refreshOpenPlans(), PLANS_POLL_MS);
     return () => clearInterval(timer);
   }, [planOverlayOpen, refreshOpenPlans]);
 

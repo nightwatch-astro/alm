@@ -7,7 +7,7 @@
 //!
 //! - [`list`]  — list manifest summaries for a project (newest first, paginated).
 //! - [`get`]   — fetch one manifest with its full structured body.
-//! - [`write`] — generate and persist a manifest snapshot (called by lifecycle
+//! - [`fn@write`] — generate and persist a manifest snapshot (called by lifecycle
 //!   triggers and the `workflow.run_completed` subscriber).
 //!
 //! ## Architecture
@@ -279,7 +279,7 @@ pub async fn write(
 /// Build the `source_map`/`calibration` snapshot for a manifest body from the
 /// project's currently-linked sources and their calibration assignments.
 ///
-/// FR-001 requires manifests to "document project source mappings [and]
+/// FR-001 requires manifests to "document project source mappings \[and\]
 /// calibration choices" — `spawn_workflow_run_subscriber` previously always
 /// passed `None` for both, the only trigger a real user ever exercises
 /// (#665 tracks the other 4 triggers being unwired).

@@ -9,7 +9,7 @@
 //! exercises both independent trigger paths against the real reconcile
 //! use-cases (no mocks):
 //!   - PATH A: the generated master artifact (spec-012 `processing_artifacts`)
-//!     goes missing/recovers → `app_core::lifecycle::artifact::mark_missing`/
+//!     goes missing/recovers → `app_core::lifecycle::artifact::mark_missing_batch`/
 //!     `mark_recovered`.
 //!   - PATH B: a raw source sub-frame of the master's own session goes
 //!     missing/recovers → `app_core::frame_inventory::run_reconcile`.
@@ -24,7 +24,7 @@
 mod support;
 
 use app_core::calibration::masters_get;
-use app_core::lifecycle::artifact::{mark_missing, mark_recovered};
+use app_core::lifecycle::artifact::{mark_missing_batch, mark_recovered, GoneArtifact};
 use contracts_core::calibration::CalibrationMatchMissingFlag;
 use contracts_core::inventory_frame::{InventoryReconcileRunRequest, ReconcileReason};
 use persistence_calibration::repositories::calibration_assignment::{upsert, UpsertParams};
@@ -182,7 +182,14 @@ async fn master_artifact_missing_flags_match_and_clears_on_recovery() {
     assert_eq!(detail.missing_flag, None);
 
     // (A) mark the master artifact missing.
-    mark_missing(pool, &bus, "proj-a", &artifact_id, "output/MasterDark.xisf").await.unwrap();
+    mark_missing_batch(
+        pool,
+        &bus,
+        "proj-a",
+        &[GoneArtifact { id: artifact_id.clone(), path: "output/MasterDark.xisf".to_owned() }],
+    )
+    .await
+    .unwrap();
 
     let detail = masters_get(pool, &master_id).await.unwrap();
     assert_eq!(

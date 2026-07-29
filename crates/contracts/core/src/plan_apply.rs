@@ -144,3 +144,18 @@ pub struct PlanApplyStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pause_reason: Option<String>,
 }
+
+// ── recovery.status ─────────────────────────────────────────────────────────
+
+/// Response for `recovery.status` — the unclean-shutdown recovery prompt input.
+///
+/// `unclean_shutdown` is true when the clean-shutdown marker was absent at
+/// boot (the previous process did not exit gracefully). `interrupted_plan_ids`
+/// lists plans left mid-apply by the crash (still `applying`, or `paused` with
+/// a `crash` reason) — the recovery prompt offers these for review/resume.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryStatus {
+    pub unclean_shutdown: bool,
+    pub interrupted_plan_ids: Vec<String>,
+}

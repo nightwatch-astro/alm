@@ -176,7 +176,7 @@ pub async fn cas_approved_to_applying(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn complete_run(
     pool: &SqlitePool,
     plan_id: &str,
@@ -234,7 +234,7 @@ pub async fn complete_run(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn pause_run(
     pool: &SqlitePool,
@@ -279,8 +279,8 @@ pub async fn pause_run(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] if plan is not in `paused` state.
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::CasFailed`] if plan is not in `paused` state.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn resume_run(pool: &SqlitePool, plan_id: &str, run_id: &str) -> DbResult<()> {
     let mut tx = pool.begin().await?;
 
@@ -327,7 +327,7 @@ pub async fn resume_run(pool: &SqlitePool, plan_id: &str, run_id: &str) -> DbRes
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn item_retry_applying(pool: &SqlitePool, item_id: &str, plan_id: &str) -> DbResult<()> {
     let mut tx = pool.begin().await?;
 
@@ -356,7 +356,7 @@ pub async fn item_retry_applying(pool: &SqlitePool, item_id: &str, plan_id: &str
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn list_pending_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<String>> {
     let ids: Vec<String> = sqlx::query_scalar(
         "SELECT id FROM plan_items WHERE plan_id = ? AND item_state = 'pending' ORDER BY item_index ASC",
@@ -371,7 +371,7 @@ pub async fn list_pending_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Ve
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn batch_cancel_pending_items(pool: &SqlitePool, plan_id: &str) -> DbResult<i64> {
     let mut tx = pool.begin().await?;
 
@@ -418,7 +418,7 @@ pub async fn batch_cancel_pending_items(pool: &SqlitePool, plan_id: &str) -> DbR
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn cancel_orphaned_applying_items(
     pool: &SqlitePool,
     plan_id: &str,
@@ -460,7 +460,7 @@ pub async fn cancel_orphaned_applying_items(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn append_event(
     pool: &SqlitePool,
@@ -509,28 +509,13 @@ pub async fn append_event(
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 
-/// Fetch a plan apply run by id.
-///
-/// # Errors
-///
-/// Returns [`DbError::NotFound`] if no run matches.
-/// Returns [`DbError::Database`] on connection failure.
-pub async fn get_run(pool: &SqlitePool, run_id: &str) -> DbResult<PlanApplyRunRow> {
-    let row: Option<PlanApplyRunRow> = sqlx::query_as("SELECT * FROM plan_apply_runs WHERE id = ?")
-        .bind(run_id)
-        .fetch_optional(pool)
-        .await?;
-
-    row.ok_or_else(|| DbError::NotFound(format!("run {run_id}")))
-}
-
 /// Fetch the most recent active (paused or applying) run for a plan.
 ///
 /// Returns `None` if no run is in-progress.
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn get_active_run(pool: &SqlitePool, plan_id: &str) -> DbResult<Option<PlanApplyRunRow>> {
     Ok(sqlx::query_as(
         "SELECT * FROM plan_apply_runs \
@@ -540,18 +525,6 @@ pub async fn get_active_run(pool: &SqlitePool, plan_id: &str) -> DbResult<Option
     .bind(plan_id)
     .fetch_optional(pool)
     .await?)
-}
-
-/// List all apply events for a plan in chronological order.
-///
-/// # Errors
-///
-/// Returns [`DbError::Database`] on connection failure.
-pub async fn list_events(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<PlanApplyEventRow>> {
-    Ok(sqlx::query_as("SELECT * FROM plan_apply_events WHERE plan_id = ? ORDER BY at ASC")
-        .bind(plan_id)
-        .fetch_all(pool)
-        .await?)
 }
 
 /// Fetch the plan item whose CAS mismatch most recently triggered a pause
@@ -565,7 +538,7 @@ pub async fn list_events(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<PlanA
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn get_last_stale_item(
     pool: &SqlitePool,
     plan_id: &str,
@@ -587,7 +560,7 @@ pub async fn get_last_stale_item(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn get_last_item_with_failure_prefix(
     pool: &SqlitePool,
     plan_id: &str,
@@ -633,7 +606,7 @@ pub struct BatchItemState<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn batch_flush_item_states(
     conn: &mut SqliteConnection,
     plan_id: &str,
@@ -693,7 +666,7 @@ pub async fn batch_flush_item_states(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn append_event_conn(
     conn: &mut SqliteConnection,
@@ -755,7 +728,7 @@ pub async fn append_event_conn(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn sweep_crashed_applying_plans(pool: &SqlitePool) -> DbResult<Vec<String>> {
     let mut tx = pool.begin().await?;
 
@@ -785,6 +758,29 @@ pub async fn sweep_crashed_applying_plans(pool: &SqlitePool) -> DbResult<Vec<Str
 
     tx.commit().await?;
     Ok(ids)
+}
+
+/// List the plan ids interrupted by an unclean shutdown, for the recovery
+/// prompt. A plan qualifies when it is still `applying` (the boot sweep has not
+/// yet run) or already `paused` with `pause_reason = 'crash'` (the sweep ran).
+/// This is order-independent with respect to the async startup sweep, so the
+/// recovery command returns the same set whether it is queried before or after
+/// the sweep completes.
+///
+/// # Errors
+///
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
+pub async fn list_crash_interrupted_plans(pool: &SqlitePool) -> DbResult<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "SELECT p.id FROM plans p \
+         WHERE p.state = 'applying' \
+            OR (p.state = 'paused' AND EXISTS ( \
+                 SELECT 1 FROM plan_apply_runs r \
+                 WHERE r.plan_id = p.id AND r.pause_reason = 'crash')) \
+         ORDER BY p.id ASC",
+    )
+    .fetch_all(pool)
+    .await?)
 }
 
 // ── Boot reconciliation ───────────────────────────────────────────────────────
@@ -817,7 +813,7 @@ pub struct UnreconciledItem {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn list_unreconciled_items(
     pool: &SqlitePool,
     plan_ids: &[String],
@@ -879,7 +875,7 @@ pub async fn list_unreconciled_items(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
 pub async fn record_reconciled_outcome(
     pool: &SqlitePool,
     item: &UnreconciledItem,
@@ -1007,9 +1003,108 @@ mod tests {
         let plan = plans_repo::get_plan(db.pool(), "p1", false).await.unwrap();
         assert_eq!(plan.state, "applying");
 
-        let run = get_run(db.pool(), "run-1").await.unwrap();
+        let run = get_active_run(db.pool(), "p1").await.unwrap().expect("run should exist");
         assert_eq!(run.plan_id, "p1");
         assert_eq!(run.items_total, 2);
+    }
+
+    /// Spec 025 T025: a rollback attempt is durably recorded on the
+    /// `plan_apply_events` row, not just reported in memory.
+    ///
+    /// The executor only attempts a rollback on the cross-volume
+    /// copy-then-delete path (`crates/fs/executor/src/ops/move_op.rs`), whose
+    /// failure injection is private to that crate, so this asserts the audit
+    /// write itself: the three `rollback_*` columns round-trip the outcome that
+    /// `plan_apply::callbacks` passes down when `rollback_attempted` is set.
+    #[tokio::test]
+    async fn append_event_persists_rollback_attempt() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        setup_with_approved_plan(&db, "p-rollback", 1).await;
+        cas_approved_to_applying(db.pool(), "p-rollback", "run-rb", "test-token", 1, 1)
+            .await
+            .unwrap();
+
+        let failure = EventFailure {
+            code: "copy_succeeded_delete_failed_rollback_failed",
+            message: "delete of source failed after copy; rollback also failed",
+            recoverable: false,
+        };
+        let rollback = EventRollback {
+            attempted: true,
+            outcome: "failed",
+            message: Some("could not remove the copied destination file"),
+        };
+
+        append_event(
+            db.pool(),
+            "ev-rb-1",
+            "run-rb",
+            "p-rollback",
+            Some("p-rollback-item-0"),
+            "applying",
+            "failed",
+            "2026-06-01T00:00:01Z",
+            Some(&failure),
+            Some(&rollback),
+        )
+        .await
+        .unwrap();
+
+        let (attempted, outcome, message): (Option<i64>, Option<String>, Option<String>) =
+            sqlx::query_as(
+                "SELECT rollback_attempted, rollback_outcome, rollback_message \
+                 FROM plan_apply_events WHERE id = ?",
+            )
+            .bind("ev-rb-1")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+
+        assert_eq!(attempted, Some(1), "rollback_attempted must persist as true");
+        assert_eq!(outcome.as_deref(), Some("failed"));
+        assert_eq!(message.as_deref(), Some("could not remove the copied destination file"));
+    }
+
+    /// A non-rollback event leaves all three `rollback_*` columns NULL, so a
+    /// reader can distinguish "no rollback was needed" from "rollback failed".
+    #[tokio::test]
+    async fn append_event_without_rollback_leaves_columns_null() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        setup_with_approved_plan(&db, "p-norb", 1).await;
+        cas_approved_to_applying(db.pool(), "p-norb", "run-norb", "test-token", 1, 1)
+            .await
+            .unwrap();
+
+        append_event(
+            db.pool(),
+            "ev-norb-1",
+            "run-norb",
+            "p-norb",
+            Some("p-norb-item-0"),
+            "applying",
+            "applied",
+            "2026-06-01T00:00:01Z",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let (attempted, outcome, message): (Option<i64>, Option<String>, Option<String>) =
+            sqlx::query_as(
+                "SELECT rollback_attempted, rollback_outcome, rollback_message \
+                 FROM plan_apply_events WHERE id = ?",
+            )
+            .bind("ev-norb-1")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+
+        assert_eq!(attempted, None);
+        assert_eq!(outcome, None);
+        assert_eq!(message, None);
     }
 
     #[tokio::test]
@@ -1104,34 +1199,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn append_and_list_events() {
-        let db = Database::in_memory().await.unwrap();
-        db.migrate().await.unwrap();
-        setup_with_approved_plan(&db, "p5", 1).await;
-        cas_approved_to_applying(db.pool(), "p5", "run-5", "tok", 1, 1).await.unwrap();
-
-        append_event(
-            db.pool(),
-            "evt-1",
-            "run-5",
-            "p5",
-            Some("p5-item-0"),
-            "pending",
-            "applying",
-            "2026-06-01T00:00:00Z",
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-
-        let events = list_events(db.pool(), "p5").await.unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].prior_state, "pending");
-        assert_eq!(events[0].new_state, "applying");
-    }
-
-    #[tokio::test]
     async fn sweep_crashed_applying_plans_transitions_to_paused() {
         let db = Database::in_memory().await.unwrap();
         db.migrate().await.unwrap();
@@ -1148,7 +1215,7 @@ mod tests {
         let plan = plans_repo::get_plan(db.pool(), "pc1", false).await.unwrap();
         assert_eq!(plan.state, "paused", "crash-applying plan must become paused");
 
-        let run = get_run(db.pool(), "run-c1").await.unwrap();
+        let run = get_active_run(db.pool(), "pc1").await.unwrap().expect("run should exist");
         assert_eq!(run.terminal_state, Some("paused".to_owned()));
         assert_eq!(run.pause_reason, Some("crash".to_owned()));
     }
@@ -1168,7 +1235,7 @@ mod tests {
         let plan = plans_repo::get_plan(db.pool(), "pp1", false).await.unwrap();
         assert_eq!(plan.state, "paused");
         // pause_reason stays 'item.stale', not overwritten to 'crash'.
-        let run = get_run(db.pool(), "run-pp1").await.unwrap();
+        let run = get_active_run(db.pool(), "pp1").await.unwrap().expect("run should exist");
         assert_eq!(run.pause_reason, Some("item.stale".to_owned()));
     }
 
@@ -1185,8 +1252,12 @@ mod tests {
         assert_eq!(plan.state, "applied");
         assert_eq!(plan.items_applied, 2);
 
-        let run = get_run(db.pool(), "run-6").await.unwrap();
-        assert_eq!(run.terminal_state, Some("applied".to_owned()));
+        let terminal: Option<String> =
+            sqlx::query_scalar("SELECT terminal_state FROM plan_apply_runs WHERE id = 'run-6'")
+                .fetch_optional(db.pool())
+                .await
+                .unwrap();
+        assert_eq!(terminal.as_deref(), Some("applied"));
     }
 
     /// batch_flush_item_states must set item_stale=1 for stale items so
@@ -1355,5 +1426,38 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(ambiguous_code, Some("reconcile.ambiguous".to_owned()));
+    }
+
+    /// list_crash_interrupted_plans must return the same set before and after
+    /// the sweep runs (applying, then paused+crash), and exclude non-crash
+    /// paused plans.
+    #[tokio::test]
+    async fn list_crash_interrupted_is_order_independent_with_sweep() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+
+        // pc: crashed mid-apply. pn: paused for a non-crash reason.
+        setup_with_approved_plan(&db, "pc", 1).await;
+        setup_with_approved_plan(&db, "pn", 1).await;
+        cas_approved_to_applying(db.pool(), "pc", "run-pc", "tok", 1, 1).await.unwrap();
+        cas_approved_to_applying(db.pool(), "pn", "run-pn", "tok", 1, 1).await.unwrap();
+        pause_run(db.pool(), "pn", "run-pn", "item.stale", 0, 1, 0, 0, 0).await.unwrap();
+
+        // Before the sweep: pc is still 'applying'.
+        let before = list_crash_interrupted_plans(db.pool()).await.unwrap();
+        assert_eq!(
+            before,
+            vec!["pc".to_owned()],
+            "applying plan is interrupted; non-crash pause is not"
+        );
+
+        // After the sweep: pc is 'paused' with reason 'crash' — still returned.
+        sweep_crashed_applying_plans(db.pool()).await.unwrap();
+        let after = list_crash_interrupted_plans(db.pool()).await.unwrap();
+        assert_eq!(
+            after,
+            vec!["pc".to_owned()],
+            "crash-paused plan stays in the set after the sweep"
+        );
     }
 }

@@ -4,7 +4,11 @@
 
 **Created**: 2026-07-19
 
-**Status**: Draft
+**Status**: Implemented (post-hoc record, verified 2026-07-28). The splash window
+ships in `apps/desktop/src/splash/main.ts`, with the minimum-display and
+boot-ready handshake in `apps/desktop/src-tauri/src/lib.rs` (around lines
+119-258). This header claimed otherwise until the 2026-07-28 spec audit
+corrected it.
 
 **Input**: User description: "PlateVault logo system + native splash screen + docs brand alignment. Native splashscreen window shown at launch while the main window stays hidden; startup work (database open + migrations) runs while the splash is visible; splash closes when startup is complete AND a minimum 800 ms has elapsed. Extensible splash content variants (mark-only / mark+wordmark+version / mark+live-status) with a live startup-status channel. New logo designed externally in Claude Design (single-color-capable master SVG); replace stock app icons, placeholder favicon, About dialog, README header; align docs-site brand assets (favicon, og-image, hero, stale org link). Bundle identifier change explicitly out of scope."
 

@@ -1,10 +1,34 @@
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const schemasDir = new URL("../schemas", import.meta.url).pathname;
 const specsDir = new URL("../../../specs", import.meta.url).pathname;
 const generatedDir = new URL("../src/generated", import.meta.url).pathname;
+const packageDir = new URL("..", import.meta.url).pathname;
+
+// `json2ts` is a dependency binary, not a global. `spawnSync` without a shell
+// does not consult the package-manager-injected PATH, so resolve the bin
+// explicitly: pnpm puts it in this package's node_modules, npm/hoisted layouts
+// in the workspace root. Without this every invocation failed with ENOENT,
+// which the old script reported as "json2ts failed on <schema>" — indis-
+// tinguishable from a genuine schema error.
+function resolveJson2Ts() {
+  const candidates = [
+    join(packageDir, "node_modules/.bin/json2ts"),
+    join(packageDir, "../../node_modules/.bin/json2ts"),
+    join(packageDir, "../../node_modules/.pnpm/node_modules/.bin/json2ts"),
+  ];
+  const found = candidates.find((path) => existsSync(path));
+  if (!found) {
+    console.error(
+      "json2ts binary not found. Install dependencies first (`pnpm install`).\nLooked in:\n" +
+        candidates.map((c) => `  ${c}`).join("\n"),
+    );
+    process.exit(1);
+  }
+  return found;
+}
 
 function findSchemas(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -59,35 +83,47 @@ function findSpecContracts() {
   });
 }
 
-rmSync(generatedDir, { recursive: true, force: true });
-mkdirSync(generatedDir, { recursive: true });
-
+const json2ts = resolveJson2Ts();
 const schemas = [...findSchemas(schemasDir), ...findSpecContracts()];
 
 if (schemas.length === 0) {
-  writeFileSync(
-    join(generatedDir, "contracts.d.ts"),
-    "export {};\n",
-    "utf8",
-  );
+  mkdirSync(generatedDir, { recursive: true });
+  writeFileSync(join(generatedDir, "contracts.d.ts"), "export {};\n", "utf8");
   console.log("No contract schemas found yet; wrote placeholder declarations.");
   process.exit(0);
 }
 
-let exitCode = 0;
+// Generate into a staging directory and swap it in only once every schema has
+// succeeded. The previous script deleted `src/generated` up front, so a failed
+// run left the tree empty — worse than before it started, and it destroyed the
+// only copy of types that could no longer be regenerated.
+const stagingDir = `${generatedDir}.staging`;
+rmSync(stagingDir, { recursive: true, force: true });
+mkdirSync(stagingDir, { recursive: true });
+
+const failures = [];
 for (const schema of schemas) {
   const stem = basename(schema, ".schema.json").replace(/\.json$/, "");
-  const output = join(generatedDir, `${stem}.d.ts`);
-  const result = spawnSync(
-    "json2ts",
-    ["-i", schema, "-o", output, "--unreachableDefinitions"],
-    { stdio: "inherit" },
-  );
+  const output = join(stagingDir, `${stem}.d.ts`);
+  const result = spawnSync(json2ts, ["-i", schema, "-o", output, "--unreachableDefinitions"], {
+    stdio: "inherit",
+  });
 
-  if (result.status !== 0) {
-    console.error(`json2ts failed on ${schema}`);
-    exitCode = result.status ?? 1;
+  if (result.error || result.status !== 0) {
+    failures.push(`${schema}${result.error ? ` (${result.error.message})` : ""}`);
   }
 }
 
-process.exit(exitCode);
+if (failures.length > 0) {
+  rmSync(stagingDir, { recursive: true, force: true });
+  console.error(
+    `\njson2ts failed on ${failures.length} of ${schemas.length} schema(s); ` +
+      `${generatedDir} left unchanged:\n` +
+      failures.map((f) => `  ${f}`).join("\n"),
+  );
+  process.exit(1);
+}
+
+rmSync(generatedDir, { recursive: true, force: true });
+renameSync(stagingDir, generatedDir);
+console.log(`Generated ${schemas.length} contract declaration file(s).`);

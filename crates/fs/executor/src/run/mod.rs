@@ -25,8 +25,8 @@
 //!
 //! Split by responsibility (refactor sweep #985): this file holds the
 //! shared public types (progress events, item/action model, cancellation +
-//! skip + retry coordination primitives); [`loop_`] is the `execute_plan`
-//! forward loop + per-item gate pipeline; [`dispatch`] is the pure
+//! skip + retry coordination primitives); `loop_` is the `execute_plan`
+//! forward loop + per-item gate pipeline; `dispatch` is the pure
 //! action→filesystem-op dispatch.
 
 use std::collections::HashSet;

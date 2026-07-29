@@ -11,3 +11,4 @@ pub mod projects;
 pub mod q_projects;
 pub mod source_protection;
 pub mod tool_launches;
+pub mod update_view;

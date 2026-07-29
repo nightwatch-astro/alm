@@ -8,7 +8,7 @@
 //! the existing spec-018 settings key/value store
 //! (`persistence_lifecycle::repositories::settings::{get_raw,set_raw}`) — the same
 //! low-level mechanism `patternsByType` uses for its map (see
-//! `repositories::settings::get_patterns_by_type` / `set_pattern_for`).
+//! `repositories::settings::get_patterns_by_type` / `PATTERNS_BY_TYPE_KEY` + `set_raw`).
 //!
 //! This intentionally does **not** route through `SettingsState` / the
 //! per-key descriptor registry (`descriptors.rs`): that bag is validated,

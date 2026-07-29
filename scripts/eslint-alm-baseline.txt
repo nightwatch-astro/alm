@@ -6,12 +6,10 @@
 # rule's own `// eslint-disable-next-line alm/no-user-string -- <reason>`
 # for a genuinely non-user-facing string).
 # Regenerate with: node scripts/check-eslint-baseline.mjs --generate
-src/app/CommandPalette.tsx	280	alm/require-root-testid
+src/app/CommandPalette.tsx	215	alm/require-root-testid
 src/app/LogPanelContext.tsx	155	alm/require-root-testid
 src/app/OperationStatusContext.tsx	46	alm/require-root-testid
 src/app/PageStatusContext.tsx	52	alm/require-root-testid
-src/app/Shell.tsx	176	alm/require-root-testid
-src/app/StatusBar.tsx	57	alm/require-root-testid
 src/components/DetailHeader.tsx	28	alm/require-root-testid
 src/components/DetailPanel.tsx	134	alm/require-root-testid
 src/components/DetailPanel.tsx	72	alm/require-root-testid
@@ -70,12 +68,10 @@ src/features/settings/AuditLog.tsx	305	alm/require-root-testid
 src/features/settings/CalibrationMatching.tsx	189	alm/require-root-testid
 src/features/settings/Framing.tsx	130	alm/require-root-testid
 src/features/settings/PatternChipsEditor.tsx	39	alm/require-root-testid
-src/features/settings/PerTypeDestinationPatterns.tsx	206	alm/require-root-testid
 src/features/settings/PerTypePatternChipsEditor.tsx	90	alm/require-root-testid
 src/features/settings/ProcessingTools.tsx	181	alm/require-root-testid
 src/features/settings/RootCard.tsx	109	alm/require-root-testid
 src/features/settings/SettingsKit.tsx	106	alm/require-root-testid
-src/features/settings/SettingsKit.tsx	197	alm/require-root-testid
 src/features/settings/SettingsKit.tsx	33	alm/require-root-testid
 src/features/settings/SettingsPage.tsx	187	alm/require-root-testid
 src/features/settings/SourceProtectionOverride.tsx	131	alm/require-root-testid
@@ -95,7 +91,6 @@ src/features/targets/GuidanceCell.tsx	70	alm/require-root-testid
 src/features/targets/LinkedItemsList.tsx	102	alm/require-root-testid
 src/features/targets/LinkedItemsList.tsx	37	alm/require-root-testid
 src/features/targets/NotesSection.tsx	41	alm/require-root-testid
-src/features/targets/TargetDetailV2.tsx	163	alm/require-root-testid
 src/features/targets/TargetList.tsx	73	alm/require-root-testid
 src/features/targets/TargetsTableColumns.tsx	134	alm/require-root-testid
 src/features/targets/TonightPanel.tsx	166	alm/require-root-testid

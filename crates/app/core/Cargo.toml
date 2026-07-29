@@ -59,8 +59,14 @@ uuid = { version = "1", features = ["serde", "v4", "v5"] }
 [dev-dependencies]
 app_core_cache = { path = "../cache" }
 tempfile = { workspace = true }
+# spec 048 T010: forces two fixture frames to a single mtime so the
+# moved-vs-catalogued `file_record` comparison tests the writer, not the clock.
+filetime = "0.2"
 rstest = { workspace = true }
 proptest = { workspace = true }
+# artifact_reconcile_batching.rs counts sqlx statement-execution tracing events
+# to assert each reconcile phase batches its writes.
+tracing-subscriber = { workspace = true }
 # spec 052 P1 (resolution_e2e.rs): computes the same deterministic UUIDv5 the
 # resolver crate and app_core_targets already derive, to assert target_id
 # stability across the redb cache / SQLite promotion boundary.

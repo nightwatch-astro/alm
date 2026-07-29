@@ -34,7 +34,7 @@ pub const MAX_OUTBOX_EVENTS: usize = 100;
 const MAX_SAFE_STRING_BYTES: usize = 1024;
 
 /// Errors returned by command-ledger operations.  Semantic errors are kept
-/// separate from [`crate::DbError`] so callers can project safe contract codes
+/// separate from `persistence_core::DbError` so callers can project safe contract codes
 /// without parsing SQLite's diagnostic text.
 #[derive(Debug, Error)]
 pub enum CommandLedgerError {

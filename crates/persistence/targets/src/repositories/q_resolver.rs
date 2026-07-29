@@ -86,7 +86,7 @@ pub struct ExistingTargetRow {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn select_canonical_target_by_id(
     pool: &SqlitePool,
     id: &str,
@@ -105,7 +105,7 @@ pub async fn select_canonical_target_by_id(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn select_canonical_target_by_simbad_oid(
     pool: &SqlitePool,
     simbad_oid: i64,
@@ -124,7 +124,7 @@ pub async fn select_canonical_target_by_simbad_oid(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn select_target_id_by_normalized_alias(
     pool: &SqlitePool,
     normalized: &str,
@@ -141,7 +141,7 @@ pub async fn select_target_id_by_normalized_alias(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn select_aliases_for_target(
     pool: &SqlitePool,
     target_id: &str,
@@ -164,7 +164,7 @@ pub async fn select_aliases_for_target(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_canonical_targets(pool: &SqlitePool) -> DbResult<Vec<TargetListQueryRow>> {
     let rows = sqlx::query_as::<_, TargetListQueryRow>(
         "SELECT id, primary_designation, display_alias, object_type,
@@ -182,7 +182,7 @@ pub async fn list_canonical_targets(pool: &SqlitePool) -> DbResult<Vec<TargetLis
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_all_target_aliases(pool: &SqlitePool) -> DbResult<Vec<TargetAliasPairRow>> {
     let rows = sqlx::query_as::<_, TargetAliasPairRow>(
         "SELECT target_id, alias
@@ -199,7 +199,7 @@ pub async fn list_all_target_aliases(pool: &SqlitePool) -> DbResult<Vec<TargetAl
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn count_canonical_targets(pool: &SqlitePool) -> DbResult<i64> {
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM canonical_target").fetch_one(pool).await?;
@@ -214,7 +214,7 @@ pub async fn count_canonical_targets(pool: &SqlitePool) -> DbResult<i64> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_user_alias(
     pool: &SqlitePool,
     alias_id: &str,
@@ -240,7 +240,7 @@ pub async fn insert_user_alias(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn select_alias_id_by_target_and_normalized(
     pool: &SqlitePool,
     target_id: &str,
@@ -260,7 +260,7 @@ pub async fn select_alias_id_by_target_and_normalized(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn delete_user_alias(pool: &SqlitePool, alias_id: &str) -> DbResult<bool> {
     let result = sqlx::query("DELETE FROM target_alias WHERE id = ? AND kind = 'user'")
         .bind(alias_id)
@@ -274,7 +274,7 @@ pub async fn delete_user_alias(pool: &SqlitePool, alias_id: &str) -> DbResult<bo
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn set_display_alias(
     pool: &SqlitePool,
     target_id: &str,
@@ -293,7 +293,7 @@ pub async fn set_display_alias(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn clear_display_alias(pool: &SqlitePool, target_id: &str) -> DbResult<bool> {
     let result = sqlx::query("UPDATE canonical_target SET display_alias = NULL WHERE id = ?")
         .bind(target_id)
@@ -312,7 +312,7 @@ pub async fn clear_display_alias(pool: &SqlitePool, target_id: &str) -> DbResult
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_existing_by_simbad_oid_conn(
     conn: &mut SqliteConnection,
     simbad_oid: i64,
@@ -331,7 +331,7 @@ pub async fn find_existing_by_simbad_oid_conn(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_existing_by_id_conn(
     conn: &mut SqliteConnection,
     id: &str,
@@ -353,7 +353,7 @@ pub async fn find_existing_by_id_conn(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn update_canonical_target_conn(
     conn: &mut SqliteConnection,
@@ -402,7 +402,7 @@ pub async fn update_canonical_target_conn(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_canonical_target_conn(
     conn: &mut SqliteConnection,
@@ -442,7 +442,7 @@ pub async fn insert_canonical_target_conn(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn delete_aliases_for_target_conn(
     conn: &mut SqliteConnection,
     target_id: &str,
@@ -460,7 +460,7 @@ pub async fn delete_aliases_for_target_conn(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_alias_conn(
     conn: &mut SqliteConnection,
     alias_id: &str,

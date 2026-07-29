@@ -61,7 +61,7 @@ pub enum UpsertOutcome {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn load_state(pool: &SqlitePool) -> DbResult<Vec<OnboardingStateRow>> {
     let rows: Vec<(String, String, String, String)> =
         sqlx::query_as("SELECT item_id, state, at, source FROM onboarding_state")
@@ -78,7 +78,7 @@ pub async fn load_state(pool: &SqlitePool) -> DbResult<Vec<OnboardingStateRow>> 
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn load_item(pool: &SqlitePool, item_id: &str) -> DbResult<Option<OnboardingStateRow>> {
     let row: Option<(String, String, String, String)> =
         sqlx::query_as("SELECT item_id, state, at, source FROM onboarding_state WHERE item_id = ?")
@@ -108,7 +108,7 @@ pub async fn load_item(pool: &SqlitePool, item_id: &str) -> DbResult<Option<Onbo
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn upsert_if_unsettled(
     pool: &SqlitePool,
     item_id: &str,
@@ -154,7 +154,7 @@ pub async fn upsert_if_unsettled(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn force_unchecked(pool: &SqlitePool, item_id: &str) -> DbResult<UpsertOutcome> {
     let now = Timestamp::now_iso();
     let result = sqlx::query(
@@ -186,7 +186,7 @@ pub async fn force_unchecked(pool: &SqlitePool, item_id: &str) -> DbResult<Upser
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_if_missing(
     pool: &SqlitePool,
     item_id: &str,
@@ -214,7 +214,7 @@ pub async fn insert_if_missing(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn all_items_settled(pool: &SqlitePool) -> DbResult<bool> {
     let unchecked_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM onboarding_state WHERE state = 'unchecked'")
@@ -243,7 +243,7 @@ pub async fn all_items_settled(pool: &SqlitePool) -> DbResult<bool> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn has_confirmed_inbox_item(pool: &SqlitePool) -> DbResult<bool> {
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM inbox_items WHERE state IN ('plan_open', 'resolved'))",
@@ -258,7 +258,7 @@ pub async fn has_confirmed_inbox_item(pool: &SqlitePool) -> DbResult<bool> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn has_applied_plan(pool: &SqlitePool) -> DbResult<bool> {
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM plans WHERE state IN ('applied', 'partially_applied'))",
@@ -273,7 +273,7 @@ pub async fn has_applied_plan(pool: &SqlitePool) -> DbResult<bool> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn has_project(pool: &SqlitePool) -> DbResult<bool> {
     let exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM projects)").fetch_one(pool).await?;
@@ -285,7 +285,7 @@ pub async fn has_project(pool: &SqlitePool) -> DbResult<bool> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn has_spawned_tool_launch(pool: &SqlitePool) -> DbResult<bool> {
     let exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tool_launches WHERE outcome = 'spawned')")
@@ -299,7 +299,7 @@ pub async fn has_spawned_tool_launch(pool: &SqlitePool) -> DbResult<bool> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn has_resolved_target(pool: &SqlitePool) -> DbResult<bool> {
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM ingest_resolution WHERE state = 'resolved')",
@@ -317,7 +317,7 @@ pub async fn has_resolved_target(pool: &SqlitePool) -> DbResult<bool> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn load_flags(pool: &SqlitePool) -> DbResult<OnboardingFlagsRow> {
     let row: Option<(Option<String>, Option<String>, i64)> = sqlx::query_as(
         "SELECT orientation_done_at, section_hidden_at, sidebar_collapsed \
@@ -341,7 +341,7 @@ pub async fn load_flags(pool: &SqlitePool) -> DbResult<OnboardingFlagsRow> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn upsert_flags(pool: &SqlitePool, row: &OnboardingFlagsRow) -> DbResult<()> {
     sqlx::query(
         "INSERT INTO onboarding_flags (singleton_id, orientation_done_at, section_hidden_at, sidebar_collapsed) \

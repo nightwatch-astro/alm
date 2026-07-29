@@ -3,6 +3,10 @@
 
 import { clsx } from 'clsx';
 import { m } from '@/lib/i18n';
+// RENDERING CHANGE: canonical formatBytes uses 1dp for all sizes (B, KB, MB,
+// GB), whereas the former local copy used 0dp for KB. Aligns with MasterDetail
+// and the lib/format docstring (PR #1546 fmtBytes→formatBytes note).
+import { formatBytes } from '@/lib/format';
 import { useLogPanel } from './LogPanelContext';
 import { useOperationStatus } from './OperationStatusContext';
 import { usePageStatus } from './PageStatusContext';
@@ -19,14 +23,6 @@ import {
   meter as statusBarMeter,
   logToggle as statusBarLogToggle,
 } from './statusbar.css';
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
 
 function formatCount(n: number): string {
   return n.toLocaleString();
@@ -54,7 +50,7 @@ export function StatusBar() {
   const isActive = opStatus !== 'idle';
 
   return (
-    <div className={statusBar}>
+    <div className={statusBar} data-testid="status-bar">
       {/* LEFT — current operation */}
       <div className={statusBarOp}>
         {isActive ? (

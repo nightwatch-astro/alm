@@ -20,7 +20,7 @@ use super::sources::list_sources;
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_first_run_state(pool: &SqlitePool) -> DbResult<FirstRunStateResponse> {
     let row: Option<(Option<String>, String)> = sqlx::query_as(
         "SELECT completed_at, last_step FROM first_run_state WHERE singleton_id = 'first_run'",
@@ -87,7 +87,7 @@ pub async fn complete_first_run(pool: &SqlitePool) -> DbResult<FirstRunCompleteR
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn restart_first_run(pool: &SqlitePool) -> DbResult<FirstRunRestartResponse> {
     let now = Timestamp::now_iso();
 

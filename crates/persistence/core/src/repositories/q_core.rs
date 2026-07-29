@@ -17,7 +17,7 @@ use crate::DbResult;
 /// `frame_ids` JSON string for an `acquisition_session`, if it exists.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_acquisition_session_frame_ids(
     pool: &SqlitePool,
     session_id: &str,
@@ -33,7 +33,7 @@ pub async fn get_acquisition_session_frame_ids(
 /// `(frame_ids, kind)` for a `calibration_session`, if it exists.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_calibration_session_frame_ids_and_kind(
     pool: &SqlitePool,
     session_id: &str,
@@ -60,7 +60,7 @@ pub struct FileRecordRow {
 /// without querying.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn file_records_by_ids(
     pool: &SqlitePool,
     ids: &[String],
@@ -83,7 +83,7 @@ pub async fn file_records_by_ids(
 /// `file_record` rows for a given root.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn file_records_by_root(
     pool: &SqlitePool,
     root_id: &str,
@@ -101,7 +101,7 @@ pub async fn file_records_by_root(
 /// given frame id, matched via `LIKE`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_acquisition_session_id_by_frame_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -118,7 +118,7 @@ pub async fn find_acquisition_session_id_by_frame_like(
 /// array contains a given frame id, matched via `LIKE`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_calibration_session_by_frame_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -136,7 +136,7 @@ pub async fn find_calibration_session_by_frame_like(
 /// untouched while still forming a valid `UPDATE`).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn mark_file_record_missing(pool: &SqlitePool, id: &str) -> DbResult<()> {
     sqlx::query(
         "UPDATE file_record SET state = 'missing', last_seen_at = last_seen_at WHERE id = ?",
@@ -152,7 +152,7 @@ pub async fn mark_file_record_missing(pool: &SqlitePool, id: &str) -> DbResult<(
 /// T021 auto-reconcile membership drop).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn acquisition_sessions_by_frame_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -168,7 +168,7 @@ pub async fn acquisition_sessions_by_frame_like(
 /// Same as [`acquisition_sessions_by_frame_like`] for `calibration_session`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn calibration_sessions_by_frame_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -184,7 +184,7 @@ pub async fn calibration_sessions_by_frame_like(
 /// Overwrite an `acquisition_session`'s `frame_ids` JSON array.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn update_acquisition_session_frame_ids(
     pool: &SqlitePool,
     id: &str,
@@ -201,7 +201,7 @@ pub async fn update_acquisition_session_frame_ids(
 /// Overwrite a `calibration_session`'s `frame_ids` JSON array.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn update_calibration_session_frame_ids(
     pool: &SqlitePool,
     id: &str,
@@ -220,7 +220,7 @@ pub async fn update_calibration_session_frame_ids(
 /// does not.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_file_record_content_hash(pool: &SqlitePool, id: &str) -> DbResult<Option<String>> {
     let hash: Option<String> =
         sqlx::query_scalar("SELECT content_hash FROM file_record WHERE id = ?")
@@ -235,7 +235,7 @@ pub async fn get_file_record_content_hash(pool: &SqlitePool, id: &str) -> DbResu
 /// `classified` (spec 048 T025).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn relink_file_record(
     pool: &SqlitePool,
     id: &str,
@@ -273,7 +273,7 @@ pub struct TargetSearchRow {
 /// already wrapped in `%...%`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn search_targets_by_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -315,7 +315,7 @@ pub struct IdLabelRow {
 /// Most-recently-resolved `canonical_target` rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn recent_targets(pool: &SqlitePool) -> DbResult<Vec<IdLabelRow>> {
     let rows = sqlx::query_as::<_, IdLabelRow>(
         "SELECT id, COALESCE(display_alias, primary_designation) AS label FROM canonical_target \
@@ -330,7 +330,7 @@ pub async fn recent_targets(pool: &SqlitePool) -> DbResult<Vec<IdLabelRow>> {
 /// wrapped in `%...%`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn search_sessions_by_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -351,7 +351,7 @@ pub async fn search_sessions_by_like(
 /// Most-recently-created `acquisition_session` rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn recent_sessions(pool: &SqlitePool) -> DbResult<Vec<IdLabelRow>> {
     let rows = sqlx::query_as::<_, IdLabelRow>(
         "SELECT id, session_key AS label
@@ -375,7 +375,7 @@ pub struct ProjectSearchRow {
 /// Search `projects` by `name`, `like_pattern` already wrapped in `%...%`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn search_projects_by_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -396,7 +396,7 @@ pub async fn search_projects_by_like(
 /// Most-recently-created `projects` rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn recent_projects(pool: &SqlitePool) -> DbResult<Vec<IdLabelRow>> {
     let rows = sqlx::query_as::<_, IdLabelRow>(
         "SELECT id, name AS label FROM projects ORDER BY created_at DESC LIMIT 5",
@@ -424,7 +424,7 @@ pub struct SessionJoinRow {
 /// All `acquisition_session` rows, newest first.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_sessions_joined(pool: &SqlitePool) -> DbResult<Vec<SessionJoinRow>> {
     list_sessions_joined_paginated(pool, None, None).await
 }
@@ -432,7 +432,7 @@ pub async fn list_sessions_joined(pool: &SqlitePool) -> DbResult<Vec<SessionJoin
 /// Paginated variant of [`list_sessions_joined`].
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_sessions_joined_paginated(
     pool: &SqlitePool,
     limit: Option<u32>,
@@ -469,7 +469,7 @@ pub async fn list_sessions_joined_paginated(
 /// A single `acquisition_session` row by id.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_session_joined(pool: &SqlitePool, id: &str) -> DbResult<Option<SessionJoinRow>> {
     let row = sqlx::query_as::<_, SessionJoinRow>(
         "SELECT s.id, s.session_key, s.target_id, s.frame_ids, s.created_at,
@@ -515,7 +515,7 @@ pub struct FingerprintRow {
 /// `acquisition_fingerprint` row for a session, if present.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_fingerprint(
     pool: &SqlitePool,
     session_id: &str,
@@ -536,7 +536,7 @@ pub async fn get_fingerprint(
 /// `(0, 0)` without querying.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn active_frame_summary(pool: &SqlitePool, ids: &[String]) -> DbResult<(i64, i64)> {
     if ids.is_empty() {
         return Ok((0, 0));
@@ -569,7 +569,7 @@ pub async fn active_frame_summary(pool: &SqlitePool, ids: &[String]) -> DbResult
 /// single frame into multiple summed rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn active_frame_exposure_seconds(pool: &SqlitePool, ids: &[String]) -> DbResult<f64> {
     if ids.is_empty() {
         return Ok(0.0);
@@ -602,7 +602,7 @@ pub async fn active_frame_exposure_seconds(pool: &SqlitePool, ids: &[String]) ->
 /// whether a single per-sub value exists.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn active_frame_exposures(pool: &SqlitePool, ids: &[String]) -> DbResult<Vec<f64>> {
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -634,7 +634,7 @@ pub async fn active_frame_exposures(pool: &SqlitePool, ids: &[String]) -> DbResu
 /// `project_id`s linked to a session via `project_sources`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn project_ids_for_session(pool: &SqlitePool, session_id: &str) -> DbResult<Vec<String>> {
     let ids = sqlx::query_scalar::<_, String>(
         "SELECT project_id FROM project_sources WHERE inventory_session_id = ?",
@@ -660,7 +660,7 @@ pub struct CalibrationAssignmentRow {
 /// Calibration matches assigned to a session.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn calibration_matches_for_session(
     pool: &SqlitePool,
     session_id: &str,
@@ -688,7 +688,7 @@ pub struct AuditHistoryRow {
 /// oldest first.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn session_history(
     pool: &SqlitePool,
     session_id: &str,
@@ -710,7 +710,7 @@ pub async fn session_history(
 /// All `(id, frame_ids)` pairs from `acquisition_session`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn all_acquisition_session_frame_ids(
     pool: &SqlitePool,
 ) -> DbResult<Vec<(String, String)>> {
@@ -722,7 +722,7 @@ pub async fn all_acquisition_session_frame_ids(
 /// All `(id, frame_ids, kind)` triples from `calibration_session`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn all_calibration_session_frame_ids(
     pool: &SqlitePool,
 ) -> DbResult<Vec<(String, String, String)>> {
@@ -749,7 +749,7 @@ pub struct KeyedFingerprintRow {
 /// Batch-load `acquisition_fingerprint` rows for multiple session ids.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_fingerprints_batch(
     pool: &SqlitePool,
     session_ids: &[String],
@@ -774,7 +774,7 @@ pub async fn get_fingerprints_batch(
 /// Returns `(session_id, project_id)` pairs.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn project_ids_for_sessions_batch(
     pool: &SqlitePool,
     session_ids: &[String],
@@ -825,7 +825,7 @@ pub async fn project_names_batch(
 /// Internally collects all frame IDs, runs one query, then re-attributes by session.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn active_frame_summaries_batch(
     pool: &SqlitePool,
     sessions_frame_ids: &[(String, Vec<String>)],
@@ -883,7 +883,7 @@ pub async fn active_frame_summaries_batch(
 /// per session. Returns `session_id -> total_exposure_s`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn active_frame_exposure_seconds_batch(
     pool: &SqlitePool,
     sessions_frame_ids: &[(String, Vec<String>)],

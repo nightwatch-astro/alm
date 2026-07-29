@@ -46,6 +46,8 @@ interface AdvancedProps {
 
 type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
+const RESET_FEEDBACK_MS = 3000;
+
 export function Advanced({ save }: AdvancedProps) {
   const navigate = useNavigate();
   const [logLevel, setLogLevel] = useState<LogLevel>('info');
@@ -135,7 +137,7 @@ export function Advanced({ save }: AdvancedProps) {
     resetPreferences();
     setResetConfirming(false);
     setResetDone(true);
-    setTimeout(() => setResetDone(false), 3000);
+    setTimeout(() => setResetDone(false), RESET_FEEDBACK_MS);
   };
 
   // Staged update flow (#888, absorbs #869/#873): checking/downloading are

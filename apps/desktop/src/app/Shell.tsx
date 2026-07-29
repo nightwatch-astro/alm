@@ -20,6 +20,7 @@ import { LogPanelProvider, useLogPanel } from './LogPanelContext';
 import { OperationStatusProvider } from './OperationStatusContext';
 import { PageStatusProvider } from './PageStatusContext';
 import { ToastContainer } from '@/ui/ToastContainer';
+import { RecoveryBanner } from '@/features/recovery/RecoveryBanner';
 import { useOnboardingState, useWalkActive } from '@/features/onboarding/store';
 import { loadObservingState } from '@/features/targets/observing-sites/site-store';
 import {
@@ -155,6 +156,7 @@ function ShellInner() {
       <div className={frameBody}>
         <Sidebar />
         <main className={frameMain} data-testid="frame-main">
+          <RecoveryBanner />
           <Outlet />
         </main>
       </div>
@@ -173,7 +175,7 @@ function ShellInner() {
 
 export function Shell() {
   return (
-    <OperationStatusProvider>
+    <OperationStatusProvider data-testid="shell">
       <PageStatusProvider>
         <LogPanelProvider>
           <ShellInner />

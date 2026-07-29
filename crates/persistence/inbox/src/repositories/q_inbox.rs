@@ -23,7 +23,7 @@ use persistence_core::DbResult;
 /// `(root_id, relative_path)` natural key.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn get_source_group_by_id(
     pool: &SqlitePool,
     id: &str,
@@ -51,7 +51,7 @@ pub async fn get_source_group_by_id(
 /// inline query exactly.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn set_manual_override_reset_stale(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -102,7 +102,7 @@ pub struct InsertCalibrationFingerprint<'a> {
 /// row already reference this inbox item?
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn calibration_session_exists_for_inbox_item(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -118,7 +118,7 @@ pub async fn calibration_session_exists_for_inbox_item(
 /// Insert a `calibration_session` row registering a detected master.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn insert_calibration_session(
     pool: &SqlitePool,
     session: &InsertCalibrationSession<'_>,
@@ -143,7 +143,7 @@ pub async fn insert_calibration_session(
 /// `calibration_session`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn insert_calibration_fingerprint(
     pool: &SqlitePool,
     fp: &InsertCalibrationFingerprint<'_>,

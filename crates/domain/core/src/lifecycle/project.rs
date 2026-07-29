@@ -122,39 +122,6 @@ pub fn is_allowed(from: ProjectState, to: ProjectState) -> bool {
     TRANSITIONS.iter().any(|&(f, t)| f == from && t == to)
 }
 
-/// Default action label for a `(from, to)` edge per data-model.md §Transition Table (R2).
-#[must_use]
-pub fn default_label(from: ProjectState, to: ProjectState) -> &'static str {
-    match (from, to) {
-        (ProjectState::SetupIncomplete, ProjectState::Ready) => "Marked ready",
-        (
-            ProjectState::SetupIncomplete
-            | ProjectState::Ready
-            | ProjectState::Prepared
-            | ProjectState::Processing,
-            ProjectState::Blocked,
-        ) => "Marked blocked",
-        (ProjectState::Ready, ProjectState::Prepared) => "Marked prepared",
-        (ProjectState::Ready | ProjectState::Prepared, ProjectState::Processing) => {
-            "Marked processing"
-        }
-        (ProjectState::Prepared, ProjectState::Ready) => "Reverted to ready",
-        (ProjectState::Processing, ProjectState::Completed) => "Marked completed",
-        (ProjectState::Completed, ProjectState::Archived) => "Marked archived",
-        (ProjectState::Completed, ProjectState::Processing) => "Re-opened",
-        (ProjectState::Archived, ProjectState::Processing | ProjectState::Ready) => "Unarchived",
-        (
-            ProjectState::Blocked,
-            ProjectState::SetupIncomplete
-            | ProjectState::Ready
-            | ProjectState::Prepared
-            | ProjectState::Processing,
-        ) => "Resolved blocker",
-        (ProjectState::Blocked, ProjectState::Archived) => "Archived from blocked",
-        _ => "Transition applied",
-    }
-}
-
 /// Snapshot of `{label, at, actor}` recorded in the UI projection column.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, Type)]
 #[serde(rename_all = "camelCase")]
@@ -283,22 +250,5 @@ mod tests {
     #[test]
     fn archived_prepared_is_forbidden() {
         assert!(!is_allowed(ProjectState::Archived, ProjectState::Prepared));
-    }
-
-    /// Default label derivation for all 19 allowed edges.
-    #[test]
-    fn default_labels_match_spec() {
-        assert_eq!(
-            default_label(ProjectState::SetupIncomplete, ProjectState::Ready),
-            "Marked ready"
-        );
-        assert_eq!(default_label(ProjectState::Archived, ProjectState::Ready), "Unarchived");
-        assert_eq!(default_label(ProjectState::Archived, ProjectState::Processing), "Unarchived");
-        assert_eq!(
-            default_label(ProjectState::Blocked, ProjectState::Archived),
-            "Archived from blocked"
-        );
-        assert_eq!(default_label(ProjectState::Completed, ProjectState::Processing), "Re-opened");
-        assert_eq!(default_label(ProjectState::Blocked, ProjectState::Ready), "Resolved blocker");
     }
 }

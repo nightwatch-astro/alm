@@ -92,10 +92,10 @@ pub enum MigrateError {
 ///
 /// The migration applies three rules in key-declaration order:
 ///
-/// 1. **Drop** — keys in [`DROP_KEYS`] are deleted from the `settings` table.
-/// 2. **Reset** — keys in [`RESET_KEYS`] are deleted so the v2 in-code default
+/// 1. **Drop** — keys in `DROP_KEYS` are deleted from the `settings` table.
+/// 2. **Reset** — keys in `RESET_KEYS` are deleted so the v2 in-code default
 ///    applies on the next `get_settings` call.
-/// 3. **Retain** — all other v1 keys (from [`descriptors::all_keys`]) that are
+/// 3. **Retain** — all other v1 keys (from `descriptors::all_keys`) that are
 ///    actually stored in the DB are left unchanged.
 ///
 /// After applying the rules, exactly one `settings.migration` audit event is

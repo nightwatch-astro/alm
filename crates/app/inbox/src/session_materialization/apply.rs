@@ -384,7 +384,7 @@ pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<S
 ///
 /// # Errors
 ///
-/// Returns [`DbError`] on SQL or constraint errors.
+/// Returns [`persistence_core::DbError`] on SQL or constraint errors.
 pub async fn insert_ready_operation(
     pool: &SqlitePool,
     operation_public_id: &str,
@@ -417,8 +417,8 @@ pub async fn insert_ready_operation(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] on state-version mismatch, or
-/// [`DbError::Database`] on SQL errors.
+/// Returns [`persistence_core::DbError::CasFailed`] on state-version mismatch, or
+/// [`persistence_core::DbError::Database`] on SQL errors.
 pub async fn mark_operation_failed(
     pool: &SqlitePool,
     operation_row_id: i64,
