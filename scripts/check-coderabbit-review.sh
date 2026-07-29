@@ -61,6 +61,8 @@ while (($# > 0)); do
 done
 
 command -v gh >/dev/null || { echo 'check-coderabbit-review: gh is required' >&2; exit 2; }
+((json_mode == 0)) || command -v jq >/dev/null ||
+  { echo 'check-coderabbit-review: --json requires jq' >&2; exit 2; }
 
 if ((open_mode)); then
   ((${#prs[@]} == 0)) || { echo 'check-coderabbit-review: --open takes no PR numbers' >&2; usage; }
@@ -189,8 +191,13 @@ for pr in "${prs[@]}"; do
   [[ "$status" == REVIEWED ]] || failed=1
 
   if ((json_mode)); then
-    printf '{"pr":%s,"status":"%s","head":"%s","inline_findings":%s,"detail":"%s"}\n' \
-      "$pr" "$status" "$head" "$count" "$detail"
+    # jq --arg, never printf interpolation: several details embed double quotes
+    # (the draft-skip line quotes "@coderabbitai full review"), which would emit
+    # unparseable JSON on the interface that exists for machine consumers.
+    jq -cn --arg pr "$pr" --arg status "$status" --arg head "$head" \
+      --arg count "$count" --arg detail "$detail" \
+      '{pr: ($pr | tonumber? // $pr), status: $status, head: $head,
+        inline_findings: ($count | tonumber? // 0), detail: $detail}'
   else
     printf '%-8s %-14s %-10s %s\n' "#$pr" "$status" "$count" "$detail"
   fi

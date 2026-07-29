@@ -188,6 +188,52 @@ Your included review limit is currently reached under our Fair Usage Limits Poli
   echo "$output" | jq -e '.status == "REVIEWED" and .inline_findings == 2 and .pr == 1234'
 }
 
+@test "--json is parseable for a detail containing double quotes" {
+  # The draft-skip detail quotes "@coderabbitai full review"; printf-interpolated
+  # JSON broke on it. Pipe through jq so invalid JSON fails the test.
+  bot_notice 'skip review by coderabbit.ai — Review skipped. Draft detected.'
+  run bash "$SCRIPT" --json 1234
+  [ "$status" -eq 1 ]
+  echo "$output" | jq -e '.status == "SKIPPED_DRAFT" and (.detail | contains("\"@coderabbitai full review\""))'
+}
+
+@test "--json is parseable for every status the scanner emits" {
+  # status<TAB>notice-body pairs (bash 3.2: no associative arrays).
+  local pairs=(
+    $'RATE_LIMITED\trate limited by coderabbit.ai — Review limit reached\nAction performed: Review finished.'
+    $'SKIPPED_DRAFT\tskip review by coderabbit.ai — Review skipped. Draft detected.'
+    $'PENDING\tReview in progress'
+    $'NOT_REVIEWED\tAction performed: Review finished.'
+  )
+
+  for pair in "${pairs[@]}"; do
+    local want=${pair%%$'\t'*} body=${pair#*$'\t'}
+    printf '[]\n' >"$CR_REVIEWS"
+    bot_notice "$body"
+    run bash "$SCRIPT" --json 1234
+    [ "$status" -eq 1 ]
+    echo "$output" | jq -e --arg want "$want" '.status == $want and (.detail | type) == "string"'
+  done
+
+  printf '[]\n' >"$CR_NOTICES"
+  bot_review "$CR_HEAD"
+  run bash "$SCRIPT" --json 1234
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.status == "REVIEWED"'
+
+  bot_review "0000000000000000000000000000000000000000"
+  run bash "$SCRIPT" --json 1234
+  [ "$status" -eq 1 ]
+  echo "$output" | jq -e '.status == "STALE"'
+
+  # ERROR: gh cannot read the PR at all.
+  printf '#!/usr/bin/env bash\nexit 1\n' >"$TEST_ROOT/bin/gh"
+  chmod +x "$TEST_ROOT/bin/gh"
+  run bash "$SCRIPT" --json 1234
+  [ "$status" -eq 1 ]
+  echo "$output" | jq -e '.status == "ERROR" and .inline_findings == 0'
+}
+
 @test "no arguments is a usage error" {
   run bash "$SCRIPT"
   [ "$status" -eq 2 ]
