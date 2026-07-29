@@ -66,6 +66,17 @@ export type { LifecycleProps } from './Lifecycle';
 export { Modal } from './Modal';
 export type { ModalProps, ModalSize } from './Modal';
 
+// C-13: shared confirm dialog for delete/disable actions.
+export { ConfirmModal } from './ConfirmModal';
+export type {
+  ConfirmModalProps,
+  ConfirmModalActionVariant,
+} from './ConfirmModal';
+
+// C-28: shared loading/error/empty gate for list pages.
+export { TableStateGate } from './TableStateGate';
+export type { TableStateGateProps } from './TableStateGate';
+
 // Shared status indicator (dot + label).
 export { StatusTag } from './StatusTag';
 export type { StatusTagProps } from './StatusTag';
