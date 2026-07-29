@@ -27,7 +27,6 @@ dependencies:
   - srobroek/agentic-packages/packages/mcp-playwright#main
   - srobroek/agentic-packages/packages/mcp-context7#main
   - srobroek/agentic-packages/packages/mcp-package-version#main
-  - srobroek/agentic-packages/packages/mcp-repomix#main
   - srobroek/agentic-packages/packages/mcp-tauri#main
   - wshobson/agents/plugins/database-design
   - srobroek/agentic-packages/packages/user-journeys#main
