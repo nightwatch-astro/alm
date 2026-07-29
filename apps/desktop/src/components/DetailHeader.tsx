@@ -26,7 +26,7 @@ export function DetailHeader({
   children,
 }: DetailHeaderProps) {
   return (
-    <div className={detailHeader}>
+    <div className={detailHeader} data-testid="detail-header">
       <div className={detailHeaderContent}>
         <div className={detailTitle}>
           {title}

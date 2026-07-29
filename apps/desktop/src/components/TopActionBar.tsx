@@ -34,7 +34,10 @@ export function TopActionBar({
   wrap = false,
 }: TopActionBarProps) {
   return (
-    <div className={clsx(actionBar, wrap && actionBarWrap)}>
+    <div
+      className={clsx(actionBar, wrap && actionBarWrap)}
+      data-testid="top-action-bar"
+    >
       <span className={actionBarTitle}>{title}</span>
       {subtitle && <span className={actionBarSubtitle}>{subtitle}</span>}
       {children}
