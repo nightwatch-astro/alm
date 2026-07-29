@@ -186,6 +186,33 @@ pub async fn max_event_id(pool: &SqlitePool) -> DbResult<i64> {
     Ok(max_id)
 }
 
+/// Cursor that replays at most the newest `window` rows, together with the
+/// number of older rows that cursor excludes.
+///
+/// Returns `(cursor, skipped)` where `cursor` is exclusive (callers pass it to
+/// [`list_since`]) and `skipped` counts rows at or below it. With `window` rows
+/// or fewer in the table the cursor is `0` and nothing is skipped.
+///
+/// A live subscriber seeds its cursor with this instead of [`max_event_id`] so
+/// rows committed before it started are still delivered, bounded so a long
+/// history cannot be replayed in full on every launch.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn rewound_cursor(pool: &SqlitePool, window: i64) -> DbResult<(i64, i64)> {
+    let cursor: Option<i64> =
+        sqlx::query_scalar("SELECT event_id FROM events ORDER BY event_id DESC LIMIT 1 OFFSET ?")
+            .bind(window)
+            .fetch_optional(pool)
+            .await?;
+    let Some(cursor) = cursor else { return Ok((0, 0)) };
+    let (skipped,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM events WHERE event_id <= ?")
+        .bind(cursor)
+        .fetch_one(pool)
+        .await?;
+    Ok((cursor, skipped))
+}
+
 /// Smallest retained `event_id`, or `None` if the table is empty. Used to
 /// detect a retention/eviction gap between a caller's cursor and the oldest
 /// row still on disk.
@@ -249,7 +276,7 @@ mod tests {
 
     use super::{
         count_events, insert_event, list_by_emitted_at_range, list_recent_since, list_since,
-        list_since_by_topic, max_event_id, min_event_id, prune_events_older_than,
+        list_since_by_topic, max_event_id, min_event_id, prune_events_older_than, rewound_cursor,
     };
 
     async fn setup() -> SqlitePool {
@@ -347,6 +374,28 @@ mod tests {
         let id1 = insert_event(&pool, "t.a", "system", "2026-01-01T00:00:00Z", "{}").await.unwrap();
         insert_event(&pool, "t.b", "system", "2026-01-01T00:00:01Z", "{}").await.unwrap();
         assert_eq!(max_event_id(&pool).await.expect("max_event_id"), id1 + 1);
+    }
+
+    #[tokio::test]
+    async fn rewound_cursor_replays_window_and_counts_skipped() {
+        let pool = setup().await;
+        assert_eq!(rewound_cursor(&pool, 2).await.expect("empty table"), (0, 0));
+
+        for i in 0..5 {
+            insert_event(&pool, "t.a", "system", &format!("2026-01-01T00:00:0{i}Z"), "{}")
+                .await
+                .unwrap();
+        }
+
+        // Window larger than the table replays everything.
+        assert_eq!(rewound_cursor(&pool, 10).await.expect("wide window"), (0, 0));
+
+        // A window of 2 leaves ids 1..=3 behind the cursor and replays 4 and 5,
+        // unlike max_event_id which would replay nothing.
+        let (cursor, skipped) = rewound_cursor(&pool, 2).await.expect("narrow window");
+        assert_eq!((cursor, skipped), (3, 3));
+        assert_eq!(list_since(&pool, cursor).await.unwrap().len(), 2);
+        assert_eq!(list_since(&pool, max_event_id(&pool).await.unwrap()).await.unwrap().len(), 0);
     }
 
     #[tokio::test]

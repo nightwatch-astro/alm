@@ -156,8 +156,11 @@ pub async fn log_export(
 /// id) for every entry, matching what `log.recent` returns.
 ///
 /// **Startup seam**: call this from `run_app` after both `AppHandle` and
-/// `EventBus` are ready. Events emitted before this task starts are durably
-/// stored and available via `log.recent` with no cursor.
+/// `EventBus` are ready. Rows committed before this task starts are replayed on
+/// the first broadcast, bounded to the newest [`log_stream::LOG_BUFFER_SIZE`]
+/// events. Older rows cannot fit the frontend ring buffer, so they are reported
+/// through a diagnostic entry (the same signal the lag path emits) and remain
+/// reachable via `log.recent`.
 pub fn start_log_forwarder(
     app_handle: tauri::AppHandle,
     bus: &audit::bus::EventBus,
@@ -167,12 +170,24 @@ pub fn start_log_forwarder(
     let mut rx = bus.subscribe();
 
     tokio::spawn(async move {
-        let mut cursor: i64 = 0;
         let mut diag_seq: u64 = 0;
 
-        // Initialise cursor to the current max event_id so we only emit new events.
-        if let Ok(max_id) = persistence_lifecycle::repositories::events::max_event_id(&pool).await {
-            cursor = max_id;
+        // Rewind rather than jumping to max_event_id: a jump discards every row
+        // committed between app start and forwarder start.
+        let window = i64::try_from(log_stream::LOG_BUFFER_SIZE).unwrap_or(i64::MAX);
+        let (mut cursor, skipped) =
+            persistence_lifecycle::repositories::events::rewound_cursor(&pool, window)
+                .await
+                .unwrap_or((0, 0));
+
+        if skipped > 0 {
+            diag_seq += 1;
+            let diag = LogEntry::diagnostic(
+                diag_seq,
+                LogLevel::Warn,
+                format!("Log stream started mid-history: {skipped} earlier events not streamed. Refresh to reload."),
+            );
+            let _ = tauri::Emitter::emit(&app_handle, "log:entry", &diag);
         }
 
         loop {
