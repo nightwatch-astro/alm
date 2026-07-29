@@ -94,7 +94,7 @@ import { formatOppositionDate, oppositionRelative } from './astro/opposition';
 import { GuidanceCell } from './GuidanceCell';
 import { m } from '@/lib/i18n';
 import { useFavourites } from './useFavourites';
-import { useActiveSite } from './observing-sites/site-store';
+import { useActiveSite } from '@/shared/observing-sites/site-store';
 import { usePlannerDateMs } from './planner-date-store';
 import { usePreference } from '@/data/preferences';
 import { ROW_HEIGHT_PX } from '@/data/theme';

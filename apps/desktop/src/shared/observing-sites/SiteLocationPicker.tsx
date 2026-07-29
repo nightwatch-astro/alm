@@ -178,7 +178,10 @@ export function SiteLocationPicker({
 
   if (unavailable) {
     return (
-      <p className="pv-step-site__map-unavailable">
+      <p
+        className="pv-step-site__map-unavailable"
+        data-testid="site-location-picker"
+      >
         {m.setup_site_map_unavailable()}
       </p>
     );

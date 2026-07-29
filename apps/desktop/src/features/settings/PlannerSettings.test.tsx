@@ -27,13 +27,13 @@ vi.mock('@/bindings/index', () => ({
 vi.mock('@/api/ipc', () => ({ unwrap: (v: unknown) => v }));
 
 import { PlannerSettings } from './PlannerSettings';
-import { __resetGuidanceParamsForTest } from '@/features/targets/guidance-settings';
+import { __resetGuidanceParamsForTest } from '@/shared/planner/guidance-settings';
 import { DEFAULT_MOON_AVOIDANCE } from '@/features/targets/astro/moon-avoidance';
 import {
   __setObservingStateForTest,
   USABLE_ALTITUDE_KEY,
   OBSERVING_SCOPE,
-} from '@/features/targets/observing-sites/site-store';
+} from '@/shared/observing-sites/site-store';
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -16,7 +16,7 @@ import {
   getNightObservability,
   moonExcludedSpans,
 } from './planner-derive';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import { BANDS, DEFAULT_MOON_AVOIDANCE } from './astro/moon-avoidance';
 import { __resetOppositionCacheForTest } from './astro/opposition';
 import { assertDefined } from '@/test/assertDefined';

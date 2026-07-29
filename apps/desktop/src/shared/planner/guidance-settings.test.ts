@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DEFAULT_MOON_AVOIDANCE } from './astro/moon-avoidance';
+import { DEFAULT_MOON_AVOIDANCE } from './moon-avoidance';
 
 // Mock the generated command surface so we can drive settings I/O.
 const { settingsGet, settingsUpdate, settingsRestoreDefaults } = vi.hoisted(

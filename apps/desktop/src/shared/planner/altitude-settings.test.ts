@@ -34,14 +34,14 @@ import {
   ALTITUDE_THRESHOLD_MIN,
   ALTITUDE_THRESHOLD_MAX,
 } from './altitude-settings';
-import { USABLE_ALT_DEG } from './planner-altitude';
+import { USABLE_ALT_DEG } from '@/features/targets/planner-altitude';
 import {
   __setObservingStateForTest,
   DEFAULT_USABLE_ALTITUDE_DEG,
   loadObservingState,
   USABLE_ALTITUDE_KEY,
   OBSERVING_SCOPE,
-} from './observing-sites/site-store';
+} from '@/shared/observing-sites/site-store';
 import { commands } from '@/bindings/index';
 
 beforeEach(() => {
