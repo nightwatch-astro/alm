@@ -19,8 +19,10 @@
 #   Tier 1 — L3 smoke (per-PR): a small, fast subset runs on every pull_request
 #     on ubuntu-latest only (the stable lane). Covers app boot + all top-level
 #     routes, one inbox flow, and one targets flow — three journeys, serial,
-#     targeting <8 min wall-clock. Required branch-protection check:
-#     "Real-UI smoke (L3) — ubuntu-latest". PRs get a real-UI signal without
+#     targeting <8 min wall-clock. The required branch-protection check
+#     "Real-UI smoke (L3) — ubuntu-latest" is published by the gate job
+#     e2e-smoke-gate-ubuntu; the worker publishes "… (L3) subset — …" so no
+#     two check runs share the required name. PRs get a real-UI signal without
 #     the ~25-min Windows full-suite cost or Windows L3 flake exposure.
 #
 #   Tier 2 — Full L3 matrix (main pushes + workflow_dispatch): the complete
@@ -694,7 +696,12 @@ jobs:
   # step and the comment above — there is no hidden implicit selection.
   # ---------------------------------------------------------------------------
   smoke-ubuntu:
-    name: Real-UI smoke (L3) — ubuntu-latest
+    # NOT the required context — that name belongs to e2e-smoke-gate-ubuntu
+    # alone. Branch protection matches contexts by exact name, so two check
+    # runs sharing the required name let an evaluator (notably a merge queue)
+    # settle on the wrong instance. Worker/gate names are split here the same
+    # way the full matrix splits "shard" from its gate.
+    name: Real-UI smoke (L3) subset — ubuntu-latest
     needs: [changes, build-frontend, build-app-ubuntu]
     # Smoke subset runs ONLY on pull_request. Main pushes and dispatch run the
     # full matrix (real-ui-e2e-ubuntu shards) instead.
@@ -770,7 +777,8 @@ jobs:
           --no-tests=warn
           --filter-expr 'test(all_top_level_screens_load) | test(inbox_ui_mixed_folder_splits_into_single_type_items) | test(targets_ui_add_target_no_duplicate_on_reconfirm)'
 
-  # Gate for the smoke job. Published as "Real-UI smoke (L3) — ubuntu-latest"
+  # Gate for the smoke job, and the ONLY publisher of
+  # "Real-UI smoke (L3) — ubuntu-latest"
   # — the context required by branch protection for PRs (replaces the old
   # full-matrix "Real-UI journeys (L3) — ubuntu-latest" and "— windows-latest"
   # required contexts). Only runs on pull_request; skipped on main push/dispatch
