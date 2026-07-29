@@ -418,9 +418,15 @@ jobs:
       # .pv-* selector ratchet: sealed at zero class selectors in e2e test
       # files (Playwright TS under tests/e2e/ and Rust journeys under
       # crates/e2e-tests/), which the eslint alm/require-root-testid rule
-      # cannot reach. Gated on frontend too, because tests/e2e/ is TS.
+      # cannot reach.
+      #
+      # Gated on rust/scripts only, NOT frontend: `just` is installed under the
+      # rust lane alone, so a `|| frontend` clause here makes a PR touching only
+      # apps/desktop/src/** run this step with no `just` on PATH. Both scanned
+      # trees (tests/e2e/, crates/e2e-tests/) match the `rust` filter via
+      # `tests/**` and `crates/**`, so the frontend clause added no coverage.
       - name: .pv-* selector ratchet
-        if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.scripts == 'true')
+        if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
         run: just pv-selector-ratchet
 
       # Compilation warnings/lints are OS-agnostic; running clippy on all 3 legs
