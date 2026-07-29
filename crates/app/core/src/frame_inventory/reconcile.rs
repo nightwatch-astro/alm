@@ -7,7 +7,7 @@ use std::path::Path;
 
 use contracts_core::error_code::ErrorCode;
 use contracts_core::inventory_frame::{
-    InventoryReconcileRunRequest, InventoryReconcileRunResponse, ReconcileMode,
+    InventoryReconcileRunRequest, InventoryReconcileRunResponse,
 };
 use contracts_core::{ContractError, ErrorSeverity};
 use fs_inventory::reconcile::{reconcile_root, FrameOutcome, KnownFrame};
@@ -189,72 +189,26 @@ async fn apply_missing_outcome(
     Ok(())
 }
 
-/// Returns `frame_ids_json` with `frame_id` removed, or `None` if it wasn't
-/// present (no update needed).
-fn drop_id_from_frame_ids(frame_ids_json: &str, frame_id: &str) -> Option<String> {
-    let mut ids: Vec<String> = serde_json::from_str(frame_ids_json).unwrap_or_default();
-    let before = ids.len();
-    ids.retain(|id| id != frame_id);
-    (ids.len() != before).then(|| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_owned()))
-}
-
-/// Remove `frame_id` from whichever session's `frame_ids` array currently
-/// references it (spec 048 T021, FR-010 auto-reconcile mode). The
-/// `file_record` row itself is never touched here — only membership — so a
-/// `missing` record stays retained and queryable (INV-4) via a root-scoped
-/// `inventory.frame.list { include_missing: true }`, it just stops being an
-/// active member of its former session.
-async fn drop_frame_from_session_membership(
-    pool: &SqlitePool,
-    frame_id: &str,
-) -> Result<(), ContractError> {
-    let like = format!("%\"{frame_id}\"%");
-
-    for (session_id, frame_ids_json) in
-        persistence_core::repositories::q_core::acquisition_sessions_by_frame_like(pool, &like)
-            .await
-            .map_err(db_err)?
-    {
-        if let Some(updated) = drop_id_from_frame_ids(&frame_ids_json, frame_id) {
-            persistence_core::repositories::q_core::update_acquisition_session_frame_ids(
-                pool,
-                &session_id,
-                &updated,
-            )
-            .await
-            .map_err(db_err)?;
-        }
-    }
-
-    for (session_id, frame_ids_json) in
-        persistence_core::repositories::q_core::calibration_sessions_by_frame_like(pool, &like)
-            .await
-            .map_err(db_err)?
-    {
-        if let Some(updated) = drop_id_from_frame_ids(&frame_ids_json, frame_id) {
-            persistence_core::repositories::q_core::update_calibration_session_frame_ids(
-                pool,
-                &session_id,
-                &updated,
-            )
-            .await
-            .map_err(db_err)?;
-        }
-    }
-    Ok(())
-}
-
 /// `inventory.reconcile.run` — on-demand reconcile pass over a root (spec 048
 /// T003/T015/US2 groundwork). See module docs for exactly what this pass
 /// does and does not apply yet.
 ///
+/// Both reconcile modes report a missing frame identically: the `file_record`
+/// row is marked `missing` and its session membership is left intact.
+/// Membership is frame-to-session attribution — user knowledge the filesystem
+/// cannot supply back (Constitution V, Tier 1) — and every active count,
+/// total, and list already filters on `state != 'missing'`
+/// (`q_core::active_frame_summaries_batch`, `list_frames`), so removing the id
+/// bought nothing and could not be undone when the frame returned.
+///
 /// # Errors
 ///
 /// Returns `ContractError` (`root.unavailable`) when the root is not
-/// registered; database errors otherwise. A root whose directory does not
-/// currently exist on disk is NOT an error — every known frame is reported
-/// `missing` (e.g. a disconnected removable drive), matching the spec's
-/// "never treat storage-absent as permanently deleted" edge case.
+/// registered, or when its directory is not currently walkable — absent
+/// (unmounted drive), not a directory, unreadable, or a symlink while
+/// `detection.follow_symlinks` is off. In those cases NO frame state is
+/// written: an un-walkable root is not evidence that any frame was deleted.
+/// Database errors otherwise.
 pub async fn run_reconcile(
     pool: &SqlitePool,
     bus: &audit::bus::EventBus,
@@ -286,7 +240,15 @@ pub async fn run_reconcile(
         })
         .collect();
 
-    let report = reconcile_root(root_path, &known, config.detection.follow_symlinks);
+    let report =
+        reconcile_root(root_path, &known, config.detection.follow_symlinks).map_err(|reason| {
+            ContractError::new(
+                ErrorCode::RootUnavailable,
+                format!("library root {} cannot be reconciled: {reason}", req.root_id),
+                ErrorSeverity::Blocking,
+                true,
+            )
+        })?;
     let reason = format!("{:?}", req.reason).to_lowercase();
 
     let mut tally = ReconcileTally::default();
@@ -304,12 +266,6 @@ pub async fn run_reconcile(
             }
             FrameOutcome::Missing => {
                 apply_missing_outcome(pool, bus, row, was_missing, &reason, &mut tally).await?;
-                // FR-010: auto-reconcile drops the id from active session
-                // membership; flag-missing (default) retains it, relying on
-                // the `state != 'missing'` filter for active counts/totals.
-                if matches!(config.reconcile_mode, ReconcileMode::AutoReconcile) {
-                    drop_frame_from_session_membership(pool, &row.id).await?;
-                }
             }
         }
     }
