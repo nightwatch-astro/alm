@@ -6,6 +6,7 @@ import {
   header as detailHeader,
   content as detailHeaderContent,
   title as detailTitle,
+  subtitle as detailSubtitle,
   actions as detailActions,
 } from './DetailHeader.css';
 
@@ -31,7 +32,7 @@ export function DetailHeader({
           {title}
           {titleExtra}
         </div>
-        {subtitle && <div className="pv-detail__subtitle">{subtitle}</div>}
+        {subtitle && <div className={detailSubtitle}>{subtitle}</div>}
         {children}
       </div>
       {actions && <div className={detailActions}>{actions}</div>}

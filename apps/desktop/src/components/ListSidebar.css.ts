@@ -3,7 +3,7 @@
 
 // ListSidebar.tsx styles.
 
-import { style } from '@vanilla-extract/css';
+import { globalStyle, style } from '@vanilla-extract/css';
 import { vars } from '@/styles/themes.css';
 
 export const listSidebar = style({
@@ -27,6 +27,36 @@ export const controls = style({
   flexDirection: 'column',
   gap: 'var(--pv-sp-1)',
   borderBottom: `1px solid ${vars.borderSubtle}`,
+});
+
+// The search input and the caller-supplied controls are unclassed elements
+// (ListSidebar.tsx, TargetList.tsx), so both are styled by descendant selector.
+globalStyle(`${search} input`, {
+  width: '100%',
+  height: '28px',
+  padding: '0 var(--pv-sp-2)',
+  border: `1px solid ${vars.border}`,
+  borderRadius: 'var(--pv-radius-sm)',
+  fontSize: 'var(--pv-text-xs)',
+  background: vars.bg,
+  color: vars.text,
+  outline: 'none',
+  transition: 'border-color var(--pv-transition-fast)',
+});
+
+globalStyle(`${search} input:focus`, { borderColor: vars.accent });
+globalStyle(`${search} input::placeholder`, { color: vars.textFaint });
+
+globalStyle(`${controls} select`, {
+  width: '100%',
+  height: 'var(--pv-control-h)',
+  fontSize: 'var(--pv-text-xs)',
+  border: `1px solid ${vars.border}`,
+  borderRadius: 'var(--pv-radius-sm)',
+  background: vars.bg,
+  color: vars.textSecondary,
+  padding: '0 var(--pv-sp-2)',
+  cursor: 'pointer',
 });
 
 export const list = style({ flex: 1, overflowY: 'auto', position: 'relative' });
