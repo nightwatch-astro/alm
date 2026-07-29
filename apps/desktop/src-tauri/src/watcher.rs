@@ -340,47 +340,51 @@ async fn run_attach_reconciliation(
     )
     .map_err(|e| format!("reconcile failed: {e}"))?;
 
+    let mut seen_ids: Vec<String> = Vec::new();
+    let mut gone: Vec<app_core::artifact::GoneArtifact> = Vec::new();
     for (rel_path, outcome) in report.existing {
         let Some(row) = known_rows.iter().find(|r| r.path == rel_path) else { continue };
         match outcome {
             workflow_artifacts::ReconcileOutcome::Gone => {
-                if let Err(e) =
-                    app_core::artifact::mark_missing(pool, bus, project_id, &row.id, &row.path)
-                        .await
-                {
-                    tracing::warn!("artifact watcher: mark_missing failed for {}: {e}", row.path);
-                }
+                gone.push(app_core::artifact::GoneArtifact {
+                    id: row.id.clone(),
+                    path: row.path.clone(),
+                });
             }
-            workflow_artifacts::ReconcileOutcome::Seen => {
-                if let Err(e) =
-                    persistence_plans::repositories::artifacts::touch_artifact(pool, &row.id).await
-                {
-                    tracing::warn!("artifact watcher: touch_artifact failed for {}: {e}", row.path);
-                }
-            }
+            workflow_artifacts::ReconcileOutcome::Seen => seen_ids.push(row.id.clone()),
         }
     }
 
-    for new_file in report.new_files {
-        let path_str = new_file.absolute_path.to_string_lossy().into_owned();
-        let detected_at = OffsetDateTime::from(new_file.file_mtime)
-            .format(&Rfc3339)
-            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        let size_bytes = i64::try_from(new_file.size_bytes).unwrap_or(i64::MAX);
-        if let Err(e) = app_core::artifact::detect(
-            pool,
-            bus,
-            project_id,
-            &path_str,
-            tool_id,
-            size_bytes,
-            &detected_at,
-            &detected_at,
-        )
-        .await
-        {
-            tracing::warn!("artifact watcher: reconcile detect failed for {path_str}: {e}");
-        }
+    let detected: Vec<app_core::artifact::DetectedFile> = report
+        .new_files
+        .into_iter()
+        .map(|new_file| {
+            let detected_at = OffsetDateTime::from(new_file.file_mtime)
+                .format(&Rfc3339)
+                .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+            app_core::artifact::DetectedFile {
+                path: new_file.absolute_path.to_string_lossy().into_owned(),
+                size_bytes: i64::try_from(new_file.size_bytes).unwrap_or(i64::MAX),
+                file_mtime: detected_at.clone(),
+                detected_at,
+            }
+        })
+        .collect();
+
+    // One transaction per phase (kyo7.54): a project with thousands of outputs
+    // otherwise pays one commit per row on every drawer open. A failed phase is
+    // logged, not propagated — the remaining phases still run, matching the old
+    // per-row loops' tolerance of individual failures.
+    if let Err(e) = app_core::artifact::touch_seen(pool, &seen_ids).await {
+        tracing::warn!(count = seen_ids.len(), "artifact watcher: seen phase failed: {e}");
+    }
+    if let Err(e) = app_core::artifact::mark_missing_batch(pool, bus, project_id, &gone).await {
+        tracing::warn!(count = gone.len(), "artifact watcher: missing phase failed: {e}");
+    }
+    if let Err(e) =
+        app_core::artifact::detect_batch(pool, bus, project_id, tool_id, &detected).await
+    {
+        tracing::warn!(count = detected.len(), "artifact watcher: detect phase failed: {e}");
     }
 
     Ok(())
