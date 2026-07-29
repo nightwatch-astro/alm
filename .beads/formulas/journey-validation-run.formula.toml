@@ -1,0 +1,53 @@
+formula = "journey-validation-run"
+description = "Drive one user journey end-to-end against the running product (tauri-mcp), fanning out fix lanes the instant an issue is found without pausing the drive. Pour one molecule per journey and attach to the journey-validation epic."
+version = 1
+type = "workflow"
+
+[vars.journey_id]
+description = "Journey identifier, for example J01"
+required = true
+pattern = "^J[0-9]+$"
+
+[vars.journey_title]
+description = "Short human-readable journey title"
+required = true
+
+[vars.journey_path]
+description = "Repository path to the journey definition (docs/journeys/<dir>/journey.md)"
+required = true
+
+[vars.platform]
+description = "OS the journey is driven on: macos | windows | linux"
+default = "macos"
+
+[vars.built_sha]
+description = "Exact commit SHA of the build under test"
+required = true
+pattern = "^[0-9a-f]{40}$"
+
+[[steps]]
+id = "build-preflight"
+title = "Preflight {{journey_id}} ({{platform}}): build + tauri-mcp up"
+type = "task"
+description = "Confirm a clean build at {{built_sha}}, bring the app up under tauri-mcp on {{platform}} (ONE instance; no concurrent live sessions per the port-collision hazards), and confirm the journey definition {{journey_path}} + its acceptance criteria."
+
+[[steps]]
+id = "drive"
+title = "Drive {{journey_id}} ({{platform}}): {{journey_title}}"
+type = "task"
+needs = ["build-preflight"]
+description = "Drive every step of {{journey_id}} against the running product via tauri-mcp, capturing evidence (snapshots/console/network) per step. THE INSTANT an issue is found (technical bug OR clearly non-functional / spec-divergent code): create a fix bead labeled journey,fix with expected-vs-actual against the spec, add dep discovered-from:<this journey bead>, and IMMEDIATELY assign a coder (do NOT wait, do NOT pause the drive) — keep driving the remaining steps while the fix lane runs. Fix lanes follow the standard protocol: worktree off origin/main, just check, dgit push, review, PR, merge."
+
+[[steps]]
+id = "report"
+title = "Report {{journey_id}} ({{platform}}): GitHub issue + tracking matrix"
+type = "task"
+needs = ["drive"]
+description = "Open/update ONE GitHub issue for {{journey_id}} logging what worked / what did not with evidence, in per-OS sections (macOS/Windows/Linux). Update the cross-platform status matrix doc (journey x {macOS,Windows,Linux} x {pass,fail+issue#,not-run}). Link every fix bead spawned during the drive."
+
+[[steps]]
+id = "reverify"
+title = "Re-verify {{journey_id}} ({{platform}}) after fixes land"
+type = "task"
+needs = ["report"]
+description = "Once the fix beads discovered-from this journey have merged, re-drive the affected steps to confirm resolution; update the issue + matrix. Does NOT self-certify functionality — final sign-off is the owner's interactive review."
