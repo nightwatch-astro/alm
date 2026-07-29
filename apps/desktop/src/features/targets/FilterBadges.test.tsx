@@ -9,7 +9,7 @@ import {
   bandViability,
   DEFAULT_MOON_AVOIDANCE,
   BANDS,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 
 describe('FilterBadges — per-band viability pills (spec 047 T016)', () => {
   it('renders all seven bands with a viable/not-viable aria-label each', () => {

@@ -88,7 +88,7 @@ import type { ObservingNight } from './astro/moon-state';
 import {
   DEFAULT_MOON_AVOIDANCE,
   type MoonAvoidanceParams,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import type { SensorConfig } from './planner-derive';
 import { formatOppositionDate, oppositionRelative } from './astro/opposition';
 import { GuidanceCell } from './GuidanceCell';

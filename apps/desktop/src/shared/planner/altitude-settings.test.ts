@@ -34,7 +34,6 @@ import {
   ALTITUDE_THRESHOLD_MIN,
   ALTITUDE_THRESHOLD_MAX,
 } from './altitude-settings';
-import { USABLE_ALT_DEG } from '@/features/targets/planner-altitude';
 import {
   __setObservingStateForTest,
   DEFAULT_USABLE_ALTITUDE_DEG,
@@ -49,9 +48,8 @@ beforeEach(() => {
 });
 
 describe('getAltitudeThreshold', () => {
-  it('returns the default USABLE_ALT_DEG when nothing is stored', () => {
-    expect(getAltitudeThreshold()).toBe(USABLE_ALT_DEG);
-    expect(DEFAULT_USABLE_ALTITUDE_DEG).toBe(USABLE_ALT_DEG);
+  it('returns DEFAULT_USABLE_ALTITUDE_DEG when nothing is stored', () => {
+    expect(getAltitudeThreshold()).toBe(DEFAULT_USABLE_ALTITUDE_DEG);
   });
 
   it('returns the stored value after setAltitudeThreshold', () => {

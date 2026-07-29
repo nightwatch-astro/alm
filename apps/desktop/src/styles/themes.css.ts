@@ -405,4 +405,3 @@ globalStyle(':root', {
     '--pv-radius-lg': "8px",
   },
 });
-

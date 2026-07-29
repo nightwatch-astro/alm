@@ -15,7 +15,7 @@ import {
   rowAltitudeFor,
   USABLE_ALT_DEG,
 } from './planner-altitude';
-import { BANDS } from './astro/moon-avoidance';
+import { BANDS } from '@/shared/planner/moon-avoidance';
 import type { SensorConfig } from './planner-derive';
 import { useActiveSite } from '@/shared/observing-sites/site-store';
 import { usePlannerDateMs } from './planner-date-store';

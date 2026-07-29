@@ -36,7 +36,10 @@ import { useStaleSelectionCleanup } from '@/lib/use-stale-selection';
 import { AddTargetDialog } from './AddTargetDialog';
 import { TargetDetail } from './TargetDetail';
 import { useTargets } from './store';
-import { PLANNER_CATALOGS, type CatalogueId } from './planner-catalog';
+import {
+  PLANNER_CATALOGS,
+  type CatalogueId,
+} from '@/shared/planner/planner-catalog';
 import { TargetsTable } from './TargetsTable';
 import { useAltitudeThreshold } from '@/shared/planner/altitude-settings';
 import { useObservingNight } from './astro/observing-night';
@@ -50,7 +53,7 @@ import {
 } from '@/shared/planner/guidance-settings';
 import { usePlannerSensorConfig } from './planner-sensor';
 import { recommendationLabel } from './FilterBadges';
-import type { Recommendation } from './astro/moon-avoidance';
+import type { Recommendation } from '@/shared/planner/moon-avoidance';
 import {
   useTargetsPageFilters,
   MY_TARGETS_VALUE,

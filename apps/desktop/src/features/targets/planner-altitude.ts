@@ -32,7 +32,10 @@
 
 import type { TargetListItem } from '@/bindings/index';
 import type { ObserverSite } from '@/shared/observing-sites/observer-site';
-import { activeSite } from '@/shared/observing-sites/site-store';
+import {
+  activeSite,
+  DEFAULT_USABLE_ALTITUDE_DEG,
+} from '@/shared/observing-sites/site-store';
 import {
   deriveObservability,
   getNightObservability,
@@ -48,15 +51,18 @@ import {
   DEFAULT_MOON_AVOIDANCE,
   type Band,
   type MoonAvoidanceParams,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 
 /**
  * Default usable-altitude threshold (degrees above horizon for imaging).
  * Overridable via Settings → Target Planner; callers should prefer the
  * user-configured value from `observing-sites/site-store.ts` (settings-backed,
  * T012b) over this constant.
+ *
+ * Alias of the settings-store default so the fallback used by these pure
+ * altitude functions cannot drift from the persisted default.
  */
-export const USABLE_ALT_DEG = 30;
+export const USABLE_ALT_DEG = DEFAULT_USABLE_ALTITUDE_DEG;
 
 /** One sampled point of the night's altitude curve. */
 export interface AltPoint {

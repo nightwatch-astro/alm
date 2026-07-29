@@ -19,7 +19,7 @@ import { unwrap } from '@/api/ipc';
 import {
   PLANNER_CATALOGS,
   type CatalogueId,
-} from '@/features/targets/planner-catalog';
+} from '@/shared/planner/planner-catalog';
 
 /** Settings scope for the default-enabled planner catalogues. */
 export const CATALOGUES_SCOPE = 'catalogues';

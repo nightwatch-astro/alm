@@ -22,8 +22,8 @@ import {
   useUsableAltitude,
   getUsableAltitude,
   saveUsableAltitude,
+  DEFAULT_USABLE_ALTITUDE_DEG,
 } from '@/shared/observing-sites/site-store';
-import { USABLE_ALT_DEG } from '@/features/targets/planner-altitude';
 
 /** Minimum allowed threshold value (degrees). */
 export const ALTITUDE_THRESHOLD_MIN = 0;
@@ -61,4 +61,4 @@ export function getAltitudeThreshold(): number {
   return getUsableAltitude();
 }
 
-export { USABLE_ALT_DEG };
+export { DEFAULT_USABLE_ALTITUDE_DEG };

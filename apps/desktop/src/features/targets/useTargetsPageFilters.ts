@@ -19,7 +19,10 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { TargetListItem } from '@/bindings/index';
-import { filterByCatalogues, type CatalogueId } from './planner-catalog';
+import {
+  filterByCatalogues,
+  type CatalogueId,
+} from '@/shared/planner/planner-catalog';
 import {
   DEFAULT_ENABLED_CATALOGUES,
   loadDefaultCatalogues,
@@ -32,7 +35,7 @@ import type { ObservingNight } from './astro/moon-state';
 import type {
   MoonAvoidanceParams,
   Recommendation,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

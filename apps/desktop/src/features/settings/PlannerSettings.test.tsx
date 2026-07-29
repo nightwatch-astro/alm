@@ -28,7 +28,7 @@ vi.mock('@/api/ipc', () => ({ unwrap: (v: unknown) => v }));
 
 import { PlannerSettings } from './PlannerSettings';
 import { __resetGuidanceParamsForTest } from '@/shared/planner/guidance-settings';
-import { DEFAULT_MOON_AVOIDANCE } from '@/features/targets/astro/moon-avoidance';
+import { DEFAULT_MOON_AVOIDANCE } from '@/shared/planner/moon-avoidance';
 import {
   __setObservingStateForTest,
   USABLE_ALTITUDE_KEY,

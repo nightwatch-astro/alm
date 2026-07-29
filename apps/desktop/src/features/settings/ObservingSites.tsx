@@ -29,7 +29,7 @@ import { m } from '@/lib/i18n';
 // Leaflet is ~240 KB raw. Lazy-load so it splits to its own chunk and only
 // loads when the add/edit form mounts for the first time.
 const SiteLocationPicker = lazy(() =>
-  import('./SiteLocationPicker').then((mod) => ({
+  import('@/shared/observing-sites/SiteLocationPicker').then((mod) => ({
     default: mod.SiteLocationPicker,
   })),
 );
@@ -42,13 +42,19 @@ function parsedCoord(text: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 import { errMessage } from '@/lib/errors';
+import { SettingsSection, SettingsFormShell } from './SettingsKit';
 import {
-  SettingsSection,
-  SettingsFormShell,
-} from '@/features/settings/SettingsKit';
-import { useObservingState, saveSites } from './site-store';
-import type { ObserverSite, Twilight } from './observer-site';
-import { ianaTimezones, localTimezone } from './iana-timezones';
+  useObservingState,
+  saveSites,
+} from '@/shared/observing-sites/site-store';
+import type {
+  ObserverSite,
+  Twilight,
+} from '@/shared/observing-sites/observer-site';
+import {
+  ianaTimezones,
+  localTimezone,
+} from '@/shared/observing-sites/iana-timezones';
 
 interface SiteForm {
   id: string | null;

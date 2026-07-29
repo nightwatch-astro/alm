@@ -33,7 +33,7 @@ vi.mock('@/shared/planner/catalogue-settings', async (importOriginal) => {
 });
 
 import { CatalogueSettingsControl } from './CatalogueSettingsControl';
-import { PLANNER_CATALOGS } from '@/features/targets/planner-catalog';
+import { PLANNER_CATALOGS } from '@/shared/planner/planner-catalog';
 import { DEFAULT_ENABLED_CATALOGUES } from '@/shared/planner/catalogue-settings';
 import { m } from '@/lib/i18n';
 

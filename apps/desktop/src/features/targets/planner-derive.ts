@@ -44,7 +44,7 @@ import {
   minSeparationDeg,
   type Band,
   type MoonAvoidanceParams,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import { nextOpposition } from './astro/opposition';
 
 /** A separation figure, or the explicit "Moon not up" state at the reference time/window (FR-020). */
