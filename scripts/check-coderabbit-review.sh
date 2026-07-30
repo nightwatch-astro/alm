@@ -77,9 +77,18 @@ command -v gh >/dev/null || { echo 'check-coderabbit-review: gh is required' >&2
 ((json_mode == 0)) || command -v jq >/dev/null ||
   { echo 'check-coderabbit-review: --json requires jq' >&2; exit 2; }
 
+OPEN_SCAN_LIMIT=1000
+
 if ((open_mode)); then
   ((${#prs[@]} == 0)) || { echo 'check-coderabbit-review: --open takes no PR numbers' >&2; usage; }
-  mapfile -t prs < <(gh pr list --state open --limit 100 --json number --jq '.[].number')
+  mapfile -t prs < <(gh pr list --state open --limit "$OPEN_SCAN_LIMIT" --json number --jq '.[].number')
+  # A silent truncation is the failure this whole script exists to prevent: a
+  # partial scan that still exits 0 reports the PRs it never looked at as fine.
+  # Say so loudly rather than trusting the cap to stay above the real count.
+  if ((${#prs[@]} >= OPEN_SCAN_LIMIT)); then
+    printf 'check-coderabbit-review: hit the --open cap of %d PRs; results are PARTIAL\n' \
+      "$OPEN_SCAN_LIMIT" >&2
+  fi
 fi
 
 ((${#prs[@]} > 0)) || usage

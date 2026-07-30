@@ -8,6 +8,16 @@
 # unreviewed PR as clean. Every test below pins one classification so that
 # cannot regress.
 
+# ISO-8601 UTC for an epoch, portable across GNU and BSD date.
+#
+# `date -u -r <epoch>` is BSD. On GNU coreutils `-r` means --reference=FILE, so
+# the epoch is read as a filename, the command fails, `created_at` lands empty,
+# and every wait-hint assertion below fails for a reason that has nothing to do
+# with the scanner. Try GNU first, fall back to BSD.
+iso_at() { # $1 = epoch seconds
+  date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
+}
+
 setup() {
   export TEST_ROOT
   TEST_ROOT=$(mktemp -d)
@@ -286,7 +296,7 @@ rate_limit_notice_at() { # $1 = created_at, $2 = minutes quoted by the bot
 
 @test "a still-closed window reports minutes remaining and a UTC time" {
   # Posted 5 minutes ago quoting 30 → ~25 remaining.
-  rate_limit_notice_at "$(date -u -r "$(( $(date -u +%s) - 300 ))" +%Y-%m-%dT%H:%M:%SZ)" 30
+  rate_limit_notice_at "$(iso_at "$(( $(date -u +%s) - 300 ))")" 30
   run bash "$SCRIPT" 1234
   [ "$status" -eq 1 ]
   [[ "$output" == *RATE_LIMITED* ]]
@@ -296,7 +306,7 @@ rate_limit_notice_at() { # $1 = created_at, $2 = minutes quoted by the bot
 
 @test "an elapsed window reports that it has reopened" {
   # Posted 2 hours ago quoting 30 minutes → long since reopened.
-  rate_limit_notice_at "$(date -u -r "$(( $(date -u +%s) - 7200 ))" +%Y-%m-%dT%H:%M:%SZ)" 30
+  rate_limit_notice_at "$(iso_at "$(( $(date -u +%s) - 7200 ))")" 30
   run bash "$SCRIPT" 1234
   [ "$status" -eq 1 ]
   [[ "$output" == *"has reopened"* ]]
@@ -328,7 +338,7 @@ rate_limit_notice_at() { # $1 = created_at, $2 = minutes quoted by the bot
 @test "the live fair-usage wording yields a real wait, not a reopened window" {
   # Verbatim from PR #1622, 2026-07-30T05:31:17Z. The earlier patterns expected
   # "next review available in" and dropped this entirely.
-  jq -n --arg t "$(date -u -r "$(($(date -u +%s) - 300))" +%Y-%m-%dT%H:%M:%SZ)" \
+  jq -n --arg t "$(iso_at "$(($(date -u +%s) - 300))")" \
     '[{user:{login:"coderabbitai[bot]"},created_at:$t,
        body:"Your included review limit is currently reached under our Fair Usage Limits Policy. This review may still proceed through usage-based billing if eligible. Your next included review will be available in 48 minutes."}]' \
     >"$CR_NOTICES"
@@ -342,7 +352,7 @@ rate_limit_notice_at() { # $1 = created_at, $2 = minutes quoted by the bot
 @test "an unseen rewording of the notice still yields the wait figure" {
   # Detection is deliberately loose: a limit indicator plus any duration. This
   # invented wording matches none of the phrasings the bot has used so far.
-  jq -n --arg t "$(date -u -r "$(($(date -u +%s) - 60))" +%Y-%m-%dT%H:%M:%SZ)" \
+  jq -n --arg t "$(iso_at "$(($(date -u +%s) - 60))")" \
     '[{user:{login:"coderabbitai[bot]"},created_at:$t,
        body:"Fair Usage: reviews resume for this account in 2 hours."}]' >"$CR_NOTICES"
   run bash "$SCRIPT" 1234
@@ -352,7 +362,7 @@ rate_limit_notice_at() { # $1 = created_at, $2 = minutes quoted by the bot
 }
 
 @test "the bold Next review available in wording still parses" {
-  rate_limit_notice_at "$(date -u -r "$(($(date -u +%s) - 60))" +%Y-%m-%dT%H:%M:%SZ)" 31
+  rate_limit_notice_at "$(iso_at "$(($(date -u +%s) - 60))")" 31
   run bash "$SCRIPT" 1234
   [ "$status" -eq 1 ]
   [[ "$output" =~ next\ review\ in\ ~3[01]\ min ]]
@@ -361,7 +371,7 @@ rate_limit_notice_at() { # $1 = created_at, $2 = minutes quoted by the bot
 @test "the wait figure is read from the notice, not the trailing ack" {
   # Real shape: the rate-limit notice comes first, a bare "Review finished" ack
   # last. Reading only the last comment loses the figure entirely.
-  jq -n --arg t "$(date -u -r "$(( $(date -u +%s) - 60 ))" +%Y-%m-%dT%H:%M:%SZ)" \
+  jq -n --arg t "$(iso_at "$(( $(date -u +%s) - 60 ))")" \
     '[{user:{login:"coderabbitai[bot]"},created_at:$t,
        body:"Review limit reached\n\n> **Next review available in:** **25 minutes**"},
       {user:{login:"coderabbitai[bot]"},created_at:$t,
