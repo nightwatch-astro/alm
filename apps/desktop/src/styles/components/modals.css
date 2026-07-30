@@ -27,7 +27,7 @@
   z-index: 501;
   display: flex;
   flex-direction: column;
-  width: min(94vw, var(--pv-modal-w, 640px));
+  width: min(94vw, var(--pv-modal-w));
   max-height: 88vh;
   background: var(--pv-surface-raised);
   border: 1px solid var(--pv-border);
