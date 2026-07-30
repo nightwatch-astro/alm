@@ -44,9 +44,9 @@ export const actionBarWrap = style({
   paddingBottom: 'var(--pv-sp-2)',
 });
 
-/** Full-width spacer forces the action cluster onto its own row. */
-export const spacerWrap = style({ flexBasis: '100%' });
-
+// `flex: 1 1 100%` already forces this onto its own flex line, so the wrap
+// variant renders no spacer: an empty full-width spacer would form a third,
+// zero-height line and apply `rowGap` twice.
 export const actionsWrap = style({
   flex: '1 1 100%',
   justifyContent: 'flex-end',
