@@ -113,10 +113,18 @@ failure-output = "immediate-final"
 # #1465 (jobs 89248442052 / 89248442207 plus reruns) with no flaky suffix on
 # either shard, so the isolation fix does appear to hold.
 #
-# `retries = 1` keeps one attempt of headroom against genuine runner faults
-# (STATUS_DLL_INIT_FAILED and the 0xC0000142 startup deaths tracked by
-# `astro-plan-gl5q` are runner-image problems, not test flakes) while making a
-# second-attempt pass visible as `(N flaky)` instead of silently absorbed.
+# `retries = 1` keeps one attempt of headroom for a per-test stall -- the
+# slow-timeout edge described above -- while making a second-attempt pass
+# visible as `(N flaky)` instead of silently absorbed. That visibility is the
+# whole point of choosing 1 over 2.
+#
+# It does NOT cover the runner-image faults tracked by `astro-plan-gl5q`
+# (STATUS_DLL_INIT_FAILED / 0xC0000142). Those kill the harness process during
+# init, before any test starts, so nextest has no test to retry and the retry
+# budget is orthogonal to them. `gl5q` asks for exit-code detection, not
+# retries: a step that recognises 0xC0000142, or any exit with zero test output,
+# and reports "runner failure, re-run". That work is unstarted; do not read this
+# retry budget as protection against it.
 #
 # If flakes return, that is the answer: raise it back to 2 and reopen the
 # contamination investigation with the shard logs as evidence.
