@@ -36,7 +36,7 @@ src/features/inbox/InboxDetail.tsx	347	alm/require-root-testid
 src/features/inbox/InboxNeedsReview.tsx	104	alm/require-root-testid
 src/features/inbox/PlanDestructiveControl.tsx	32	alm/require-root-testid
 src/features/onboarding/ChecklistPopover.tsx	110	alm/require-root-testid
-src/features/onboarding/FindSpotlight.tsx	170	alm/require-root-testid
+src/features/onboarding/FindSpotlight.tsx	173	alm/require-root-testid
 src/features/onboarding/OrientationWalk.tsx	160	alm/require-root-testid
 src/features/onboarding/joyrideAdapter.tsx	209	alm/require-root-testid
 src/features/plans/PlanProtectionGate.tsx	116	alm/require-root-testid

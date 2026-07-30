@@ -20,6 +20,7 @@ import {
   tdContract as callsTdContract,
   tdStarted as callsTdStarted,
   tdActions as callsTdActions,
+  actions as callsActions,
   truncated as callsTruncated,
   outcomeVariants as callsOutcomeVariants,
   replayBtnVariants as callsReplayBtnVariants,
@@ -116,33 +117,35 @@ export function CallList({
                 )}
               </td>
               <td className={callsTdActions}>
-                <button
-                  type="button"
-                  className="pv-btn pv-btn--xs"
-                  onClick={() => onViewSchema(call)}
-                  aria-label={`View schema for ${call.contract} v${call.contractVersion}`}
-                >
-                  Schema
-                </button>
-                <button
-                  type="button"
-                  className={`pv-btn pv-btn--xs ${isReplaySafe ? callsReplayBtnVariants.safe : callsReplayBtnVariants.unsafe}`}
-                  onClick={() => onReplay(call)}
-                  disabled={!isReplaySafe}
-                  title={
-                    isReplaySafe
-                      ? `Replay ${call.contract}`
-                      : 'Replay disabled: write contract'
-                  }
-                  aria-label={
-                    isReplaySafe
-                      ? `Replay call to ${call.contract}`
-                      : `Replay disabled for write contract ${call.contract}`
-                  }
-                  aria-disabled={!isReplaySafe}
-                >
-                  Replay
-                </button>
+                <div className={callsActions}>
+                  <button
+                    type="button"
+                    className="pv-btn pv-btn--xs"
+                    onClick={() => onViewSchema(call)}
+                    aria-label={`View schema for ${call.contract} v${call.contractVersion}`}
+                  >
+                    Schema
+                  </button>
+                  <button
+                    type="button"
+                    className={`pv-btn pv-btn--xs ${isReplaySafe ? callsReplayBtnVariants.safe : callsReplayBtnVariants.unsafe}`}
+                    onClick={() => onReplay(call)}
+                    disabled={!isReplaySafe}
+                    title={
+                      isReplaySafe
+                        ? `Replay ${call.contract}`
+                        : 'Replay disabled: write contract'
+                    }
+                    aria-label={
+                      isReplaySafe
+                        ? `Replay call to ${call.contract}`
+                        : `Replay disabled for write contract ${call.contract}`
+                    }
+                    aria-disabled={!isReplaySafe}
+                  >
+                    Replay
+                  </button>
+                </div>
               </td>
             </tr>
           );
