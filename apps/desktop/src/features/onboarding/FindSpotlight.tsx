@@ -211,7 +211,11 @@ function SpotlightFor({
   // has a real path to compare against while the apology callout is showing.
   const targetPath = ONBOARDING_PAGE_PATHS[target?.page ?? item.page];
   const [status, setStatus] = useState<ResolveStatus>('pending');
-  /** When the target page first came on screen; `null` until it does. */
+  /** The route {@link resolveSpotlightPath} chose; `null` until it resolves. */
+  const [resolvedPath, setResolvedPath] = useState<string | null>(null);
+  /** True once the target PAGE has been on screen — drives away-dismissal. */
+  const visitedRef = useRef(false);
+  /** When the RESOLVED route came on screen; `null` until it does. */
   const arrivedAtRef = useRef<number | null>(null);
 
   // Navigate to the target's page once (FR-022). Items with no resolvable
@@ -227,6 +231,7 @@ function SpotlightFor({
         setStatus('missing');
         return;
       }
+      setResolvedPath(path);
       // Deep links (path !== basePath) navigate even when already on the page:
       // being on `/sessions` is not the same as having a session selected.
       if (!pathname.startsWith(targetPath) || path !== targetPath) {
@@ -278,13 +283,25 @@ function SpotlightFor({
 
   // Dismiss on navigation AWAY from the target page (FR-023). Arriving at the
   // target page is not a dismissal; leaving it after arrival is.
+  //
+  // The anchor deadline keys off the RESOLVED route, not the page: for a deep
+  // link (`sessions.note-field` ⇒ `/sessions/<id>`) the list route is on screen
+  // long before the selected session is, and recording arrival there burns the
+  // short post-arrival budget on legitimate navigation. `/sessions/$id`
+  // redirects to `/sessions?selected=<id>`, so that pathname never matches and
+  // deep links keep the generous pre-arrival grace instead — which is the
+  // correct budget while a record is still loading. Dismissal stays on the page
+  // path so leaving the page still closes the spotlight in both cases.
   useEffect(() => {
     if (pathname.startsWith(targetPath)) {
-      arrivedAtRef.current ??= Date.now();
-    } else if (arrivedAtRef.current !== null) {
+      visitedRef.current = true;
+      if (resolvedPath !== null && pathname.startsWith(resolvedPath)) {
+        arrivedAtRef.current ??= Date.now();
+      }
+    } else if (visitedRef.current) {
       clearFind();
     }
-  }, [pathname, targetPath]);
+  }, [pathname, targetPath, resolvedPath]);
 
   // Pulse the outline for the first seconds, then static (FR-022). Signalled via
   // a root data-attribute the spotlight CSS keys off — portal-safe and
