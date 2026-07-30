@@ -81,7 +81,9 @@ export const item = style({
   display: 'flex',
   alignItems: 'center',
   gap: 'var(--pv-sp-2)',
-  padding: '6px var(--pv-sp-3)',
+  // 6px is off the base-4 spacing scale, so it is composed from tokens rather
+  // than hardcoded; the rendered value is unchanged.
+  padding: 'calc(var(--pv-sp-1) + var(--pv-sp-0)) var(--pv-sp-3)',
   margin: '1px var(--pv-sp-1)',
   cursor: 'pointer',
   color: vars.textSecondary,
