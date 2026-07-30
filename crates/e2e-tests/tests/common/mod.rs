@@ -45,9 +45,10 @@
 //!   sends `tauri:options.application` = the built `desktop_shell` binary
 //!   path in the New Session capabilities. No `browserName` is set (see
 //!   `quickstart.md`).
-//! - The app loads its own frontend from the Tauri `devUrl` (`:5173`)
+//! - The app loads its own frontend from the Tauri `devUrl` ([`app_url`])
 //!   automatically on launch, so the harness does **not** call
-//!   `driver.goto(...)` after connecting.
+//!   `driver.goto(...)` after connecting. Export `PV_DEV_URL` to put concurrent
+//!   local lanes on separate ports (issue #1409).
 //! - `window.__PV_E2E__.invoke(...)` (exposed by the frontend when built
 //!   with `VITE_E2E=1`, see `apps/desktop/src/main.tsx`) is the real-IPC
 //!   invoke bridge used by [`E2eApp::invoke`].
@@ -305,20 +306,45 @@ fn pick_port_pair() -> Result<(u16, u16)> {
     Ok((proxy_port, native_port))
 }
 
-/// Vite dev-server / `vite preview` URL the app's Tauri `devUrl` points at
-/// (`apps/desktop/src-tauri/tauri.conf.json`). The app loads this URL on its
-/// own at launch — do NOT `driver.goto(APP_URL)` after connecting. Kept for
-/// journeys that need to assert the current URL or navigate within the SPA.
+/// Raw `tauri.conf.json` the app's `generate_context!` compiles in, embedded
+/// here so this harness and the app cannot disagree about the default `devUrl`.
+const TAURI_CONF_JSON: &str = include_str!("../../../../apps/desktop/src-tauri/tauri.conf.json");
+
+/// Environment variable that overrides the app's `devUrl`, read by
+/// `apps/desktop/src-tauri/src/lib.rs` (`desktop_shell::DEV_URL_ENV`).
+const DEV_URL_ENV: &str = "PV_DEV_URL";
+
+/// Vite dev-server / `vite preview` URL the app loads its frontend from:
+/// `$PV_DEV_URL` when the lane sets one, else `build.devUrl` from
+/// `tauri.conf.json`. The app resolves the same two sources in the same order,
+/// so a lane that serves `dist` on its own port only has to export the var.
 ///
-/// MUST be the `localhost` host form, byte-identical to `devUrl`: the app
-/// boots on `http://localhost:5173`, and `localhost` vs `127.0.0.1` are
-/// DIFFERENT web origins with separate localStorage. Navigating journeys to
-/// a `127.0.0.1` URL splits app state across two origins — preferences
-/// written on one (e.g. `setupCompleted`, `complete_first_run_gate`) are
-/// invisible on the other, which made `Shell`'s localStorage-based setup
-/// gate and `SetupPage`'s backend-based check ping-pong `/setup` ↔ `/inbox`
-/// indefinitely.
-pub const APP_URL: &str = "http://localhost:5173";
+/// The app loads this URL on its own at launch — do NOT `driver.goto(app_url())`
+/// after connecting. Kept for journeys that need to assert the current URL or
+/// navigate within the SPA.
+///
+/// MUST be the `localhost` host form, byte-identical to `devUrl`: `localhost`
+/// and `127.0.0.1` are DIFFERENT web origins with separate localStorage.
+/// Navigating journeys to a `127.0.0.1` URL splits app state across two origins
+/// — preferences written on one (e.g. `setupCompleted`,
+/// `complete_first_run_gate`) are invisible on the other, which made `Shell`'s
+/// localStorage-based setup gate and `SetupPage`'s backend-based check
+/// ping-pong `/setup` ↔ `/inbox` indefinitely.
+pub fn app_url() -> &'static str {
+    static URL: OnceLock<String> = OnceLock::new();
+    URL.get_or_init(|| {
+        if let Some(raw) = std::env::var_os(DEV_URL_ENV) {
+            return raw.to_string_lossy().trim_end_matches('/').to_string();
+        }
+        let conf: serde_json::Value = serde_json::from_str(TAURI_CONF_JSON)
+            .expect("apps/desktop/src-tauri/tauri.conf.json is not valid JSON");
+        conf["build"]["devUrl"]
+            .as_str()
+            .expect("tauri.conf.json declares no string `build.devUrl`")
+            .trim_end_matches('/')
+            .to_string()
+    })
+}
 
 /// Overall deadline for WebDriver session creation in [`E2eApp::launch`].
 ///
@@ -1007,7 +1033,7 @@ impl E2eApp {
     /// The router uses HASH history (`createHashHistory()`,
     /// `apps/desktop/src/app/router.tsx`): routes live in the URL fragment
     /// (`/#/inbox`) and the pathname is ignored entirely. Navigating to
-    /// `{APP_URL}{path}` therefore always lands on the index route `/`,
+    /// `{app_url()}{path}` therefore always lands on the index route `/`,
     /// whose first-run gate redirects a fresh DB to `/setup` — the target
     /// page never mounts (CI run 28751553798: Inbox's "Rescan all roots"
     /// deterministically never appeared on all three OSes). Navigate to the
@@ -1021,7 +1047,7 @@ impl E2eApp {
     /// stays on the target route, and fail with the URL it kept landing on —
     /// far more diagnosable in CI than a downstream "element never appeared".
     pub async fn goto_route(&self, path: &str) -> Result<()> {
-        let url = format!("{APP_URL}/#{path}");
+        let url = format!("{}/#{path}", app_url());
         let deadline = Instant::now() + Duration::from_secs(20);
         let mut last = String::new();
         loop {
