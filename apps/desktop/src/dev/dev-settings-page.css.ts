@@ -24,4 +24,7 @@ export const error = style({
   color: vars.danger,
   fontSize: 'var(--pv-text-sm)',
 });
-export const loading = style({ color: vars.textMuted });
+export const loading = style({
+  padding: 'var(--pv-sp-7)',
+  color: vars.textMuted,
+});

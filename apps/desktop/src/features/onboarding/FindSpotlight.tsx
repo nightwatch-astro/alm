@@ -152,10 +152,13 @@ export function useActiveFindItem(): OnboardingItemDto | null {
 // ── Spotlight ─────────────────────────────────────────────────────────────────
 
 const PULSE_MS = 2500;
-// Cross-page navigation + React hydration under full-suite Playwright load can
-// take up to ~2s; 3s gives the poll enough headroom without visibly delaying
-// the unavailable-target fallback for genuinely absent anchors.
-const RESOLVE_TIMEOUT_MS = 3000;
+// Two budgets, because waiting for a route to land and waiting for an anchor on
+// the page already shown are different problems. Cross-page navigation plus
+// React hydration under full-suite Playwright load can take ~2s, so the
+// pre-arrival budget is generous; once the target page is on screen an absent
+// anchor is absent, and the user should not wait 3s for the explanation.
+const NAVIGATION_GRACE_MS = 3000;
+const ARRIVED_TIMEOUT_MS = 1500;
 const RESOLVE_POLL_MS = 60;
 
 // react-joyride wire strings (enum imports stay in the adapter — mirrored here).
@@ -208,7 +211,8 @@ function SpotlightFor({
   // has a real path to compare against while the apology callout is showing.
   const targetPath = ONBOARDING_PAGE_PATHS[target?.page ?? item.page];
   const [status, setStatus] = useState<ResolveStatus>('pending');
-  const arrivedRef = useRef(false);
+  /** When the target page first came on screen; `null` until it does. */
+  const arrivedAtRef = useRef<number | null>(null);
 
   // Navigate to the target's page once (FR-022). Items with no resolvable
   // control skip this and fall straight to the unavailable state, as do
@@ -243,13 +247,22 @@ function SpotlightFor({
     }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const deadline = Date.now() + RESOLVE_TIMEOUT_MS;
+    const startedAt = Date.now();
+    const navigationDeadline = startedAt + NAVIGATION_GRACE_MS;
     const tick = () => {
       if (cancelled) return;
       if (document.querySelector(selector)) {
         setStatus('found');
         return;
       }
+      // Before arrival the navigation grace applies; arrival restarts the clock
+      // on the shorter anchor wait, so a genuinely absent control is reported
+      // ~1.5s after the page is visible instead of ~3s after activation.
+      const arrivedAt = arrivedAtRef.current;
+      const deadline =
+        arrivedAt === null
+          ? navigationDeadline
+          : arrivedAt + ARRIVED_TIMEOUT_MS;
       if (Date.now() > deadline) {
         setStatus('missing');
         return;
@@ -267,8 +280,8 @@ function SpotlightFor({
   // target page is not a dismissal; leaving it after arrival is.
   useEffect(() => {
     if (pathname.startsWith(targetPath)) {
-      arrivedRef.current = true;
-    } else if (arrivedRef.current) {
+      arrivedAtRef.current ??= Date.now();
+    } else if (arrivedAtRef.current !== null) {
       clearFind();
     }
   }, [pathname, targetPath]);
