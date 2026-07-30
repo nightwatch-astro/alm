@@ -3,8 +3,8 @@
 
 //! Batched forms of the on-attach reconciliation phases (kyo7.54).
 //!
-//! The per-row entry points (`detect`, `mark_missing`,
-//! `repo::touch_artifact`) issue one implicit commit per artifact, so a project
+//! The per-row entry points this supersedes issued one implicit commit per
+//! artifact, so a project
 //! with thousands of outputs pays thousands of commits every time its drawer
 //! opens. Each function here collapses one reconcile phase into a single
 //! transaction plus a single batched audit publish, with the same observable
@@ -37,7 +37,7 @@ fn event<P: serde::Serialize>(topic: &str, payload: &P) -> Option<BatchEvent> {
 }
 
 /// Refresh `last_seen_at` for every still-present artifact in one statement
-/// (reconcile seen phase). Emits no events, exactly like `touch_artifact`.
+/// (reconcile seen phase). Emits no events.
 ///
 /// # Errors
 /// Returns `Err(String)` on DB failure.
@@ -58,7 +58,7 @@ pub struct GoneArtifact {
 /// `artifact.missing` plus `calibration_match.source_missing` events in one
 /// transaction (reconcile gone phase).
 ///
-/// The calibration flags stay best-effort as in [`super::mark_missing`]: a
+/// The calibration flags stay best-effort: a
 /// lookup failure drops them rather than failing the phase, because the flag is
 /// re-derived on the next read.
 ///
