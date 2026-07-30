@@ -9,7 +9,6 @@ import {
   title as actionBarTitle,
   subtitle as actionBarSubtitle,
   spacer as actionBarSpacer,
-  spacerWrap as actionBarSpacerWrap,
   actions as actionBarActions,
   actionsWrap as actionBarActionsWrap,
 } from './TopActionBar.css';
@@ -41,7 +40,7 @@ export function TopActionBar({
       <span className={actionBarTitle}>{title}</span>
       {subtitle && <span className={actionBarSubtitle}>{subtitle}</span>}
       {children}
-      <span className={clsx(actionBarSpacer, wrap && actionBarSpacerWrap)} />
+      {!wrap && <span className={actionBarSpacer} />}
       {right && (
         <div className={clsx(actionBarActions, wrap && actionBarActionsWrap)}>
           {right}

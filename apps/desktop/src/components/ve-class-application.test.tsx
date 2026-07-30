@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { DetailHeader } from './DetailHeader';
 import { subtitle as detailSubtitle } from './DetailHeader.css';
 import { TopActionBar } from './TopActionBar';
-import { actionBarWrap, actionsWrap, spacerWrap } from './TopActionBar.css';
+import { actionBarWrap, actionsWrap, spacer } from './TopActionBar.css';
 import { EmptyState } from '../ui/EmptyState';
 import { empty } from '../ui/EmptyState.css';
 
@@ -44,7 +44,7 @@ describe('vanilla-extract class application', () => {
       <TopActionBar title="Bar" right={<button type="button">Go</button>} />,
     );
     expect(container.querySelector(`.${actionBarWrap}`)).toBeNull();
-    expect(container.querySelector(`.${spacerWrap}`)).toBeNull();
+    expect(container.querySelector(`.${spacer}`)).not.toBeNull();
     expect(container.querySelector(`.${actionsWrap}`)).toBeNull();
     unmount();
 
@@ -56,7 +56,8 @@ describe('vanilla-extract class application', () => {
       />,
     );
     expect(wrapped.container.querySelector(`.${actionBarWrap}`)).not.toBeNull();
-    expect(wrapped.container.querySelector(`.${spacerWrap}`)).not.toBeNull();
+    // The spacer would form a third flex line and double the bar's rowGap.
+    expect(wrapped.container.querySelector(`.${spacer}`)).toBeNull();
     expect(wrapped.container.querySelector(`.${actionsWrap}`)).not.toBeNull();
   });
 });
