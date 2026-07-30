@@ -287,8 +287,8 @@
 }
 /* Side detail panel (same width token as side-only). */
 .pv-listpage__side {
-  flex: 0 0 var(--pv-side-detail-w, 420px);
-  width: var(--pv-side-detail-w, 420px);
+  flex: 0 0 var(--pv-side-detail-w);
+  width: var(--pv-side-detail-w);
   height: auto;
   max-height: none;
   align-self: stretch;

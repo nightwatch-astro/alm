@@ -350,11 +350,13 @@ jobs:
       # scripts/check-eslint-baseline.mjs + eslint-alm-baseline.txt so
       # pre-existing violations drain via the refactor sweep instead of
       # blocking every PR), type-aware typescript-eslint, react-hooks,
-      # jsx-a11y, and the inline-style ban — then the design-token guard
+      # jsx-a11y, and the inline-style ban — then stylelint, which is the only
+      # tool in the repo that parses CSS (Biome's includes are scoped to
+      # `src/**/*.{ts,tsx,js,jsx}`), then the design-token guard
       # (check-tokens.sh) and the i18n catalog lint
       # (check-i18n-catalog.mjs: raw `{code}` interpolation + duplicate
       # catalog values, same baseline-drain pattern).
-      - name: Frontend lint (Biome + ESLint gates + tokens)
+      - name: Frontend lint (Biome + ESLint gates + stylelint + tokens)
         if: needs.changes.outputs.frontend == 'true'
         run: pnpm --filter @astro-plan/desktop run lint
 

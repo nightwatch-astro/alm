@@ -404,3 +404,44 @@
 .density-spacious {
   --pv-row-height: 40px;
 }
+
+@property --pv-skel-w {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+@property --pv-skel-h {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 12px;
+}
+@property --pv-skel-r {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 3px;
+}
+@property --pv-row-indent {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0;
+}
+@property --pv-toast-accent {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: rgba(0, 0, 0, 0);
+}
+@property --pv-side-detail-w {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 420px;
+}
+@property --pv-modal-w {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 640px;
+}
+@property --pv-targets-star-w {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 50px;
+}
