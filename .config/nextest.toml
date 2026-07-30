@@ -65,9 +65,11 @@ failure-output = "immediate-final"
 
 # Windows-latest CI runners are chronically the closest to the slow-timeout
 # edge (debug-build WebView2 boot + intermittent runner-level stalls; even
-# green CI runs there show 1-3 retried flakes recovering by luck). One extra
-# retry buys more margin without masking a real regression, since a genuinely
-# broken journey still fails all 3 attempts.
+# green CI runs there show 1-3 retried flakes recovering by luck). The single
+# retry below buys margin against a runner stall without masking a real
+# regression, since a genuinely broken journey fails both attempts. It also
+# keeps a recovered flake VISIBLE as `(N flaky)` rather than absorbing it --
+# see the budget note further down for why that visibility is the point.
 #
 # `threads-required = 2` makes each Windows journey occupy the whole
 # `test-threads = 2` budget, i.e. Windows runs one journey at a time while
