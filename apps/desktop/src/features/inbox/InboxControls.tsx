@@ -21,6 +21,7 @@
 import type { DimensionAccessor } from './grouping';
 import type { InboxListItem } from '@/bindings/index';
 import { m } from '@/lib/i18n';
+import { selectBase } from '@/styles/select.css';
 
 // ── Grouping dimension registry ─────────────────────────────────────────────────
 
@@ -165,7 +166,7 @@ export function InboxControls({ dims, setSlot }: InboxControlsProps) {
           return (
             <select
               key={slot}
-              className="pv-select"
+              className={selectBase}
               value={value}
               disabled={disabled}
               onChange={(e) => setSlot(slot, e.target.value)}

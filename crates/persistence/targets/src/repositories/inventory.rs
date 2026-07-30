@@ -38,7 +38,9 @@ pub struct SessionProjectionRow {
     pub session_kind: String,
     /// Frame type string: "light", "dark", "flat", "bias", or derived "mixed".
     pub frame_type: String,
-    /// Pre-aggregated frame count from `json_array_length(frame_ids)`.
+    /// Pre-aggregated count of `frame_ids` members whose `file_record` is not
+    /// `missing` — a frame absent from disk retains its session attribution
+    /// but stops counting as active.
     pub frame_count: i64,
     /// First element of the `frame_ids` JSON array (`json_extract(...,'$[0]')`),
     /// `None` when the session has no frames.
@@ -155,7 +157,11 @@ pub async fn list_sessions_for_root(
             acs.root_id                                 AS root_id,
             'acquisition'                               AS session_kind,
             'light'                                     AS frame_type,
-            json_array_length(acs.frame_ids)            AS frame_count,
+            (SELECT COUNT(*)
+               FROM json_each(acs.frame_ids) je
+               LEFT JOIN file_record fr ON fr.id = je.value
+              WHERE fr.state IS NULL OR fr.state != 'missing')
+                                                        AS frame_count,
             json_extract(acs.frame_ids, '$[0]')         AS first_frame_id,
             acs.target_id                               AS target_id,
             NULL                                        AS target_name,
@@ -182,7 +188,11 @@ pub async fn list_sessions_for_root(
             cs.root_id                                  AS root_id,
             'calibration'                               AS session_kind,
             cs.kind                                     AS frame_type,
-            json_array_length(cs.frame_ids)             AS frame_count,
+            (SELECT COUNT(*)
+               FROM json_each(cs.frame_ids) je
+               LEFT JOIN file_record fr ON fr.id = je.value
+              WHERE fr.state IS NULL OR fr.state != 'missing')
+                                                        AS frame_count,
             json_extract(cs.frame_ids, '$[0]')          AS first_frame_id,
             NULL                                        AS target_id,
             NULL                                        AS target_name,
@@ -295,8 +305,11 @@ pub async fn list_project_links_for_sessions(
 /// `primary_designation` (same effective-label rule as the Targets surface).
 /// `filter` and `acquisition_night` come from `acquisition_fingerprint`
 /// (absent until the metadata extraction pipeline populates a fingerprint
-/// row). `frame_count` is derived from `json_array_length(frame_ids)` and is
-/// always present for a matched row (the column is `NOT NULL DEFAULT '[]'`).
+/// row). `frame_count` counts the `frame_ids` members whose `file_record` is
+/// not `missing`, so a frame that vanished from disk stops counting while its
+/// session attribution is retained; an id with no `file_record` row still
+/// counts. Always present for a matched row (`frame_ids` is `NOT NULL DEFAULT
+/// '[]'`).
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SessionContextRow {
     pub id: String,
@@ -332,7 +345,10 @@ pub async fn get_session_context_by_ids(
              COALESCE(ct.display_alias, ct.primary_designation)  AS target_name,
              af.filter_name                                      AS filter,
              af.observing_night_date                             AS acquisition_night,
-             json_array_length(acs.frame_ids)                    AS frame_count
+             (SELECT COUNT(*)
+                FROM json_each(acs.frame_ids) je
+                LEFT JOIN file_record fr ON fr.id = je.value
+               WHERE fr.state IS NULL OR fr.state != 'missing')  AS frame_count
          FROM acquisition_session acs
          LEFT JOIN canonical_target ct ON ct.id = acs.canonical_target_id
          LEFT JOIN acquisition_fingerprint af ON af.id = acs.id
@@ -861,9 +877,10 @@ mod tests {
 
     // ── list_sessions_for_root — frame_count / first_frame_id aggregation ────
 
-    /// Verifies that `json_array_length` and `json_extract('$[0]')` return the
-    /// same values a Rust parse of the raw `frame_ids` column would produce.
-    /// This is the parity assertion called for by the task brief.
+    /// Verifies that the `frame_count` subquery and `json_extract('$[0]')`
+    /// return the same values a Rust parse of the raw `frame_ids` column would
+    /// produce when no `file_record` row exists for the ids. This is the parity
+    /// assertion called for by the task brief.
     #[tokio::test]
     async fn list_sessions_frame_count_and_first_frame_id_match_raw_array() {
         let db = setup_db().await;
@@ -912,6 +929,49 @@ mod tests {
         let cal = rows.iter().find(|r| r.id == "cal-fc").expect("cal-fc missing");
         assert_eq!(cal.frame_count, 0, "empty array → 0");
         assert!(cal.first_frame_id.is_none(), "empty array → None");
+    }
+
+    /// A frame marked `missing` stops counting toward `frame_count` while its
+    /// session attribution is retained (astro-plan-2uwa) — the projection is
+    /// what makes retained membership safe to leave in place.
+    #[tokio::test]
+    async fn list_sessions_frame_count_excludes_missing_frames() {
+        let db = setup_db().await;
+
+        sqlx::query(
+            "INSERT INTO library_root (id, label, kind, current_path, state, created_at) \
+             VALUES ('root-fm', 'Lib', 'local', '/lib', 'active', '2026-01-01T00:00:00Z')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        for (id, state) in [("fm-1", "classified"), ("fm-2", "missing")] {
+            sqlx::query(
+                "INSERT INTO file_record \
+                    (id, root_id, relative_path, size_bytes, mtime, state, \
+                     first_seen_at, last_seen_at) \
+                 VALUES (?, 'root-fm', ?, 100, 't0', ?, 't0', 't0')",
+            )
+            .bind(id)
+            .bind(format!("{id}.fits"))
+            .bind(state)
+            .execute(db.pool())
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, root_id, frame_ids, created_at) \
+             VALUES ('acq-fm', 'k', 'root-fm', '[\"fm-1\",\"fm-2\"]', '2026-01-01T00:00:00Z')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        let filters = InventoryFilters::default();
+        let (rows, _) = list_sessions_for_root(db.pool(), "root-fm", &filters).await.unwrap();
+        let acq = rows.iter().find(|r| r.id == "acq-fm").expect("acq-fm missing");
+
+        assert_eq!(acq.frame_count, 1, "the missing frame must not count as active");
     }
 
     /// Verifies offset/limit pagination bounds results per source root.

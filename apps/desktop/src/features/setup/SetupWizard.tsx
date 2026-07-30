@@ -52,6 +52,7 @@ import {
 } from './sources-store';
 import { saveSites } from '@/features/targets/observing-sites/site-store';
 import type { ObserverSite } from '@/features/targets/observing-sites/observer-site';
+import { page } from '@/ui/page-layout.css';
 
 // Registers the custom-almSettings Paraglide strategy as soon as this module
 // loads — before StepLanguage's first `useLocale()` render. Idempotent, so
@@ -229,6 +230,10 @@ export function SetupWizard() {
   );
 }
 
+/**
+ * Renders the main setup wizard, including step navigation, source configuration,
+ * scan progress, and first-run completion.
+ */
 function SetupWizardBody() {
   // The language control consumes locale context itself, but the wizard body
   // must also subscribe so its message thunks are re-evaluated after a change.
@@ -661,7 +666,7 @@ function SetupWizardBody() {
   // Layout fix (mirrors the project wizard): flex column + minHeight:0 so the
   // WizardShell fills the main content area instead of overflowing/mis-placing.
   return (
-    <div className="pv-page pv-setup-wizard">
+    <div className={`${page} pv-setup-wizard`}>
       <WizardShell
         steps={wizardSteps}
         currentStep={step}

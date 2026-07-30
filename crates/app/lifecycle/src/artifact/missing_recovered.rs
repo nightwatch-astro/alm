@@ -6,8 +6,8 @@
 
 use audit::bus::EventBus;
 use audit::event_bus::{
-    ArtifactMissing, ArtifactRecovered, ArtifactUserResolved, Source, TOPIC_ARTIFACT_MISSING,
-    TOPIC_ARTIFACT_RECOVERED, TOPIC_ARTIFACT_USER_RESOLVED,
+    ArtifactRecovered, ArtifactUserResolved, Source, TOPIC_ARTIFACT_RECOVERED,
+    TOPIC_ARTIFACT_USER_RESOLVED,
 };
 use domain_core::ids::Timestamp;
 use sqlx::SqlitePool;
@@ -40,42 +40,6 @@ pub async fn mark_resolved(
             },
         )
         .await;
-    Ok(())
-}
-
-/// Mark an artifact as missing (reconciliation pass — file gone from disk).
-///
-/// # Errors
-/// Returns `Err(String)` on DB failure.
-pub async fn mark_missing(
-    pool: &SqlitePool,
-    bus: &EventBus,
-    project_id: &str,
-    artifact_id: &str,
-    path: &str,
-) -> Result<(), String> {
-    repo::mark_artifact_missing(pool, artifact_id)
-        .await
-        .map_err(|e| format!("DB mark missing failed: {e}"))?;
-
-    let now = Timestamp::now_iso();
-    let _ = bus
-        .publish(
-            TOPIC_ARTIFACT_MISSING,
-            Source::System,
-            ArtifactMissing {
-                artifact_id: artifact_id.to_owned(),
-                project_id: project_id.to_owned(),
-                path: path.to_owned(),
-                at: now.clone(),
-            },
-        )
-        .await;
-
-    // spec 048 US5 (FR-024, PATH A): flag any calibration match whose
-    // master's generated master file is this now-missing artifact.
-    emit_calibration_match_flag_for_artifact(pool, bus, artifact_id, &now, false).await;
-
     Ok(())
 }
 

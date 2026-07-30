@@ -27,23 +27,11 @@ mod common;
 
 use std::time::Duration;
 
-use common::E2eApp;
+use common::{settle_first_run_redirect, E2eApp};
 use serde_json::json;
 
 const INVOKE_TIMEOUT: Duration = Duration::from_secs(30);
 const UI_TIMEOUT: Duration = Duration::from_secs(20);
-
-/// Wait for the index route's async first-run redirect to land on `/setup`
-/// BEFORE navigating anywhere (mirrors `inbox_ui_journeys.rs`'s
-/// `settle_first_run_redirect`) — a fresh DB redirects `/` -> `/setup` from
-/// an async `beforeLoad`; navigating while that is still pending can yank the
-/// app off the target route.
-async fn settle_first_run_redirect(app: &E2eApp) -> anyhow::Result<()> {
-    app.wait_url_contains("/setup", Duration::from_secs(15))
-        .await
-        .map(drop)
-        .map_err(|e| anyhow::anyhow!("expected a fresh DB to redirect to /setup: {e}"))
-}
 
 /// Complete first-run (registers a `light_frames` AND a `project` root, the
 /// real `firstrun.complete` precondition, then routes through the real gate

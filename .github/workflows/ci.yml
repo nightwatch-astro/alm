@@ -26,6 +26,14 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Required for the merge queue. A queued PR waits on the same contexts branch
+  # protection requires; a workflow that does not trigger on `merge_group`
+  # publishes none of them, so the entry never resolves and the queue stalls
+  # instead of failing. The `changes` job needs no adjustment: dorny/paths-filter
+  # v4 handles this event by diffing `merge_group.base_sha..head_sha` (v3 has no
+  # merge_group branch at all), so path gating scopes to the queued changes
+  # rather than the whole tree.
+  merge_group:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
