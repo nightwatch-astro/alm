@@ -46,6 +46,13 @@ function formatType(objectType: string): string {
   return objectTypeLabel(objectType as TargetObjectType);
 }
 
+/**
+ * Displays a searchable, selectable list of targets with dense and rich row layouts.
+ *
+ * @param targets - The targets to display
+ * @param selected - The identifier of the selected target, or `null` when no target is selected
+ * @param onSelect - Called with the identifier of a target when its row is activated
+ */
 export function TargetList({ targets, selected, onSelect }: Props) {
   const [search, setSearch] = useState('');
   const [density, setDensity] = useState<RowDensity>('Dense');

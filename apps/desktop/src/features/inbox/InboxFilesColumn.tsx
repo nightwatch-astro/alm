@@ -30,6 +30,11 @@ export interface InboxFilesColumnProps {
   /** FR-011 summary node, or null when the item is not a mixed folder. */
 }
 
+/**
+ * Displays file metadata in a popover with optional row inspection and warnings for missing required attributes.
+ *
+ * @param fileMetadata - Metadata for the files associated with the inbox item.
+ */
 export function InboxFilesColumn({ fileMetadata }: InboxFilesColumnProps) {
   // Files popover: which row is "inspected" inside the popover.
   const [inspectedIdx, setInspectedIdx] = useState<number | null>(null);

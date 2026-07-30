@@ -186,6 +186,13 @@ function deriveProjectPath(trimmedName: string): string {
   return safeName || 'new-project';
 }
 
+/**
+ * Renders the project creation wizard for configuring and creating a project.
+ *
+ * The wizard restores and saves its draft, supports optional target prefill,
+ * validates navigation between steps, and reports project creation errors on
+ * the relevant step.
+ */
 export function WizardPage() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);

@@ -44,6 +44,11 @@ interface DataSourcesProps {
   save: (scope: string, values: Record<string, unknown>) => void;
 }
 
+/**
+ * Manages the sources settings pane, including adding, remapping, rescanning, disabling, and deleting data sources.
+ *
+ * @param save - Settings persistence callback.
+ */
 export function DataSources({ save: _save }: DataSourcesProps) {
   const {
     roots,

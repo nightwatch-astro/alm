@@ -18,9 +18,9 @@ export interface LifecycleProps {
 }
 
 /**
- * Vertical lifecycle flowchart for a project's state. Renders the centralized
- * PROJECT_LIFECYCLE steps with done/active styling, plus a trailing blocked
- * marker when the project is off-track. Lives in the detail rail (design v4).
+ * Renders the project's lifecycle steps with completed and current styling, and adds a blocked marker for blocked projects.
+ *
+ * @param state - The project's current state.
  */
 export function Lifecycle({ state }: LifecycleProps) {
   // `state` is an arbitrary string; `projectStateIndex` is now keyed by the

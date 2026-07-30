@@ -209,6 +209,9 @@ function buildFilters(
   return hasFilter ? filters : null;
 }
 
+/**
+ * Displays the audit log with filtering, pagination, and export controls.
+ */
 export function AuditLog() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);

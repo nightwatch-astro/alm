@@ -38,6 +38,14 @@ interface SchemaViewerProps {
   onClose: () => void;
 }
 
+/**
+ * Displays a fetched JSON Schema with loading, missing, and clipboard-copy states.
+ *
+ * @param schemaPath - The path used to fetch the schema
+ * @param contractVersion - The contract version displayed in the viewer
+ * @param contractName - The contract name displayed in the viewer
+ * @param onClose - Callback invoked when the viewer is closed
+ */
 export function SchemaViewer({
   schemaPath,
   contractVersion,

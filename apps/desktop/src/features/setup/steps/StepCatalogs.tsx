@@ -42,7 +42,11 @@ export interface StepCatalogsProps {
 // of a per-source override already means inherit-global.
 type DefaultProtection = 'protected' | 'unprotected';
 
-// ── Default source protection (spec 018, persisted via the settings backend) ──
+/**
+ * Provides a control for choosing the default source protection setting.
+ *
+ * @returns A select control for choosing protected or unprotected sources
+ */
 
 function DefaultProtectionControl() {
   const [value, setValue] = useState<DefaultProtection>('protected');
@@ -104,7 +108,11 @@ function DefaultProtectionControl() {
   );
 }
 
-// ── Display density (frontend preference; applied app-wide) ───────────────────
+/**
+ * Provides a control for selecting the application's display density.
+ *
+ * @returns The display density selection control
+ */
 
 function DensityControl() {
   const [density, setDensity] = usePreference('density');

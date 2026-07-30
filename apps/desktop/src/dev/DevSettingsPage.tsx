@@ -36,6 +36,9 @@ import {
 } from './dev-settings-page.css';
 import { pageScroll } from '@/ui/page-layout.css';
 
+/**
+ * Renders the developer settings page and manages the developer-mode setting.
+ */
 export function DevSettingsPage() {
   const [devMode, setDevModeState] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);

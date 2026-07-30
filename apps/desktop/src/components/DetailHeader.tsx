@@ -18,6 +18,16 @@ export interface DetailHeaderProps {
   children?: ReactNode;
 }
 
+/**
+ * Renders a detail header with optional subtitle, actions, and additional content.
+ *
+ * @param title - The main header content
+ * @param titleExtra - Additional content displayed alongside the title
+ * @param subtitle - Optional subtitle text
+ * @param actions - Optional actions displayed beside the header content
+ * @param children - Optional content displayed within the header
+ * @returns The rendered detail header
+ */
 export function DetailHeader({
   title,
   titleExtra,

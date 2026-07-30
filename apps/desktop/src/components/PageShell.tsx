@@ -8,6 +8,11 @@ export interface PageShellProps {
   children: ReactNode;
 }
 
+/**
+ * Provides a styled page-level container for its child content.
+ *
+ * @param children - The content rendered inside the page container
+ */
 export function PageShell({ children }: PageShellProps) {
   return <div className={page}>{children}</div>;
 }

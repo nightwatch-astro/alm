@@ -31,6 +31,15 @@ export interface ListSidebarProps {
   virtualized?: boolean;
 }
 
+/**
+ * Renders a searchable sidebar containing optional controls, a list, and footer content.
+ *
+ * @param placeholder - Custom placeholder and accessible label for the search input.
+ * @param searchValue - Controlled value displayed in the search input.
+ * @param onSearchChange - Callback invoked with the updated search text.
+ * @param virtualized - Whether to mark the list container for virtual scrolling.
+ * @returns The rendered sidebar.
+ */
 export function ListSidebar({
   placeholder,
   searchValue,

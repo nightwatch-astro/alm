@@ -17,6 +17,15 @@ export interface ListItemProps {
   meta?: ReactNode;
 }
 
+/**
+ * Renders a list item with optional selection, supplementary content, and interaction.
+ *
+ * @param selected - Whether the item is displayed as selected
+ * @param onClick - Action invoked when the interactive item is activated
+ * @param title - Main content displayed in the item
+ * @param pills - Supplementary content displayed alongside the title
+ * @param meta - Secondary content displayed beneath the title
+ */
 export function ListItem({
   selected,
   onClick,

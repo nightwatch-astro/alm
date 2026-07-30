@@ -48,6 +48,9 @@ const LANGUAGE_OPTIONS: SegControlOption[] = SHIPPED_LOCALES.map((id) => {
   };
 });
 
+/**
+ * Renders controls for configuring general application settings, including theme, language, font size, zoom, and density.
+ */
 export function General() {
   const [, setChoice] = useThemeChoice();
   const [fontSize, setFontSize] = useFontSizeChoice();

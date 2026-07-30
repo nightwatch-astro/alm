@@ -95,6 +95,12 @@ interface CleanupProps {
   save: (scope: string, values: Record<string, unknown>) => void;
 }
 
+/**
+ * Provides controls for source protection and per-data-type cleanup policies.
+ *
+ * @param save - Persists source protection setting changes.
+ * @returns The cleanup settings pane.
+ */
 export function Cleanup({ save }: CleanupProps) {
   // ── spec 018 owned state ─────────────────────────────────────────────────
   const [blockPermanentDelete, setBlockPermanentDelete] = useState(true);
