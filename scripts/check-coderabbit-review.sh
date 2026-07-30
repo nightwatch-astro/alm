@@ -32,6 +32,19 @@ set -euo pipefail
 
 BOT='coderabbitai[bot]'
 
+# Matched loosely on purpose. The bot rephrases: it has posted both
+# "**Next review available in:** **31 minutes**" and "Your next included review
+# will be available in 48 minutes", and the earlier fixed-sentence pattern
+# silently dropped the second one. So detection never demands a sentence shape:
+# a rate-limit indicator establishes that the window is shut, and any nearby
+# "<number> minutes|hours" figure supplies the wait. A future rewording still
+# parses as long as it says it is a limit and quotes a duration.
+RATE_LIMIT_RE='rate limited by coderabbit|review limit|fair usage'
+# Non-alphabetic filler only, so the figure must belong to the unit it precedes:
+# spans bold markers and whitespace ("**31** minutes") but never skips a word.
+# Kept free of backslashes to stay valid in both grep -E and jq's test().
+WAIT_FIGURE_RE='[0-9]+[^a-zA-Z]*(minute|hour)'
+
 usage() {
   cat >&2 <<'EOF'
 usage: check-coderabbit-review.sh [--json] (--open | <pr-number>...)
@@ -79,9 +92,9 @@ fi
 wait_hint() { # $1 = notice created_at (ISO 8601), $2 = notice body
   local created="$1" body="$2" minutes posted now deadline remaining
 
-  # "**Next review available in:** **31 minutes**" — also tolerate an hour form.
-  minutes=$(grep -oiE 'next review available in:?\**[[:space:]]*\**[[:space:]]*([0-9]+)[[:space:]]*(minute|hour)' <<<"$body" |
-    grep -oiE '[0-9]+[[:space:]]*(minute|hour)' | head -1 || true)
+  # Any duration in the notice, whatever sentence surrounds it. The caller only
+  # passes bodies that already matched RATE_LIMIT_RE, so the figure is the wait.
+  minutes=$(grep -oiE "$WAIT_FIGURE_RE" <<<"$body" | head -1 || true)
   [[ -n "$minutes" ]] || return 0
 
   local value unit
@@ -134,14 +147,15 @@ classify() {
   notices=$(gh api "repos/:owner/:repo/issues/$pr/comments" --paginate \
     --jq "[.[] | select(.user.login == \"$BOT\") | .body] | join(\"\n\")" 2>/dev/null || echo '')
 
-  # The most recent notice that actually quotes a wait figure, with the time it
-  # was posted. "Next review available in: N minutes" is relative to when it was
-  # WRITTEN, so the raw number is stale on read — pair it with created_at to get
-  # a real wall-clock deadline. Selecting the *last* bot comment is wrong here:
-  # that is usually the bare "Review finished" ack, which carries no figure.
+  # The most recent limit notice that actually quotes a figure, with the time it
+  # was posted. The bot's figure is relative to when it was WRITTEN, so the raw
+  # number is stale on read — pair it with created_at to get a real wall-clock
+  # deadline. Selecting the *last* bot comment is wrong here: that is usually the
+  # bare "Review finished" ack, which carries no figure. Selected on signal words
+  # plus a duration rather than a sentence, so a reworded notice still qualifies.
   local latest
   latest=$(gh api "repos/:owner/:repo/issues/$pr/comments" --paginate \
-    --jq "[.[] | select(.user.login == \"$BOT\" and (.body | test(\"[Nn]ext review available in\")))] | last | \"\(.created_at // \"\")\t\(.body // \"\")\"" \
+    --jq "[.[] | select(.user.login == \"$BOT\" and (.body | test(\"$RATE_LIMIT_RE\"; \"i\")) and (.body | test(\"$WAIT_FIGURE_RE\"; \"i\")))] | last | \"\(.created_at // \"\")\t\(.body // \"\")\"" \
     2>/dev/null || printf '\t')
 
   count="$inline"
@@ -154,11 +168,13 @@ classify() {
     # from an earlier declined attempt on an older commit.
     status=STALE
     detail="review exists but not for head ${head:0:8} — re-trigger for the new commits"
-  elif grep -qE 'rate limited by coderabbit|Review limit reached|Fair Usage Limits' <<<"$notices"; then
+  elif grep -qiE "$RATE_LIMIT_RE" <<<"$notices"; then
     status=RATE_LIMITED
     local hint
     hint=$(wait_hint "${latest%%$'\t'*}" "${latest#*$'\t'}")
-    detail="bot declined: review limit — ${hint:-re-trigger after the window}"
+    # No parsed figure means no knowledge of the window. Never phrase that as
+    # safe to re-trigger: a false green light burns review quota for nothing.
+    detail="bot declined: review limit — ${hint:-wait unknown — re-check before re-triggering}"
     count=0
   elif grep -qE 'skip review by coderabbit|Review skipped' <<<"$notices"; then
     status=SKIPPED_DRAFT
