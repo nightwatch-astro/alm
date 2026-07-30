@@ -95,7 +95,7 @@ const fileMetadata = [
 
 describe('InboxDetail — two-col layout (#813)', () => {
   it('renders the shared .pv-session-detail2 structure', () => {
-    const { container } = render(
+    render(
       <InboxDetail
         item={item}
         rootAbsolutePath="/astro/inbox"
@@ -103,11 +103,11 @@ describe('InboxDetail — two-col layout (#813)', () => {
         fileMetadata={fileMetadata}
       />,
     );
-    expect(container.querySelector('.pv-session-detail2')).toBeInTheDocument();
+    expect(screen.getByTestId('two-col-detail')).toBeInTheDocument();
   });
 
   it('gives Files its own __col, never the narrow __linked slot', () => {
-    const { container } = render(
+    render(
       <InboxDetail
         item={item}
         rootAbsolutePath="/astro/inbox"
@@ -115,24 +115,24 @@ describe('InboxDetail — two-col layout (#813)', () => {
         fileMetadata={fileMetadata}
       />,
     );
-    const wrapper = container.querySelector('.pv-session-detail2');
+    const wrapper = screen.getByTestId('two-col-detail');
 
     // detection A + detection B + Files. No needs-review column: nothing
     // is unclassified here.
+    expect(wrapper.querySelectorAll('[data-testid="detail-col"]')).toHaveLength(
+      3,
+    );
     expect(
-      wrapper?.querySelectorAll(':scope > .pv-session-detail2__col'),
-    ).toHaveLength(3);
-    expect(
-      wrapper?.querySelector('.pv-session-detail2__linked'),
+      wrapper.querySelector('[data-testid="detail-linked"]'),
     ).not.toBeInTheDocument();
 
     // The Files trigger really is inside a __col, not floating elsewhere.
     const trigger = screen.getByTestId('inbox-files-popover-trigger');
-    expect(trigger.closest('.pv-session-detail2__col')).toBeInTheDocument();
+    expect(trigger.closest('[data-testid="detail-col"]')).toBeInTheDocument();
   });
 
   it('adds a fourth __col for Needs-review when files are unclassified', () => {
-    const { container } = render(
+    render(
       <InboxDetail
         item={item}
         rootAbsolutePath="/astro/inbox"
@@ -140,16 +140,16 @@ describe('InboxDetail — two-col layout (#813)', () => {
         fileMetadata={fileMetadata}
       />,
     );
-    const wrapper = container.querySelector('.pv-session-detail2');
+    const wrapper = screen.getByTestId('two-col-detail');
+    expect(wrapper.querySelectorAll('[data-testid="detail-col"]')).toHaveLength(
+      4,
+    );
     expect(
-      wrapper?.querySelectorAll(':scope > .pv-session-detail2__col'),
-    ).toHaveLength(4);
-    expect(
-      wrapper?.querySelector('.pv-session-detail2__linked'),
+      wrapper.querySelector('[data-testid="detail-linked"]'),
     ).not.toBeInTheDocument();
 
     // And it is the Needs-review block that occupies the extra column.
     const selectAll = screen.getByTestId('reclassify-select-all');
-    expect(selectAll.closest('.pv-session-detail2__col')).toBeInTheDocument();
+    expect(selectAll.closest('[data-testid="detail-col"]')).toBeInTheDocument();
   });
 });
