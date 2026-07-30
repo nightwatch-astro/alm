@@ -286,7 +286,6 @@ export function ObservingSites() {
 
   return (
     <SettingsSection
-      data-testid="observing-sites"
       title={m.settings_observing_sites_title()}
       action={
         <Btn size="sm" onClick={startAdd}>
