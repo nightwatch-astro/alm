@@ -96,6 +96,7 @@ interface SourceSummaryProps {
   state: SourceScanState;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: summary render over per-source-kind count and warning branches
 export function SourceSummary({ state }: SourceSummaryProps) {
   const {
     source,

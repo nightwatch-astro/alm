@@ -137,6 +137,7 @@ export function ObservingSites() {
     setFormError(null);
   };
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: site submit guard chain then create-or-update dispatch
   const handleSubmit = async () => {
     if (!form) return;
     const name = form.name.trim();

@@ -55,6 +55,7 @@ import {
 
 // ── LogPanel component ────────────────────────────────────────────────────────
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: log panel render with per-filter and per-level conditional branches
 export function LogPanel() {
   const {
     expanded,

@@ -205,6 +205,7 @@ function equipmentSubtitle(session: InventorySession): string {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: detail render branching over session kind, frames, and calibration sections
 export function SessionDetail({
   session,
   onReveal,

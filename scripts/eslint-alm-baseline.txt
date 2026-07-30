@@ -19,7 +19,7 @@ src/components/DetailPanel.tsx	134	alm/require-root-testid
 src/components/DetailPanel.tsx	72	alm/require-root-testid
 src/components/FilterToolbar.tsx	286	alm/require-root-testid
 src/components/Lifecycle.tsx	26	alm/require-root-testid
-src/components/ListPageLayout.tsx	210	alm/require-root-testid
+src/components/ListPageLayout.tsx	211	alm/require-root-testid
 src/components/ListSidebar.tsx	37	alm/require-root-testid
 src/components/MetricLine.tsx	23	alm/require-root-testid
 src/components/Modal.tsx	115	alm/require-root-testid
@@ -38,12 +38,12 @@ src/features/calibration/MatchCandidatesPanel.tsx	354	alm/require-root-testid
 src/features/calibration/SessionListPopover.tsx	34	alm/require-root-testid
 src/features/inbox/ConeSearchSuggestions.tsx	111	alm/require-root-testid
 src/features/inbox/InboxControls.tsx	159	alm/require-root-testid
-src/features/inbox/InboxDetail.tsx	345	alm/require-root-testid
+src/features/inbox/InboxDetail.tsx	346	alm/require-root-testid
 src/features/inbox/InboxNeedsReview.tsx	103	alm/require-root-testid
 src/features/inbox/PlanDestructiveControl.tsx	32	alm/require-root-testid
 src/features/onboarding/ChecklistPopover.tsx	110	alm/require-root-testid
 src/features/onboarding/FindSpotlight.tsx	167	alm/require-root-testid
-src/features/onboarding/OrientationWalk.tsx	160	alm/require-root-testid
+src/features/onboarding/OrientationWalk.tsx	161	alm/require-root-testid
 src/features/onboarding/joyrideAdapter.tsx	209	alm/require-root-testid
 src/features/plans/PlanProtectionGate.tsx	116	alm/require-root-testid
 src/features/projects/BlockedBanner.tsx	157	alm/require-root-testid
@@ -51,7 +51,7 @@ src/features/projects/CalibrationMatchPanel.tsx	127	alm/require-root-testid
 src/features/projects/ManifestsAccordion.tsx	125	alm/require-root-testid
 src/features/projects/ProjectBottomDetail.tsx	53	alm/require-root-testid
 src/features/projects/ProjectChannelsSection.tsx	36	alm/require-root-testid
-src/features/projects/ProjectDetail.tsx	137	alm/require-root-testid
+src/features/projects/ProjectDetail.tsx	138	alm/require-root-testid
 src/features/projects/ProjectSourcesSection.tsx	96	alm/require-root-testid
 src/features/projects/ProjectsPage.tsx	224	alm/require-root-testid
 src/features/projects/ProjectsTable.tsx	285	alm/require-root-testid
@@ -67,7 +67,7 @@ src/features/projects/wizard/StepName.tsx	122	alm/require-root-testid
 src/features/projects/wizard/StepReview.tsx	48	alm/require-root-testid
 src/features/projects/wizard/StepSources.tsx	28	alm/require-root-testid
 src/features/projects/wizard/StepViews.tsx	74	alm/require-root-testid
-src/features/projects/wizard/WizardPage.tsx	598	alm/require-root-testid
+src/features/projects/wizard/WizardPage.tsx	599	alm/require-root-testid
 src/features/sessions/CalendarScroll.tsx	72	alm/require-root-testid
 src/features/sessions/SessionDetail.tsx	214	alm/require-root-testid
 src/features/sessions/SessionNotesSection.tsx	93	alm/require-root-testid
@@ -79,7 +79,7 @@ src/features/settings/PatternChipsEditor.tsx	39	alm/require-root-testid
 src/features/settings/PerTypeDestinationPatterns.tsx	206	alm/require-root-testid
 src/features/settings/PerTypePatternChipsEditor.tsx	90	alm/require-root-testid
 src/features/settings/ProcessingTools.tsx	181	alm/require-root-testid
-src/features/settings/RootCard.tsx	109	alm/require-root-testid
+src/features/settings/RootCard.tsx	110	alm/require-root-testid
 src/features/settings/SettingsKit.tsx	106	alm/require-root-testid
 src/features/settings/SettingsKit.tsx	197	alm/require-root-testid
 src/features/settings/SettingsKit.tsx	33	alm/require-root-testid
@@ -104,8 +104,8 @@ src/features/targets/NotesSection.tsx	41	alm/require-root-testid
 src/features/targets/TargetDetailV2.tsx	163	alm/require-root-testid
 src/features/targets/TargetList.tsx	71	alm/require-root-testid
 src/features/targets/TargetsTableColumns.tsx	134	alm/require-root-testid
-src/features/targets/TonightPanel.tsx	166	alm/require-root-testid
-src/features/targets/observing-sites/ObservingSites.tsx	282	alm/require-root-testid
+src/features/targets/TonightPanel.tsx	167	alm/require-root-testid
+src/features/targets/observing-sites/ObservingSites.tsx	283	alm/require-root-testid
 src/features/targets/observing-sites/SiteLocationPicker.tsx	181	alm/require-root-testid
 src/ui/NumberField.tsx	40	alm/require-root-testid
 src/ui/Tooltip.tsx	51	alm/require-root-testid

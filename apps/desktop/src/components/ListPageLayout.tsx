@@ -134,6 +134,7 @@ function hasOpenOverlay(): boolean {
   return false;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: layout render branching over optional top-bar, detail, and empty slots
 export function ListPageLayout({
   topBar,
   topBarProps,

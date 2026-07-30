@@ -51,6 +51,7 @@ interface EquipmentProps {
 // CRUD lists (e.g. observing-site management, spec 044 US3) — no per-pane
 // clone (shared-component mandate).
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: equipment panel render over camera, telescope, and filter lists
 export function Equipment({ save: _save }: EquipmentProps) {
   const {
     cameras,

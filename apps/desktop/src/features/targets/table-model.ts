@@ -90,6 +90,7 @@ function compareStr(a: string, b: string): number {
  * require the pre-computed `RowAltitude` values (which encode the user's
  * threshold), so the comparator receives them alongside the list items.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: flat comparator dispatch over sortable target columns
 export function compareTargetRows(
   a: TargetListItem,
   altA: RowAltitude,

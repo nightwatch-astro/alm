@@ -81,6 +81,7 @@ type LoadState =
 
 // ── TargetDetail ────────────────────────────────────────────────────────────
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: detail render branching over framing, sessions, and altitude sections
 export function TargetDetail({
   targetId,
   item = null,

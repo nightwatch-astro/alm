@@ -192,6 +192,7 @@ export function useEquipment() {
 
   // ── Camera handlers ──────────────────────────────────────────────────────────
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: camera submit guard chain then create-or-update dispatch
   const handleCameraSubmit = async () => {
     if (!cameraForm) return;
     const name = cameraForm.name.trim();

@@ -120,6 +120,7 @@ function destinationLabel(plan: PlanDetail_Serialize): string {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: overlay render branching over plan state, item counts, and action availability
 export function PlanReviewOverlay({
   planId,
   open,

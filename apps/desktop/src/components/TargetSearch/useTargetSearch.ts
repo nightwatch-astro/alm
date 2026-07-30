@@ -106,6 +106,7 @@ export function useTargetSearch({
   });
 
   const runSearch = useCallback(
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: search input handler dispatching over query shape and resolver outcome
     async (raw: string) => {
       const trimmed = raw.trim();
 
