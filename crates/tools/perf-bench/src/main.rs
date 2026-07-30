@@ -1,25 +1,28 @@
 // Copyright (C) 2024-2026 Sjors Robroek
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Performance measurement harness for the inbox scan/classify hot paths.
+//! Performance measurement harness for the measured hot paths.
 //!
-//! Generates a synthetic fixture tree in a tempdir, runs real use-case
-//! functions against a real `SQLite` database (with migrations applied), and
-//! prints one machine-readable JSON line per scenario so PRs can paste
-//! before/after tables.
+//! Generates synthetic fixtures in tempdirs, runs real use-case functions
+//! against a real `SQLite` database (with migrations applied), and prints one
+//! machine-readable JSON line per scenario so PRs can paste before/after
+//! tables.
 //!
 //! # Usage
 //!
 //! ```
-//! just perf-bench              # PERF_N=500 (CI-safe default)
-//! PERF_N=5000 just perf-bench  # larger fixture for a local baseline run
+//! just perf-bench              # CI-safe defaults
+//! PERF_N=5000 just perf-bench  # larger inbox fixture for a local baseline run
 //! ```
 //!
 //! # Environment variables
 //!
 //! | Variable | Default | Description |
 //! |---|---|---|
-//! | `PERF_N` | `500` | Number of sub-frame FITS files to generate |
+//! | `PERF_N` | `500` | Sub-frame FITS files for the inbox scan/classify scenarios |
+//! | `RECONCILE_N` | `10000` | Frames for the reconcile scenario (spec 048 SC-005) |
+//! | `PLAN_N` | `10000` | Plan items for the apply-progress scenario (spec 025 T045) |
+//! | `MASTERS_N` | `1000` | Calibration masters for the suggest scenario (spec 007 T033) |
 //!
 //! # Output
 //!
@@ -32,12 +35,20 @@
 //!
 //! `wall_ms` is wall-clock milliseconds measured around the use-case call
 //! only (fixture setup and DB bootstrapping are excluded from every timing
-//! window).
+//! window). `sqlx_stmts` is the hard-gated metric — see
+//! `scripts/check-perf-baseline.sh`.
+
+mod calibration_suggest;
+mod plan_progress;
+mod reconcile;
+mod support;
 
 use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
+
+use support::{print_result, SqlxCounterLayer};
 
 use app_core_inbox::classify::classify_source_group;
 use app_core_inbox::scan::{scan_root, ScanOptions};
@@ -128,62 +139,7 @@ fn build_fixture(root: &Path, n: usize) {
     }
 }
 
-// ── Query counter ─────────────────────────────────────────────────────────────
-
-/// Counts tracing events whose target starts with `sqlx`.
-///
-/// sqlx emits a tracing event per statement execution at the `debug` level
-/// under the `sqlx` target (target prefix `"sqlx"`). Counting those events gives a
-/// statement-count proxy for DB pressure without adding any instrumentation
-/// dependency inside the production crates.
-///
-/// The inner `Arc<AtomicU64>` lets the layer and the harness share the same
-/// counter. The newtype wrapper is required by Rust's orphan rule: `Layer` is
-/// a foreign trait and `Arc` is a foreign type, so the impl must be on a
-/// local type.
-struct SqlxCounterLayer(std::sync::Arc<std::sync::atomic::AtomicU64>);
-
-impl SqlxCounterLayer {
-    fn new() -> (Self, std::sync::Arc<std::sync::atomic::AtomicU64>) {
-        let inner = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        (Self(inner.clone()), inner)
-    }
-}
-
-impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for SqlxCounterLayer {
-    // Declare DEBUG interest so the registry does not drop sqlx query events
-    // before they reach this layer, even when the fmt layer's EnvFilter is set
-    // to a higher level (e.g. "error").
-    fn max_level_hint(&self) -> Option<tracing::level_filters::LevelFilter> {
-        Some(tracing::level_filters::LevelFilter::DEBUG)
-    }
-
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) {
-        if event.metadata().target().starts_with("sqlx") {
-            self.0.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-}
-
 // ── Scenario runner ───────────────────────────────────────────────────────────
-
-fn print_result(scenario: &str, n: usize, wall_ms: u128, extra: &serde_json::Value) {
-    let mut obj = serde_json::json!({
-        "scenario": scenario,
-        "n": n,
-        "wall_ms": wall_ms,
-    });
-    if let serde_json::Value::Object(ref extra_map) = extra {
-        if let serde_json::Value::Object(ref mut m) = obj {
-            m.extend(extra_map.clone());
-        }
-    }
-    println!("{obj}");
-}
 
 #[tokio::main]
 async fn main() {
@@ -325,4 +281,13 @@ async fn main() {
             "sqlx_stmts": classify_stmts,
         }),
     );
+
+    // ── Scenarios C-E: spec-gated hot paths ───────────────────────────────────
+    //
+    // Each owns its own tempdir + database so its statement count is
+    // independent of the inbox fixture above and of the other two.
+
+    reconcile::run(&counter).await;
+    plan_progress::run(&counter).await;
+    calibration_suggest::run(&counter).await;
 }
