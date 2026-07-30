@@ -194,13 +194,17 @@ async fn drain_since<R: tauri::Runtime>(
 /// **Startup seam**: call this from `run_app` after both `AppHandle` and
 /// `EventBus` are ready. Rows committed before this task starts are replayed
 /// immediately, without waiting for a broadcast, bounded to the newest
-/// [`log_stream::LOG_BUFFER_SIZE`] events. Older rows cannot fit the frontend
-/// ring buffer, so they are reported through a diagnostic entry (the same signal
-/// the lag path emits) and remain reachable via `log.recent`.
+/// [`log_stream::LOG_BUFFER_SIZE`] events — the frontend ring buffer's capacity,
+/// so a wider replay could only evict the rows it just delivered. Rows older
+/// than that window are the same set `log.recent` declines to return, and stay
+/// reachable through `log.export`, which is uncapped.
 ///
 /// **Cursor-init failure**: if the rewound cursor cannot be determined the
-/// forwarder emits a diagnostic and stops. It must not fall back to cursor `0`,
-/// which would replay the whole `events` table and defeat the bound.
+/// forwarder stops. It must not fall back to cursor `0`, which would replay the
+/// whole `events` table and defeat the bound. The failure is recorded through
+/// `tracing` rather than a `log:entry`: this task starts before any webview
+/// exists (`create_main_window` runs last in `run_app`) and Tauri drops events
+/// that have no listener, so an emit here reaches nobody.
 ///
 /// The returned handle is how tests observe that stop; production callers ignore
 /// it, since a detached forwarder needs no supervision.
@@ -218,35 +222,21 @@ pub fn start_log_forwarder<R: tauri::Runtime>(
         // Rewind rather than jumping to the table maximum: a jump discards every
         // row committed between app start and forwarder start.
         let window = i64::try_from(log_stream::LOG_BUFFER_SIZE).unwrap_or(i64::MAX);
-        let (mut cursor, skipped) =
-            match persistence_lifecycle::repositories::events::rewound_cursor(&pool, window).await {
-                Ok(seed) => seed,
-                Err(e) => {
-                    // No retry here: `persistence_core::BUSY_TIMEOUT` already gives
-                    // sqlx a 5s window for lock contention, so an error past it is
-                    // not transient. Stopping keeps the bound intact; `log.recent`
-                    // still serves the durable history.
-                    tracing::error!("log forwarder: cursor init failed, not streaming: {e}");
-                    diag_seq += 1;
-                    let diag = LogEntry::diagnostic(
-                        diag_seq,
-                        LogLevel::Error,
-                        "Live log stream unavailable: could not read the event history. Refresh to reload.",
-                    );
-                    let _ = tauri::Emitter::emit(&app_handle, "log:entry", &diag);
-                    return;
-                }
-            };
-
-        if skipped > 0 {
-            diag_seq += 1;
-            let diag = LogEntry::diagnostic(
-                diag_seq,
-                LogLevel::Warn,
-                format!("Log stream started mid-history: {skipped} earlier events not streamed. Refresh to reload."),
-            );
-            let _ = tauri::Emitter::emit(&app_handle, "log:entry", &diag);
-        }
+        let mut cursor = match persistence_lifecycle::repositories::events::rewound_cursor(
+            &pool, window,
+        )
+        .await
+        {
+            Ok(seed) => seed,
+            Err(e) => {
+                // No retry here: `persistence_core::BUSY_TIMEOUT` already gives
+                // sqlx a 5s window for lock contention, so an error past it is
+                // not transient. Stopping keeps the bound intact; `log.recent`
+                // still serves the durable history.
+                tracing::error!("log forwarder: cursor init failed, not streaming: {e}");
+                return;
+            }
+        };
 
         // Catch up before the first broadcast: rows already inside the rewound
         // window must reach the panel even if no further event is ever emitted.
@@ -263,12 +253,16 @@ pub fn start_log_forwarder<R: tauri::Runtime>(
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!("log forwarder: lagged by {n} events");
-                    // Emit a diagnostic entry for the lag gap.
+                    // Point at export, not refresh: a refresh re-pulls the newest
+                    // 500 via `log.recent`, which cannot reach rows outside that
+                    // window. `log.export` is uncapped and can.
                     diag_seq += 1;
                     let diag = LogEntry::diagnostic(
                         diag_seq,
                         LogLevel::Warn,
-                        format!("Log stream lagged: {n} events dropped. Refresh to reload."),
+                        format!(
+                            "Log stream lagged: {n} events not shown live. Export the log to see them."
+                        ),
                     );
                     let _ = tauri::Emitter::emit(&app_handle, "log:entry", &diag);
                 }

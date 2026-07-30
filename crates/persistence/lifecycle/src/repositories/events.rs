@@ -175,12 +175,10 @@ pub async fn list_by_emitted_at_range(
     Ok(rows)
 }
 
-/// Cursor that replays at most the newest `window` rows, together with the
-/// number of older rows that cursor excludes.
+/// Exclusive cursor that replays at most the newest `window` rows.
 ///
-/// Returns `(cursor, skipped)` where `cursor` is exclusive (callers pass it to
-/// [`list_since`]) and `skipped` counts rows at or below it. With `window` rows
-/// or fewer in the table the cursor is `0` and nothing is skipped.
+/// Callers pass the result to [`list_since`]. With `window` rows or fewer in the
+/// table the cursor is `0`, which replays the whole table.
 ///
 /// A live subscriber seeds its cursor with this rather than the table's maximum
 /// `event_id` so rows committed before it started are still delivered, bounded
@@ -188,18 +186,13 @@ pub async fn list_by_emitted_at_range(
 ///
 /// # Errors
 /// Returns `persistence_core::DbError::Database` on query failure.
-pub async fn rewound_cursor(pool: &SqlitePool, window: i64) -> DbResult<(i64, i64)> {
+pub async fn rewound_cursor(pool: &SqlitePool, window: i64) -> DbResult<i64> {
     let cursor: Option<i64> =
         sqlx::query_scalar("SELECT event_id FROM events ORDER BY event_id DESC LIMIT 1 OFFSET ?")
             .bind(window)
             .fetch_optional(pool)
             .await?;
-    let Some(cursor) = cursor else { return Ok((0, 0)) };
-    let (skipped,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM events WHERE event_id <= ?")
-        .bind(cursor)
-        .fetch_one(pool)
-        .await?;
-    Ok((cursor, skipped))
+    Ok(cursor.unwrap_or(0))
 }
 
 /// Smallest retained `event_id`, or `None` if the table is empty. Used to
@@ -356,9 +349,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rewound_cursor_replays_window_and_counts_skipped() {
+    async fn rewound_cursor_bounds_the_replay_to_the_window() {
         let pool = setup().await;
-        assert_eq!(rewound_cursor(&pool, 2).await.expect("empty table"), (0, 0));
+        assert_eq!(rewound_cursor(&pool, 2).await.expect("empty table"), 0);
 
         for i in 0..5 {
             insert_event(&pool, "t.a", "system", &format!("2026-01-01T00:00:0{i}Z"), "{}")
@@ -367,12 +360,12 @@ mod tests {
         }
 
         // Window larger than the table replays everything.
-        assert_eq!(rewound_cursor(&pool, 10).await.expect("wide window"), (0, 0));
+        assert_eq!(rewound_cursor(&pool, 10).await.expect("wide window"), 0);
 
         // A window of 2 leaves ids 1..=3 behind the cursor and replays 4 and 5,
         // where seeding the cursor at the table maximum would replay nothing.
-        let (cursor, skipped) = rewound_cursor(&pool, 2).await.expect("narrow window");
-        assert_eq!((cursor, skipped), (3, 3));
+        let cursor = rewound_cursor(&pool, 2).await.expect("narrow window");
+        assert_eq!(cursor, 3);
         assert_eq!(list_since(&pool, cursor).await.unwrap().len(), 2);
     }
 
