@@ -584,12 +584,12 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         &bus,
         resolve_cache.clone(),
     );
-    crate::commands::log::start_log_forwarder(
+    drop(crate::commands::log::start_log_forwarder(
         app.clone(),
         &bus,
         contracts_core::log::LogLevel::Debug,
         pool.clone(),
-    );
+    ));
     drop(spawn_stale_dependent_propagator(pool.clone(), &bus));
     // spec 056 (R5): backend-authoritative onboarding tick subscriber →
     // persists auto-ticks from domain-completion topics and emits
