@@ -83,4 +83,7 @@ export const linkedStack = style({
 
 export const match = style({
   padding: '0 var(--pv-sp-4) var(--pv-sp-4)',
+  // Lets the candidate table shrink below its min-content width in the narrow
+  // side dock instead of overflowing it (#1068).
+  minWidth: 0,
 });

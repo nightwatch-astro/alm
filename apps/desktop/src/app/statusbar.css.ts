@@ -3,8 +3,9 @@
 
 // StatusBar.tsx styles.
 
-import { style } from '@vanilla-extract/css';
+import { globalStyle, style } from '@vanilla-extract/css';
 import { vars } from '@/styles/themes.css';
+import { spin } from '@/styles/motion.css';
 
 export const statusBar = style({
   height: 'var(--pv-statusbar-height)',
@@ -39,7 +40,7 @@ export const spinner = style({
   borderRadius: '50%',
   border: `2px solid ${vars.accent}`,
   borderTopColor: 'transparent',
-  animation: 'pv-spin 1s linear infinite',
+  animation: `${spin} 1s linear infinite`,
 });
 
 export const vol = style({
@@ -55,6 +56,18 @@ export const meter = style({
   borderRadius: '3px',
   background: vars.bg3,
   overflow: 'hidden',
+});
+
+// The fill is a bare `<i>` carrying only an inline width (StatusBar.tsx), so it
+// is styled by descendant selector rather than its own class.
+globalStyle(`${meter} > i`, {
+  display: 'block',
+  height: '100%',
+  background: vars.ok,
+});
+
+globalStyle(`${volWarn} ${meter} > i`, {
+  background: vars.warn,
 });
 
 export const logToggle = style({

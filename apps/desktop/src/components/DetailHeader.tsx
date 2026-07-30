@@ -6,6 +6,7 @@ import {
   header as detailHeader,
   content as detailHeaderContent,
   title as detailTitle,
+  subtitle as detailSubtitle,
   actions as detailActions,
 } from './DetailHeader.css';
 
@@ -25,13 +26,13 @@ export function DetailHeader({
   children,
 }: DetailHeaderProps) {
   return (
-    <div className={detailHeader}>
+    <div className={detailHeader} data-testid="detail-header">
       <div className={detailHeaderContent}>
         <div className={detailTitle}>
           {title}
           {titleExtra}
         </div>
-        {subtitle && <div className="pv-detail__subtitle">{subtitle}</div>}
+        {subtitle && <div className={detailSubtitle}>{subtitle}</div>}
         {children}
       </div>
       {actions && <div className={detailActions}>{actions}</div>}
