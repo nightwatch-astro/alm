@@ -288,6 +288,32 @@ pub async fn find_by_source_artifact(
     Ok(rows.into_iter().map(row_to_struct).collect())
 }
 
+/// Batch form of [`find_by_source_artifact`] returning only
+/// `(artifact_id, match_id)` — one query for a whole reconcile phase instead of
+/// one per artifact. The audit emission needs no other assignment field.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn find_match_ids_by_source_artifacts(
+    pool: &SqlitePool,
+    artifact_ids: &[String],
+) -> DbResult<Vec<(String, String)>> {
+    if artifact_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT cm.artifact_id, ca.id
+         FROM calibration_assignment ca
+         JOIN calibration_master cm ON cm.source_session_id = ca.master_id
+         WHERE cm.artifact_id IN (SELECT value FROM json_each(?))",
+    )
+    .bind(serde_json::to_string(artifact_ids).unwrap_or_else(|_| "[]".to_owned()))
+    .fetch_all(pool)
+    .await
+    .map_err(DbError::Database)?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

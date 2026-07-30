@@ -6,8 +6,8 @@
       "Unit + integration (L1+L2) — ubuntu-latest",
       "Unit + integration (L1+L2) — windows-latest",
       "UI mock-mode (Playwright)",
-      "Supply chain (cargo-deny)",
-      "Real-UI smoke (L3) — ubuntu-latest"
+      "Real-UI smoke (L3) — ubuntu-latest",
+      "Supply chain (cargo-deny)"
     ]
   },
   "enforce_admins": false,

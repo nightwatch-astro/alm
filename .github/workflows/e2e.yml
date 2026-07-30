@@ -17,7 +17,7 @@
 # Two-tier L3 strategy (see issue #1203 and the original full-matrix motivation):
 #
 #   Tier 1 — L3 smoke (per-PR): a small, fast subset runs on every pull_request
-#     on ubuntu-latest only (the stable lane). Covers app boot + all top-level
+#     and every merge_group queue entry, on ubuntu-latest only (the stable lane). Covers app boot + all top-level
 #     routes, one inbox flow, and one targets flow — three journeys, serial,
 #     targeting <8 min wall-clock. The required branch-protection check
 #     "Real-UI smoke (L3) — ubuntu-latest" is published by the gate job
@@ -130,6 +130,22 @@ on:
   # ubuntu + windows shards for real, not skipped.
   push:
     branches: [main]
+  # Required for the merge queue. A queued PR waits on the contexts branch
+  # protection requires, and "Real-UI smoke (L3) — ubuntu-latest" is one of them
+  # (this workflow publishes it). A workflow with no `merge_group` trigger
+  # publishes none of its contexts, so the entry never resolves and the queue
+  # stalls instead of failing. The `changes` job needs no adjustment:
+  # dorny/paths-filter v4 diffs `merge_group.base_sha..head_sha` for this event,
+  # so path gating scopes to the queued changes.
+  #
+  # A queue entry runs the SMOKE tier, the same as a pull_request — it is the
+  # required context, and the full matrix at ~25 min would make the queue the
+  # slowest path in the repo. The full matrix still runs on the push to `main`
+  # the queue produces, so Tier 2 coverage is unchanged. Every job `if:` below
+  # therefore names its events positively instead of testing
+  # `!= 'pull_request'`, which would silently have put queue entries on the
+  # full-matrix side.
+  merge_group:
   workflow_dispatch:
     inputs:
       run_macos:
@@ -467,8 +483,11 @@ jobs:
     name: Build app — windows-latest
     needs: changes
     # Windows build only needed on main pushes and dispatch; the windows shards
-    # are skipped on pull_request, so no consumer would use this artifact on PRs.
-    if: needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    # are skipped on pull_request and merge_group, so no consumer would use this
+    # artifact there.
+    if: >-
+      needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -681,8 +700,8 @@ jobs:
   # ---------------------------------------------------------------------------
   # Tier-1 smoke (per-PR, ubuntu-latest only): a focused subset of real-UI
   # journeys that boots the app and exercises the core surfaces. Runs on
-  # pull_request ONLY — the full matrix (both OSes, all shards) runs on push
-  # to main and workflow_dispatch instead (see the two-tier strategy in the
+  # pull_request and merge_group ONLY — the full matrix (both OSes, all shards)
+  # runs on push to main and workflow_dispatch instead (see the two-tier strategy in the
   # header). No sharding: the filter selects 3 journeys, each serial, which
   # completes in < 8 min on ubuntu-latest.
   #
@@ -703,9 +722,12 @@ jobs:
     # way the full matrix splits "shard" from its gate.
     name: Real-UI smoke (L3) subset — ubuntu-latest
     needs: [changes, build-frontend, build-app-ubuntu]
-    # Smoke subset runs ONLY on pull_request. Main pushes and dispatch run the
-    # full matrix (real-ui-e2e-ubuntu shards) instead.
-    if: needs.changes.outputs.run == 'true' && github.event_name == 'pull_request'
+    # Smoke subset runs on pull_request and on merge_group (the queue needs the
+    # same required context). Main pushes and dispatch run the full matrix
+    # (real-ui-e2e-ubuntu shards) instead.
+    if: >-
+      needs.changes.outputs.run == 'true'
+      && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -781,8 +803,9 @@ jobs:
   # "Real-UI smoke (L3) — ubuntu-latest"
   # — the context required by branch protection for PRs (replaces the old
   # full-matrix "Real-UI journeys (L3) — ubuntu-latest" and "— windows-latest"
-  # required contexts). Only runs on pull_request; skipped on main push/dispatch
-  # because the full e2e-gate-ubuntu/-windows gates cover those events.
+  # required contexts). Runs on pull_request and merge_group; skipped on main
+  # push/dispatch because the full e2e-gate-ubuntu/-windows gates cover those
+  # events.
   #
   # `always()` alone (without `run == 'true'`) keeps this gate reporting a
   # definitive conclusion even on docs-only PRs where run='false' and the whole
@@ -794,7 +817,9 @@ jobs:
   e2e-smoke-gate-ubuntu:
     name: Real-UI smoke (L3) — ubuntu-latest
     needs: [changes, smoke-ubuntu]
-    if: always() && github.event_name == 'pull_request'
+    if: >-
+      always()
+      && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -826,7 +851,9 @@ jobs:
     needs: [changes, build-frontend, build-app-ubuntu]
     # Full ubuntu matrix only on main pushes and manual dispatch (not PRs).
     # PRs run the lighter smoke-ubuntu job instead (see two-tier strategy above).
-    if: needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    if: >-
+      needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -1010,7 +1037,9 @@ jobs:
     # Windows L3 is the slow/historically flaky leg (~25 min + flake, runs
     # 30013328940, 30008614669); keeping it off PRs avoids blocking merge
     # trains while preserving full coverage on every main push.
-    if: needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    if: >-
+      needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -1241,7 +1270,9 @@ jobs:
     needs: [changes, real-ui-e2e-ubuntu]
     # Full gate only on main pushes and manual dispatch; skipped on PRs.
     # PRs satisfy their real-UI requirement via e2e-smoke-gate-ubuntu instead.
-    if: always() && needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    if: >-
+      always() && needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -1256,7 +1287,9 @@ jobs:
     name: Real-UI journeys (L3) — windows-latest
     needs: [changes, real-ui-e2e-windows]
     # Full gate only on main pushes and manual dispatch; skipped on PRs.
-    if: always() && needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    if: >-
+      always() && needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
