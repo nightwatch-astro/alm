@@ -422,7 +422,7 @@
 }
 @property --pv-row-indent {
   syntax: "<length>";
-  inherits: false;
+  inherits: true;
   initial-value: 0;
 }
 @property --pv-toast-accent {

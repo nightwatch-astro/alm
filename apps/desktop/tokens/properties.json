@@ -21,8 +21,8 @@
   "row-indent": {
     "$value": "0",
     "$type": "dimension",
-    "$description": "Tree-row indent, set per row by Table.tsx from the row depth.",
-    "$extensions": { "pv.property": { "syntax": "<length>", "inherits": false } }
+    "$description": "Tree-row indent, set per row by Table.tsx from the row depth. MUST inherit: Table.tsx sets it on the <tr> while primitives.css consumes it two levels down, on `> td:first-child > :first-child`. With inherits:false the descendant reads initial-value 0 and every nested row renders flush left.",
+    "$extensions": { "pv.property": { "syntax": "<length>", "inherits": true } }
   },
   "toast-accent": {
     "$value": "transparent",
