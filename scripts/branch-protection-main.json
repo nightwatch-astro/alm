@@ -1,6 +1,6 @@
 {
   "required_status_checks": {
-    "strict": true,
+    "strict": false,
     "contexts": [
       "Detect changes (CI)",
       "Unit + integration (L1+L2) — ubuntu-latest",
