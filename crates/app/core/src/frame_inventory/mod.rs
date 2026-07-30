@@ -58,6 +58,10 @@ use contracts_core::inventory_frame::{
 /// Returns `ContractError` per `reconcile::run_reconcile`. A failed
 /// project-health check is retried on the next reconcile for the same root,
 /// because the frame-state writes have already committed by then.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "reconcile pass over inventory rows with per-row health outcomes"
+)]
 pub async fn run_reconcile(
     pool: &SqlitePool,
     bus: &audit::bus::EventBus,

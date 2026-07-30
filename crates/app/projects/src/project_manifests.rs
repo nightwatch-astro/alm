@@ -449,6 +449,10 @@ pub fn spawn_workflow_run_subscriber(
 
 /// Process a single `workflow.run_completed` payload: look up the project,
 /// build the manifest snapshot, and write it.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "workflow-run event handler with per-field payload extraction and guards"
+)]
 async fn handle_workflow_run_event(pool: &SqlitePool, bus: &EventBus, payload: &serde_json::Value) {
     use persistence_plans::repositories::projects::get_project;
 
@@ -492,6 +496,10 @@ async fn handle_workflow_run_event(pool: &SqlitePool, bus: &EventBus, payload: &
 
 /// Replay `workflow.run_completed` events from the durable table since `cursor`.
 /// Returns the updated cursor.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "replay loop over stored events with per-row cursor advance"
+)]
 async fn replay_workflow_events_since(pool: &SqlitePool, bus: &EventBus, cursor: i64) -> i64 {
     use audit::event_bus::TOPIC_WORKFLOW_RUN_COMPLETED;
 

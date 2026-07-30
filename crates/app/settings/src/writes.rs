@@ -270,6 +270,10 @@ struct PendingWrite {
 /// Returns `ContractError` with code `"key.unknown"` if any key is not a valid
 /// v1 key (structured-path keys accepted). Returns internal errors on DB/audit
 /// failure.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "per-key default restore with scope and validation branches"
+)]
 pub async fn restore_defaults(
     pool: &SqlitePool,
     bus: &EventBus,
