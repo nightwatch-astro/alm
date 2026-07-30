@@ -201,6 +201,15 @@ env:
   # in every shard job (ubuntu, windows, macOS) so a single bump here
   # invalidates the cached binary across all lanes at once.
   TAURI_WEBDRIVER_VERSION: "0.1.1"
+  # THE frontend URL for this workflow. Every "Serve frontend dist" step derives
+  # its `vite preview --port` from this value, the app binary reads it as its
+  # `devUrl` (`desktop_shell::DEV_URL_ENV`), and the harness reads it as its
+  # base URL (`crates/e2e-tests/tests/common/mod.rs::app_url`) — one value,
+  # three readers, so what is served and what is loaded cannot drift apart.
+  # Each job runs on its own GitHub-hosted VM, so the port only has to be
+  # unique per machine; concurrent LOCAL lanes export their own `PV_DEV_URL`
+  # (issue #1409).
+  PV_DEV_URL: "http://localhost:5173"
 
 jobs:
   # Cheap change-detection gate — mirrors ci.yml's `changes` job. Cross-workflow
@@ -768,9 +777,15 @@ jobs:
         shell: bash
         run: chmod +x "$APP_BIN"
 
-      - name: Serve frontend dist on :5173
+      - name: Serve frontend dist on $PV_DEV_URL
         shell: bash
-        run: pnpm --filter @astro-plan/desktop preview --port 5173 &
+        # Port comes from PV_DEV_URL (workflow `env`) — the same value the app
+        # binary and the harness read, so there is no second port literal to
+        # drift. --strictPort makes a taken port a loud failure instead of a
+        # silent fallback that leaves the app loading someone else's server.
+        run: |
+          pnpm --filter @astro-plan/desktop preview \
+            --port "${PV_DEV_URL##*:}" --strictPort &
 
       - name: Run L3 smoke (3 journeys via filter-expr)
         env:
@@ -925,11 +940,18 @@ jobs:
         shell: bash
         run: chmod +x "$APP_BIN"
 
-      # Serve built dist on :5173 in the background. The app binary reads the
-      # Tauri devUrl (:5173) and loads its frontend from there — real IPC.
-      - name: Serve frontend dist on :5173
+      # Serve built dist in the background. The app binary reads the same
+      # PV_DEV_URL as its Tauri devUrl and loads its frontend from there —
+      # real IPC.
+      - name: Serve frontend dist on $PV_DEV_URL
         shell: bash
-        run: pnpm --filter @astro-plan/desktop preview --port 5173 &
+        # Port comes from PV_DEV_URL (workflow `env`) — the same value the app
+        # binary and the harness read, so there is no second port literal to
+        # drift. --strictPort makes a taken port a loud failure instead of a
+        # silent fallback that leaves the app loading someone else's server.
+        run: |
+          pnpm --filter @astro-plan/desktop preview \
+            --port "${PV_DEV_URL##*:}" --strictPort &
 
       # Run the Layer-2 harness (real journeys, serial per .config/nextest.toml)
       # from the prebuilt archive, wrapped in xvfb-run for a headless display.
@@ -1081,9 +1103,15 @@ jobs:
         with:
           name: e2e-build-windows-latest
 
-      - name: Serve frontend dist on :5173
+      - name: Serve frontend dist on $PV_DEV_URL
         shell: bash
-        run: pnpm --filter @astro-plan/desktop preview --port 5173 &
+        # Port comes from PV_DEV_URL (workflow `env`) — the same value the app
+        # binary and the harness read, so there is no second port literal to
+        # drift. --strictPort makes a taken port a loud failure instead of a
+        # silent fallback that leaves the app loading someone else's server.
+        run: |
+          pnpm --filter @astro-plan/desktop preview \
+            --port "${PV_DEV_URL##*:}" --strictPort &
 
       # Shard-coverage integrity check (shard 1 only — runs once per push).
       # Lists all ignored tests from the archive, then lists the union of all
@@ -1236,9 +1264,15 @@ jobs:
         shell: bash
         run: chmod +x "$APP_BIN"
 
-      - name: Serve frontend dist on :5173
+      - name: Serve frontend dist on $PV_DEV_URL
         shell: bash
-        run: pnpm --filter @astro-plan/desktop preview --port 5173 &
+        # Port comes from PV_DEV_URL (workflow `env`) — the same value the app
+        # binary and the harness read, so there is no second port literal to
+        # drift. --strictPort makes a taken port a loud failure instead of a
+        # silent fallback that leaves the app loading someone else's server.
+        run: |
+          pnpm --filter @astro-plan/desktop preview \
+            --port "${PV_DEV_URL##*:}" --strictPort &
 
       - name: Run E2E
         shell: bash

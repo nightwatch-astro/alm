@@ -46,9 +46,9 @@ cargo nextest run -p e2e_tests --profile e2e --run-ignored all
 - thirtyfour (this crate's W3C client) connects to the CLI on `:4444` and
   sends `tauri:options.application` = the built `desktop_shell` binary path in
   the New Session capabilities. No `browserName` is set.
-- The app loads its own frontend from the Tauri `devUrl` (`:5173`)
-  automatically on launch; the harness does not call `driver.goto(...)` after
-  connecting.
+- The app loads its own frontend from the Tauri `devUrl` (`$PV_DEV_URL`, else
+  `build.devUrl`) automatically on launch; the harness does not call
+  `driver.goto(...)` after connecting.
 - `window.__PV_E2E__.invoke(...)` is the real-IPC invoke bridge exposed by
   the frontend when built with `VITE_E2E=1` (`apps/desktop/src/main.tsx`).
 
@@ -62,9 +62,31 @@ D10 and `quickstart.md`).
 - The `desktop_shell` binary must be **built with the `e2e` feature**:
   `cargo build -p desktop_shell --features e2e`. Override the binary the
   harness launches with `PV_E2E_APP_BIN=/path/to/binary`.
-- Vite dev server / `vite preview` running on `:5173` with:
+- Vite dev server / `vite preview` running on the port the app loads its
+  frontend from: `build.devUrl` in `apps/desktop/src-tauri/tauri.conf.json`,
+  or the `PV_DEV_URL` you export. `PV_DEV_URL` is read by the app binary and by
+  this harness, so exporting one value moves both. Concurrent lanes on one host
+  MUST each export a distinct `PV_DEV_URL`; otherwise the second lane's app
+  loads the first lane's frontend build (issue #1409). Serve with:
   - `VITE_USE_MOCKS=false` — real backend.
   - `VITE_E2E=1` — exposes the `window.__PV_E2E__` invoke bridge.
+
+## Running two lanes at once
+
+`just e2e-dev-url` prints a `PV_DEV_URL` whose port is derived from the
+checkout path: stable per worktree, distinct between worktrees. Export it in
+both halves of the run:
+
+```bash
+export PV_DEV_URL="$(just e2e-dev-url)"
+VITE_E2E=1 VITE_USE_MOCKS=false pnpm --filter @astro-plan/desktop preview \
+  --port "${PV_DEV_URL##*:}" --strictPort &
+cargo nextest run -p e2e_tests --profile e2e --run-ignored all
+```
+
+`--strictPort` exits 1 when the port is taken. Without it `vite preview` falls
+back to another port, the app keeps loading `PV_DEV_URL`, and the failure looks
+like a broken journey.
 
 ## Notes
 
