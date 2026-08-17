@@ -41,6 +41,7 @@ mod archive;
 mod auto_apply;
 mod discard;
 mod read;
+mod reopen;
 mod retry;
 #[cfg(test)]
 mod tests;
@@ -52,6 +53,7 @@ pub use auto_apply::{
 };
 pub use discard::discard_plan;
 pub use read::{get_plan, list_plans};
+pub use reopen::reopen_plan;
 pub use retry::retry_plan;
 
 // ── Constants ─────────────────────────────────────────────────────────────────

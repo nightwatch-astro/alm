@@ -260,6 +260,26 @@ pub struct PlanApproved {
 
 pub const TOPIC_PLAN_APPROVED: &str = "plan.approved";
 
+/// Payload for the `plan.reopened` topic (spec 017, A7).
+///
+/// Emitted when a plan returns to `draft`, reversing an approval. The approval
+/// token recorded at approval time is cleared by the same write, so any token
+/// held by a caller is dead once this event exists.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanReopened {
+    /// Stable plan id.
+    pub plan_id: String,
+    /// Prior state before reopening (`approved` or `ready_for_review`).
+    pub prior_state: String,
+    /// Actor who reopened the plan.
+    pub actor: String,
+    /// ISO-8601 timestamp of the reopen.
+    pub reopened_at: String,
+}
+
+pub const TOPIC_PLAN_REOPENED: &str = "plan.reopened";
+
 /// Payload for the `plan.discarded` topic (spec 017, A7, A5).
 ///
 /// Emitted when a plan is soft-deleted. The audit record is retained even after

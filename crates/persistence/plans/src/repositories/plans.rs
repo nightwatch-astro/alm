@@ -411,6 +411,34 @@ pub async fn set_approved(
     Ok(())
 }
 
+/// Return a plan to `draft` and clear its approval (spec 017 T023).
+///
+/// `approval_token` and `approved_at` are nulled in the same statement as the
+/// state change: `verify_approval_token` reads a null stored token as
+/// `plan.approval.stale`, so a token issued before the reopen cannot authorise
+/// an apply of the edited plan. The state predicate is in the `WHERE` clause so
+/// a concurrent `applying` transition cannot be overwritten.
+///
+/// # Errors
+///
+/// Returns [`persistence_core::DbError::Database`] on connection failure and
+/// [`persistence_core::DbError::NotFound`] when no row matches `plan_id` in a
+/// reopenable state.
+pub async fn set_reopened(pool: &SqlitePool, plan_id: &str) -> DbResult<()> {
+    let rows = sqlx::query(
+        "UPDATE plans SET state = 'draft', approved_at = NULL, approval_token = NULL \
+         WHERE id = ? AND state IN ('approved', 'ready_for_review')",
+    )
+    .bind(plan_id)
+    .execute(pool)
+    .await?;
+
+    if rows.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!("reopenable plan {plan_id}")));
+    }
+    Ok(())
+}
+
 /// Set the attribution pick's target framing on a plan (spec 008 Q27,
 /// F-Framing-10, migration 0068). Read back at plan-apply completion
 /// (`app_core_targets::ingest_sessions`) once the plan's light frames are

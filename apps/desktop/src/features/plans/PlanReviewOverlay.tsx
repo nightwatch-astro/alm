@@ -185,6 +185,7 @@ export function PlanReviewOverlay({
   const [finalState, setFinalState] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const {
     progress,
     run: runApply,
@@ -206,7 +207,8 @@ export function PlanReviewOverlay({
     string | null
   >(null);
 
-  const busy = approving || discarding || retrying || progress.running;
+  const busy =
+    approving || discarding || retrying || reopening || progress.running;
   // FR-011 (issue #733): a plan reopened from a prior session carries no
   // session-local `finalState` (it starts `null` every mount), so the
   // footer must fall back to the persisted `plan.state` from `plans.get`
@@ -215,6 +217,7 @@ export function PlanReviewOverlay({
   // `plan.invalid_state`.
   const effectiveState = finalState ?? plan?.state ?? null;
   const applied = effectiveState === 'applied';
+  const reopenable = effectiveState === 'approved';
   const retryable =
     effectiveState === 'failed' ||
     effectiveState === 'partially_applied' ||
@@ -329,6 +332,27 @@ export function PlanReviewOverlay({
       setDiscarding(false);
     }
   }, [planId, busy, onDiscarded, onClose, resetApply]);
+
+  /** Return an approved plan to `draft` (`plans.reopen`, T023). The approval
+   * token issued at approval time dies with the call, so the plan must be
+   * re-approved before it can be applied. */
+  const handleReopen = useCallback(async () => {
+    if (planId === null || busy) return;
+    setReopening(true);
+    setApplyError(null);
+    try {
+      unwrap(await commands.plansReopen(planId));
+      invalidatePlan();
+      setFinalState(null);
+      setGateReady(false);
+      setDestructiveConfirmed(false);
+      addToast({ message: m.plans_review_reopened_toast(), variant: 'info' });
+    } catch (e) {
+      setApplyError(errMessage(e));
+    } finally {
+      setReopening(false);
+    }
+  }, [planId, busy, invalidatePlan]);
 
   /** Resume a paused apply run (R-Pause-1, T048-T050). Minimal, honest
    * surface: reflects the real `plan.resume` call outcome, nothing simulated. */
@@ -480,6 +504,16 @@ export function PlanReviewOverlay({
       <Btn variant="ghost" onClick={() => void handleDiscard()} disabled={busy}>
         {m.plans_review_discard_btn()}
       </Btn>
+      {reopenable && (
+        <Btn
+          variant="ghost"
+          onClick={() => void handleReopen()}
+          disabled={busy}
+          data-testid="plan-review-reopen"
+        >
+          {reopening ? m.plans_review_reopening() : m.plans_review_reopen_btn()}
+        </Btn>
+      )}
       <Btn
         variant={hasDestructiveItems ? 'destructive' : 'primary'}
         onClick={() => void handleApproveAndApply()}

@@ -1354,6 +1354,14 @@ const mockHandlers = {
       discardedAt: new Date().toISOString(),
     };
   },
+  plans_reopen: async (_args) => {
+    return {
+      planId: (_args?.id as string) ?? 'plan-001',
+      newState: 'draft',
+      priorState: 'approved',
+      reopenedAt: new Date().toISOString(),
+    };
+  },
   settings_update: async (_args) => {
     // The `observing` scope round-trips into the seedable values bag so a
     // UI-driven site creation / active-site switch persists across the
