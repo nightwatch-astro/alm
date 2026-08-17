@@ -23,7 +23,7 @@
 import { lazy, Suspense, useState } from 'react';
 import { Btn, Table, Pill } from '@/ui';
 import type { TableRow } from '@/ui';
-import { Modal } from '@/components';
+import { ConfirmModal } from '@/components';
 import { m } from '@/lib/i18n';
 
 // Leaflet is ~240 KB raw. Lazy-load so it splits to its own chunk and only
@@ -50,7 +50,6 @@ import { useObservingState, saveSites } from './site-store';
 import type { ObserverSite, Twilight } from './observer-site';
 import { ianaTimezones, localTimezone } from './iana-timezones';
 import { selectBase } from '@/styles/select.css';
-import { message as modalMessage } from '@/components/modal.css';
 
 interface SiteForm {
   id: string | null;
@@ -542,31 +541,19 @@ export function ObservingSites() {
         </SettingsFormShell>
       )}
 
-      <Modal
+      <ConfirmModal
         open={deleteTarget != null}
         onClose={closeDeleteConfirm}
         title={m.settings_observing_sites_delete_confirm_title({
           name: deleteTarget?.name ?? '',
         })}
-        size="sm"
-        hideClose
-        footer={
-          <>
-            <Btn variant="ghost" onClick={closeDeleteConfirm}>
-              {m.common_cancel()}
-            </Btn>
-            <Btn
-              variant="destructive"
-              onClick={() => void handleConfirmDelete()}
-            >
-              {deleteBusy ? m.common_removing() : m.common_remove()}
-            </Btn>
-          </>
-        }
+        message={m.settings_observing_sites_delete_confirm_desc()}
+        actionLabel={deleteBusy ? m.common_removing() : m.common_remove()}
+        busy={deleteBusy}
+        onConfirm={() => void handleConfirmDelete()}
+        error={deleteError}
+        data-testid="observing-site-delete-confirm"
       >
-        <p className={modalMessage}>
-          {m.settings_observing_sites_delete_confirm_desc()}
-        </p>
         {deleteNeedsFallbackChoice && (
           <div className="pv-stack-1">
             <label className="pv-field-label" htmlFor="observing-site-fallback">
@@ -590,8 +577,7 @@ export function ObservingSites() {
             </select>
           </div>
         )}
-        {deleteError && <span className="pv-field-error">{deleteError}</span>}
-      </Modal>
+      </ConfirmModal>
     </SettingsSection>
   );
 }

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { useState, useEffect, useCallback } from 'react';
+import { z } from 'zod';
 import { useNavigate } from '@tanstack/react-router';
+import { readLocalStorage, writeLocalStorage } from '@/lib/local-storage';
 import { WizardShell } from '@/ui/WizardShell';
 import { Btn } from '@/ui/Btn';
 import { Banner } from '@/ui';
@@ -162,54 +164,69 @@ function migrateCurrentStep(parsed: Partial<WizardState>): number {
   return Math.min(migrated, SCAN_STEP);
 }
 
+const toolConfigSchema = z.object({
+  enabled: z.boolean(),
+  path: z.string().nullable(),
+});
+
+/**
+ * Validation schema for the persisted wizard state.
+ *
+ * Every field is `.optional().catch(undefined)`, so a field whose shape has
+ * changed since it was written is dropped on its own and the caller's per-field
+ * default applies — a whole-object rejection would discard the user's step
+ * position and sources along with the one stale field.
+ *
+ * `version`/`currentStep` stay plain numbers on purpose: `migrateCurrentStep`
+ * is what interprets them, and a schema strict enough to reject a legacy
+ * version-1 payload would delete the migration path rather than migrate it.
+ */
+const persistedWizardStateSchema = z.object({
+  version: z.number().optional().catch(undefined),
+  currentStep: z.number().optional().catch(undefined),
+  catalogSettings: z
+    .object({ downloadAll: z.boolean() })
+    .optional()
+    .catch(undefined),
+  tools: z
+    .object({ pixinsight: toolConfigSchema, siril: toolConfigSchema })
+    .optional()
+    .catch(undefined),
+  site: z
+    .object({
+      name: z.string(),
+      latitudeDegText: z.string(),
+      longitudeDegText: z.string(),
+      elevationMText: z.string(),
+      timezone: z.string(),
+    })
+    .optional()
+    .catch(undefined),
+});
+
 function loadWizardState(): WizardState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      // Persisted state is untrusted JSON; type it as a partial of the runtime
-      // shape so field access is checked while the guards below still coerce
-      // any missing/legacy fields to defaults.
-      const parsed = JSON.parse(raw) as Partial<WizardState>;
-      // If persisted state had the wizard already at the scan step, reset to
-      // confirm so the scan always starts fresh (avoids stale scan guard).
-      const migratedStep = migrateCurrentStep(parsed);
-      const currentStep =
-        migratedStep === SCAN_STEP ? CONFIRM_STEP : migratedStep;
-      return {
-        version: CURRENT_WIZARD_STATE_VERSION,
-        currentStep,
-        sources: Array.isArray(parsed.sources) ? parsed.sources : loadSources(),
-        // Guard: accept persisted catalogSettings only if it matches the current
-        // shape (`{ downloadAll }`); older/corrupt shapes fall back to the default.
-        catalogSettings:
-          typeof parsed.catalogSettings?.downloadAll === 'boolean'
-            ? parsed.catalogSettings
-            : DEFAULT_CATALOG_SETTINGS,
-        tools: parsed.tools ?? DEFAULT_TOOLS_STATE,
-        // spec 044 T016: older persisted state (pre-Site step) has no `site`
-        // key — default to the empty (skippable) step state.
-        site: parsed.site ?? DEFAULT_SITE_STEP_STATE,
-      };
-    }
-  } catch {
-    // corrupt or stale state -- start fresh
-  }
+  const parsed = readLocalStorage(STORAGE_KEY, persistedWizardStateSchema, {});
+  // If persisted state had the wizard already at the scan step, reset to
+  // confirm so the scan always starts fresh (avoids stale scan guard).
+  const migratedStep = migrateCurrentStep(parsed);
+  const currentStep = migratedStep === SCAN_STEP ? CONFIRM_STEP : migratedStep;
   return {
     version: CURRENT_WIZARD_STATE_VERSION,
-    currentStep: 0,
+    currentStep,
+    // `loadSources()` reads the `sources` key of this same record and is the
+    // only path that validates each entry and backfills `organizationState`.
     sources: loadSources(),
-    catalogSettings: DEFAULT_CATALOG_SETTINGS,
-    tools: DEFAULT_TOOLS_STATE,
-    site: DEFAULT_SITE_STEP_STATE,
+    catalogSettings: parsed.catalogSettings ?? DEFAULT_CATALOG_SETTINGS,
+    tools: parsed.tools ?? DEFAULT_TOOLS_STATE,
+    // spec 044 T016: older persisted state (pre-Site step) has no `site`
+    // key — default to the empty (skippable) step state.
+    site: parsed.site ?? DEFAULT_SITE_STEP_STATE,
   };
 }
 
 function saveWizardState(state: WizardState): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // storage full -- proceed without persistence
-  }
+  // Storage full -- proceed without persistence.
+  writeLocalStorage(STORAGE_KEY, state);
 }
 
 function clearWizardState(): void {

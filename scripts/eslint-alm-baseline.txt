@@ -10,7 +10,6 @@ src/app/CommandPalette.tsx	215	alm/require-root-testid
 src/app/LogPanelContext.tsx	155	alm/require-root-testid
 src/app/OperationStatusContext.tsx	46	alm/require-root-testid
 src/app/PageStatusContext.tsx	52	alm/require-root-testid
-src/components/DetailHeader.tsx	38	alm/require-root-testid
 src/components/DetailPanel.tsx	134	alm/require-root-testid
 src/components/DetailPanel.tsx	72	alm/require-root-testid
 src/components/FilterToolbar.tsx	286	alm/require-root-testid
@@ -22,7 +21,6 @@ src/components/PageShell.tsx	17	alm/require-root-testid
 src/components/RenderValue.tsx	68	alm/require-root-testid
 src/components/SortHeader.tsx	68	alm/require-root-testid
 src/components/StatusTag.tsx	26	alm/require-root-testid
-src/components/TopActionBar.tsx	35	alm/require-root-testid
 src/components/TwoColDetailLayout.tsx	111	alm/require-root-testid
 src/features/archive/ArchiveDetail.tsx	63	alm/require-root-testid
 src/features/calibration/CalibrationDetail.tsx	9	alm/require-root-testid
@@ -61,12 +59,12 @@ src/features/projects/wizard/StepName.tsx	122	alm/require-root-testid
 src/features/projects/wizard/StepReview.tsx	48	alm/require-root-testid
 src/features/projects/wizard/StepSources.tsx	28	alm/require-root-testid
 src/features/projects/wizard/StepViews.tsx	74	alm/require-root-testid
-src/features/projects/wizard/WizardPage.tsx	606	alm/require-root-testid
+src/features/projects/wizard/WizardPage.tsx	637	alm/require-root-testid
 src/features/sessions/CalendarScroll.tsx	72	alm/require-root-testid
 src/features/sessions/SessionNotesSection.tsx	93	alm/require-root-testid
 src/features/settings/AuditLog.tsx	308	alm/require-root-testid
 src/features/settings/CalibrationMatching.tsx	189	alm/require-root-testid
-src/features/settings/Framing.tsx	130	alm/require-root-testid
+src/features/settings/Framing.tsx	137	alm/require-root-testid
 src/features/settings/PatternChipsEditor.tsx	39	alm/require-root-testid
 src/features/settings/PerTypePatternChipsEditor.tsx	90	alm/require-root-testid
 src/features/settings/ProcessingTools.tsx	181	alm/require-root-testid
@@ -76,9 +74,9 @@ src/features/settings/SettingsKit.tsx	33	alm/require-root-testid
 src/features/settings/SettingsPage.tsx	187	alm/require-root-testid
 src/features/settings/SourceProtectionOverride.tsx	139	alm/require-root-testid
 src/features/settings/SourceViewStrategy.tsx	60	alm/require-root-testid
-src/features/settings/SourceViews.tsx	93	alm/require-root-testid
+src/features/settings/SourceViews.tsx	101	alm/require-root-testid
 src/features/setup/SetupPage.tsx	48	alm/require-root-testid
-src/features/setup/SetupWizard.tsx	227	alm/require-root-testid
+src/features/setup/SetupWizard.tsx	244	alm/require-root-testid
 src/features/setup/steps/StepCatalogs.tsx	168	alm/require-root-testid
 src/features/setup/steps/StepConfirm.tsx	67	alm/require-root-testid
 src/features/setup/steps/StepLanguage.tsx	26	alm/require-root-testid
@@ -94,7 +92,7 @@ src/features/targets/NotesSection.tsx	41	alm/require-root-testid
 src/features/targets/TargetList.tsx	80	alm/require-root-testid
 src/features/targets/TargetsTableColumns.tsx	134	alm/require-root-testid
 src/features/targets/TonightPanel.tsx	166	alm/require-root-testid
-src/features/targets/observing-sites/ObservingSites.tsx	287	alm/require-root-testid
+src/features/targets/observing-sites/ObservingSites.tsx	286	alm/require-root-testid
 src/features/targets/observing-sites/SiteLocationPicker.tsx	181	alm/require-root-testid
 src/ui/NumberField.tsx	40	alm/require-root-testid
 src/ui/Tooltip.tsx	51	alm/require-root-testid
