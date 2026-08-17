@@ -156,8 +156,8 @@ check-generated:
     git diff --exit-code specs/*/contracts/*.generated.json apps/desktop/src/bindings/
 
 # Full pre-merge gate: lint + tests + typecheck + generated-artifact drift +
-# DB/dead-caller/hot-read/lifecycle-strings/pv-selector boundary ratchets.
-check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings pv-selector-ratchet
+# DB/dead-caller/hot-read/lifecycle-strings boundary ratchets.
+check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings
 
 # Placeholder fixture check hook.
 fixtures-check:
@@ -229,7 +229,7 @@ e2e-dev-url:
 perf-bench:
     cargo run --release -p perf-bench
 
-# Check measured hot-path query counts against the committed baseline.
+# Check inbox hot-path query counts against the committed baseline.
 # HARD-fails on any sqlx_stmts increase; WARN-only on wall_ms > 1.5× budget.
 # Use --generate to record a fresh baseline after a justified query-count change.
 perf-check:

@@ -8,6 +8,10 @@
 //! `inventory_root_config_get`/`_set` are wired through
 //! `app_core_settings::root_config`.
 //!
+//! `inventory_watcher_attach`/`_detach` bind a root's live and scheduled
+//! detection triggers to the lifetime of the surface showing its frame
+//! inventory (spec 048 T023/T024/T026, `crate::frame_watcher`).
+//!
 //! Command fn names below are the literal Tauri invoke targets (no specta
 //! rename) — e.g. `inventory_frame_list` is invoked as `"inventory_frame_list"`.
 
@@ -16,13 +20,14 @@ use app_core::settings::root_config::{get_root_config, set_root_config};
 use contracts_core::inventory_frame::{
     InventoryFrameListRequest, InventoryFrameListResponse, InventoryFrameRelinkRequest,
     InventoryFrameRelinkResponse, InventoryReconcileRunRequest, InventoryReconcileRunResponse,
-    RootConfigGetRequest, RootConfigSetRequest, RootInventoryConfig,
+    RootConfigGetRequest, RootConfigSetRequest, RootInventoryConfig, RootWatcherRequest,
 };
 use contracts_core::ContractError;
 use sqlx::SqlitePool;
 use tauri::State;
 
 use crate::commands::lifecycle::AppState;
+use crate::frame_watcher::FrameWatcherRegistry;
 
 /// `inventory.frame.list` — list per-frame inventory entries for a session
 /// or root.
@@ -86,6 +91,10 @@ pub async fn inventory_root_config_get(
 /// `inventory.root_config.set` — write a (possibly partial) update to a
 /// root's reconcile/detection configuration.
 ///
+/// A currently-attached root is re-attached so the new detection triggers take
+/// effect immediately; without that, toggling `live` off would leave the OS
+/// watcher running until the surface closed.
+///
 /// # Errors
 /// Returns `ContractError` on database failure.
 #[tauri::command]
@@ -93,6 +102,50 @@ pub async fn inventory_root_config_get(
 pub async fn inventory_root_config_set(
     req: RootConfigSetRequest,
     pool: State<'_, SqlitePool>,
+    app_state: State<'_, AppState>,
+    registry: State<'_, FrameWatcherRegistry>,
 ) -> Result<RootInventoryConfig, ContractError> {
-    set_root_config(&pool, &req).await
+    let config = set_root_config(&pool, &req).await?;
+    crate::frame_watcher::reattach_if_attached(&pool, &app_state.bus, &registry, &req.root_id)
+        .await;
+    Ok(config)
+}
+
+/// `inventory.watcher.attach` — start the root's configured live and scheduled
+/// detection triggers, and run its `on_open` reconcile if enabled.
+///
+/// Idempotent. An unavailable or unregistered root is not an error: nothing is
+/// attached and a later attach retries.
+///
+/// # Errors
+/// Returns `ContractError` when the root's config cannot be read or its OS
+/// watcher cannot be started.
+#[tauri::command]
+#[specta::specta]
+pub async fn inventory_watcher_attach(
+    req: RootWatcherRequest,
+    pool: State<'_, SqlitePool>,
+    app_state: State<'_, AppState>,
+    registry: State<'_, FrameWatcherRegistry>,
+) -> Result<(), ContractError> {
+    crate::frame_watcher::attach_root_watcher(&pool, &app_state.bus, &registry, &req.root_id)
+        .await
+        .map_err(ContractError::internal)
+}
+
+/// `inventory.watcher.detach` — stop the root's live watch and scheduled
+/// trigger so no watch is held on an idle root (research R2).
+///
+/// Idempotent: detaching an unattached root is a silent no-op.
+///
+/// # Errors
+/// Never fails; the `Result` matches the shared command shape.
+#[tauri::command]
+#[specta::specta]
+pub async fn inventory_watcher_detach(
+    req: RootWatcherRequest,
+    registry: State<'_, FrameWatcherRegistry>,
+) -> Result<(), ContractError> {
+    crate::frame_watcher::detach_root_watcher(&registry, &req.root_id).await;
+    Ok(())
 }

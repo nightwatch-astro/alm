@@ -24,6 +24,7 @@ import type {
   RootConfigGetRequest,
   RootConfigSetRequest,
   RootInventoryConfig,
+  RootWatcherRequest,
   RawFrameCleanupScanRequest,
   RawFrameCleanupScanResponse,
   RawFrameCleanupGenerateRequest,
@@ -66,6 +67,18 @@ export async function inventoryRootConfigSet(
       req as Parameters<typeof commands.inventoryRootConfigSet>[0],
     ),
   );
+}
+
+export async function inventoryWatcherAttach(
+  req: RootWatcherRequest,
+): Promise<void> {
+  unwrap(await commands.inventoryWatcherAttach(req));
+}
+
+export async function inventoryWatcherDetach(
+  req: RootWatcherRequest,
+): Promise<void> {
+  unwrap(await commands.inventoryWatcherDetach(req));
 }
 
 export async function cleanupRawFramesScan(

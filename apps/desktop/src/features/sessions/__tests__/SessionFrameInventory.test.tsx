@@ -20,22 +20,27 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { InventoryFrameListResponse } from '@/bindings/index';
 
-const { mockScanMutate, mockRelinkMutate, scanState, relinkState } = vi.hoisted(
-  () => ({
-    mockScanMutate: vi.fn(),
-    mockRelinkMutate: vi.fn(),
-    scanState: {
-      data: undefined as InventoryFrameListResponse | undefined,
-      isPending: false,
-      isError: false,
-    },
-    relinkState: {
-      isPending: false,
-      isError: false,
-      error: undefined as Error | undefined,
-    },
-  }),
-);
+const {
+  mockScanMutate,
+  mockRelinkMutate,
+  mockUseRootFrameWatcher,
+  scanState,
+  relinkState,
+} = vi.hoisted(() => ({
+  mockScanMutate: vi.fn(),
+  mockRelinkMutate: vi.fn(),
+  mockUseRootFrameWatcher: vi.fn(),
+  scanState: {
+    data: undefined as InventoryFrameListResponse | undefined,
+    isPending: false,
+    isError: false,
+  },
+  relinkState: {
+    isPending: false,
+    isError: false,
+    error: undefined as Error | undefined,
+  },
+}));
 
 vi.mock('@/features/inventory/store', () => ({
   useFrameListScan: () => ({ ...scanState, mutate: mockScanMutate }),
@@ -44,6 +49,9 @@ vi.mock('@/features/inventory/store', () => ({
     mutate: mockRelinkMutate,
     reset: vi.fn(),
   }),
+  useRootFrameWatcher: (rootId: string | null) => {
+    mockUseRootFrameWatcher(rootId);
+  },
 }));
 
 const mockAddToast = vi.fn();
@@ -98,7 +106,7 @@ beforeEach(() => {
 
 describe('SessionFrameInventory (spec 048 T014/T025)', () => {
   it('renders the panel and calls inventory.frame.list on demand (no fabricated frames)', () => {
-    render(<SessionFrameInventory sessionId="session-1" />);
+    render(<SessionFrameInventory sessionId="session-1" rootId="root-1" />);
     expect(screen.getByTestId('session-frame-inventory')).toBeInTheDocument();
     expect(
       screen.queryByTestId('frame-inventory-row-frame-1'),
@@ -111,9 +119,14 @@ describe('SessionFrameInventory (spec 048 T014/T025)', () => {
     });
   });
 
+  it('binds the session root live detection triggers to the panel lifetime (T023/T026)', () => {
+    render(<SessionFrameInventory sessionId="session-1" rootId="root-1" />);
+    expect(mockUseRootFrameWatcher).toHaveBeenCalledWith('root-1');
+  });
+
   it('shows the real present count + disk total and a Missing pill for missing frames', () => {
     scanState.data = listResult();
-    render(<SessionFrameInventory sessionId="session-1" />);
+    render(<SessionFrameInventory sessionId="session-1" rootId="root-1" />);
 
     expect(screen.getByTestId('frame-inventory-summary')).toHaveTextContent(
       '1 present',
@@ -139,7 +152,7 @@ describe('SessionFrameInventory (spec 048 T014/T025)', () => {
         opts?.onSuccess?.();
       },
     );
-    render(<SessionFrameInventory sessionId="session-1" />);
+    render(<SessionFrameInventory sessionId="session-1" rootId="root-1" />);
 
     fireEvent.click(screen.getByTestId('relink-open-frame-2'));
     fireEvent.change(screen.getByTestId('relink-input-frame-2'), {
@@ -168,7 +181,7 @@ describe('SessionFrameInventory (spec 048 T014/T025)', () => {
       name: 'ContractError',
       message: 'hash.mismatch',
     } as Error;
-    render(<SessionFrameInventory sessionId="session-1" />);
+    render(<SessionFrameInventory sessionId="session-1" rootId="root-1" />);
 
     fireEvent.click(screen.getByTestId('relink-open-frame-2'));
     expect(screen.getByTestId('relink-error-frame-2')).toBeInTheDocument();
