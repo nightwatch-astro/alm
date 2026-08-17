@@ -44,6 +44,44 @@ pub const MAIN_WINDOW_LABEL: &str = "main";
 // scope. `tests/bindings.rs` depends on `desktop_shell::specta_builder`.
 include!("bootstrap/specta.rs");
 
+/// Build the signed auto-update plugin.
+///
+/// Split out of [`build_app`] rather than inlined: the `dev-tools` override
+/// below is ~30 lines of conditional wiring, and folding it into the builder
+/// chain pushed that function past the line ceiling. Keeping it here also puts
+/// the whole override in one readable place.
+///
+/// `PV_E2E_VERSION_OVERRIDE` spoofs a lower "current" version so an e2e run can
+/// exercise the "update available" path against a fixture endpoint without
+/// modifying the real release binary or its embedded version. It is gated
+/// behind `dev-tools` at compile time, so release binaries ignore the env var
+/// entirely — the code is absent, not merely inactive.
+fn build_updater_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry, tauri_plugin_updater::Config> {
+    #[cfg(not(feature = "dev-tools"))]
+    let b = tauri_plugin_updater::Builder::new();
+    #[cfg(feature = "dev-tools")]
+    let mut b = tauri_plugin_updater::Builder::new();
+    #[cfg(feature = "dev-tools")]
+    if let Ok(override_ver) = std::env::var("PV_E2E_VERSION_OVERRIDE") {
+        match override_ver.parse::<semver::Version>() {
+            Ok(fake_ver) => {
+                b = b.default_version_comparator(move |_current, remote| remote.version > fake_ver);
+                tracing::info!(
+                    PV_E2E_VERSION_OVERRIDE = %override_ver,
+                    "updater version override active"
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
+                    PV_E2E_VERSION_OVERRIDE = %override_ver,
+                    "invalid semver in PV_E2E_VERSION_OVERRIDE — using real version"
+                );
+            }
+        }
+    }
+    b.build()
+}
+
 /// Build the Tauri `App` **without** starting the event loop.
 ///
 /// The returned handle exposes the platform path resolver (needed to locate
@@ -160,7 +198,7 @@ pub fn build_app() -> tauri::App {
         // T060, #762) — the check/download/verify/relaunch flow itself is
         // frontend-driven (`updateSubscription.ts`, #888 staged flow), not
         // triggered from this Rust process.
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(build_updater_plugin())
         .plugin(tauri_plugin_process::init())
         // Spec 051 US7 (T041): diagnostics log file. `skip_logger()` is
         // required here — this app already installs a global `tracing`

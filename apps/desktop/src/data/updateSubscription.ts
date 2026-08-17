@@ -25,6 +25,18 @@
 
 const IS_MOCK = import.meta.env.VITE_USE_MOCKS === 'true';
 
+// E2E test-injection seam: a journey spec can set this before navigation to
+// seed a specific update phase without a real Tauri updater host. Only
+// consulted in `startUpdateSubscription` before the IS_MOCK guard, so it
+// has no effect in production or in unit tests that never set it.
+declare global {
+  interface Window {
+    __PV_TEST__?: {
+      updateState?: UpdateState;
+    };
+  }
+}
+
 export type UpdatePhase =
   | 'idle'
   | 'checking'
@@ -143,8 +155,16 @@ export async function restartPendingUpdate(): Promise<void> {
 
 /** Start the update-check subscription (idempotent): runs one check now. */
 export async function startUpdateSubscription(): Promise<void> {
-  if (subscribed || IS_MOCK) return;
+  if (subscribed) return;
   subscribed = true;
+  // E2E override: lets a journey spec seed any update phase before navigation
+  // without a real Tauri updater host. Takes effect only when the spec
+  // explicitly sets window.__PV_TEST__.updateState via addInitScript.
+  if (typeof window !== 'undefined' && window.__PV_TEST__?.updateState) {
+    setState(window.__PV_TEST__.updateState);
+    return;
+  }
+  if (IS_MOCK) return;
   await checkForUpdate();
 }
 

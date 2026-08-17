@@ -1425,6 +1425,7 @@ dependencies = [
  "persistence_lifecycle",
  "persistence_plans",
  "persistence_targets",
+ "semver",
  "serde",
  "serde_json",
  "simbad-resolver",

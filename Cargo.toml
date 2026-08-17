@@ -126,6 +126,7 @@ itertools = "0.14"
 moka = { version = "0.12", features = ["sync"] }
 path-clean = "1"
 percent-encoding = "2"
+semver = "1"
 strum = { version = "0.27", features = ["derive"] }
 strum_macros = "0.27"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
