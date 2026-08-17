@@ -7,36 +7,31 @@
 **Feature Branch**: `025-filesystem-plan-application`  
 **Created**: 2026-05-09  
 **Updated**: 2026-06-23  
-**Status**: Partially implemented out-of-spec — real apply backend shipped via spec 041; remaining 025 tasks (rollback, progress UI) open  
+**Status**: Implemented; 6 items open (see Implementation Status)  
 **Input**: User description: "Specify applying reviewed filesystem plans, including per-item outcomes, rollback where possible, progress, failures, and audit records."
 
 ## Implementation Status
 
-> **Reconciliation (2026-06-23):** The "real implementation has not started" note below is **stale**.
-> A real (non-simulated) plan-apply path shipped through **[Spec 041 — Inbox Plan Surface](../041-inbox-plan-surface/spec.md)**:
-> `crates/app/core/src/plan_apply.rs`, `crates/persistence/db/src/repositories/plan_apply.rs`,
-> `crates/app/inbox/src/plan_listener.rs`, with audit coverage in
-> `crates/app/core/tests/plan_apply_audit_integration.rs`. Per-item outcomes + audit records are done;
-> **rollback, live progress reporting, and the dedicated apply UI remain open** (the items below are the
-> outstanding 025 surface, not yet started).
+The real plan-apply path shipped through
+[Spec 041 — Inbox Plan Surface](../041-inbox-plan-surface/spec.md):
+`crates/app/core/src/plan_apply.rs`,
+`crates/persistence/db/src/repositories/plan_apply.rs`,
+`crates/app/inbox/src/plan_listener.rs`, with audit coverage in
+`crates/app/core/tests/plan_apply_audit_integration.rs`.
 
-A working **mockup** of plan apply exists in the desktop shell and informs this
-spec. Real (non-simulated) implementation has not started.
+Live progress reporting and the apply UI shipped as
+`apps/desktop/src/features/plans/usePlanApplyProgress.ts` and
+`apps/desktop/src/features/plans/PlanReviewOverlay.tsx`, which also carries the
+paused/`resumeStalled` state.
 
-### Mockup files
+Open items, tracked in beads and GitHub:
 
-- `apps/desktop/src/data/store.ts` — `simulateApply(planId)` walks
-  `pending → applying → succeeded/failed` item-by-item with a setTimeout tick
-  cadence; injects a deterministic failure every 30 items for demo realism;
-  computes the plan's terminal state (`applied`, `partially_applied`, or
-  `failed`) only after every item finishes; cancellation halts forward
-  progress because `tick` returns early when `plan.state !== "applying"`;
-  re-apply resets every non-failed item back to `pending` before progression.
-- `apps/desktop/src/features/plans/PlanDetailPage.tsx` — applying pane with
-  Needs Attention / Recently Applied / Pending sections, primary "Apply" /
-  "Cancel" actions, and disabled-while-applying guards.
-- `apps/desktop/src/data/store.ts` `updatePlanState` — generic transition used
-  for cancellation (`updatePlanState(plan.id, "cancelled")`).
+- `resume_plan` does not re-spawn the executor to continue pending items
+  (issue #575).
+- Rollback-audit coverage needs a real cross-device `EXDEV` error, not
+  producible in an ordinary tempdir (issue #577).
+- Three race/device-unavailable tests need non-deterministic OS conditions.
+- Docs cross-links and the 10k-item perf benchmark.
 
 ### Boundary with spec 017
 

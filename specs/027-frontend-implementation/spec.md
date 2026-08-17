@@ -1,14 +1,16 @@
 # Feature Specification: Desktop Frontend Implementation
 
 > **Superseded**: All UI layout, navigation, and component design in this spec
-> is superseded by [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md).
-> Implement using spec 030 patterns. This spec is reference only.
+> is superseded by
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth (reached via Spec 031 Design V3). Spec 030, cited here as the successor,
+> is itself superseded by 031/032. This spec is reference only.
 
 **Feature Branch**: `027-frontend-implementation`
 
 **Created**: 2026-05-24
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "End-to-end implementation of the Astro Library Manager React frontend matching all wireframes from the Claude Design canvas export and DESIGN.md contracts."
 

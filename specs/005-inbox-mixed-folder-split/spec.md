@@ -5,9 +5,10 @@
 > flow specified here was never implemented as written (0/51 tasks). Spec 041 is its reassigned home:
 > 041's **single-type sub-items at ingest** model (mixed folders split into per-type items at ingest,
 > field-agnostic reclassify, missing-mandatory gate, source-group provenance) replaces this approach.
-> **Note (2026-06-23):** that single-type model is 041 *iteration-2* and is **spec'd but not yet
-> implemented** — PR #315 merged docs only; no source-group schema/migration exists on `main`. The
-> mixed-vs-single detection intent here remains the conceptual origin; the implementation will live in 041.
+> The single-type model is 041 iteration-2. Its source-group schema shipped:
+> `inbox_source_groups` (`crates/persistence/core/migrations/0001_initial_schema.sql:1151`).
+> The mixed-vs-single detection intent here remains the conceptual origin; the
+> implementation lives in 041.
 
 > **UI Revised**: The UI design in this spec has been revised by
 > [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md).

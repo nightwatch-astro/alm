@@ -4,7 +4,12 @@
 
 **Created**: 2026-07-21
 
-**Status**: Draft
+**Status**: Partial. US1, US3, and US4 shipped. US2 is not built: the 15 Tauri
+commands invoked from
+`apps/desktop/src/features/sessions/sessionsGroupsIpc.ts` (`panel_group_*`,
+`mosaic_*`, `relation_proposal_*`, `matching_settings_*`) have no backend
+handlers. Each name appears in that one TypeScript file and nowhere else in
+`apps/`, `crates/`, or `packages/`.
 
 **Input**: Product-owner decisions recorded in Bead `astro-plan-ic9h`: replace
 mutable, folder-led session accumulation with immutable ingestion sessions;

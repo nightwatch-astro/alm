@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-20
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "Selectable application language with en-GB and pt-BR"
 

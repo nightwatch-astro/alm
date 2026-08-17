@@ -7,67 +7,46 @@
 **Feature Branch**: `026-generated-project-source-view-removal`  
 **Created**: 2026-05-09  
 **Updated**: 2026-07-03  
-**Status**: **OPEN** — core (P1/P2) implemented; P3 deferred; **POSSIBLY OBSOLETE** (see banner). Not closed out: kept open pending a product decision.  
+**Status**: Implemented (2026-08-17); P3 stale-detection sweep landed  
 **Input**: User description: "Specify removing generated project source views and app-created links/folders without touching original Inventory data."
 
-> ⚠ **POSSIBLY OBSOLETE (2026-07-03) — the generation path this feature manages was dropped.**
-> This spec's remove/regenerate machinery is fully built and wired, but the app
-> no longer has any path that **creates** a generated source view: source-view
-> generation was tied to project-lifecycle **preparation**, which the 041 inbox
-> single-type + 043 redesign work **removed** ("drop session lifecycle"). In a
-> real DB `preparedview.list` therefore returns empty and `SourceViewsSection`
-> shows its empty state (matching 043's "no junction/source-views shown"). The
-> remove/regenerate feature is consequently **vestigial**. This spec is kept
-> **open** with its P3 work deferred until a product decision: either (a) restore
-> a generation path and finish P3, or (b) formally retire the source-view feature
-> and mark this spec Superseded. Do not close as Implemented until that decision.
+> **Generation path active.** Source-view generation is specified by
+> [Spec 049 — Source View Generation](../049-source-view-generation/spec.md) and
+> shipped as the `sourceview_generate` command, so this spec's
+> remove/regenerate machinery has live views to act on.
 >
-> **UPDATE (2026-07-04): generation path RESTORED — option (a) chosen.** The user
-> confirmed source-view generation is in scope, reversing the retire lean. The
-> **generation** (first-materialization) counterpart is specified by
-> [Spec 049 — Source View Generation](../049-source-view-generation/spec.md),
-> which reuses (does not duplicate) this spec's `PreparedSourceView` /
-> `PreparedSourceViewItem` entities and remove/regenerate/stale machinery. Once
-> 049 lands a live generation path, this surface is no longer vestigial and P3
-> stale-detection/audit work here should be finished. **Cross-spec conflict
-> RESOLVED (2026-07-04):** spec 049 CL-2 (user decision) relaxes **FR-008 / the
-> single-kind invariant** (below) to *deterministic kind per drive-scope, recorded
-> per item*. A generation's link kind is resolved from a settings pair (intra-drive
-> default vs cross-drive default), chosen per item by rule, and recorded; a view
-> may carry more than one recorded kind. FR-008 and the data-model invariant are
-> amended accordingly. **Revert note:** if the product decision is reversed and
-> generation is retired again, delete spec 049, re-tighten FR-008 to the strict
-> single-kind invariant, and restore this banner's original "possibly obsolete"
-> framing.
+> Spec 049 CL-2 relaxes **FR-008 / the single-kind invariant** below to
+> *deterministic kind per drive-scope, recorded per item*. A generation's link
+> kind resolves from a settings pair (intra-drive default vs cross-drive
+> default), is chosen per item by rule, and is recorded; a view may carry more
+> than one recorded kind. FR-008 and the data-model invariant are amended
+> accordingly.
 
-## Implementation Status: core built (P1/P2); vestigial pending decision
+## Implementation Status
 
-Core persistence (migration 0029), domain types, persistence repository,
-app-core use cases, contract DTOs, Tauri commands, and frontend helpers
-(source-views.ts + SourceViewsSection) are implemented — but see the
-POSSIBLY-OBSOLETE banner above: there is no live source-view *generation* path,
-so this surface currently has nothing to act on.
+Shipped: persistence (migration 0029), domain types, the persistence
+repository, app-core use cases, contract DTOs, the `preparedview_list` /
+`preparedview_remove` / `preparedview_regenerate` commands, and the frontend
+helpers (`source-views.ts`, `SourceViewsSection`).
 
-Deferred/partial items (see tasks.md):
-- T005 cross-platform per-item apply: SourceViewRemove plan is created; the
-  actual filesystem unlink/archive at apply time is handled by the existing
-  spec 025 executor via the `archive` action type. Windows junction/reparse-
-  point specifics deferred to v1.x (same as spec 025 cross-platform scope).
-- T006a data-migration scan for pre-existing kind_diverged records: deferred;
-  no PreparedSourceView records exist in a fresh DB.
-- T008/T013 integration tests requiring end-to-end plan apply: deferred (spec
-  025 executor integration tests are out of scope for this agent).
-- T014–T017 stale-detection sweep: repo and domain types support it, active
-  sweep not implemented.
-- T018–T020 audit emission per view item: deferred to when the apply executor
-  calls the hook.
-- T019 UI audit history surface: deferred.
-- E-026-1 envelope sweep: explicitly deferred per spec.
+Stale detection is active: `sweep_view_staleness`
+(`crates/app/projects/src/source_view_verify.rs:224`) runs on view listing
+(`crates/app/projects/src/prepared_views.rs:126`) and after plan apply
+(`crates/app/core/src/plan_apply/finalizers.rs:177`, `:222`).
+
+Open items, tracked in beads:
+
+- Windows junction/reparse-point specifics at apply time, scoped with spec 025's
+  cross-platform work. The `SourceViewRemove` plan is created and applied by the
+  spec 025 executor via the `archive` action type.
+- Data-migration scan for pre-existing `kind_diverged` records.
+- End-to-end plan-apply integration tests.
+- Per-view-item audit emission and the UI audit-history surface.
+- The E-026-1 envelope sweep.
 
 The canonical project database remains the source of truth; prepared source
 views are reproducible projections and removing them MUST be reversible by
 regeneration.
-
 ### User Story 3 - Regenerate a Removed Source View (Priority: P2)
 
 As a user, after removing a generated source view to free disk space, I want to

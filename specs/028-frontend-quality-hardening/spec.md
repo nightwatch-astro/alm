@@ -1,12 +1,15 @@
 # Feature Specification: Frontend Quality Hardening
 
-> **Superseded**: All UI layout, navigation, and component design in this spec
-> is superseded by [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md).
-> Implement using spec 030 patterns. This spec is reference only.
+> **Obsolete as a work queue (2026-08-17)**: this spec's last substantive item
+> named `ProjectDetailPane`, a component that does not exist. The shipped
+> equivalent is
+> `apps/desktop/src/features/projects/ProjectBottomDetail.tsx`. UI design is
+> owned by [Spec 032 — Design V4](../032-design-v4-implementation/spec.md).
+> Reference only; task state lives in beads.
 
 **Feature Branch**: `028-frontend-quality-hardening`
 **Created**: 2026-05-25
-**Status**: Placeholder
+**Status**: Obsolete
 **Input**: Surviving quality tasks from superseded specs 020 (Router & URL State) and 022 (Design System), plus new coverage needs from spec 027 (Desktop Frontend Implementation).
 
 **Supersedes**: Remaining open tasks from spec 020 and spec 022.
@@ -43,7 +46,6 @@ spec 027 full frontend rewrite.
 - Vitest unit tests for UI primitives and utility modules
 - Component integration tests for critical flows (setup wizard, review queue
   decision cycle, project wizard)
-- Fix React setState-during-render warning in `ProjectDetailPane`
 
 ### CI & Automation
 
@@ -51,6 +53,3 @@ spec 027 full frontend rewrite.
 - Circular import detection (`madge`)
 - Bundle size baseline and regression guard
 
-## Priority
-
-Not yet prioritized. This is a placeholder for scoping and sequencing.

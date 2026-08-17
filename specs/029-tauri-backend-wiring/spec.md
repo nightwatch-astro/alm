@@ -8,7 +8,7 @@
 
 **Created**: 2026-05-25
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "Wire the full Tauri desktop shell so the React frontend can run inside `tauri dev` with real (initially stub) command handlers instead of the mock layer."
 
@@ -123,7 +123,7 @@ As a frontend developer, I can still run `VITE_USE_MOCKS=true` with `just dev` (
   `commands.ts` is gone; the dotted names now come from tauri-specta's
   generated bindings, not a hand-written wrapper.)*
 - **FR-004**: The existing 4 spec-002 lifecycle commands MUST continue to work unchanged.
-- **FR-005**: Stub handlers MUST be clearly marked and trivially replaceable — each command group (sessions, calibration, targets, projects, plans, audit, settings, roots, scan, search, preferences, equipment, review, tour) MUST be in its own module. Each stub MUST emit a `tracing::debug!` log line with the command name on invocation, so developers can identify which commands are still stubs via `RUST_LOG=debug`.
+- **FR-005**: Stub handlers MUST be clearly marked and trivially replaceable — each command group (sessions, calibration, targets, projects, plans, audit, settings, roots, scan, search, preferences, equipment, review, onboarding) MUST be in its own module. Each stub MUST emit a `tracing::debug!` log line with the command name on invocation, so developers can identify which commands are still stubs via `RUST_LOG=debug`. The tour capability shipped as `apps/desktop/src-tauri/src/commands/onboarding.rs` (spec 056), not the `commands/tour.rs` / `tour_complete_step` named during planning.
 
 **Type Safety**
 

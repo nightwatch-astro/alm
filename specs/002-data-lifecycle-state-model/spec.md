@@ -16,86 +16,12 @@
 
 **Feature Branch**: `002-data-lifecycle-state-model`  
 **Created**: 2026-05-09  
-**Status**: Draft  
+**Status**: Implemented  
 **Input**: User description: "Specify the data states and lifecycle model discussed for observed files, inferred metadata, reviewed decisions, generated views, plans, and applied mutations."
 
 ### SpecKit Refinement Note (2026-05-15)
 
 This is the detailed follow-on specification for the lifecycle/state behavior introduced in Spec 001.
-
-## Implementation Status
-
-A non-production UI mockup currently shadows a subset of this lifecycle model
-inside the desktop shell. It is the canonical reference for "what the model
-looks like as a user interacts with it", but it is NOT a substitute for the
-durable, audited Rust + persistence implementation called for by the
-constitution. Treat the mockup as a reviewable prototype that exercises shape,
-labels, and transition gating; the canonical model still belongs in
-`crates/domain/core/` and `crates/audit/`.
-
-Wired files (mockup-only, in `apps/desktop/`):
-
-- `apps/desktop/src/data/mock.ts` — shadow domain types and labels:
-  `ProjectLifecycle` (`setup_incomplete | ready | prepared | processing |
-  completed | archived | blocked`), `PlanState` (`draft | ready_for_review |
-  approved | applying | applied | partially_applied | failed | cancelled`),
-  `InventorySession.state` — canonical 6-state vocabulary
-  (`discovered | candidate | needs_review | confirmed | rejected | ignored`);
-  the current mockup only exercises a partial subset
-  (`confirmed | needs_review | rejected`) and MUST be brought up to the full
-  6-state set in the Rust port,
-  `InventorySource.state` (`active | missing | disabled | reconnect_required`),
-  plus `lifecycleLabel`, `lifecycleTone`, `planStateLabel`, `planStateTone`,
-  `inventoryStateLabel`, `inventoryStateTone`.
-- `apps/desktop/src/data/store.ts`:
-  - `PROJECT_TRANSITIONS` table encodes the allowed project lifecycle graph
-    (forward, blocked-recovery, archive resume).
-  - `isProjectTransitionAllowed(from, to)` enforces the graph.
-  - `setProjectLifecycle(id, next, actionLabel?)` refuses disallowed
-    transitions, writes an audit log line, and updates `lastAction`.
-  - `setSessionReviewState(sessionId, state)` is idempotent (no-op when state
-    is unchanged, no log entry).
-  - `simulateApply(planId)` walks `pending → applying → succeeded|failed`
-    item-by-item and resolves the plan to `applied | partially_applied |
-    failed`, mirroring FR-004 terminal outcomes.
-  - `usePendingPlansCount()` partitions pending plans into `needsAction`
-    (`draft | ready_for_review | approved`) and `needsAttention`
-    (`failed | partially_applied`), exposing the spec's distinction between
-    in-flight review and post-failure recovery.
-- `apps/desktop/src/features/projects/ProjectsPage.tsx` — surfaces the project
-  lifecycle stepper and is the primary consumer of `setProjectLifecycle`.
-- `apps/desktop/src/features/plans/PlanDetailPage.tsx` — surfaces plan terminal
-  states and the "Needs attention" partitioning produced by the apply
-  simulator.
-- `apps/desktop/src/features/inventory/InventoryPage.tsx` — surfaces session
-  review state and consumes `setSessionReviewState`.
-
-Invariants the mockup currently enforces:
-
-1. Project lifecycle transitions are gated by an explicit edge list; disallowed
-   transitions are refused at the store layer, not at the UI layer.
-2. Refused transitions emit a `warn` log entry that names the source entity
-   and the rejected edge (FR-002 audit shape, minus durable persistence).
-3. Same-state writes are no-ops: identical-state `setSessionReviewState` calls
-   neither mutate nor log, and identical-state `setProjectLifecycle` returns
-   early.
-4. Plan apply resolves to exactly one of `applied | partially_applied |
-   failed`, with item-level state preserved on each entry (FR-004 shape).
-5. Project lifecycle changes update `lastAction` (label + timestamp), which is
-   the user-visible projection of the audit event.
-
-Invariants explicitly NOT yet enforced by the mockup (deferred to Rust port):
-
-- Persistence and crash-safe audit-log durability.
-- Field-level provenance separation (`observed | inferred | reviewed`) on
-  individual values inside a Data Asset.
-- Action-bound review gating (FR-009/FR-010) — the mockup tracks session-level
-  `needs_review` but not per-action critical-value blocking.
-- Generated-projection `Stale` state on source change (FR-003).
-- Immutable snapshot capture for session/calibration reviews (FR-005).
-- Session-key derivation from metadata (FR-011/FR-012).
-- Diagnostic vs. workflow-significant event partitioning at the audit layer
-  (FR-008) — the log panel currently shows whatever the store appends.
 
 ## User Scenarios & Testing *(mandatory)*
 

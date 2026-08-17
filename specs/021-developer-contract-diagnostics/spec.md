@@ -6,16 +6,24 @@
 
 **Feature Branch**: `021-developer-contract-diagnostics`  
 **Created**: 2026-05-09  
-**Status**: Draft  
+**Status**: Implemented (dev-tools gated)  
 **Input**: User description: "Specify API/contract diagnostics as developer-facing references, not normal user settings."
 
-## Implementation Status: NOT IMPLEMENTED
+## Implementation Status
 
-The original framework-review surface in the prototype has been replaced by the
-new Base UI design and no developer diagnostics surface currently exists. No
-backend instrumentation, route, or schema viewer has been built. This spec
-defines the rebuilt surface.
+Implemented behind the workspace `dev-tools` feature (default off); release
+binaries omit the surface.
 
+- Route `/dev/contracts`: `apps/desktop/src/dev/ContractsPage.tsx`,
+  `apps/desktop/src/app/router.tsx:231`.
+- Commands: `dev_contracts_list`, `dev_calls_list`, `dev_export`,
+  `dev_schema_get`, `dev_mode` (`apps/desktop/src-tauri/src/commands/dev.rs`).
+
+The `ts_hash` / `rust_hash` / `mismatch` trio (T015) is inert: both hash fields
+are hardcoded `None` at `apps/desktop/src-tauri/src/commands/dev.rs:406` and
+`crates/app/core/src/dev_contracts.rs:189`, so no mismatch is ever computed.
+Either drop the fields from `crates/contracts/core/src/dev.rs:42` or implement
+the hashing described in `research.md` R9.
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Inspect Contract References (Priority: P1)

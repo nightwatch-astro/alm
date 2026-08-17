@@ -12,59 +12,33 @@
 **Feature Branch**: `003-first-run-source-setup`  
 **Created**: 2026-05-09  
 **Last Updated**: 2026-05-26  
-**Status**: Draft (reconciled post-027/029)  
+**Status**: Implemented  
 **Input**: User description: "Specify the one-time setup wizard for selecting initial data sources, validating selections, starting guided first steps, and restarting setup later."
 
 ## Implementation Status
 
-> **Reconciliation note (2026-07-19, issue #764)**: the section below (written
-> when specs 027/029 first merged) describes stub Tauri commands returning
-> fixture data and a 5-step Welcome→Sources→Catalogs→Scan→Confirm wizard.
-> Both are stale. Real persistence has landed (roots/scan are no longer
-> stubs), `apps/desktop/src/api/commands.ts` was deleted by spec 037's
-> generated-bindings migration, and the wizard's actual current steps are
-> `StepSourceFolders` → `StepTools` → `StepCatalogs` (now a Configuration
-> screen: SIMBAD online-resolution toggle, density, default protection,
-> scan depth, theme — no catalog download, per spec 035's SIMBAD pivot) →
-> `StepSite` → `StepConfirm` → `StepScan` (`apps/desktop/src/features/setup/
-> SetupWizard.tsx`, `steps/`). FR-009/FR-011/FR-014/FR-015 below describe the
-> original step-sequence design and were not updated when specs 030/035/038/044
-> changed it; treat this Implementation Status block and those FRs as
-> historical design intent, not current behavior — consult the step
-> components directly for the shipped sequence.
+The wizard is defined in
+`apps/desktop/src/features/setup/SetupWizard.tsx`, with step components under
+`apps/desktop/src/features/setup/steps/`. Roots and scan are backed by real
+persistence, not stubs.
 
-Specs 027 (Frontend Implementation) and 029 (Tauri Backend Wiring) have been
-merged. The setup wizard exists as a working UI with stub Tauri commands.
+Shipped step sequence (`SetupWizard.tsx:86` `STEPS`, `steps/index.ts`):
 
-Wired files (stub commands — no real persistence):
+1. `StepLanguage` (spec 061)
+2. `StepTheme` (spec 055)
+3. `StepSourceFolders`
+4. `StepTools`
+5. `StepCatalogs`: configuration screen: SIMBAD online-resolution toggle,
+   density, default protection, scan depth, theme. No catalog download, per
+   spec 035's SIMBAD pivot.
+6. `StepSite`
+7. `StepConfirm`
+8. `StepScan`
 
-- `apps/desktop/src/features/setup/SetupWizard.tsx` — 5-step wizard:
-  Welcome → Sources (unified) → Catalogs → Scan Settings → Confirm. Uses
-  `DirPicker` (wired to `@tauri-apps/plugin-dialog`), persists wizard
-  progress to `localStorage` under `alm-setup-wizard-state`. Calls
-  `registerRoot()` per folder on Finish, then `startScan()`, sets
-  `setupCompleted` preference, and navigates to `/sessions`.
-- `apps/desktop/src/features/setup/SetupPage.tsx` — guards against
-  re-entry when `setupCompleted` is true, redirects to `/sessions`.
-- `apps/desktop/src/features/setup/steps/` — step components:
-  `StepWelcome`, `StepSources` (unified 4-category card layout),
-  `StepCatalogs`, `StepScan`, `StepConfirm`.
-- `apps/desktop/src/app/router.tsx` — setup route at `/setup` renders
-  outside the Shell chrome. Index route (`/`) goes to `/sessions`.
-- `apps/desktop/src/api/commands.ts` — `registerRoot()` calls
-  `roots.register`, `startScan()` calls `scan.start` (both stubs).
-- `apps/desktop/src-tauri/src/commands/roots.rs` — stub handlers for
-  `roots.register`, `roots.list`, `roots.remap`, `roots.remap.apply`,
-  `scan.start`, `equipment.list` returning fixture data.
-- `apps/desktop/src/data/preferences.ts` — `setupCompleted` flag stored
-  in localStorage-only preferences.
-- `apps/desktop/src/features/settings/SettingsPage.tsx` — "Restart setup
-  wizard" button clears preferences and navigates to `/setup`.
-
-This spec replaces the stub commands with real persistence and refactors
-the 5-step wizard into the 8-step design described below. The `DirPicker`
-and `@tauri-apps/plugin-dialog` wiring are retained as-is.
-(Historical: see the reconciliation note above for what actually shipped.)
+FR-009, FR-011, FR-014, and FR-015 below describe the original step-sequence
+design superseded by specs 030/035/038/044/055/061. `apps/desktop/src/api/
+commands.ts` was deleted by spec 037's generated-bindings migration. Read the
+step components for shipped behavior. Tracked as issue #764.
 
 ## User Scenarios & Testing *(mandatory)*
 

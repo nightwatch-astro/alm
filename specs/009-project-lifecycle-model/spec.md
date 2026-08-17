@@ -18,7 +18,7 @@
 
 **Feature Branch**: `009-project-lifecycle-model`  
 **Created**: 2026-05-09  
-**Status**: Draft  
+**Status**: Implemented; FR-003 partial (More menu, issue #764)  
 **Input**: User description: "Specify project lifecycle state, project detail structure, actions by phase, and cleanup/archive readiness without ambiguous Plan columns or unexplained top action strips."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -73,10 +73,7 @@ As a user, I want the project side panel and opened project view to show structu
 - **FR-001**: Project lifecycle state MUST be a domain field, not a decorative badge-only UI treatment.
 - **FR-002**: Project rows MUST NOT use an ambiguous "Plan" column unless it is explicitly a cleanup/archive plan count or link.
 - **FR-003**: Project actions MUST be phase-aware and use the shared primary action plus More menu pattern.
-  *(Reconciliation note, 2026-07-19, issue #764: `ProjectDetail.tsx` has no
-  "More menu"/overflow pattern — this shape was never rebuilt after later UI
-  passes; `specs/SPEC_STATUS.md`'s "21/21" complete framing for this spec
-  overstates given this gap.)*
+  *(Partial: `ProjectDetail.tsx` has no More-menu/overflow pattern. Issue #764.)*
 - **FR-004**: The project surface MUST NOT show unexplained top action strips such as Candidate, Source mapping, Prepared, or Processing when those states are already represented by project data.
 - **FR-005**: Project details MUST list sources directly.
 - **FR-006**: Clicking a source in a project MUST navigate to or open the linked Inventory item.
@@ -114,31 +111,18 @@ As a user, I want the project side panel and opened project view to show structu
 
 ## Implementation Status
 
-**Mockup-implemented (apps/desktop):**
+Shipped surfaces:
 
-- Seven Project lifecycle states (`setup_incomplete`, `ready`, `prepared`,
-  `processing`, `completed`, `archived`, `blocked`) are modeled in
-  `apps/desktop/src/data/mock.ts` (`ProjectLifecycle`, `projectLifecycleSteps`,
-  `lifecycleLabel`, `lifecycleTone`).
-- Canonical transition graph lives in `apps/desktop/src/data/store.ts` as
-  `PROJECT_TRANSITIONS`, with `isProjectTransitionAllowed` guarding the edge
-  table and `setProjectLifecycle(id, next, actionLabel?)` writing the new
-  state, deriving a default action label, and emitting an audit log line.
-- Project drawer renders the stepper at the top of `ProjectsPage.tsx`, with
-  contextual footer actions per lifecycle (`projectFooter`):
-  - `setup_incomplete`: Continue setup, Edit, overflow.
-  - `ready`/`prepared`: Open in {tool}, Mark as Processing, overflow.
-  - `processing`: Open in {tool}, Mark as Completed, overflow.
-  - `completed`: Open in {tool}, Generate cleanup plan (if sources remain),
-    overflow.
-  - `archived`: Unarchive (primary, re-enters via `processing`), read-only
-    notice.
-  - `blocked`: Resolve blocker, Edit, overflow.
-- Row overflow surfaces phase-appropriate actions through
-  `rowMenuGroupsForLifecycle`. Archived rows expose only View (read-only),
-  Reveal manifest folder, and Unarchive.
-- `lastAction { label, when }` is recorded on every successful transition and
-  surfaced in row, drawer header, and detail table.
+- Lifecycle states and the stepper: `ProjectLifecycleStepper.tsx`,
+  `lifecycle-actions.ts`, `lifecycleTransition.ts` (all under
+  `apps/desktop/src/features/projects/`).
+- Backend transitions: `lifecycle_transition_preview`,
+  `lifecycle_transition_apply`, `lifecycle_ledger_list`, `lifecycle_manifest`
+  (`apps/desktop/src-tauri/src/commands/`).
+- Blocked-state surface: `BlockedBanner.tsx`.
+
+FR-003 is partial: the shared primary-action pattern shipped, the More-menu half
+did not. Tracked as issue #764.
 
 **Transition graph (canonical edges):**
 
@@ -178,7 +162,8 @@ Eighteen allowed edges total (seventeen + `archived → ready`).
   rows display state via `StateLabel`/`lifecycleTone` rather than a
   decorative-only badge. No ambiguous "Plan" column appears in the project
   table; plan counts/links are scoped to detail expandable rows.
-- FR-003: Footer uses the shared primary + secondary + overflow pattern.
+- FR-003: Footer uses the shared primary + secondary pattern. The More menu is
+  not built (issue #764).
 - FR-004: Phase-only top-action strips are removed; the stepper plus footer
   carries all phase context.
 - FR-005/FR-006: Project detail enumerates sources with inventory deep-links.
