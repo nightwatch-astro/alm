@@ -58,3 +58,7 @@ LIK = "LIK"
 Desig = "Desig"
 # logical conjunction past-tense used in inline comments (e.g. "ANDed")
 Ded = "Ded"
+# `foN`/`foY` field-orientation fixtures in validateFieldSeverity tests. The
+# checker splits on the case boundary and judges the leading `fo` alone, so the
+# allow entry has to key `fo`, not the identifier as written.
+fo = "fo"

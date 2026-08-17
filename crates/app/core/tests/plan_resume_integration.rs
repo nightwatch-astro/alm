@@ -683,6 +683,12 @@ async fn resume_then_retry_of_pre_pause_failed_item_reaches_terminal_state() {
         .await
         .expect("retry must be accepted: plan is applying, item is failed, run is active");
 
+    // Wait on ITEM 0 specifically, not on the plan. The plan can already hold a
+    // terminal state left over from the pre-retry attempt, in which case
+    // `wait_plan_terminal` returns instantly and every assertion below races the
+    // restarted executor (astro-plan-9lkf). Item 0 reaching `succeeded` is the
+    // completion signal for the work this test actually triggered.
+    support::wait_item_state(db.pool(), &item0_id, "succeeded").await;
     support::wait_plan_terminal(db.pool(), &plan_id).await;
 
     // The retried item actually re-executed for real (not just a DB flip):
