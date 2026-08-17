@@ -766,6 +766,91 @@ async fn retry_plan_item_rejects_when_no_active_run() {
     assert_eq!(item.item_state, "failed", "rejected retry must not mutate item state");
 }
 
+/// astro-plan-ts1z: the rollback that makes losing the retry race honest.
+///
+/// `retry_plan_item` flips the item to `applying` and only then enqueues it. If
+/// the run disappears in that window, the enqueue finds no run and the item is
+/// left `applying` with nothing that will ever execute it — and run completion
+/// sweeps orphaned `applying` items to `cancelled` (`terminal.rs`). The user's
+/// retry then reads as a cancellation they asked for: file unmoved, audit trail
+/// saying cancelled. A Tier-1 custody failure (constitution II).
+///
+/// The window itself lives inside one function and cannot be opened from a test
+/// without adding a production seam purely for testing, which is a worse trade.
+/// So this drives the repair path directly: after a DB flip to `applying` with
+/// no run to receive it, the rollback must restore `failed` AND the plan's
+/// `items_failed` count, leaving the item genuinely retryable.
+#[tokio::test]
+async fn losing_the_retry_race_restores_the_item_to_failed_and_retryable() {
+    let (db, _bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-retry-race", 1).await;
+    plans_repo::update_plan_state(db.pool(), "p-retry-race", "applying").await.unwrap();
+    {
+        let mut conn = db.pool().acquire().await.unwrap();
+        apply_repo::batch_flush_item_states(
+            &mut conn,
+            "p-retry-race",
+            &[apply_repo::BatchItemState {
+                item_id: "p-retry-race-item-0",
+                new_state: "failed",
+                failure_reason: Some("permission.denied"),
+                is_stale: false,
+            }],
+            0,
+            1,
+            0,
+        )
+        .await
+        .unwrap();
+    }
+
+    let failed_before =
+        plans_repo::get_plan(db.pool(), "p-retry-race", false).await.unwrap().items_failed;
+
+    // The accepted-then-orphaned state: item flipped to `applying`, no run.
+    apply_repo::item_retry_applying(db.pool(), "p-retry-race-item-0", "p-retry-race")
+        .await
+        .unwrap();
+    let items = plans_repo::list_plan_items(db.pool(), "p-retry-race").await.unwrap();
+    assert_eq!(
+        items.iter().find(|i| i.id == "p-retry-race-item-0").unwrap().item_state,
+        "applying",
+        "precondition: the item is stranded `applying`, which is what the sweep would cancel"
+    );
+
+    apply_repo::item_retry_rollback_to_failed(db.pool(), "p-retry-race-item-0", "p-retry-race")
+        .await
+        .unwrap();
+
+    let items = plans_repo::list_plan_items(db.pool(), "p-retry-race").await.unwrap();
+    let item = items.iter().find(|i| i.id == "p-retry-race-item-0").unwrap();
+    assert_eq!(
+        item.item_state, "failed",
+        "a retry that could not be handed to an executor must leave the item FAILED — \
+         retryable and honest — not stranded `applying` for the sweep to cancel"
+    );
+
+    let failed_after =
+        plans_repo::get_plan(db.pool(), "p-retry-race", false).await.unwrap().items_failed;
+    assert_eq!(
+        failed_after, failed_before,
+        "items_failed must return to its pre-retry value, or the plan's terminal state is \
+         computed from a wrong count"
+    );
+
+    // Idempotent: a second rollback must not inflate the counter. This matters
+    // because the rollback is best-effort and could be reached twice.
+    apply_repo::item_retry_rollback_to_failed(db.pool(), "p-retry-race-item-0", "p-retry-race")
+        .await
+        .unwrap();
+    let failed_twice =
+        plans_repo::get_plan(db.pool(), "p-retry-race", false).await.unwrap().items_failed;
+    assert_eq!(
+        failed_twice, failed_before,
+        "rollback is guarded on item_state='applying', so repeating it must be a no-op"
+    );
+}
+
 #[tokio::test]
 async fn retry_plan_item_rejects_non_failed_item() {
     let (db, _bus) = setup().await;

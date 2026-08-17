@@ -655,14 +655,55 @@ pub async fn retry_plan_item(
     // Transition item back to applying in DB (failed → applying).
     apply_repo::item_retry_applying(pool, item_id, plan_id).await.map_err(db_err)?;
 
-    // Register in the retry queue so the executor re-executes it.
-    {
+    // Enqueue for re-execution, and REFUSE if the run vanished in the meantime.
+    //
+    // The `active_runs()` check above closes the common case but not the window
+    // between it and here. Previously that window was swallowed: `if let
+    // Some(run)` simply did nothing when the run was gone, leaving the item
+    // `applying` in the DB with nothing that will ever execute it. Run
+    // completion then sweeps orphaned `applying` items to `cancelled`
+    // (`terminal.rs`), so the user's retry became a silent cancellation --
+    // file unmoved, audit trail reading `cancelled`, indistinguishable from a
+    // cancellation they asked for. That is a Tier-1 custody failure under
+    // constitution II: an approved action recorded terminal that never ran.
+    //
+    // Losing the race is now reported instead. The DB flip is rolled back
+    // first so the item stays `failed` -- retryable, and honest about not
+    // having run -- rather than stranded `applying`.
+    let enqueued = {
         let registry = active_runs();
-        if let Some(run) = registry.get(plan_id) {
+        let queued = registry.get(plan_id).is_some_and(|run| {
             run.retry_queue.push(item_id);
-            drop(run);
-        }
+            true
+        });
         drop(registry);
+        queued
+    };
+
+    if !enqueued {
+        // Best-effort restore. If this fails the item is left `applying` and
+        // the completion sweep will cancel it -- the pre-existing behaviour --
+        // so log loudly and still return the error: the caller must not be
+        // told a retry was accepted when it was not.
+        if let Err(e) = apply_repo::item_retry_rollback_to_failed(pool, item_id, plan_id).await {
+            tracing::error!(
+                error = %e,
+                plan_id,
+                item_id,
+                "retry lost the race with run completion AND could not restore the item to \
+                 'failed'; it will be swept to 'cancelled' and must be retried at plan level"
+            );
+        }
+        return Err(ContractError::new(
+            ErrorCode::RunNotFound,
+            format!(
+                "the run for plan {plan_id} finished while the retry of item {item_id} was \
+                 being accepted, so nothing re-executed it. The item was not retried. \
+                 Use plan.retry on the terminal plan."
+            ),
+            ErrorSeverity::Blocking,
+            true,
+        ));
     }
 
     Ok(PlanItemRetryResponse { item_id: item_id.to_owned(), new_state: "applying".to_owned() })

@@ -350,6 +350,56 @@ pub async fn item_retry_applying(pool: &SqlitePool, item_id: &str, plan_id: &str
     Ok(())
 }
 
+/// Undo [`item_retry_applying`]: put the item back to `failed` and restore the
+/// plan's `items_failed` count.
+///
+/// Used when a retry is accepted in the DB but cannot actually be handed to an
+/// executor — the run finished in between. Without this the item is stranded
+/// `applying` and the completion sweep converts it to `cancelled`, which reads
+/// as a cancellation the user asked for rather than a retry that never ran.
+///
+/// Guarded on `item_state = 'applying'` so it cannot clobber an item the
+/// executor did pick up and has since moved on: if the retry really did run,
+/// this is a no-op.
+///
+/// `failure_reason` is deliberately left NULL. The previous reason described the
+/// original failure, which this retry did not reproduce, so restoring it would
+/// attribute a failure the app did not observe. The item is `failed` and
+/// retryable, which is the true state.
+///
+/// # Errors
+///
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
+pub async fn item_retry_rollback_to_failed(
+    pool: &SqlitePool,
+    item_id: &str,
+    plan_id: &str,
+) -> DbResult<()> {
+    let mut tx = pool.begin().await?;
+
+    let restored = sqlx::query(
+        "UPDATE plan_items SET item_state = 'failed' \
+         WHERE id = ? AND plan_id = ? AND item_state = 'applying'",
+    )
+    .bind(item_id)
+    .bind(plan_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    // Only re-increment when this call actually moved the row, so a no-op
+    // cannot inflate the counter past the number of failed items.
+    if restored > 0 {
+        sqlx::query("UPDATE plans SET items_failed = items_failed + 1 WHERE id = ?")
+            .bind(plan_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
 /// List the IDs of all `pending` items for a plan.
 ///
 /// Used to emit per-item audit rows before batch-cancelling (FR-005, T021).
