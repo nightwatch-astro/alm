@@ -16,10 +16,10 @@ use serde_json::{json, Value};
 use thirtyfour::components::escape_string;
 use thirtyfour::prelude::*;
 
+use super::boot::{app_url, DEFAULT_FIND_TIMEOUT};
 use super::boot::{
     instance_env, pick_port_pair, LAUNCH_TIMEOUT, SCRIPT_TIMEOUT, SCRIPT_TIMEOUT_PAGE_LOAD,
 };
-use super::boot::{APP_URL, DEFAULT_FIND_TIMEOUT};
 use super::helpers::{
     app_binary_path, blocking_session_delete, drain_into, kill_driver_proc, preflight,
     reset_database, reset_webview_storage, reset_window_state, spawn_tauri_webdriver, ProcLog,
@@ -649,7 +649,7 @@ impl E2eApp {
     /// The router uses HASH history (`createHashHistory()`,
     /// `apps/desktop/src/app/router.tsx`): routes live in the URL fragment
     /// (`/#/inbox`) and the pathname is ignored entirely. Navigating to
-    /// `{APP_URL}{path}` therefore always lands on the index route `/`,
+    /// `{app_url()}{path}` therefore always lands on the index route `/`,
     /// whose first-run gate redirects a fresh DB to `/setup` — the target
     /// page never mounts (CI run 28751553798: Inbox's "Rescan all roots"
     /// deterministically never appeared on all three OSes). Navigate to the
@@ -663,7 +663,7 @@ impl E2eApp {
     /// stays on the target route, and fail with the URL it kept landing on —
     /// far more diagnosable in CI than a downstream "element never appeared".
     pub async fn goto_route(&self, path: &str) -> Result<()> {
-        let url = format!("{APP_URL}/#{path}");
+        let url = format!("{}/#{path}", app_url());
         let deadline = Instant::now() + Duration::from_secs(20);
         let mut last = String::new();
         loop {

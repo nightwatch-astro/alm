@@ -202,6 +202,26 @@ test-integration:
 test-e2e:
     cd apps/desktop && pnpm test:e2e:real
 
+# Print a PV_DEV_URL whose port is derived from this checkout's absolute path.
+#
+# Export it in BOTH halves of a local Layer-2/Layer-3 run — the `vite preview`
+# that serves `dist` and the `cargo nextest` that launches the app — so two
+# worktrees never resolve the same frontend port. Without it both default to
+# `tauri.conf.json`'s devUrl and the second lane's app loads the first lane's
+# build, which surfaces as hanging or wrong-branch journeys rather than as a
+# port conflict (issue #1409).
+#
+# The port is a hash of the checkout path, so it is stable across runs of the
+# same worktree and differs between worktrees. Serve with `--strictPort` so a
+# hash collision fails loudly instead of silently sharing a port.
+e2e-dev-url:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="$(git rev-parse --show-toplevel)"
+    # 5200-5455: above vite's 5173 default and playwright.config.ts's 5183.
+    port=$(( 5200 + 0x$(printf %s "$root" | shasum | cut -c1-4) % 256 ))
+    echo "http://localhost:${port}"
+
 # Run the inbox perf measurement harness and print baseline JSON lines.
 # Set PERF_N to control fixture size (default 500; use 5000 for a deeper run).
 # Output is machine-readable JSON — one line per scenario — suitable for
