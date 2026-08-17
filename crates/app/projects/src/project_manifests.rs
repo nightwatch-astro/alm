@@ -430,13 +430,15 @@ pub fn spawn_workflow_run_subscriber(
         loop {
             match rx.recv().await {
                 Ok(env) if env.topic == TOPIC_WORKFLOW_RUN_COMPLETED => {
+                    // The live path deliberately leaves `cursor` alone. Advancing it
+                    // here to `max_event_id` would read the table-wide max rather
+                    // than this event's row: any event inserted between the
+                    // broadcast and that query gets jumped, so a later `Lagged`
+                    // replay starts *after* it and it is lost rather than late.
+                    // The envelope carries no `event_id`, so this branch cannot
+                    // know its own row to advance to. Only the replay below moves
+                    // the cursor, and it does so per row.
                     handle_workflow_run_event(&pool, &bus, &env.payload).await;
-                    // Advance cursor so the next lag replay doesn't restart from 0.
-                    if let Ok(id) =
-                        persistence_lifecycle::repositories::events::max_event_id(bus.pool()).await
-                    {
-                        cursor = id;
-                    }
                 }
                 Ok(_) => {}
                 Err(RecvError::Lagged(n)) => {
@@ -794,6 +796,113 @@ mod tests {
                 "manifest row not found within 2 s after workflow.run_completed event"
             );
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    /// A `Lagged` replay must never skip a durable event the live path never
+    /// delivered — regression test for the cursor-jump defect (astro-plan-hyk0).
+    ///
+    /// The live branch used to advance the cursor with `max_event_id`, the
+    /// TABLE-WIDE max, rather than the row it had just handled. An event that
+    /// reached the table without reaching this subscriber therefore sat *below*
+    /// the new cursor and was never replayed, so its manifest was never written
+    /// — lost, not merely late.
+    ///
+    /// Deterministic by ordering rather than by racing: the never-broadcast row
+    /// is inserted FIRST, so it always holds the lower `event_id`.
+    #[tokio::test]
+    async fn lag_replay_writes_the_manifest_for_an_event_the_live_path_never_saw() {
+        let pool = setup().await;
+        let dir = tempfile::tempdir().unwrap();
+        for id in ["proj-lost", "proj-live"] {
+            // `projects.path` is UNIQUE, so each project needs its own directory.
+            let project_dir = dir.path().join(id);
+            std::fs::create_dir_all(&project_dir).unwrap();
+            sqlx::query(
+                "INSERT INTO projects (id, name, tool, lifecycle, path, notes, channel_drift, created_at, updated_at) \
+                 VALUES (?,?,?,?,?,?,?,?,?)",
+            )
+            .bind(id)
+            .bind(id)
+            .bind("PixInsight")
+            .bind("ready")
+            .bind(project_dir.to_str().unwrap())
+            .bind::<Option<String>>(None)
+            .bind(false)
+            .bind("2026-01-01T00:00:00Z")
+            .bind("2026-01-01T00:00:00Z")
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        // Capacity 1 so a lag is reachable at all.
+        let bus = EventBus::new(pool.clone(), 1);
+        let _handle = spawn_workflow_run_subscriber(pool.clone(), bus.clone());
+
+        // The event the subscriber can never see live: durable row, no broadcast.
+        // Inserted first, so a jumped cursor would strand it.
+        persistence_lifecycle::repositories::events::insert_event(
+            &pool,
+            "workflow.run_completed",
+            "system",
+            "2026-01-01T00:00:00Z",
+            &serde_json::json!({
+                "projectId": "proj-lost",
+                "toolId": "pixinsight",
+                "toolLaunchId": "tl-lost",
+                "completedAt": "2026-06-01T10:00:00Z",
+                "artifactIds": [],
+            })
+            .to_string(),
+        )
+        .await
+        .unwrap();
+
+        // A live event, which is what used to jump the cursor past the row above.
+        let _ = bus
+            .publish(
+                "workflow.run_completed",
+                audit::event_bus::Source::System,
+                serde_json::json!({
+                    "projectId": "proj-live",
+                    "toolId": "pixinsight",
+                    "toolLaunchId": "tl-live",
+                    "completedAt": "2026-06-01T10:00:00Z",
+                    "artifactIds": [],
+                }),
+            )
+            .await;
+
+        // Wait for the live one to be handled, so the cursor logic has run.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            let (rows, _) = list_manifests_for_project(&pool, "proj-live", None, 10).await.unwrap();
+            if !rows.is_empty() {
+                break;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "live manifest not written in time");
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        // Force a lag: two broadcasts with no await between them, so the
+        // subscriber cannot drain the channel in between.
+        let _ = bus.broadcast_only("tick.heartbeat");
+        let _ = bus.broadcast_only("tick.heartbeat");
+
+        // The replay must reach the stranded row and write ITS manifest.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let (rows, _) = list_manifests_for_project(&pool, "proj-lost", None, 10).await.unwrap();
+            if !rows.is_empty() {
+                return; // success
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the lag replay never wrote a manifest for the event the live path \
+                 never saw: the cursor jumped past it"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
         }
     }
 

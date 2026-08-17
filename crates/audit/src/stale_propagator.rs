@@ -74,18 +74,16 @@ impl StalePropagator {
                 match rx.recv().await {
                     Ok(env) => {
                         if env.topic == TOPIC_LIFECYCLE_TRANSITION_APPLIED {
+                            // The live path deliberately leaves `cursor` alone.
+                            // Advancing it here to `max_event_id` would read the
+                            // table-wide max rather than this event's row: any event
+                            // inserted between the broadcast and that query gets
+                            // jumped, so a later `Lagged` replay starts *after* it
+                            // and it is lost rather than late. The envelope carries
+                            // no `event_id`, so this branch cannot know its own row
+                            // to advance to. Only the replay below moves the cursor,
+                            // and it does so per row.
                             let _errors = self.dispatch(&env);
-                            // Advance cursor so the next lag replay doesn't restart from 0.
-                            // Hooks are idempotent, but avoiding full table replay matters on
-                            // large libraries.
-                            if let Ok(id) =
-                                persistence_lifecycle::repositories::events::max_event_id(
-                                    bus.pool(),
-                                )
-                                .await
-                            {
-                                cursor = id;
-                            }
                         }
                     }
                     Err(RecvError::Lagged(n)) => {
@@ -469,23 +467,32 @@ mod tests {
         );
     }
 
-    /// After the subscriber processes a live Ok(env) event the cursor must advance
-    /// so a subsequent Lagged replay does not restart from 0 and re-dispatch the
-    /// entire events table.
+    /// A `Lagged` replay must never skip a durable event that the live path
+    /// never delivered.
     ///
-    /// Strategy:
-    ///   1. Publish 1 event via bus.publish and yield until the subscriber sees
-    ///      it live — cursor advances to that event's `max_event_id`.
-    ///   2. Pre-seed 4 more durable rows directly (no broadcast), so cursor does
-    ///      NOT advance again.
-    ///   3. Trigger a lag via two synchronous `broadcast_only` calls (no yield
-    ///      between them → subscriber cannot run in between → Lagged(1)).
-    ///   4. Replay should page from cursor (after event 1) and dispatch exactly
-    ///      4 rows.  Total = 1 live + 4 replay = 5.
-    ///      If cursor had not advanced, replay would have dispatched all 5 rows
-    ///      instead of 4, yielding total >= 6.
+    /// This is the regression test for the cursor-jump defect (astro-plan-hyk0).
+    /// The live branch used to advance the cursor with `max_event_id`, the
+    /// TABLE-WIDE max, rather than the row it had just handled. Any event that
+    /// reached the table without reaching this subscriber therefore sat *below*
+    /// the new cursor and was never replayed — lost, not merely late.
+    ///
+    /// Strategy — deterministic, no race required. The lost row is inserted
+    /// *before* the broadcast one, so it always carries the lower `event_id`:
+    ///   1. Insert one durable row directly, with NO broadcast. The subscriber
+    ///      cannot see it live; only a replay can ever deliver it.
+    ///   2. Publish a second event normally, so the subscriber handles it live.
+    ///      The buggy code read `max_event_id` here and jumped the cursor past
+    ///      BOTH rows, stranding the one from step 1.
+    ///   3. Trigger a lag with two synchronous `broadcast_only` calls (no yield
+    ///      between them, so the subscriber cannot run in between → `Lagged`).
+    ///   4. The replay must dispatch both durable rows: 1 live + 2 replayed = 3.
+    ///
+    /// Under the defect this totals 1 — the replay pages from a cursor already
+    /// past the end, finds nothing, and the step-1 event is gone. Re-dispatching
+    /// the live event is the accepted cost: hooks are idempotent
+    /// (research.md §6.1), and re-doing work beats silently dropping it.
     #[tokio::test]
-    async fn cursor_advances_after_live_events_so_next_lag_is_bounded() {
+    async fn lag_replay_delivers_an_event_the_live_path_never_saw() {
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = counter.clone();
 
@@ -507,7 +514,19 @@ mod tests {
         let bus = EventBus::new(pool.clone(), 1);
         let handle = propagator.spawn(&bus);
 
-        // Step 1: publish 1 event via the bus (writes durable row + broadcasts).
+        // Step 1: a durable row with NO broadcast. Inserted first, so it holds
+        // the LOWEST event_id — the row a jumped cursor strands behind it.
+        persistence_lifecycle::repositories::events::insert_event(
+            &pool,
+            TOPIC_LIFECYCLE_TRANSITION_APPLIED,
+            "system",
+            "2026-01-01T00:00:00Z",
+            "{}",
+        )
+        .await
+        .unwrap();
+
+        // Step 2: publish an event via the bus (writes durable row + broadcasts).
         bus.publish(
             TOPIC_LIFECYCLE_TRANSITION_APPLIED,
             Source::User,
@@ -524,7 +543,7 @@ mod tests {
         .await
         .unwrap();
 
-        // Yield until the subscriber has processed the live event and advanced cursor.
+        // Wait until the subscriber has handled the broadcast event live.
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
         loop {
             tokio::task::yield_now().await;
@@ -534,28 +553,15 @@ mod tests {
             assert!(tokio::time::Instant::now() < deadline, "live event not processed in time");
         }
 
-        // Step 2: insert 4 more durable rows directly — no broadcast, cursor stays put.
-        for _ in 0..4 {
-            persistence_lifecycle::repositories::events::insert_event(
-                &pool,
-                TOPIC_LIFECYCLE_TRANSITION_APPLIED,
-                "system",
-                "2026-01-01T00:00:00Z",
-                "{}",
-            )
-            .await
-            .unwrap();
-        }
-
         // Step 3: trigger Lagged deterministically (no yield between calls).
         let _ = bus.broadcast_only("tick.heartbeat");
         let _ = bus.broadcast_only("tick.heartbeat");
 
-        // Step 4: wait for replay to dispatch the 4 new rows.
+        // Step 4: wait for the replay to dispatch both durable rows.
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
         loop {
             tokio::task::yield_now().await;
-            if counter.load(Ordering::SeqCst) >= 5 {
+            if counter.load(Ordering::SeqCst) >= 3 {
                 break;
             }
             if tokio::time::Instant::now() >= deadline {
@@ -564,11 +570,15 @@ mod tests {
         }
         handle.abort();
 
+        // 1 live dispatch + 2 replayed durable rows. The load-bearing part is
+        // that the replay reached the step-1 row at all: under the defect the
+        // cursor was already past it and the total stalls at 1.
         let total = counter.load(Ordering::SeqCst);
-        assert!(total >= 5, "expected at least 5 total dispatches, got {total}");
-        // Without cursor advancement replay would start from 0 (all 5 rows),
-        // yielding 1 live + 5 replay = 6.  With it, 1 live + 4 replay = 5.
-        assert_eq!(total, 5, "cursor advancement must prevent replay from re-dispatching the already-live event; got {total}");
+        assert_eq!(
+            total, 3,
+            "the lag replay must deliver the durable event the live path never saw \
+             (1 live + 2 replayed); got {total}"
+        );
     }
 
     #[tokio::test]
