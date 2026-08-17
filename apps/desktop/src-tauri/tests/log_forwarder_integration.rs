@@ -129,6 +129,75 @@ async fn skipped_history_replay_emits_only_the_window_rows() {
     }
 }
 
+/// Production ordering: the listener attaches AFTER the forwarder starts.
+///
+/// `start_log_forwarder` is spawned in `run_app` well before
+/// `create_main_window`, so the startup catch-up emits into a webview that does
+/// not exist. Every other test here pre-attaches its listener, which is the one
+/// condition production never satisfies. If the catch-up consumed its rows, they
+/// would be past the cursor of every later drain and no broadcast could ever
+/// deliver them — permanent loss, not delay.
+///
+/// The later broadcast stands in for the first event after the window opens.
+#[tokio::test]
+async fn rows_emitted_before_any_listener_are_not_consumed_by_the_catch_up() {
+    let (app, pool, bus) = setup().await;
+
+    for i in 0..3 {
+        persistence_lifecycle::repositories::events::insert_event(
+            &pool,
+            "lifecycle.transition.applied",
+            "system",
+            &format!("2026-01-01T00:00:0{i}Z"),
+            "{}",
+        )
+        .await
+        .expect("seed event");
+    }
+
+    let _handle = start_log_forwarder(app.handle().clone(), &bus, LogLevel::Debug, pool.clone());
+
+    // Let the startup catch-up run to completion with nobody listening, exactly
+    // as it does between `start_log_forwarder` and `create_main_window`.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = std::sync::Arc::clone(&seen);
+    tauri::Listener::listen(app.handle(), "log:entry", move |event| {
+        let entry: contracts_core::log::LogEntry =
+            serde_json::from_str(event.payload()).expect("log:entry payload is a LogEntry");
+        sink.lock().expect("sink lock").push(entry.id);
+    });
+
+    bus.publish(
+        "lifecycle.transition.applied",
+        audit::event_bus::Source::System,
+        serde_json::json!({}),
+    )
+    .await
+    .expect("publish post-listener event");
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let ids = seen.lock().expect("sink lock").clone();
+        if ids.len() >= 4 {
+            assert_eq!(
+                ids,
+                vec!["aud:1", "aud:2", "aud:3", "aud:4"],
+                "the pre-listener rows must still be reachable: a catch-up that advanced \
+                 the cursor puts them past every later drain"
+            );
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "rows committed before the listener existed must be redelivered on the next \
+             broadcast; saw {ids:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
 /// The catch-up must run before the receive loop: rows already inside the
 /// rewound window reach the panel even when no further event is broadcast.
 /// Proven by cursor advancement — the forwarder consumes the pre-existing rows

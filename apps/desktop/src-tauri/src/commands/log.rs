@@ -199,6 +199,12 @@ async fn drain_since<R: tauri::Runtime>(
 /// than that window are the same set `log.recent` declines to return, and stay
 /// reachable through `log.export`, which is uncapped.
 ///
+/// That startup replay does NOT consume its rows: the cursor stays at the seed
+/// until a broadcast-driven drain, because the pre-window emit runs before any
+/// webview listener exists and an advanced cursor would make those rows
+/// unreachable to every later drain. Reaching the panel is guaranteed by the
+/// durable `log.recent` pull, not by this push.
+///
 /// **Cursor-init failure**: if the rewound cursor cannot be determined the
 /// forwarder stops. It must not fall back to cursor `0`, which would replay the
 /// whole `events` table and defeat the bound. The failure is recorded through
@@ -238,9 +244,13 @@ pub fn start_log_forwarder<R: tauri::Runtime>(
             }
         };
 
-        // Catch up before the first broadcast: rows already inside the rewound
-        // window must reach the panel even if no further event is ever emitted.
-        cursor = drain_since(&pool, &app_handle, log_level, cursor).await;
+        // Catch up before the first broadcast, and DISCARD the advanced cursor:
+        // `create_main_window` runs last in `run_app`, so this emit usually
+        // reaches no listener, and consuming the rows would put them beyond every
+        // later drain. Holding the seed re-sends the window on the next
+        // broadcast, by which time a listener normally exists; the frontend
+        // dedupes by entry id, so the one-time overlap is invisible.
+        drain_since(&pool, &app_handle, log_level, cursor).await;
 
         loop {
             match rx.recv().await {

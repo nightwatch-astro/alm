@@ -7,7 +7,6 @@
  * Migrated to vanilla-extract (pilot/css-vanilla-extract branch).
  */
 import {
-  useEffect,
   useRef,
   useCallback,
   useSyncExternalStore,
@@ -19,7 +18,6 @@ import { Collapsible } from '@base-ui-components/react/collapsible';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogPanel } from './LogPanelContext';
 import { subscribeLog, getLogSnapshot } from '@/data/logStore';
-import { startLogSubscription } from '@/data/logSubscription';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
 import { errMessage } from '@/lib/errors';
@@ -99,10 +97,6 @@ export function LogPanel() {
     overscan: 12,
     observeElementOffset: observeElementOffsetWithCleanup,
   });
-
-  useEffect(() => {
-    void startLogSubscription();
-  }, []);
 
   useHotkeys(
     {
