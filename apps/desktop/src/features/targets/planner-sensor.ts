@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { equipmentCamerasList } from '@/features/settings/settingsIpc';
 import type { Camera } from '@/features/settings/settingsIpc';
-import { BANDS, type Band } from './astro/moon-avoidance';
+import { BANDS, type Band } from '@/shared/planner/moon-avoidance';
 import type { SensorConfig } from './planner-derive';
 
 function isBand(value: string): value is Band {

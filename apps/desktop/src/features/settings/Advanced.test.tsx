@@ -23,12 +23,12 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-const { mockGetSettings, mockRestartFirstRun } = vi.hoisted(() => ({
-  mockGetSettings: vi.fn().mockResolvedValue({ values: {} }),
+const { mockGetSettingsTyped, mockRestartFirstRun } = vi.hoisted(() => ({
+  mockGetSettingsTyped: vi.fn().mockResolvedValue({}),
   mockRestartFirstRun: vi.fn(),
 }));
 vi.mock('./settingsIpc', () => ({
-  getSettings: mockGetSettings,
+  getSettingsTyped: mockGetSettingsTyped,
   restartFirstRun: mockRestartFirstRun,
 }));
 
@@ -91,7 +91,7 @@ function makeResponse(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetSettings.mockResolvedValue({ values: {} });
+  mockGetSettingsTyped.mockResolvedValue({});
   mockNavigate.mockResolvedValue(undefined);
   mockGetUpdateSnapshot.mockReturnValue({ phase: 'idle' });
   mockSubscribeUpdate.mockReturnValue(() => {});

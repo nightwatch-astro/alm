@@ -5,12 +5,12 @@
 //! (spec 035 US4, FR-016).
 //!
 //! When a reviewable inbox plan reaches `applied`, each light frame it moved or
-//! catalogued must be folded into an [`acquisition_session`] keyed by capture
+//! catalogued must be folded into an `acquisition_session` keyed by capture
 //! identity (`session_key`: target/OBJECT, filter, binning, gain,
 //! observing-night) and linked to its resolved canonical target. This module is
 //! the production entry point the plan-apply listener calls.
 //!
-//! ## Per-frame pipeline ([`ingest_light_frame`])
+//! ## Per-frame pipeline (`ingest_light_frame`)
 //!
 //! 1. **Resolve the destination root → `library_root` (R9).** Applied inbox
 //!    items store `to_root_id` as a `registered_sources` id, but

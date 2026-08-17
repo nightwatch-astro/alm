@@ -88,7 +88,7 @@ pub struct InsertDarkThermalEvidence<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_calibration_session(
     conn: &mut SqliteConnection,
     params: &InsertCalibrationSession<'_>,
@@ -125,7 +125,7 @@ pub async fn insert_calibration_session(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_dark_thermal_evidence(
     conn: &mut SqliteConnection,
     params: &InsertDarkThermalEvidence<'_>,
@@ -163,9 +163,9 @@ pub async fn insert_dark_thermal_evidence(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] when the row was already assigned or the
+/// Returns `persistence_core::DbError::CasFailed` when the row was already assigned or the
 /// expected prior state does not match.
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn assign_calibration_session_to_family(
     conn: &mut SqliteConnection,
     session_row_id: i64,
@@ -200,7 +200,7 @@ pub async fn assign_calibration_session_to_family(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no matching row exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_calibration_session(
     pool: &SqlitePool,
     session_row_id: i64,
@@ -261,7 +261,7 @@ pub async fn get_calibration_session_by_public_id(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_calibration_sessions_by_family(
     pool: &SqlitePool,
     family_row_id: i64,

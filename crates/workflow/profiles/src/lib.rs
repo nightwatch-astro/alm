@@ -9,7 +9,7 @@
 //! - [`ToolProfile`]: static per-tool descriptor (name, args template, capabilities).
 //! - [`seed::all`]: seeded profiles for PixInsight, Siril, and Planetary Suite.
 //! - [`args::render`]: token-pattern substitution (`{folder}`, `{file}`).
-//! - [`launch`]: platform-specific detach helpers behind a [`ProcessSpawner`] trait.
+//! - [`launch`]: platform-specific detach helpers behind a [`launch::ProcessSpawner`] trait.
 //! - [`discover`]: per-OS executable auto-detection (pure filesystem reads).
 //!
 //! Constitution III: this crate NEVER processes images; it only models how to

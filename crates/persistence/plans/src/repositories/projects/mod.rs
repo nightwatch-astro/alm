@@ -10,9 +10,9 @@
 //! Constitution V: SQLite is the durable record; snapshot fields on
 //! `project_sources` denormalize Inventory data at link time.
 //!
-//! Split by responsibility (refactor sweep #977): [`crud`] is the `projects`
-//! table CRUD; [`sources`] is `project_sources` CRUD; [`channels`] is
-//! `project_channels` CRUD; [`create_tx`] is the composite atomic create
+//! Split by responsibility (refactor sweep #977): `crud` is the `projects`
+//! table CRUD; `sources` is `project_sources` CRUD; `channels` is
+//! `project_channels` CRUD; `create_tx` is the composite atomic create
 //! (T2-a) that writes all three tables plus the Constitution II folder plan
 //! in one transaction. Row/insert types shared across siblings stay here.
 

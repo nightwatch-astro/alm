@@ -54,7 +54,7 @@ pub struct TargetAliasRow {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_resolver_settings(pool: &SqlitePool) -> DbResult<Option<ResolverSettingsRow>> {
     let row = sqlx::query_as::<_, ResolverSettingsRow>(
         "SELECT online_enabled, simbad_endpoint, debounce_ms, request_timeout_secs
@@ -71,7 +71,7 @@ pub async fn get_resolver_settings(pool: &SqlitePool) -> DbResult<Option<Resolve
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_resolver_settings_online(
     pool: &SqlitePool,
 ) -> DbResult<Option<ResolverSettingsOnlineRow>> {
@@ -88,7 +88,7 @@ pub async fn get_resolver_settings_online(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn upsert_resolver_settings(
     pool: &SqlitePool,
     online_enabled: i64,
@@ -121,7 +121,7 @@ pub async fn upsert_resolver_settings(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn target_exists(pool: &SqlitePool, target_id: &str) -> DbResult<bool> {
     let row: Option<(String,)> = sqlx::query_as("SELECT id FROM canonical_target WHERE id = ?")
         .bind(target_id)
@@ -134,7 +134,7 @@ pub async fn target_exists(pool: &SqlitePool, target_id: &str) -> DbResult<bool>
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_target_aliases(
     pool: &SqlitePool,
     target_id: &str,
@@ -158,7 +158,7 @@ pub async fn list_target_aliases(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_alias_kind(
     pool: &SqlitePool,
     alias_id: &str,
@@ -188,7 +188,7 @@ pub async fn get_alias_kind(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn session_counts_by_target(pool: &SqlitePool) -> DbResult<Vec<(String, i64)>> {
     let rows: Vec<(Option<String>, Option<String>)> =
         sqlx::query_as("SELECT target_id, canonical_target_id FROM acquisition_session")

@@ -96,14 +96,16 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Option<T>>,
 {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    // 10 s covers the new wal_checkpoint(TRUNCATE) on resume/start paths
+    // (added by the durability commit) under slow CI runners (Ubuntu).
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     loop {
         if let Some(v) = check().await {
             return v;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "poll_until timed out after 2 s: {deadline_msg}"
+            "poll_until timed out after 10 s: {deadline_msg}"
         );
         tokio::time::sleep(Duration::from_millis(25)).await;
     }

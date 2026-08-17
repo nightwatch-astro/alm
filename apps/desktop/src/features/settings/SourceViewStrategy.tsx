@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { Select } from '@base-ui-components/react/select';
 import { m } from '@/lib/i18n';
+import { selectBase } from '@/styles/select.css';
 
 interface SourceViewStrategyProps {
   save: (scope: string, values: Record<string, unknown>) => void;
@@ -39,6 +40,11 @@ const STRATEGIES: StrategyOption[] = [
   },
 ];
 
+/**
+ * Renders controls for selecting and displaying source view strategies.
+ *
+ * @param save - Persists the selected strategy under the source view settings
+ */
 export function SourceViewStrategy({ save }: SourceViewStrategyProps) {
   const [selected, setSelected] = useState('junctions');
 
@@ -59,7 +65,7 @@ export function SourceViewStrategy({ save }: SourceViewStrategyProps) {
         </label>
         <Select.Root value={selected} onValueChange={handleChange}>
           <Select.Trigger
-            className="pv-select"
+            className={selectBase}
             aria-label={m.settings_sourceview_strategy_aria()}
           >
             <Select.Value />

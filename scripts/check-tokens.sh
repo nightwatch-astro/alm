@@ -6,11 +6,15 @@
 #      (all colors must use --pv-* CSS variables).
 #   2. Raw `ms` values appear in components.css
 #      (motion durations must use --pv-transition-* variables).
-#   3. Legacy/non-PV token namespaces appear in TSX/TS source files
-#      (--mantine-color-* and --pv-color-* do not exist in tokens.css).
-#   4. Bare --pv-radius (without -sm/-md/-lg suffix) appears in TSX/TS
-#      source files — pin the R-4 regression fix (spec 028, 2026-06-17).
-#      Valid radius tokens: --pv-radius-sm, --pv-radius-md, --pv-radius-lg.
+#   5. A [data-theme] block omits a raw token another theme declares.
+#   6. A text/surface token pair falls below WCAG AA contrast.
+#   7. A var(--pv-*) reference in TS/TSX names a token that does not exist.
+#
+# Checks 3 and 4 are Biome GritQL plugins:
+# apps/desktop/biome-plugins/no-legacy-token-namespace.grit bans the
+# `--mantine-color-*` / `--pv-color-*` namespaces, and
+# apps/desktop/biome-plugins/no-bare-pv-radius.grit bans bare `var(--pv-radius)`.
+# Checks 5-7 keep their original numbers because docs and specs cite them.
 #
 # Exceptions documented in components.css policy comment (spec 022 T011):
 #   - Component-intrinsic geometry px values are intentionally raw.
@@ -24,7 +28,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # partials under styles/components/. Scan the barrel AND every partial so the
 # token policy still covers all component CSS after the split.
 COMPONENTS_CSS=("$REPO_ROOT/apps/desktop/src/styles/components.css" "$REPO_ROOT"/apps/desktop/src/styles/components/*.css)
-SRC_DIR="$REPO_ROOT/apps/desktop/src"
 
 PASS=true
 
@@ -103,57 +106,6 @@ if [ -n "$MS_HITS" ]; then
   PASS=false
 else
   echo "  OK: No raw ms values."
-fi
-
-# ── Check 3: No legacy token namespaces in TSX/TS source ─────────────────────
-echo ""
-echo "3. Checking for legacy/non-PV token namespaces in source files..."
-# --mantine-color-* and --pv-color-* are not in tokens.css.
-# -E, not -P: this is a plain literal alternation, no PCRE feature in use —
-# BSD/macOS grep has no -P at all, so it errored on every invocation.
-LEGACY_HITS=$(
-  set +e
-  grep -rnE "(--mantine-color-|--pv-color-)" \
-    --include="*.tsx" --include="*.ts" \
-    "$SRC_DIR" | grep -v "\.test\." | grep -v "bindings/"
-  rc=("${PIPESTATUS[@]}")
-  set -e
-  fatal_if_grep_broken "while scanning for legacy token namespaces" "${rc[@]}"
-  exit 0
-)
-if [ -n "$LEGACY_HITS" ]; then
-  echo "FAIL: Legacy token references found (--mantine-color-* / --pv-color-* do not exist in tokens.css):"
-  echo "$LEGACY_HITS"
-  PASS=false
-else
-  echo "  OK: No legacy token namespaces."
-fi
-
-# ── Check 4: No bare --pv-radius (R-4 regression pin, spec 028) ─────────────
-echo ""
-echo "4. Checking for bare --pv-radius (undefined; use --pv-radius-{sm,md,lg}) in source files..."
-# Matches the literal substring var(--pv-radius) — the required immediate
-# closing paren is what excludes suffixed forms like var(--pv-radius-md):
-# a plain literal search, no regex needed at all, so -F (fixed string) is
-# both the most portable option and clearer than a lookaround would be.
-# (The pattern never used a lookahead despite what an earlier comment here
-# claimed; -F makes that explicit.)
-BARE_RADIUS_HITS=$(
-  set +e
-  grep -rnF "var(--pv-radius)" \
-    --include="*.tsx" --include="*.ts" \
-    "$SRC_DIR" | grep -v "\.test\." | grep -v "bindings/"
-  rc=("${PIPESTATUS[@]}")
-  set -e
-  fatal_if_grep_broken "while scanning for bare --pv-radius references" "${rc[@]}"
-  exit 0
-)
-if [ -n "$BARE_RADIUS_HITS" ]; then
-  echo "FAIL: Bare --pv-radius found (R-4 regression: token is undefined; use --pv-radius-md instead):"
-  echo "$BARE_RADIUS_HITS"
-  PASS=false
-else
-  echo "  OK: No bare --pv-radius references."
 fi
 
 # ── Check 5: Every [data-theme] block declares the full raw-token set ────────

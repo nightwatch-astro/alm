@@ -5,7 +5,7 @@
  * Spec 023 target identity logic tests.
  *
  * Tests:
- * 1. Error code mapping — the real TargetDetailV2 `errorMessage` helper maps
+ * 1. Error code mapping — the real TargetDetail `errorMessage` helper maps
  *    every known `ContractError` code to its localized message.
  * 2. Targets NOT in primary nav (T007 / X-3 regression guard).
  * 3. Contract snapshot: ProjectLifecycle enum values match the real
@@ -19,7 +19,7 @@ import type { ContractError } from '@/lib/errors';
 import { errorMessage } from './target-error-message';
 import { PROJECT_STATES } from '@/lib/route-contract';
 
-// ── Error code mapping (exercises the REAL TargetDetailV2 helper) ─────────────
+// ── Error code mapping (exercises the REAL TargetDetail helper) ─────────────
 //
 // This imports the production `errorMessage` (extracted to
 // `target-error-message.ts`) rather than a hand-copied mirror, so the test
@@ -30,7 +30,7 @@ import { PROJECT_STATES } from '@/lib/route-contract';
 const ce = (code: string): ContractError =>
   ({ code, message: '' }) as ContractError;
 
-describe('errorMessage (real TargetDetailV2 mapping)', () => {
+describe('errorMessage (real TargetDetail mapping)', () => {
   it.each([
     ['alias.blank', m.targets_detail_alias_blank()],
     ['alias.not_found', m.targets_detail_alias_not_found()],
@@ -49,10 +49,10 @@ describe('errorMessage (real TargetDetailV2 mapping)', () => {
 
 // The former "formatDate" describe block defined and tested a date-formatting
 // helper inline, entirely inside this test file. A codebase-wide check
-// confirms no such standalone helper exists in production: TargetDetailV2.tsx
+// confirms no such standalone helper exists in production: TargetDetail.tsx
 // calls `new Date(s.createdAt).toLocaleDateString(...)` inline (not extracted
 // to a reusable function) — so this test only ever validated its own local
-// copy. The real formatting is exercised by TargetDetailV2.test.tsx's
+// copy. The real formatting is exercised by TargetDetail.test.tsx's
 // "(US2) Linked sessions list renders date and frameCount" render test.
 
 // ── T007 / X-3: Targets NOT in primary nav manifest ───────────────────────────

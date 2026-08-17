@@ -1,0 +1,20 @@
+// Replaces check 3 of scripts/check-tokens.sh: `--mantine-color-*` and
+// `--pv-color-*` namespaces do not exist in tokens.css. The bare-regex branch
+// covers template literals, which the `string()` node pattern does not reach;
+// excluding quote and separator characters holds it to one diagnostic per
+// violation instead of one per enclosing node. The biome.json override that
+// loads this plugin excludes *.test.ts/tsx, which assert on banned literals.
+language js
+
+or {
+  string() as $s,
+  r"[^`'\"=;]*--mantine-color-[^`'\"=;]*" as $s,
+  r"[^`'\"=;]*--pv-color-[^`'\"=;]*" as $s
+} where {
+  $s <: or { r"[^\n]*--mantine-color-[^\n]*", r"[^\n]*--pv-color-[^\n]*" },
+  register_diagnostic(
+    span = $s,
+    message = "`--mantine-color-*` and `--pv-color-*` are not defined in tokens.css (spec 022). Use a real --pv-* token.",
+    severity = "error"
+  )
+}

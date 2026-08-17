@@ -16,12 +16,13 @@
 //! emitting `frame.missing`/`frame.recovered`. It NEVER creates, deletes, or
 //! moves a file (FR-008/INV-2) — only `file_record` rows are written.
 //!
-//! Applying a root's `reconcile.mode` to session `frame_ids` array membership
-//! (dropping a missing id from the array in auto-reconcile mode, FR-010) is
-//! left for the full US2 T021 implementation: this pass always retains the
-//! id in the array and relies on the existing `state != 'missing'` filter
-//! (`app_core::sessions::active_frame_summary`) to exclude it from active
-//! counts/totals, which already satisfies FR-009's flag-missing behaviour.
+//! A missing frame keeps its session `frame_ids` membership in both reconcile
+//! modes. Active counts, totals, and lists already exclude a `missing` frame
+//! via the `state != 'missing'` filter
+//! (`app_core::sessions::active_frame_summary`, `list_frames`), so removing
+//! the id changed no user-visible number while irreversibly discarding the
+//! frame-to-session attribution (Constitution V, Tier 1) a returning frame
+//! needs in order to be restored.
 
 use contracts_core::error_code::ErrorCode;
 use contracts_core::inventory_frame::RawFrameType;
@@ -55,7 +56,7 @@ use contracts_core::inventory_frame::{
 ///
 /// # Errors
 ///
-/// Returns `ContractError` per [`reconcile::run_reconcile`]. A failed
+/// Returns `ContractError` per `reconcile::run_reconcile`. A failed
 /// project-health check is retried on the next reconcile for the same root,
 /// because the frame-state writes have already committed by then.
 pub async fn run_reconcile(

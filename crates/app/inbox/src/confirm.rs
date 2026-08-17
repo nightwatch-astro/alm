@@ -3019,10 +3019,10 @@ mod tests {
             None,
             Some(instrume),
         );
-        settings_repo::set_pattern_for(
+        settings_repo::set_raw(
             db.pool(),
-            patterns::FrameTypeClass::Light,
-            "{camera}/light/",
+            settings_repo::PATTERNS_BY_TYPE_KEY,
+            &serde_json::json!({"light": "{camera}/light/"}),
         )
         .await
         .unwrap();

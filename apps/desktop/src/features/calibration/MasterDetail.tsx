@@ -59,6 +59,11 @@ import { MatchCandidatesPanel } from './MatchCandidatesPanel';
 import { MasterArchiveFlow } from './MasterArchiveFlow';
 import { buildMasterTitle, buildFingerprintProps } from './master-detail-model';
 import { useMasterDetail } from './useMasterDetail';
+import {
+  actions as mdActionsCls,
+  linkedStack,
+  match,
+} from '@/components/two-col-detail-layout.css';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -69,7 +74,13 @@ interface Props {
   agingThresholdDays: number;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+/**
+ * Displays the selected calibration master and its matching, archive, and reveal actions.
+ *
+ * @param master - The calibration master to display, or `null` to show the selection prompt
+ * @param prefillSuggestion - Whether to prefill the matching suggestion
+ * @param agingThresholdDays - The age threshold for showing the replace-master action
+ */
 
 export function MasterDetail({
   master,
@@ -119,7 +130,7 @@ export function MasterDetail({
 
   // Actions inline-left in the title, same pattern as SessionDetail's actionButtons.
   const actionButtons = (
-    <span className="pv-session-detail2__actions">
+    <span className={mdActionsCls}>
       {/* spec 048 US5 (FR-024/025): distinct wording per trigger path; the
 				    match itself is never auto-invalidated or removed, so this is a
 				    warning badge, not a blocking state. */}
@@ -208,7 +219,7 @@ export function MasterDetail({
         <TwoColDetailLayout
           colA={<PropertyTable mode="view" properties={colA} />}
           colB={<PropertyTable mode="view" properties={colB} />}
-          linkedClassName="pv-session-detail2__linked--stack"
+          linkedClassName={linkedStack}
           linked={
             <>
               <SessionListPopover
@@ -225,7 +236,7 @@ export function MasterDetail({
 
         {/* Detail hero (spec 043 §4): ranked candidate-masters match table for
 				    the master's matching-context session, with assign/cancel. */}
-        <div className="pv-session-detail2__match">
+        <div className={match}>
           <MatchCandidatesPanel
             sessionId={matchSessionId ?? ''}
             response={suggestResponse}

@@ -24,25 +24,13 @@ mod common;
 use std::time::Duration;
 
 use anyhow::Context;
-use common::{write_minimal_fits_with_exposure, E2eApp, DRAIN_BACKED_TIMEOUT};
+use common::{
+    settle_first_run_redirect, write_minimal_fits_with_exposure, E2eApp, DRAIN_BACKED_TIMEOUT,
+};
 use serde_json::json;
 use thirtyfour::{By, WebElement};
 
 const UI_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Wait for the index route's async first-run redirect to land on `/setup`
-/// BEFORE navigating anywhere (mirrors `inbox_ui_journeys.rs`'s
-/// `settle_first_run_redirect`). A fresh DB (the harness resets it every
-/// launch) makes `checkFirstRunComplete` redirect `/` → `/setup` from an
-/// async `beforeLoad`; if a journey `goto_route`s while that redirect is
-/// still pending, the late-resolving redirect can yank the app off the
-/// target route.
-async fn settle_first_run_redirect(app: &E2eApp) -> anyhow::Result<()> {
-    app.wait_url_contains("/setup", Duration::from_secs(15))
-        .await
-        .map(drop)
-        .map_err(|e| anyhow::anyhow!("expected a fresh DB to redirect to /setup: {e}"))
-}
 
 /// Registers a disposable "project" category root (the registered project
 /// LIBRARY the wizard's derived project path is anchored under, per PR

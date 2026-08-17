@@ -10,9 +10,9 @@
 //! `provenance.unreviewed` when any required field is not yet `reviewed`.
 //!
 //! Field-level review state is derived from each field's
-//! [`ProvenancedValue::origin`] — it is NOT a per-entity column. The
+//! `ProvenancedValue::origin` — it is NOT a per-entity column. The
 //! repository surface for that read is
-//! [`LifecycleRepository::field_origins`].
+//! `LifecycleRepository::field_origins`.
 //!
 //! Spec 041 FR-051 (T076, Phase 13): the only cells ever populated here gated
 //! the `AcquisitionSession`/`InventorySession` `candidate → confirmed` and

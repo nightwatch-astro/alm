@@ -17,6 +17,8 @@ import { updateSettings } from './settingsIpc';
  * Unmount / route-change flush: the pending Map is drained synchronously
  * (without the debounce delay) when the component unmounts.
  */
+const FEEDBACK_MS = 1500;
+
 export function useAutoSave() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,7 +46,7 @@ export function useAutoSave() {
     }
     setSaved(true);
     if (feedbackRef.current) clearTimeout(feedbackRef.current);
-    feedbackRef.current = setTimeout(() => setSaved(false), 1500);
+    feedbackRef.current = setTimeout(() => setSaved(false), FEEDBACK_MS);
   }, []);
 
   const save = useCallback(

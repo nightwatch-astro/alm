@@ -9,77 +9,96 @@
  */
 
 import type { ContractMeta } from '@/bindings/index';
+import {
+  empty as contractsListEmpty,
+  table as contractsListTable,
+  theadRow as contractsListTheadRow,
+  th as contractsListTh,
+  row as contractsListRow,
+  td as contractsListTd,
+  tdName as contractsListTdName,
+  tdMuted as contractsListTdMuted,
+  tdCenter as contractsListTdCenter,
+  tdSchema as contractsListTdSchema,
+  mismatchIcon as contractsListMismatchIcon,
+  replayOk as contractsListReplayOk,
+  replayNa as contractsListReplayNa,
+} from './contract-list.css';
 
 interface ContractListProps {
   contracts: ContractMeta[];
   onViewSchema: (contract: ContractMeta) => void;
 }
 
+/**
+ * Displays the available contracts and provides controls to view each schema.
+ *
+ * @param contracts - The contracts to display
+ * @param onViewSchema - Callback invoked when a contract's schema is requested
+ * @returns The contract registry table, or an empty-state message when no contracts are available
+ */
 export function ContractList({ contracts, onViewSchema }: ContractListProps) {
   if (contracts.length === 0) {
-    return <p className="pv-dev-contracts-list__empty">No contracts loaded.</p>;
+    return <p className={contractsListEmpty}>No contracts loaded.</p>;
   }
 
   return (
-    <table
-      className="pv-dev-contracts-list__table"
-      aria-label="Contract registry"
-    >
+    <table className={contractsListTable} aria-label="Contract registry">
       <thead>
-        <tr className="pv-dev-contracts-list__thead-row">
-          <th className="pv-dev-contracts-list__th">Name</th>
-          <th className="pv-dev-contracts-list__th">Version</th>
-          <th className="pv-dev-contracts-list__th">Direction</th>
-          <th className="pv-dev-contracts-list__th">Replay</th>
-          <th className="pv-dev-contracts-list__th">Schema path</th>
-          <th className="pv-dev-contracts-list__th">Actions</th>
+        <tr className={contractsListTheadRow}>
+          <th className={contractsListTh}>Name</th>
+          <th className={contractsListTh}>Version</th>
+          <th className={contractsListTh}>Direction</th>
+          <th className={contractsListTh}>Replay</th>
+          <th className={contractsListTh}>Schema path</th>
+          <th className={contractsListTh}>Actions</th>
         </tr>
       </thead>
       <tbody>
         {contracts.map((c) => (
           <tr
             key={c.name}
-            className="pv-dev-contracts-list__row"
+            className={contractsListRow}
             data-testid={`contract-row-${c.name}`}
           >
-            <td className="pv-dev-contracts-list__td-name">
+            <td className={contractsListTdName}>
               {c.mismatch === true && (
                 <span
                   title="Version mismatch between TypeScript and Rust registries"
                   aria-label="Version mismatch warning"
-                  className="pv-dev-contracts-list__mismatch-icon"
+                  className={contractsListMismatchIcon}
                 >
                   ⚠
                 </span>
               )}
               {c.name}
             </td>
-            <td className="pv-dev-contracts-list__td">{c.version}</td>
-            <td className="pv-dev-contracts-list__td-muted">{c.direction}</td>
-            <td className="pv-dev-contracts-list__td-center">
+            <td className={contractsListTd}>{c.version}</td>
+            <td className={contractsListTdMuted}>{c.direction}</td>
+            <td className={contractsListTdCenter}>
               {c.replaySafe ? (
                 <span
                   title="Replay-safe: read-only contract, replay allowed"
-                  className="pv-dev-contracts-list__replay-ok"
+                  className={contractsListReplayOk}
                 >
                   ✓
                 </span>
               ) : (
                 <span
                   title="Not replay-safe: write contract, replay disabled"
-                  className="pv-dev-contracts-list__replay-na"
+                  className={contractsListReplayNa}
                 >
                   —
                 </span>
               )}
             </td>
             <td
-              className="pv-dev-contracts-list__td-schema"
+              className={contractsListTdSchema}
               title={c.schemaPath || 'Schema path not available'}
             >
               {c.schemaPath || <em>N/A</em>}
             </td>
-            <td className="pv-dev-contracts-list__td">
+            <td className={contractsListTd}>
               <button
                 type="button"
                 className="pv-btn pv-btn--xs"

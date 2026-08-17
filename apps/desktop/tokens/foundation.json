@@ -4,7 +4,8 @@
     "$description": "Fonts"
   },
   "font-display": {
-    "$value": "'Space Grotesk Variable', 'Inter Variable', system-ui, sans-serif"
+    "$value": "'Space Grotesk Variable', 'Inter Variable', system-ui, sans-serif",
+    "$description": "Display/heading font stack. NOT an orphan despite having no in-app reference: platevault.github.io consumes it through the vendored foundation, so an orphan-token audit will flag it and deleting it would break the docs site. Keep it."
   },
   "text-xs": {
     "$value": "0.7857rem",

@@ -5,9 +5,7 @@
 //! Layer-1 integration tests for the sessions coverage area — feature 037 (T???).
 //!
 //! Covers:
-//! 1. `sessions::merge_sessions` / `sessions::split_session` — stub error
-//!    contracts verified against the real in-memory pool.
-//! 2. `list_sessions` / `get_session` — real DB round-trips.
+//! 1. `list_sessions` / `get_session` — real DB round-trips.
 //!
 //! Spec 041 FR-051 (T076, Phase 13): the former `inventory::review_session`
 //! scenarios (session-not-found, same-state noop, discovered → candidate)
@@ -38,17 +36,7 @@ async fn insert_acquisition_session(pool: &sqlx::SqlitePool, id: &str) {
     .expect("insert acquisition_session");
 }
 
-// ── 1. sessions stub: merge and split return not-implemented errors ───────────
-//
-// `merge_and_split_stubs_return_not_implemented_errors` removed: it exactly
-// duplicated `split_session_returns_not_implemented` /
-// `merge_sessions_returns_not_implemented` in `src/sessions.rs`'s own unit
-// tests, with zero added value — both stubs take `_pool: &SqlitePool` and
-// ignore it entirely, so exercising them through a real DB pool here (vs. an
-// unconnected in-memory pool at the unit level) exercises no additional code
-// path.
-
-// ── 2. list_sessions: returns real rows, empty on fresh DB ───────────────────
+// ── 1. list_sessions: returns real rows, empty on fresh DB ───────────────────
 
 #[tokio::test]
 async fn list_sessions_returns_empty_on_fresh_db() {

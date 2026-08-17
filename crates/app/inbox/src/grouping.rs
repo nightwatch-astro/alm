@@ -30,9 +30,9 @@
 //!
 //! # Module layout
 //!
-//! Split by cohesion: [`metadata`] (input view), [`dimension`] (identity
-//! dimensions), [`config`] (per-type recipe + sentinel), [`result`] (output
-//! types), [`engine`] (the pure `group_file` computation + its unit tests).
+//! Split by cohesion: `metadata` (input view), `dimension` (identity
+//! dimensions), `config` (per-type recipe + sentinel), `result` (output
+//! types), `engine` (the pure `group_file` computation + its unit tests).
 #![allow(clippy::doc_markdown)] // spec/FITS terminology not appropriate for backticks
 
 mod config;

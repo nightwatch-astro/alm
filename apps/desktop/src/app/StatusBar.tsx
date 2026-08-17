@@ -3,34 +3,33 @@
 
 import { clsx } from 'clsx';
 import { m } from '@/lib/i18n';
+// RENDERING CHANGE: canonical formatBytes uses 1dp for all sizes (B, KB, MB,
+// GB), whereas the former local copy used 0dp for KB. Aligns with MasterDetail
+// and the lib/format docstring (PR #1546 fmtBytes→formatBytes note).
+import { formatBytes } from '@/lib/format';
 import { useLogPanel } from './LogPanelContext';
 import { useOperationStatus } from './OperationStatusContext';
 import { usePageStatus } from './PageStatusContext';
 import { useStatusSummary } from './useStatusSummary';
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
+import {
+  statusBar,
+  sep as statusBarSep,
+  right as statusBarRight,
+  op as statusBarOp,
+  idle as statusBarIdle,
+  spinner as statusBarSpinner,
+  vol as statusBarVol,
+  volWarn as statusBarVolWarn,
+  meter as statusBarMeter,
+  logToggle as statusBarLogToggle,
+} from './statusbar.css';
 
 function formatCount(n: number): string {
   return n.toLocaleString();
 }
 
 /**
- * Status bar (design v4): three zones. LEFT = the current operation (transient),
- * CENTER = GLOBAL library inventory totals (task #87 — stable across routes,
- * NOT per-page counts), RIGHT = persistent storage/cleanup health + log toggle.
- *
- * The global totals come from `useStatusSummary()` → `commands.statusSummary()`
- * (the real `LibraryStats` DTO: sessions / projects / calibration sets /
- * targets). There is no library-wide image/file count in the contract yet (the
- * Advanced settings "Records" line is hardcoded); rather than show a fabricated
- * or dev-status-leaking placeholder (fix ef364dfc), the image total is simply
- * omitted from this bar until the metadata-ingest pipeline exposes a real count.
+ * Renders the status bar with operation progress, library totals, storage health, and log controls.
  */
 export function StatusBar() {
   const { toggle } = useLogPanel();
@@ -42,16 +41,16 @@ export function StatusBar() {
   const isActive = opStatus !== 'idle';
 
   return (
-    <div className="pv-frame__statusbar">
+    <div className={statusBar} data-testid="status-bar">
       {/* LEFT — current operation */}
-      <div className="pv-statusbar__op">
+      <div className={statusBarOp}>
         {isActive ? (
           <>
-            <span className="pv-statusbar__spinner" />
+            <span className={statusBarSpinner} />
             <span>{statusLabel}</span>
           </>
         ) : (
-          <span className="pv-statusbar__idle">{m.status_ready()}</span>
+          <span className={statusBarIdle}>{m.status_ready()}</span>
         )}
       </div>
 
@@ -74,12 +73,12 @@ export function StatusBar() {
           {formatCount(status.sessionCount)}{' '}
           {m.status_sessions_label({ count: status.sessionCount })}
         </span>
-        <span className="pv-statusbar__sep">·</span>
+        <span className={statusBarSep}>·</span>
         <span title={m.status_projects_title()}>
           {formatCount(status.projectCount)}{' '}
           {m.status_projects_label({ count: status.projectCount })}
         </span>
-        <span className="pv-statusbar__sep">·</span>
+        <span className={statusBarSep}>·</span>
         <span title={m.status_masters_title()}>
           {formatCount(status.calibrationCount)}{' '}
           {m.status_masters_label({ count: status.calibrationCount })}
@@ -87,7 +86,7 @@ export function StatusBar() {
       </div>
 
       {/* RIGHT — persistent storage / cleanup health + log */}
-      <div className="pv-statusbar__right">
+      <div className={statusBarRight}>
         {status.cleanupReclaimableBytes > 0 && (
           <span>
             {formatBytes(status.cleanupReclaimableBytes)}{' '}
@@ -105,10 +104,7 @@ export function StatusBar() {
           return (
             <span
               key={vol.path}
-              className={clsx(
-                'pv-statusbar__vol',
-                vol.warning && 'pv-statusbar__vol--warn',
-              )}
+              className={clsx(statusBarVol, vol.warning && statusBarVolWarn)}
               title={m.statusbar_vol_title({
                 path: vol.path,
                 free: formatBytes(vol.freeBytes),
@@ -116,7 +112,7 @@ export function StatusBar() {
               })}
             >
               <span>{label}</span>
-              <span className="pv-statusbar__meter">
+              <span className={statusBarMeter}>
                 {/* eslint-disable-next-line no-restricted-syntax -- dynamic: disk usage meter width % */}
                 <i style={{ width: `${usedPct}%` }} />
               </span>
@@ -126,7 +122,7 @@ export function StatusBar() {
         })}
         <button
           type="button"
-          className="pv-statusbar__log-toggle"
+          className={statusBarLogToggle}
           onClick={toggle}
           aria-label={m.status_log_toggle_aria()}
         >

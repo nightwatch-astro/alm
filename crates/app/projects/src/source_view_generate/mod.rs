@@ -42,8 +42,8 @@
 //!   function's calibration loop is the place to add masters-preferred
 //!   branching.
 //!
-//! Split by responsibility (refactor sweep #983): [`generate`] owns the
-//! `generate_source_view` pipeline; [`destination_override`] is the T041
+//! Split by responsibility (refactor sweep #983): `generate` owns the
+//! `generate_source_view` pipeline; `destination_override` is the T041
 //! per-project destination override KV read/write; the pure path/layout
 //! helpers below are shared by both.
 

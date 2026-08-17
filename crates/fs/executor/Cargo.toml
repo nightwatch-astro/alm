@@ -27,6 +27,9 @@ fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
 filetime = "0.2"
 # Atomic temp+rename for cross-volume copy and marker write (GF-3/27).
 tempfile.workspace = true
+hex.workspace = true
+sha2.workspace = true
+uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }

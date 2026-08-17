@@ -21,8 +21,8 @@ import {
   UNKNOWN_ROW_PLANNING,
   type RowMoonGeometry,
 } from './astro/row-planning';
-import type { MoonAvoidanceParams } from './astro/moon-avoidance';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { MoonAvoidanceParams } from '@/shared/planner/moon-avoidance';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import {
   buildTargetAccessors,
   flattenGroups,

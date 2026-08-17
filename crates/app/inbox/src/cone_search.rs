@@ -28,9 +28,9 @@ use contracts_core::error_code::ErrorCode;
 use contracts_core::targets::TargetObjectType;
 use contracts_core::{ContractError, ErrorSeverity};
 use persistence_inbox::repositories::inbox::{self as repo, InboxPointingRow};
+use target_match::skymath as tm_skymath;
 use target_match::{rank, Constraint, SkyObject};
 use targeting::coords;
-use targeting::{Angle, Equatorial};
 use targeting_resolver::cone_search::{
     dedup_candidates, is_default_excluded, prominence_tier, select_for_display, ConeCandidate,
 };
@@ -183,13 +183,18 @@ fn pick_tier(
 
 /// Wraps a [`ConeCandidate`]'s position for `target_match::rank`'s rotated
 /// footprint test; correlates back via `index` into the candidate vec.
+///
+/// Stores `target_match::skymath::Equatorial` (0.6.x) because `target_match`
+/// 0.5.x re-exports that version and `SkyObject::position` must return it.
+/// The workspace-wide `skymath` 0.7.x lives alongside as a transitive dep;
+/// we bridge by constructing the 0.6.x type directly from raw degrees.
 struct ConeSkyObject {
     index: usize,
-    position: Equatorial,
+    position: tm_skymath::Equatorial,
 }
 
 impl SkyObject for ConeSkyObject {
-    fn position(&self) -> Equatorial {
+    fn position(&self) -> tm_skymath::Equatorial {
         self.position
     }
 }
@@ -218,8 +223,7 @@ fn live_constellation(ra_deg: f64, dec_deg: f64) -> Option<String> {
     if !ra_deg.is_finite() || !dec_deg.is_finite() {
         return None;
     }
-    let eq = skymath::Equatorial::j2000(Angle::from_degrees(ra_deg), Angle::from_degrees(dec_deg))
-        .ok()?;
+    let eq = skymath::Equatorial::j2000_lenient(ra_deg, dec_deg).ok()?;
     Some(skymath::constellation(eq).abbreviation().to_owned())
 }
 
@@ -357,20 +361,19 @@ fn in_field_indices(
     let Some(field) = field else {
         return (0..candidates.len()).collect();
     };
-    let center = coords::to_equatorial(coords::Pointing::new(pointing.ra_deg, pointing.dec_deg));
+    let center = tm_skymath::Equatorial::j2000_lenient(pointing.ra_deg, pointing.dec_deg)
+        .expect("derive_pointing only returns finite coords");
     let constraint = pointing.rotation_deg.map_or_else(
         || Constraint::frame(&field),
-        |pa| Constraint::frame_rotated(&field, Angle::from_degrees(pa)),
+        |pa| Constraint::frame_rotated(&field, tm_skymath::Angle::from_degrees(pa)),
     );
     let objects: Vec<ConeSkyObject> = candidates
         .iter()
         .enumerate()
         .map(|(index, c)| ConeSkyObject {
             index,
-            position: coords::to_equatorial(coords::Pointing::new(
-                c.identity.ra_deg,
-                c.identity.dec_deg,
-            )),
+            position: tm_skymath::Equatorial::j2000_lenient(c.identity.ra_deg, c.identity.dec_deg)
+                .expect("SIMBAD-resolved candidates have finite coordinates"),
         })
         .collect();
     rank(center, &objects, constraint).into_iter().map(|m| m.object.index).collect()

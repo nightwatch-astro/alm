@@ -4,7 +4,10 @@
 
 **Created**: 2026-06-19
 
-**Status**: Draft
+**Status**: Implemented (post-hoc record, verified 2026-07-28). The wizard scan
+step ships in `apps/desktop/src/features/setup/SetupWizard.tsx` (`SCAN_STEP` /
+`isOnScanStep`, around lines 555-609). This header claimed otherwise until the
+2026-07-28 spec audit corrected it.
 
 **Input**: As the last step in the setup wizard, perform the actual scan per registered source and show the status of the scan (what was detected per source). Ingestion-group approval for brownfield libraries happens in the Inbox afterward — the wizard step is scan + summary only and reuses the Inbox triage components for the summary view.
 

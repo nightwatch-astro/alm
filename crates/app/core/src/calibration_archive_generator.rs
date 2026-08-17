@@ -9,7 +9,7 @@
 //! [`crate::archive_generator`]'s whole-project archive/restore. This module
 //! mirrors that shape for a single calibration master instead of a whole
 //! project's artifacts, reusing the same [`crate::protection::generate_plan`]
-//! tail and (for restore) [`crate::archive_generator::generate_restore_generic`]
+//! tail and (for restore) `crate::archive_generator::generate_restore_generic`
 //! — never duplicating that machinery.
 //!
 //! ## Candidate resolution
@@ -28,7 +28,7 @@
 //!
 //! A master currently assigned to one or more sessions requires an explicit
 //! `confirm_in_use = true` to archive — mirrors `calibration.match.assign`'s
-//! `override` gate. [`generate`] returns `calibration.master_in_use` when
+//! `override` gate. `generate` returns `calibration.master_in_use` when
 //! the caller has not confirmed.
 //!
 //! ## Lifecycle closure
@@ -172,11 +172,11 @@ pub async fn generate(
 
 /// Materialise a reviewable restore (un-archive) plan for a previously
 /// applied master-archive plan (#886). Thin wrapper over the shared
-/// [`generate_restore_generic`] tail (#885's project restore extracted it).
+/// `generate_restore_generic` tail (#885's project restore extracted it).
 ///
 /// # Errors
 ///
-/// See [`generate_restore_generic`].
+/// See `generate_restore_generic`.
 pub async fn generate_restore(
     pool: &SqlitePool,
     archived_plan_id: &str,

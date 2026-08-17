@@ -249,7 +249,7 @@ pub async fn is_first_run(cache: &dyn Cache) -> Result<bool, SeedError> {
 const SENTINEL_SIMBAD_OID: i64 = -1;
 
 /// Whether `simbad_oid` identifies the warm-complete sentinel row (see
-/// [`sentinel_identity`]) rather than a real cached target. The bundled seed
+/// `sentinel_identity`) rather than a real cached target. The bundled seed
 /// is stored in the SAME `Cache`-backed store any typeahead/cone-search
 /// query reads from (the crate exposes no separate metadata table), so any
 /// app-facing surface that reads broadly from the cache (`target.search`'s
@@ -315,7 +315,7 @@ async fn sentinel_matches(cache: &dyn Cache, seed: &SeedAsset) -> Result<bool, S
         .is_some_and(|row| row.common_name.as_deref() == Some(seed.generated_at.as_str())))
 }
 
-/// Chunk size for [`chunked_upsert_batch`] (spec 052 P4/#818 follow-up): one
+/// Chunk size for `chunked_upsert_batch` (spec 052 P4/#818 follow-up): one
 /// write transaction for the WHOLE seed leaves nothing visible to a reader
 /// until it all commits, so a `target.search` query racing a multi-second
 /// warm can miss an object the seed does contain simply because its part of
@@ -326,7 +326,7 @@ async fn sentinel_matches(cache: &dyn Cache, seed: &SeedAsset) -> Result<bool, S
 /// instead of 1 atomic transaction or ~13k per-entry ones pre-#695).
 const WARM_CHUNK_SIZE: usize = 1000;
 
-/// Upsert `identities` in [`WARM_CHUNK_SIZE`]-sized slices, one
+/// Upsert `identities` in `WARM_CHUNK_SIZE`-sized slices, one
 /// [`Cache::upsert_batch`] write transaction per chunk, summing the loaded
 /// count across chunks. Shared by [`warm_cache`] and
 /// [`warm_from_canonical_target`], which both build a full identity list up
@@ -351,9 +351,9 @@ async fn chunked_upsert_batch(
 
 /// Warm the redb cache from a seed asset, writing rows with `source = seed`.
 ///
-/// Entries are upserted via [`chunked_upsert_batch`] (one
+/// Entries are upserted via `chunked_upsert_batch` (one
 /// [`simbad_resolver::Cache::upsert_batch`] write transaction per
-/// [`WARM_CHUNK_SIZE`]-sized chunk, rather than one per entry — spec 052
+/// `WARM_CHUNK_SIZE`-sized chunk, rather than one per entry — spec 052
 /// P4/#695 — or one atomic transaction for the whole seed, which left
 /// nothing visible until it all committed — #818 follow-up), so the warm is
 /// idempotent: re-running it dedups by `simbad_oid` (or the
@@ -384,7 +384,7 @@ pub async fn warm_cache(
 /// Warm the redb cache from the bundled seed **only when it isn't already
 /// warmed for this exact seed version**.
 ///
-/// Gated on the warm-complete sentinel ([`sentinel_matches`]), not cache
+/// Gated on the warm-complete sentinel (`sentinel_matches`), not cache
 /// emptiness (spec 052 P4/#818 follow-up) — a crash partway through a
 /// chunked `Eventual` warm can leave a non-empty but partial cache (see
 /// [`is_first_run`]'s doc comment), which an emptiness check would mistake
@@ -687,8 +687,8 @@ mod tests {
 
     /// A real Messier-only slice of the committed bundled asset (~110 objects,
     /// including M 31/M 42) — fast enough for redb-touching tests. [`warm_cache`]
-    /// goes through [`chunked_upsert_batch`] (one [`simbad_resolver::Cache::
-    /// upsert_batch`] write transaction per [`WARM_CHUNK_SIZE`]-sized chunk —
+    /// goes through `chunked_upsert_batch` (one [`simbad_resolver::Cache::
+    /// upsert_batch`] write transaction per `WARM_CHUNK_SIZE`-sized chunk —
     /// spec 052 P4/#695, chunked by the first #818 follow-up), which on a
     /// `simbad_resolver::BatchDurability::Eventual` file-backed store
     /// (`crate::simbad::ResolveCache::open`'s production configuration since
@@ -838,7 +838,7 @@ mod tests {
     }
 
     /// Regression guard for the #818 follow-up (chunked batching,
-    /// [`WARM_CHUNK_SIZE`]): a seed spanning multiple chunks must warm
+    /// `WARM_CHUNK_SIZE`): a seed spanning multiple chunks must warm
     /// EVERY entry exactly once — no drop, duplicate, or corruption at a
     /// chunk boundary — proving `chunked_upsert_batch`'s per-chunk loop is
     /// equivalent to the old single whole-seed `upsert_batch` call for the

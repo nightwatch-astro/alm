@@ -25,7 +25,7 @@ use super::{SimbadConfig, NAMESPACE_SEED};
 ///
 /// Wraps TWO instances of the crate's own cache-first
 /// [`simbad_resolver::SimbadResolver`] facade, sharing one [`ResolveCache`]
-/// (see the module doc, "Dual lookup"): [`Self::typeahead`]-backed
+/// (see the module doc, "Dual lookup"): `typeahead`-backed
 /// [`Resolver`] trait impl (TAP + cache only), `explicit`-backed
 /// [`Self::resolve_explicit`] (TAP-first, Sesame-fallback-on-miss).
 pub struct SimbadResolver {
@@ -227,7 +227,7 @@ impl Resolver for SimbadResolver {
 
 /// Makes the production resolver satisfy [`crate::ExplicitResolver`] (spec
 /// 052 P2), so the app layer's `resolve_explicit` use case can stay generic
-/// (testable with [`crate::FakeResolver`]) instead of hardcoding this concrete
+/// (testable with `FakeResolver`) instead of hardcoding this concrete
 /// type.
 #[async_trait]
 impl crate::ExplicitResolver for SimbadResolver {

@@ -4,7 +4,12 @@
 
 **Created**: 2026-07-04
 
-**Status**: Approved plan-of-record (decisions final; no implementation yet)
+**Status**: Implemented (post-hoc record, verified 2026-07-28). All four crates
+are extracted and published, and the workspace consumes them as versioned
+external dependencies: `fits-header 0.4.2` (`crates/metadata/fits/Cargo.toml`),
+`xisf-header 0.4.3` (`crates/metadata/xisf/Cargo.toml`), `skymath 0.7.1` and
+`target-match 0.5.1` (`crates/targeting/Cargo.toml`). This header still read
+"no implementation yet" until the 2026-07-28 spec audit corrected it.
 
 **Input**: User description: "Record the approved publishable-crate extraction
 program — four crates identified by the crate-audit (2026-07-04) as

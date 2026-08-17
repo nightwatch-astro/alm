@@ -31,8 +31,11 @@
  */
 
 import type { TargetListItem } from '@/bindings/index';
-import type { ObserverSite } from './observing-sites/observer-site';
-import { activeSite } from './observing-sites/site-store';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
+import {
+  activeSite,
+  DEFAULT_USABLE_ALTITUDE_DEG,
+} from '@/shared/observing-sites/site-store';
 import {
   deriveObservability,
   getNightObservability,
@@ -48,15 +51,18 @@ import {
   DEFAULT_MOON_AVOIDANCE,
   type Band,
   type MoonAvoidanceParams,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 
 /**
  * Default usable-altitude threshold (degrees above horizon for imaging).
  * Overridable via Settings → Target Planner; callers should prefer the
  * user-configured value from `observing-sites/site-store.ts` (settings-backed,
  * T012b) over this constant.
+ *
+ * Alias of the settings-store default so the fallback used by these pure
+ * altitude functions cannot drift from the persisted default.
  */
-export const USABLE_ALT_DEG = 30;
+export const USABLE_ALT_DEG = DEFAULT_USABLE_ALTITUDE_DEG;
 
 /** One sampled point of the night's altitude curve. */
 export interface AltPoint {
@@ -176,7 +182,7 @@ export interface AltitudeSubject {
  *   thousands of rows) — computing the Moon time-series for every row there
  *   is a real perf cliff (found via a Layer-2 CI timeout against the full
  *   ~13k-entry bundled seed catalogue). Defaults to `true` (single-target
- *   callers: `TargetDetailV2`, and the per-visible-row recompute for
+ *   callers: `TargetDetail`, and the per-visible-row recompute for
  *   `GuidanceCell`). `false` zeroes `separationScalars`/`moonFreeMinutesByBand`
  *   (never fabricating a non-zero value) — `bestDate` is unaffected, it's
  *   cheap (Sun-RA-table based) and always computed regardless of this flag.

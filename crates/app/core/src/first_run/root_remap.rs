@@ -160,7 +160,7 @@ async fn ensure_remap_verified(
 ///
 /// Re-validates `new_path` so an apply cannot silently succeed against a path
 /// that no longer exists between preview and apply (e.g. an unmounted drive).
-/// Also re-derives verification itself via [`compute_remap_verification`]
+/// Also re-derives verification itself via `compute_remap_verification`
 /// rather than trusting the caller-supplied `verified` flag: both the flag
 /// AND the freshly recomputed state must agree the remap is verified, so a
 /// stale preview or a direct IPC call can't bypass the gate.

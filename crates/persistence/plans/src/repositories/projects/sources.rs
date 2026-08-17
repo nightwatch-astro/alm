@@ -23,7 +23,7 @@ fn source_missing_health_operation_id(root_id: &str) -> String {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_project_ids_for_session(
     pool: &SqlitePool,
     inventory_session_id: &str,
@@ -46,7 +46,7 @@ pub async fn list_project_ids_for_session(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_blockable_missing_sources(pool: &SqlitePool) -> DbResult<Vec<(String, String)>> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT DISTINCT ps.project_id, ps.inventory_session_id
@@ -71,7 +71,7 @@ pub async fn find_blockable_missing_sources(pool: &SqlitePool) -> DbResult<Vec<(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn begin_source_missing_health_check(pool: &SqlitePool, root_id: &str) -> DbResult<bool> {
     let result = sqlx::query(
         "INSERT INTO operation_states (id, operation_type, status, updated_at)
@@ -90,7 +90,7 @@ pub async fn begin_source_missing_health_check(pool: &SqlitePool, root_id: &str)
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn clear_source_missing_health_check(pool: &SqlitePool, root_id: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM operation_states WHERE id = ? AND operation_type = ?")
         .bind(source_missing_health_operation_id(root_id))
@@ -115,7 +115,7 @@ pub async fn clear_source_missing_health_check(pool: &SqlitePool, root_id: &str)
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn has_archived_raw_frames_for_project(
     pool: &SqlitePool,
     project_id: &str,
@@ -145,7 +145,7 @@ pub async fn has_archived_raw_frames_for_project(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violation or query failure.
+/// Returns `persistence_core::DbError::Database` on constraint violation or query failure.
 pub async fn insert_project_source(
     pool: &SqlitePool,
     data: &InsertProjectSource<'_>,
@@ -159,7 +159,7 @@ pub async fn insert_project_source(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violation or query failure.
+/// Returns `persistence_core::DbError::Database` on constraint violation or query failure.
 pub(super) async fn insert_project_source_conn(
     conn: &mut SqliteConnection,
     data: &InsertProjectSource<'_>,
@@ -189,7 +189,7 @@ pub(super) async fn insert_project_source_conn(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn delete_project_source(
     pool: &SqlitePool,
     project_id: &str,
@@ -209,7 +209,7 @@ pub async fn delete_project_source(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_project_sources(
     pool: &SqlitePool,
     project_id: &str,

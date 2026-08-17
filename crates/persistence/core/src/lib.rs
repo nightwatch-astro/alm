@@ -98,7 +98,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns [`DbError::Database`] if the pool cannot connect to the given URL.
+    /// Returns `persistence_core::DbError::Database` if the pool cannot connect to the given URL.
     pub async fn connect(connection_string: &str) -> DbResult<Self> {
         let options = SqliteConnectOptions::from_str(connection_string)?
             .journal_mode(SqliteJournalMode::Wal)
@@ -125,7 +125,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns [`DbError::Database`] if the in-memory pool cannot be created.
+    /// Returns `persistence_core::DbError::Database` if the in-memory pool cannot be created.
     pub async fn in_memory() -> DbResult<Self> {
         let db_name = uuid::Uuid::new_v4().simple();
         let url = format!("sqlite:file:{db_name}?mode=memory&cache=shared");
@@ -147,7 +147,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns [`DbError::Database`] on an unexpected SQL error other than the
+    /// Returns `persistence_core::DbError::Database` on an unexpected SQL error other than the
     /// table-not-found case.
     pub async fn has_pending_migrations(&self) -> DbResult<bool> {
         let mut conn = self.pool.acquire().await?;
@@ -183,7 +183,7 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns [`DbError::Database`] if the statement fails (e.g. destination
+    /// Returns `persistence_core::DbError::Database` if the statement fails (e.g. destination
     /// already exists, or disk full).
     pub async fn backup_to(&self, dest: &std::path::Path) -> DbResult<()> {
         let dest_str = dest.display().to_string().replace('\'', "''");

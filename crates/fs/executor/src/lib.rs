@@ -22,6 +22,7 @@ pub mod failure;
 pub mod ops;
 pub mod reconcile;
 pub mod run;
+pub mod update_view;
 
 pub use failure::{PlanItemFailure, RollbackOutcome};
 pub use reconcile::{classify, MutationShape, ReconcileVerdict};
