@@ -97,4 +97,10 @@ export const queryKeys = {
   roots: {
     all: () => ['roots'] as const,
   },
+  settings: {
+    // Distinct from `calibration.settings`, which keys the calibration
+    // tolerances store rather than a `settings.get` scope.
+    all: () => ['settings'] as const,
+    scope: (scope: string) => ['settings', scope] as const,
+  },
 } as const;
