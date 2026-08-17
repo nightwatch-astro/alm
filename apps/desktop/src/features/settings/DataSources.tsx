@@ -37,11 +37,18 @@ import { Modal } from '@/components';
 import { categoryLabel, SOURCES_KEYS } from './datasources-model';
 import { RootCard } from './RootCard';
 import { useDataSources } from './useDataSources';
+import { selectBase } from '@/styles/select.css';
+import { message as modalMessage } from '@/components/modal.css';
 
 interface DataSourcesProps {
   save: (scope: string, values: Record<string, unknown>) => void;
 }
 
+/**
+ * Manages the sources settings pane, including adding, remapping, rescanning, disabling, and deleting data sources.
+ *
+ * @param save - Settings persistence callback.
+ */
 export function DataSources({ save: _save }: DataSourcesProps) {
   const {
     roots,
@@ -139,7 +146,7 @@ export function DataSources({ save: _save }: DataSourcesProps) {
             />
             <div className="pv-data-sources__add-controls">
               <select
-                className="pv-select"
+                className={selectBase}
                 value={addingCategory}
                 onChange={(e) =>
                   setAddingCategory(e.target.value as RootCategory)
@@ -258,7 +265,7 @@ export function DataSources({ save: _save }: DataSourcesProps) {
           </>
         }
       >
-        <p className="pv-modal__message">
+        <p className={modalMessage}>
           {m.settings_datasources_disable_confirm_desc()}
         </p>
         {toggleActiveError && (
@@ -290,7 +297,7 @@ export function DataSources({ save: _save }: DataSourcesProps) {
           </>
         }
       >
-        <p className="pv-modal__message">
+        <p className={modalMessage}>
           {m.settings_datasources_delete_confirm_desc({
             path: deleteTarget?.path ?? '',
           })}

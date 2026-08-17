@@ -21,6 +21,7 @@ import { sourceProtectionGet, sourceProtectionSet } from './settingsIpc';
 import type { ProtectionLevel } from './settingsIpc';
 import { protectionLabel } from '@/lib/protection-label';
 import { m } from '@/lib/i18n';
+import { selectBase } from '@/styles/select.css';
 
 interface SourceProtectionOverrideProps {
   /** Real source UUID from the backend. */
@@ -57,6 +58,14 @@ function levelHint(level: ProtectionLevel, inherits: boolean): string {
   }
 }
 
+/**
+ * Displays a source's protection level and optionally its level editor.
+ *
+ * @param sourceId - The backend identifier of the source.
+ * @param open - Whether the protection level editor is visible.
+ * @param onOpenChange - Called when the editor requests a change to its open state.
+ * @param onSaved - Called with the new protection level after it is saved successfully.
+ */
 export function SourceProtectionOverride({
   sourceId,
   onSaved,
@@ -160,7 +169,7 @@ export function SourceProtectionOverride({
             </label>
             <select
               id={`protection-level-${sourceId}`}
-              className="pv-select pv-source-protect__select"
+              className={`${selectBase} pv-source-protect__select`}
               value={pendingLevel}
               onChange={(e) =>
                 setPendingLevel(e.target.value as ProtectionLevel)

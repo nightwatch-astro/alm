@@ -1,0 +1,22 @@
+// Replaces check 4 of scripts/check-tokens.sh: the suffix-less
+// `var(--pv-radius)` token is undefined (spec 028 R-4 regression pin). The
+// required closing paren is what keeps `var(--pv-radius-md)` passing.
+//
+// The bare-regex branch covers template literals, which the `string()` node
+// pattern does not reach; excluding quote and separator characters holds it to
+// one diagnostic per violation instead of one per enclosing node. The biome.json
+// override that loads this plugin excludes *.test.ts/tsx, which assert on the
+// literal this bans.
+language js
+
+or {
+  string() as $s,
+  r"[^`'\"=;]*var\(--pv-radius\)[^`'\"=;]*" as $s
+} where {
+  $s <: r"[^\n]*var\(--pv-radius\)[^\n]*",
+  register_diagnostic(
+    span = $s,
+    message = "`var(--pv-radius)` is undefined (spec 028 R-4). Use --pv-radius-sm, --pv-radius-md, or --pv-radius-lg.",
+    severity = "error"
+  )
+}

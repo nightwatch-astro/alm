@@ -18,6 +18,17 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 .codex/hooks/orchestrate/scripts/orchestrator-run-activate.py",
+            "statusMessage": "Activating orchestrate run enforcement...",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -55,28 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".codex/hooks/beads/scripts/beads-gh-issue-guard.sh",
-            "statusMessage": "Checking gh issue command against beads policy...",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
             "command": ".codex/hooks/hooks-quality/scripts/quality-before-commit.sh",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".codex/hooks/release-please/scripts/release-please-guard.sh",
             "timeout": 10
           }
         ]
@@ -96,7 +86,96 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".codex/hooks/steering-git-workflow/scripts/pr-create-guard.sh",
+            "command": ".codex/hooks/beads/scripts/beads-gh-issue-guard.py",
+            "statusMessage": "Checking gh issue command against beads policy...",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": ".codex/hooks/beads/scripts/beads-sync-stage.py",
+            "statusMessage": "Staging beads JSONL for commit...",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 .codex/hooks/orchestrate/scripts/orchestrator-claim-deny.py",
+            "statusMessage": "Checking orchestrator claim policy...",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|send_message|followup_task|send_input|multi_agent_v1send_input",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 .codex/hooks/orchestrate/scripts/orchestrator-activation-guard.py",
+            "statusMessage": "Checking claim-holder activation sequence...",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".codex/hooks/release-please/scripts/release-please-guard.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .codex/hooks/hooks-worktrunk/scripts/worktrunk-guard.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .codex/hooks/hooks-worktrunk/scripts/worktrunk-agent-guard.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|send_message|followup_task|send_input|multi_agent_v1send_input|resume_agent|multi_agent_v1resume_agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 .codex/hooks/worktrunk-writer/.apm/skills/worktrunk-writer/scripts/worktrunk-writer.py hook",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|apply_patch|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 .codex/hooks/worktrunk-writer/.apm/skills/worktrunk-writer/scripts/worktrunk-writer.py hook",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .codex/hooks/steering-git-workflow/scripts/pr-create-guard.py",
             "statusMessage": "Checking draft PR and Beads linkage policy...",
             "timeout": 10
           }
@@ -146,22 +225,22 @@
         ]
       },
       {
-        "matcher": "apply_patch|Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".codex/hooks/hooks-quality/scripts/quality-edit-advisory.sh",
-            "timeout": 3
-          }
-        ]
-      },
-      {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
             "command": ".codex/hooks/mcp-repomix/scripts/repomix-refresh-snapshot.sh",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "apply_patch|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .codex/hooks/hooks-quality/scripts/quality-edit-advisory.py",
+            "timeout": 3
           }
         ]
       }
@@ -177,6 +256,26 @@
             "statusMessage": "Indexing codebase..."
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".codex/hooks/beads/scripts/beads-sync-session.py",
+            "statusMessage": "Syncing beads (Dolt pull, JSONL fallback)...",
+            "timeout": 60
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".codex/hooks/hooks-worktrunk/scripts/worktrunk-sweep.py",
+            "timeout": 60
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -185,17 +284,28 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".codex/hooks/beads/scripts/beads-subagent-reminder.sh",
+            "command": ".codex/hooks/beads/scripts/beads-subagent-reminder.py",
             "statusMessage": "Injecting beads work contract...",
             "timeout": 10
           }
         ]
       },
       {
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": ".codex/hooks/steering-pragmatic/scripts/inject-working-style.sh",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 .codex/hooks/orchestrate/scripts/contract-start.py",
+            "statusMessage": "Injecting bead-as-brief claim contract...",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".codex/hooks/steering-pragmatic/scripts/inject-working-style.py",
             "timeout": 5
           }
         ]
@@ -204,8 +314,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".codex/hooks/code-intelligence/scripts/subagent-context-inject.sh",
+            "command": ".codex/hooks/code-intelligence/scripts/subagent-context-inject.py",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 .codex/hooks/worktrunk-writer/.apm/skills/worktrunk-writer/scripts/context-handshake.py",
+            "timeout": 10
           }
         ]
       }
@@ -217,6 +337,30 @@
             "type": "command",
             "command": ".codex/hooks/speckit/scripts/speckit-stop-gate.sh",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".codex/hooks/beads/scripts/beads-sync-push.py",
+            "statusMessage": "Publishing beads state...",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && RULES_DIR=\"$(dirname \".codex/hooks/orchestrate/.apm/rules/generic.rules.json\")\" python3 .codex/hooks/orchestrate/scripts/rules-eval.py",
+            "statusMessage": "Evaluating bead contract...",
+            "timeout": 45
           }
         ]
       }

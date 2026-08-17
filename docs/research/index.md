@@ -12,6 +12,7 @@ live in this directory; feature-scoped research lives under
 - [lifecycle-state-model.md](./lifecycle-state-model.md) — data lifecycle state model.
 - [025-plan-apply-decision-map.md](./025-plan-apply-decision-map.md): spec 025 research decisions (R1 through R8, R-FS-1, R-Pause-1, R-CAS-1) mapped to the executor and `app/core` modules that enforce them, including where the approval-token implementation diverges from R8.
 - [044-frontend-astronomy-libraries.md](./044-frontend-astronomy-libraries.md) — astronomy/charting library selection for the planner (astronomy-engine, visx, react-table, moon filter model, FITS/XISF crate split); handover for spec 044 + orchestrator.
+- [007-025-048-perf-gate-measurements.md](./007-025-048-perf-gate-measurements.md) — measured perf-gate results for calibration suggest (spec 007 T033), plan-apply progress (spec 025 T045), and 10k-frame reconcile (spec 048 SC-005).
 
 ## Feature research decisions
 

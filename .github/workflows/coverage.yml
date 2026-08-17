@@ -11,8 +11,13 @@ name: Coverage
 #   - an lcov report (uploaded as an artifact)
 #   - a per-file summary in the job log
 #
-# cargo-llvm-cov wraps `cargo test`, so it covers unit tests, the real-SQLite
-# Layer-1 integration tests, and doctests in a single instrumented pass.
+# cargo-llvm-cov wraps `cargo test`, so it covers unit tests and the
+# real-SQLite Layer-1 integration tests in a single instrumented pass.
+#
+# Doctests are excluded on purpose. Instrumenting them makes rustdoc take
+# `-Z persist-doctests`, which only nightly accepts, so passing `--doctests`
+# here hard-fails the job. The workspace has no executable doctests to
+# measure either. Re-add it behind `cargo +nightly llvm-cov` if that changes.
 
 on:
   pull_request:
@@ -104,13 +109,12 @@ jobs:
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
 
-      - name: Collect coverage (workspace, all tests + doctests)
+      - name: Collect coverage (workspace, unit + integration tests)
         run: |
           cargo llvm-cov \
             --workspace \
             --lcov \
-            --output-path lcov.info \
-            --doctests
+            --output-path lcov.info
 
       - name: Print coverage summary
         run: cargo llvm-cov report --summary-only

@@ -17,6 +17,7 @@ import { m } from '@/lib/i18n';
 import type { Density } from '@/bindings/types';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
+import { selectBase } from '@/styles/select.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 //
@@ -41,7 +42,11 @@ export interface StepCatalogsProps {
 // of a per-source override already means inherit-global.
 type DefaultProtection = 'protected' | 'unprotected';
 
-// ── Default source protection (spec 018, persisted via the settings backend) ──
+/**
+ * Provides a control for choosing the default source protection setting.
+ *
+ * @returns A select control for choosing protected or unprotected sources
+ */
 
 function DefaultProtectionControl() {
   const [value, setValue] = useState<DefaultProtection>('protected');
@@ -88,7 +93,7 @@ function DefaultProtectionControl() {
 
   return (
     <select
-      className="pv-select"
+      className={selectBase}
       value={value}
       aria-label={m.setup_config_default_protection_title()}
       onChange={(e) => onChange(e.target.value as DefaultProtection)}
@@ -103,13 +108,17 @@ function DefaultProtectionControl() {
   );
 }
 
-// ── Display density (frontend preference; applied app-wide) ───────────────────
+/**
+ * Provides a control for selecting the application's display density.
+ *
+ * @returns The display density selection control
+ */
 
 function DensityControl() {
   const [density, setDensity] = usePreference('density');
   return (
     <select
-      className="pv-select"
+      className={selectBase}
       value={density}
       aria-label={m.settings_density_legend()}
       onChange={(e) => setDensity(e.target.value as Density)}

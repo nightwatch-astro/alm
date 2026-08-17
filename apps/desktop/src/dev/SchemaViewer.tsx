@@ -13,6 +13,20 @@
 import { useState, useEffect } from 'react';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
+import {
+  overlay as schemaOverlay,
+  panel as schemaPanel,
+  header as schemaHeader,
+  name as schemaName,
+  ver as schemaVersion,
+  actions as schemaActions,
+  body as schemaBody,
+  missing as schemaMissing,
+  missingPath as schemaMissingPath,
+  missingCode as schemaMissingCode,
+  loading as schemaLoading,
+  pre as schemaPre,
+} from './schema-viewer.css';
 
 interface SchemaViewerProps {
   /** Absolute path to the JSON Schema file. */
@@ -24,6 +38,14 @@ interface SchemaViewerProps {
   onClose: () => void;
 }
 
+/**
+ * Displays a fetched JSON Schema with loading, missing, and clipboard-copy states.
+ *
+ * @param schemaPath - The path used to fetch the schema
+ * @param contractVersion - The contract version displayed in the viewer
+ * @param contractName - The contract name displayed in the viewer
+ * @param onClose - Callback invoked when the viewer is closed
+ */
 export function SchemaViewer({
   schemaPath,
   contractVersion,
@@ -74,15 +96,15 @@ export function SchemaViewer({
     <div
       role="dialog"
       aria-label={`Schema viewer: ${contractName} v${contractVersion}`}
-      className="pv-dev-schema__overlay"
+      className={schemaOverlay}
     >
-      <div className="pv-dev-schema__panel">
-        <div className="pv-dev-schema__header">
+      <div className={schemaPanel}>
+        <div className={schemaHeader}>
           <div>
-            <span className="pv-dev-schema__name">{contractName}</span>
-            <span className="pv-dev-schema__version">v{contractVersion}</span>
+            <span className={schemaName}>{contractName}</span>
+            <span className={schemaVersion}>v{contractVersion}</span>
           </div>
-          <div className="pv-dev-schema__actions">
+          <div className={schemaActions}>
             <button
               type="button"
               className="pv-btn pv-btn--sm"
@@ -103,25 +125,25 @@ export function SchemaViewer({
           </div>
         </div>
 
-        <div className="pv-dev-schema__body">
+        <div className={schemaBody}>
           {missing ? (
             <div
               role="alert"
               data-testid="schema-missing"
-              className="pv-dev-schema__missing"
+              className={schemaMissing}
             >
               <strong>schema.missing</strong>
-              <p className="pv-dev-schema__missing-path">
+              <p className={schemaMissingPath}>
                 Schema file not found at:{' '}
-                <code className="pv-dev-schema__missing-code">
+                <code className={schemaMissingCode}>
                   {schemaPath || '(no path)'}
                 </code>
               </p>
             </div>
           ) : content === null ? (
-            <div className="pv-dev-schema__loading">Loading schema…</div>
+            <div className={schemaLoading}>Loading schema…</div>
           ) : (
-            <pre data-testid="schema-content" className="pv-dev-schema__pre">
+            <pre data-testid="schema-content" className={schemaPre}>
               {content}
             </pre>
           )}

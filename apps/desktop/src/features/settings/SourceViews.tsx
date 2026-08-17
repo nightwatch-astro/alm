@@ -26,6 +26,7 @@ import {
   SettingsRow,
   RestoreDefaultsBtn,
 } from './SettingsKit';
+import { selectBase } from '@/styles/select.css';
 
 const SOURCE_VIEWS_KEYS = [
   'sourceViewLinkKindIntraDrive',
@@ -52,6 +53,12 @@ interface SourceViewsProps {
   save: (scope: string, values: Record<string, unknown>) => void;
 }
 
+/**
+ * Renders controls for configuring source-view link kinds across and within drives.
+ *
+ * @param save - Persists updates to the source views settings
+ * @returns The Source Views settings section
+ */
 export function SourceViews({ save }: SourceViewsProps) {
   const [intraDrive, setIntraDrive] = useState<LinkKind>('hardlink');
   const [crossDrive, setCrossDrive] = useState<LinkKind>('symlink');
@@ -107,7 +114,7 @@ export function SourceViews({ save }: SourceViewsProps) {
         info={m.settings_source_views_intra_drive_info()}
       >
         <select
-          className="pv-select"
+          className={selectBase}
           value={intraDrive}
           aria-label={m.settings_source_views_intra_drive_label()}
           data-testid="source-views-intra-drive-select"
@@ -131,7 +138,7 @@ export function SourceViews({ save }: SourceViewsProps) {
         info={m.settings_source_views_cross_drive_info()}
       >
         <select
-          className="pv-select"
+          className={selectBase}
           value={crossDrive}
           aria-label={m.settings_source_views_cross_drive_label()}
           data-testid="source-views-cross-drive-select"
