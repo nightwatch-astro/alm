@@ -9,7 +9,7 @@ import {
   deriveRowMoonPlanning,
   UNKNOWN_ROW_PLANNING,
 } from './astro/row-planning';
-import { DEFAULT_MOON_AVOIDANCE } from './astro/moon-avoidance';
+import { DEFAULT_MOON_AVOIDANCE } from '@/shared/planner/moon-avoidance';
 import type { ObservingNight } from './astro/moon-state';
 
 function night(): ObservingNight {

@@ -6,20 +6,13 @@
  *
  * Migrated to vanilla-extract (pilot/css-vanilla-extract branch).
  */
-import {
-  useEffect,
-  useRef,
-  useCallback,
-  useSyncExternalStore,
-  useState,
-} from 'react';
+import { useRef, useCallback, useSyncExternalStore, useState } from 'react';
 import { m } from '@/lib/i18n';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Collapsible } from '@base-ui-components/react/collapsible';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogPanel } from './LogPanelContext';
 import { subscribeLog, getLogSnapshot } from '@/data/logStore';
-import { startLogSubscription } from '@/data/logSubscription';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
 import { errMessage } from '@/lib/errors';
@@ -52,8 +45,11 @@ import {
   events,
   empty,
 } from './logpanel.css';
+import { virtualInner, virtualScroll } from '@/ui/page-layout.css';
 
-// ── LogPanel component ────────────────────────────────────────────────────────
+/**
+ * Displays a filterable, virtualised log panel with tail following, navigation, and export controls.
+ */
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: log panel render with per-filter and per-level conditional branches
 export function LogPanel() {
@@ -100,10 +96,6 @@ export function LogPanel() {
     overscan: 12,
     observeElementOffset: observeElementOffsetWithCleanup,
   });
-
-  useEffect(() => {
-    void startLogSubscription();
-  }, []);
 
   useHotkeys(
     {
@@ -342,7 +334,7 @@ export function LogPanel() {
         )}
 
         <ul
-          className={`${events} pv-virtual-scroll`}
+          className={`${events} ${virtualScroll}`}
           ref={listRef}
           onScroll={handleScroll}
           data-virtual-scroll="true"
@@ -362,7 +354,7 @@ export function LogPanel() {
             </li>
           ) : (
             <div
-              className="pv-virtual-inner"
+              className={virtualInner}
               // eslint-disable-next-line no-restricted-syntax
               style={{
                 height: `${virtualizer.getTotalSize()}px`,

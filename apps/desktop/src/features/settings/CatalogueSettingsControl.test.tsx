@@ -20,10 +20,10 @@ const { mockLoad, mockSave } = vi.hoisted(() => ({
   mockSave: vi.fn(),
 }));
 
-vi.mock('@/features/targets/catalogue-settings', async (importOriginal) => {
+vi.mock('@/shared/planner/catalogue-settings', async (importOriginal) => {
   const actual =
     await importOriginal<
-      typeof import('@/features/targets/catalogue-settings')
+      typeof import('@/shared/planner/catalogue-settings')
     >();
   return {
     ...actual,
@@ -33,8 +33,8 @@ vi.mock('@/features/targets/catalogue-settings', async (importOriginal) => {
 });
 
 import { CatalogueSettingsControl } from './CatalogueSettingsControl';
-import { PLANNER_CATALOGS } from '@/features/targets/planner-catalog';
-import { DEFAULT_ENABLED_CATALOGUES } from '@/features/targets/catalogue-settings';
+import { PLANNER_CATALOGS } from '@/shared/planner/planner-catalog';
+import { DEFAULT_ENABLED_CATALOGUES } from '@/shared/planner/catalogue-settings';
 import { m } from '@/lib/i18n';
 
 beforeEach(() => {

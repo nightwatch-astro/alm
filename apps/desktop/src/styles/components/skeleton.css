@@ -16,11 +16,14 @@
   width: 100%;
 }
 
+/* skel-w/h/r are registered with @property (tokens/properties.json), so their
+   defaults come from initial-value and a var() fallback here would be dead
+   code. Variants therefore override the property, not the declaration. */
 .pv-skeleton {
   display: block;
-  width: var(--pv-skel-w, 100%);
-  height: var(--pv-skel-h, var(--pv-sp-3));
-  border-radius: var(--pv-skel-r, var(--pv-radius-sm));
+  width: var(--pv-skel-w);
+  height: var(--pv-skel-h);
+  border-radius: var(--pv-skel-r);
   background-color: var(--pv-chip);
   background-image: linear-gradient(
     90deg,
@@ -34,14 +37,14 @@
 }
 
 .pv-skeleton--block {
-  height: var(--pv-skel-h, var(--pv-row-height));
-  border-radius: var(--pv-skel-r, var(--pv-radius-md));
+  --pv-skel-h: var(--pv-row-height);
+  --pv-skel-r: var(--pv-radius-md);
 }
 
 .pv-skeleton--circle {
-  width: var(--pv-skel-w, var(--pv-row-height));
-  height: var(--pv-skel-h, var(--pv-row-height));
-  border-radius: var(--pv-skel-r, 50%);
+  --pv-skel-w: var(--pv-row-height);
+  --pv-skel-h: var(--pv-row-height);
+  --pv-skel-r: 50%;
   flex: none;
 }
 

@@ -18,7 +18,7 @@ import {
   bandTier,
   type Band,
   type Recommendation,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import { m } from '@/lib/i18n';
 
 /** i18n label for each derived recommendation category (render-time thunks). */

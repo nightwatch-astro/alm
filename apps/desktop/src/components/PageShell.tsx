@@ -2,11 +2,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
+import { page } from '@/ui/page-layout.css';
 
 export interface PageShellProps {
   children: ReactNode;
 }
 
+/**
+ * Provides a styled page-level container for its child content.
+ *
+ * @param children - The content rendered inside the page container
+ */
 export function PageShell({ children }: PageShellProps) {
-  return <div className="pv-page">{children}</div>;
+  return <div className={page}>{children}</div>;
 }

@@ -17,10 +17,12 @@
 # Two-tier L3 strategy (see issue #1203 and the original full-matrix motivation):
 #
 #   Tier 1 — L3 smoke (per-PR): a small, fast subset runs on every pull_request
-#     on ubuntu-latest only (the stable lane). Covers app boot + all top-level
+#     and every merge_group queue entry, on ubuntu-latest only (the stable lane). Covers app boot + all top-level
 #     routes, one inbox flow, and one targets flow — three journeys, serial,
-#     targeting <8 min wall-clock. Required branch-protection check:
-#     "Real-UI smoke (L3) — ubuntu-latest". PRs get a real-UI signal without
+#     targeting <8 min wall-clock. The required branch-protection check
+#     "Real-UI smoke (L3) — ubuntu-latest" is published by the gate job
+#     e2e-smoke-gate-ubuntu; the worker publishes "… (L3) subset — …" so no
+#     two check runs share the required name. PRs get a real-UI signal without
 #     the ~25-min Windows full-suite cost or Windows L3 flake exposure.
 #
 #   Tier 2 — Full L3 matrix (main pushes + workflow_dispatch): the complete
@@ -128,6 +130,22 @@ on:
   # ubuntu + windows shards for real, not skipped.
   push:
     branches: [main]
+  # Required for the merge queue. A queued PR waits on the contexts branch
+  # protection requires, and "Real-UI smoke (L3) — ubuntu-latest" is one of them
+  # (this workflow publishes it). A workflow with no `merge_group` trigger
+  # publishes none of its contexts, so the entry never resolves and the queue
+  # stalls instead of failing. The `changes` job needs no adjustment:
+  # dorny/paths-filter v4 diffs `merge_group.base_sha..head_sha` for this event,
+  # so path gating scopes to the queued changes.
+  #
+  # A queue entry runs the SMOKE tier, the same as a pull_request — it is the
+  # required context, and the full matrix at ~25 min would make the queue the
+  # slowest path in the repo. The full matrix still runs on the push to `main`
+  # the queue produces, so Tier 2 coverage is unchanged. Every job `if:` below
+  # therefore names its events positively instead of testing
+  # `!= 'pull_request'`, which would silently have put queue entries on the
+  # full-matrix side.
+  merge_group:
   workflow_dispatch:
     inputs:
       run_macos:
@@ -185,6 +203,15 @@ env:
   # in every shard job (ubuntu, windows, macOS) so a single bump here
   # invalidates the cached binary across all lanes at once.
   TAURI_WEBDRIVER_VERSION: "0.1.1"
+  # THE frontend URL for this workflow. Every "Serve frontend dist" step derives
+  # its `vite preview --port` from this value, the app binary reads it as its
+  # `devUrl` (`desktop_shell::DEV_URL_ENV`), and the harness reads it as its
+  # base URL (`crates/e2e-tests/tests/common/mod.rs::app_url`) — one value,
+  # three readers, so what is served and what is loaded cannot drift apart.
+  # Each job runs on its own GitHub-hosted VM, so the port only has to be
+  # unique per machine; concurrent LOCAL lanes export their own `PV_DEV_URL`
+  # (issue #1409).
+  PV_DEV_URL: "http://localhost:5173"
 
 jobs:
   # Cheap change-detection gate — mirrors ci.yml's `changes` job. Cross-workflow
@@ -465,8 +492,11 @@ jobs:
     name: Build app — windows-latest
     needs: changes
     # Windows build only needed on main pushes and dispatch; the windows shards
-    # are skipped on pull_request, so no consumer would use this artifact on PRs.
-    if: needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    # are skipped on pull_request and merge_group, so no consumer would use this
+    # artifact there.
+    if: >-
+      needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -679,8 +709,8 @@ jobs:
   # ---------------------------------------------------------------------------
   # Tier-1 smoke (per-PR, ubuntu-latest only): a focused subset of real-UI
   # journeys that boots the app and exercises the core surfaces. Runs on
-  # pull_request ONLY — the full matrix (both OSes, all shards) runs on push
-  # to main and workflow_dispatch instead (see the two-tier strategy in the
+  # pull_request and merge_group ONLY — the full matrix (both OSes, all shards)
+  # runs on push to main and workflow_dispatch instead (see the two-tier strategy in the
   # header). No sharding: the filter selects 3 journeys, each serial, which
   # completes in < 8 min on ubuntu-latest.
   #
@@ -694,11 +724,19 @@ jobs:
   # step and the comment above — there is no hidden implicit selection.
   # ---------------------------------------------------------------------------
   smoke-ubuntu:
-    name: Real-UI smoke (L3) — ubuntu-latest
+    # NOT the required context — that name belongs to e2e-smoke-gate-ubuntu
+    # alone. Branch protection matches contexts by exact name, so two check
+    # runs sharing the required name let an evaluator (notably a merge queue)
+    # settle on the wrong instance. Worker/gate names are split here the same
+    # way the full matrix splits "shard" from its gate.
+    name: Real-UI smoke (L3) subset — ubuntu-latest
     needs: [changes, build-frontend, build-app-ubuntu]
-    # Smoke subset runs ONLY on pull_request. Main pushes and dispatch run the
-    # full matrix (real-ui-e2e-ubuntu shards) instead.
-    if: needs.changes.outputs.run == 'true' && github.event_name == 'pull_request'
+    # Smoke subset runs on pull_request and on merge_group (the queue needs the
+    # same required context). Main pushes and dispatch run the full matrix
+    # (real-ui-e2e-ubuntu shards) instead.
+    if: >-
+      needs.changes.outputs.run == 'true'
+      && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -746,9 +784,15 @@ jobs:
         shell: bash
         run: chmod +x "$APP_BIN"
 
-      - name: Serve frontend dist on :5173
+      - name: Serve frontend dist on $PV_DEV_URL
         shell: bash
-        run: pnpm --filter @astro-plan/desktop preview --port 5173 &
+        # Port comes from PV_DEV_URL (workflow `env`) — the same value the app
+        # binary and the harness read, so there is no second port literal to
+        # drift. --strictPort makes a taken port a loud failure instead of a
+        # silent fallback that leaves the app loading someone else's server.
+        run: |
+          pnpm --filter @astro-plan/desktop preview \
+            --port "${PV_DEV_URL##*:}" --strictPort &
 
       - name: Run L3 smoke (3 journeys via filter-expr)
         env:
@@ -770,11 +814,13 @@ jobs:
           --no-tests=warn
           --filter-expr 'test(all_top_level_screens_load) | test(inbox_ui_mixed_folder_splits_into_single_type_items) | test(targets_ui_add_target_no_duplicate_on_reconfirm)'
 
-  # Gate for the smoke job. Published as "Real-UI smoke (L3) — ubuntu-latest"
+  # Gate for the smoke job, and the ONLY publisher of
+  # "Real-UI smoke (L3) — ubuntu-latest"
   # — the context required by branch protection for PRs (replaces the old
   # full-matrix "Real-UI journeys (L3) — ubuntu-latest" and "— windows-latest"
-  # required contexts). Only runs on pull_request; skipped on main push/dispatch
-  # because the full e2e-gate-ubuntu/-windows gates cover those events.
+  # required contexts). Runs on pull_request and merge_group; skipped on main
+  # push/dispatch because the full e2e-gate-ubuntu/-windows gates cover those
+  # events.
   #
   # `always()` alone (without `run == 'true'`) keeps this gate reporting a
   # definitive conclusion even on docs-only PRs where run='false' and the whole
@@ -786,7 +832,9 @@ jobs:
   e2e-smoke-gate-ubuntu:
     name: Real-UI smoke (L3) — ubuntu-latest
     needs: [changes, smoke-ubuntu]
-    if: always() && github.event_name == 'pull_request'
+    if: >-
+      always()
+      && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -818,7 +866,9 @@ jobs:
     needs: [changes, build-frontend, build-app-ubuntu]
     # Full ubuntu matrix only on main pushes and manual dispatch (not PRs).
     # PRs run the lighter smoke-ubuntu job instead (see two-tier strategy above).
-    if: needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    if: >-
+      needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -898,11 +948,18 @@ jobs:
         shell: bash
         run: chmod +x "$APP_BIN"
 
-      # Serve built dist on :5173 in the background. The app binary reads the
-      # Tauri devUrl (:5173) and loads its frontend from there — real IPC.
-      - name: Serve frontend dist on :5173
+      # Serve built dist in the background. The app binary reads the same
+      # PV_DEV_URL as its Tauri devUrl and loads its frontend from there —
+      # real IPC.
+      - name: Serve frontend dist on $PV_DEV_URL
         shell: bash
-        run: pnpm --filter @astro-plan/desktop preview --port 5173 &
+        # Port comes from PV_DEV_URL (workflow `env`) — the same value the app
+        # binary and the harness read, so there is no second port literal to
+        # drift. --strictPort makes a taken port a loud failure instead of a
+        # silent fallback that leaves the app loading someone else's server.
+        run: |
+          pnpm --filter @astro-plan/desktop preview \
+            --port "${PV_DEV_URL##*:}" --strictPort &
 
       # Run the Layer-2 harness (real journeys, serial per .config/nextest.toml)
       # from the prebuilt archive, wrapped in xvfb-run for a headless display.
@@ -1002,7 +1059,9 @@ jobs:
     # Windows L3 is the slow/historically flaky leg (~25 min + flake, runs
     # 30013328940, 30008614669); keeping it off PRs avoids blocking merge
     # trains while preserving full coverage on every main push.
-    if: needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    if: >-
+      needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -1052,9 +1111,15 @@ jobs:
         with:
           name: e2e-build-windows-latest
 
-      - name: Serve frontend dist on :5173
+      - name: Serve frontend dist on $PV_DEV_URL
         shell: bash
-        run: pnpm --filter @astro-plan/desktop preview --port 5173 &
+        # Port comes from PV_DEV_URL (workflow `env`) — the same value the app
+        # binary and the harness read, so there is no second port literal to
+        # drift. --strictPort makes a taken port a loud failure instead of a
+        # silent fallback that leaves the app loading someone else's server.
+        run: |
+          pnpm --filter @astro-plan/desktop preview \
+            --port "${PV_DEV_URL##*:}" --strictPort &
 
       # Shard-coverage integrity check (shard 1 only — runs once per push).
       # Lists all ignored tests from the archive, then lists the union of all
@@ -1207,9 +1272,15 @@ jobs:
         shell: bash
         run: chmod +x "$APP_BIN"
 
-      - name: Serve frontend dist on :5173
+      - name: Serve frontend dist on $PV_DEV_URL
         shell: bash
-        run: pnpm --filter @astro-plan/desktop preview --port 5173 &
+        # Port comes from PV_DEV_URL (workflow `env`) — the same value the app
+        # binary and the harness read, so there is no second port literal to
+        # drift. --strictPort makes a taken port a loud failure instead of a
+        # silent fallback that leaves the app loading someone else's server.
+        run: |
+          pnpm --filter @astro-plan/desktop preview \
+            --port "${PV_DEV_URL##*:}" --strictPort &
 
       - name: Run E2E
         shell: bash
@@ -1233,7 +1304,9 @@ jobs:
     needs: [changes, real-ui-e2e-ubuntu]
     # Full gate only on main pushes and manual dispatch; skipped on PRs.
     # PRs satisfy their real-UI requirement via e2e-smoke-gate-ubuntu instead.
-    if: always() && needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    if: >-
+      always() && needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -1248,7 +1321,9 @@ jobs:
     name: Real-UI journeys (L3) — windows-latest
     needs: [changes, real-ui-e2e-windows]
     # Full gate only on main pushes and manual dispatch; skipped on PRs.
-    if: always() && needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
+    if: >-
+      always() && needs.changes.outputs.run == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

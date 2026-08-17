@@ -12,7 +12,7 @@ import {
   type SiteStepState,
 } from './StepSite';
 
-vi.mock('@/features/targets/observing-sites/SiteLocationPicker', () => ({
+vi.mock('@/shared/observing-sites/SiteLocationPicker', () => ({
   SiteLocationPicker: () => null,
 }));
 

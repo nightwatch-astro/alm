@@ -301,7 +301,41 @@ fn instance_context() -> tauri::Context {
     // needed here any more (`crates/e2e-tests/tests/common/mod.rs`, refs
     // #1204).
 
+    #[cfg(feature = "e2e")]
+    apply_dev_url_override(&mut context);
+
     context
+}
+
+/// Environment variable that redirects the `devUrl` this instance loads its
+/// frontend from.
+///
+/// Read by the E2E harness (`crates/e2e-tests/tests/common/mod.rs`) and by
+/// `.github/workflows/e2e.yml`, which serve the built `dist` on the same port.
+pub const DEV_URL_ENV: &str = "PV_DEV_URL";
+
+/// Redirect `devUrl` at run time when [`DEV_URL_ENV`] is set.
+///
+/// `tauri.conf.json`'s `devUrl` is compiled into the binary by
+/// `generate_context!`, so without this override the served port is fixed at
+/// build time while the port a lane can actually claim is only known at run
+/// time. Two concurrent E2E lanes then resolve the same `localhost` port and
+/// each silently loads whichever lane's `vite preview` bound it first.
+///
+/// Compiled only under the `e2e` feature, so a release binary cannot have its
+/// frontend origin redirected by an environment variable (Constitution
+/// Principle V, mirrors `bootstrap::single_instance_guard_enabled`).
+///
+/// A malformed value aborts startup: a silently ignored override would load
+/// the baked port and reintroduce exactly that cross-lane contamination.
+#[cfg(feature = "e2e")]
+fn apply_dev_url_override(context: &mut tauri::Context) {
+    let Some(raw) = std::env::var_os(DEV_URL_ENV) else {
+        return;
+    };
+    let raw = raw.to_string_lossy();
+    let url = raw.parse().unwrap_or_else(|e| panic!("{DEV_URL_ENV}={raw} is not a valid URL: {e}"));
+    context.config_mut().build.dev_url = Some(url);
 }
 
 /// Start the event loop first, then finish database startup behind the splash.
@@ -592,12 +626,12 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         &bus,
         resolve_cache.clone(),
     );
-    crate::commands::log::start_log_forwarder(
+    drop(crate::commands::log::start_log_forwarder(
         app.clone(),
         &bus,
         contracts_core::log::LogLevel::Debug,
         pool.clone(),
-    );
+    ));
     drop(spawn_stale_dependent_propagator(pool.clone(), &bus));
     // spec 056 (R5): backend-authoritative onboarding tick subscriber →
     // persists auto-ticks from domain-completion topics and emits

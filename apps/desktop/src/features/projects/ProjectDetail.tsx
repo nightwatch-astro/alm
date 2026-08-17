@@ -196,81 +196,76 @@ export function ProjectDetailContent({ projectId }: ProjectDetailContentProps) {
       }
     >
       {/* ── Top action bar: tool · path · Reveal · Open in tool · CTA ───
-          Wrapped in a project-detail scope so the breadcrumb (tool + path)
-          and the action cluster lay out on their OWN rows and never overlap
-          the MetricLine below (task #81). The shared bar's single fixed-height
-          flex row is relaxed to auto-height + wrap only within this scope. */}
-      <div className="pv-project-detail__action-bar">
-        <TopActionBar
-          title=""
-          right={
-            /* Per-project actions live ONLY here (the detail action bar):
+          `wrap` puts the breadcrumb (tool + path) and the action cluster on
+          their OWN rows so neither overlaps the MetricLine below (task #81). */}
+      <TopActionBar
+        title=""
+        wrap
+        right={
+          /* Per-project actions live ONLY here (the detail action bar):
              Reveal · Open in {tool} · lifecycle transitions.
              The transition buttons carry the data-testid="transition-btn-*"
              hooks (previously on a separate bottom footer that has been
              removed to de-duplicate the per-project actions). */
-            <div
-              className="pv-project-detail__bar-actions"
-              data-testid="lifecycle-actions"
+          <div
+            className="pv-project-detail__bar-actions"
+            data-testid="lifecycle-actions"
+          >
+            {/* Reveal — platform-native label (shared revealLabel()) */}
+            <Btn
+              size="sm"
+              variant="ghost"
+              data-testid="action-reveal"
+              disabled={!project.path}
+              onClick={() => void handleReveal()}
             >
-              {/* Reveal — platform-native label (shared revealLabel()) */}
+              {revealLabel()}
+            </Btn>
+
+            {/* Open in processing tool */}
+            {toolId && (
               <Btn
                 size="sm"
                 variant="ghost"
-                data-testid="action-reveal"
-                disabled={!project.path}
-                onClick={() => void handleReveal()}
+                disabled={launchDisabledReason !== null || launchState.working}
+                title={
+                  launchDisabledReason
+                    ? toolLaunchDisabledTooltip(launchDisabledReason)
+                    : m.projects_open_in_tool_title({ tool: projectToolStr })
+                }
+                onClick={() => void launchTool()}
+                data-testid="tool-launch-btn"
+                data-guide-anchor="project.open-in-tool"
               >
-                {revealLabel()}
+                {launchState.working
+                  ? m.projects_launching()
+                  : m.projects_open_in({ tool: projectToolStr })}
               </Btn>
+            )}
 
-              {/* Open in processing tool */}
-              {toolId && (
-                <Btn
-                  size="sm"
-                  variant="ghost"
-                  disabled={
-                    launchDisabledReason !== null || launchState.working
-                  }
-                  title={
-                    launchDisabledReason
-                      ? toolLaunchDisabledTooltip(launchDisabledReason)
-                      : m.projects_open_in_tool_title({ tool: projectToolStr })
-                  }
-                  onClick={() => void launchTool()}
-                  data-testid="tool-launch-btn"
-                  data-guide-anchor="project.open-in-tool"
-                >
-                  {launchState.working
-                    ? m.projects_launching()
-                    : m.projects_open_in({ tool: projectToolStr })}
-                </Btn>
-              )}
-
-              {/* Lifecycle transitions — single source of truth for these actions. */}
-              {footerActions.map((action) => (
-                <Btn
-                  key={action.nextState}
-                  size="sm"
-                  variant={action.variant}
-                  disabled={transitionWorking}
-                  onClick={() =>
-                    void handleTransition(action.nextState, action.label)
-                  }
-                  data-testid={`transition-btn-${action.nextState}`}
-                >
-                  {action.label}
-                </Btn>
-              ))}
-            </div>
-          }
-        >
-          <span className="pv-project-detail__bar-tool">{toolLabel}</span>
-          {project.path && (
-            <span className="pv-project-detail__bar-path">{project.path}</span>
-          )}
-        </TopActionBar>
-      </div>
+            {/* Lifecycle transitions — single source of truth for these actions. */}
+            {footerActions.map((action) => (
+              <Btn
+                key={action.nextState}
+                size="sm"
+                variant={action.variant}
+                disabled={transitionWorking}
+                onClick={() =>
+                  void handleTransition(action.nextState, action.label)
+                }
+                data-testid={`transition-btn-${action.nextState}`}
+              >
+                {action.label}
+              </Btn>
+            ))}
+          </div>
+        }
+      >
+        <span className="pv-project-detail__bar-tool">{toolLabel}</span>
+        {project.path && (
+          <span className="pv-project-detail__bar-path">{project.path}</span>
+        )}
+      </TopActionBar>
 
       {/* ── Blocked banner (spec 009 US4-2) — above all content ──────────── */}
       {lifecycle === 'blocked' && blockedReason && (

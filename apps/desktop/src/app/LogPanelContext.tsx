@@ -24,6 +24,7 @@ import {
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
 import type { LogLevel, LogEntrySource } from '@/data/logStore';
+import { startLogSubscription } from '@/data/logSubscription';
 import { createPersistedState } from '@/data/persisted-state';
 
 export type LevelFilter = 'all' | LogLevel;
@@ -78,6 +79,14 @@ const LogPanelContext = createContext<LogPanelState>({
 
 export function LogPanelProvider({ children }: { children: ReactNode }) {
   const [expanded, setExpanded] = useState(() => logPanelExpandedState.get());
+
+  // Subscribe from the provider, which mounts with the Shell, not from LogPanel,
+  // which mounts only while `expanded`. The backend forwarder advances its cursor
+  // as it emits, so a row emitted while no listener is attached is unreachable to
+  // every later drain — delivery cannot depend on the user opening the drawer.
+  useEffect(() => {
+    void startLogSubscription();
+  }, []);
 
   // Cancel the debounced SQLite write on unmount to prevent timer leaks.
   useEffect(() => () => logPanelExpandedState.cancelPendingWrite(), []);
@@ -152,6 +161,7 @@ export function LogPanelProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
+    // eslint-disable-next-line alm/require-root-testid -- a context Provider renders no DOM node, so it cannot carry a data-testid; the panel itself carries one where it mounts
     <LogPanelContext.Provider
       value={{
         expanded,

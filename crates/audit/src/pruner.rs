@@ -22,8 +22,11 @@
 //! predates the pruning cutoff will re-dispatch already-processed events as
 //! no-ops on the next lag recovery.
 //!
-//! When kyo7.100 (cursor-advancement on live events) lands, the effective
-//! replay window will shrink further, making the floor even more conservative.
+//! Advancing that cursor on the *live* event path — rather than only on lag
+//! recovery — was tried and reverted: the only id available there is the
+//! table-wide `max_event_id`, not the handled row, so it skipped events the
+//! subscriber never saw. Shrinking the replay window that way costs
+//! correctness, so the window stays as wide as the pruning floor allows.
 
 use sqlx::SqlitePool;
 

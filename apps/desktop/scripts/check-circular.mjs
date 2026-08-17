@@ -12,7 +12,8 @@
 //   node scripts/check-circular.mjs              # CI / lint gate
 //   node scripts/check-circular.mjs --list       # print all current cycles
 
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -38,22 +39,77 @@ const ALLOWLIST = new Set([
 
 const listMode = process.argv.includes('--list');
 
-let madgeOut;
+// Resolve madge's CLI through Node rather than invoking `node_modules/.bin/madge`
+// through a shell: the bin shim is not executable by cmd.exe, so the shell form
+// fails on Windows with "'node_modules' is not recognized".  Running the real
+// entry point under the current node binary works identically on every platform.
+/** @type {string} */
+let madgeCli;
 try {
-  madgeOut = execSync(
-    'node_modules/.bin/madge --circular --no-spinner --no-color --extensions ts,tsx src',
-    { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  madgeCli = createRequire(`${ROOT}/`).resolve('madge/bin/cli.js');
+} catch {
+  process.stderr.write(
+    'CIRCULAR DEP GATE FAILED — cannot resolve madge.\n' +
+      'Run `pnpm install` in apps/desktop and retry.\n',
   );
-} catch (err) {
-  // madge exits 1 when cycles are found — capture stdout anyway.
-  madgeOut = /** @type {any} */ (err).stdout ?? '';
+  process.exit(1);
 }
 
-// Parse "N) a/b.tsx > a/c.ts" lines from madge output.
-const cycleLines = madgeOut
-  .split('\n')
-  .map((l) => l.replace(/^\d+\)\s*/, '').trim())
-  .filter((l) => l.includes(' > '));
+// madge exits 1 when cycles are found, so a non-zero status is expected — read
+// stdout regardless.  Capture stderr too: when stdout turns out to be
+// unparseable, madge's own diagnostic is the only thing that explains why.
+const madge = spawnSync(
+  process.execPath,
+  [madgeCli, '--circular', '--json', '--no-spinner', '--extensions', 'ts,tsx', 'src'],
+  { cwd: ROOT, encoding: 'utf8' },
+);
+const madgeOut = madge.stdout ?? '';
+const madgeErr = madge.error ? String(madge.error.message) : (madge.stderr ?? '');
+
+// `--json` is the only stable machine format: madge's human output carries ANSI
+// styling even under `--no-color`, which defeats string comparison against the
+// allowlist.  Unparseable output means madge did not run — fail rather than
+// report a vacuous pass, and surface madge's own diagnostic so a genuine madge
+// failure is not misreported as a missing install.
+/** @type {string[][]} */
+let cycles;
+try {
+  cycles = JSON.parse(madgeOut);
+  if (!Array.isArray(cycles)) throw new Error('expected an array');
+  // Validate every entry here, not at the `.join` below: `[null]` satisfies
+  // `Array.isArray` and would then throw an uncaught TypeError, losing the
+  // controlled diagnostic this branch exists to print.
+  const bad = cycles.findIndex(
+    (c) => !Array.isArray(c) || c.some((m) => typeof m !== 'string'),
+  );
+  if (bad !== -1) {
+    throw new Error(
+      `entry ${bad} is not an array of strings: ${JSON.stringify(cycles[bad])}`,
+    );
+  }
+} catch (err) {
+  process.stderr.write(
+    `CIRCULAR DEP GATE FAILED — could not parse madge --json output: ${
+      /** @type {Error} */ (err).message
+    }\n`,
+  );
+  if (madgeErr.trim()) {
+    process.stderr.write(`madge stderr:\n${madgeErr.trimEnd()}\n`);
+  }
+  if (madgeOut.trim()) {
+    process.stderr.write(`madge stdout:\n${madgeOut.trimEnd().slice(0, 2000)}\n`);
+  } else {
+    // madge emitted no JSON at all, so it never ran to completion.  A missing
+    // install is the most common cause; the diagnostic above says which.
+    process.stderr.write(
+      'madge produced no JSON output — if it is not installed, run ' +
+        '`pnpm install` in apps/desktop and retry.\n',
+    );
+  }
+  process.exit(1);
+}
+
+const cycleLines = cycles.map((c) => c.join(' > '));
 
 if (listMode) {
   for (const c of cycleLines) process.stdout.write(`${c}\n`);

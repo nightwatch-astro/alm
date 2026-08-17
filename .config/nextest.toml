@@ -65,9 +65,11 @@ failure-output = "immediate-final"
 
 # Windows-latest CI runners are chronically the closest to the slow-timeout
 # edge (debug-build WebView2 boot + intermittent runner-level stalls; even
-# green CI runs there show 1-3 retried flakes recovering by luck). One extra
-# retry buys more margin without masking a real regression, since a genuinely
-# broken journey still fails all 3 attempts.
+# green CI runs there show 1-3 retried flakes recovering by luck). The single
+# retry below buys margin against a runner stall without masking a real
+# regression, since a genuinely broken journey fails both attempts. It also
+# keeps a recovered flake VISIBLE as `(N flaky)` rather than absorbing it --
+# see the budget note further down for why that visibility is the point.
 #
 # `threads-required = 2` makes each Windows journey occupy the whole
 # `test-threads = 2` budget, i.e. Windows runs one journey at a time while
@@ -103,15 +105,34 @@ failure-output = "immediate-final"
 # `crates/e2e-tests/tests/common/mod.rs::InstanceEnv::new` +
 # `apps/desktop/src-tauri/src/data_dir.rs`) — the redb-lock and shared-webview
 # collisions above should no longer happen regardless of `threads-required`.
-# This override stays ON deliberately for now: it also gates a DIFFERENT,
-# still-open contamination symptom (three PRs failing this shard on opposite
-# assertions, consistent with shared localStorage surviving the reset — see
-# the bead tracking this) that concurrency, not identity, may have been
-# masking. Lower this only after a real Windows run demonstrates the fix
-# holds under `test-threads > 1`, not from reading this comment.
+# Update 2026-07-30: `retries` lowered 2 -> 1 to find out whether the
+# contamination symptom is still there. At `retries = 2` a green Windows shard
+# was not evidence of a clean first attempt, so the symptom could neither be
+# observed nor declared gone — the retry budget was hiding the very signal
+# needed to decide. `astro-plan-1oe` records per-shard TRY-1 output from PR
+# #1465 (jobs 89248442052 / 89248442207 plus reruns) with no flaky suffix on
+# either shard, so the isolation fix does appear to hold.
+#
+# `retries = 1` keeps one attempt of headroom for a per-test stall -- the
+# slow-timeout edge described above -- while making a second-attempt pass
+# visible as `(N flaky)` instead of silently absorbed. That visibility is the
+# whole point of choosing 1 over 2.
+#
+# It does NOT cover the runner-image faults tracked by `astro-plan-gl5q`
+# (STATUS_DLL_INIT_FAILED / 0xC0000142). Those kill the harness process during
+# init, before any test starts, so nextest has no test to retry and the retry
+# budget is orthogonal to them. `gl5q` asks for exit-code detection, not
+# retries: a step that recognises 0xC0000142, or any exit with zero test output,
+# and reports "runner failure, re-run". That work is unstarted; do not read this
+# retry budget as protection against it.
+#
+# If flakes return, that is the answer: raise it back to 2 and reopen the
+# contamination investigation with the shard logs as evidence.
+# `threads-required = 2` stays: the comment above gates lowering it on a real
+# Windows run under `test-threads > 1`, and that has not happened.
 [[profile.e2e.overrides]]
 platform = 'cfg(windows)'
-retries = 2
+retries = 1
 threads-required = 2
 
 # ---------------------------------------------------------------------------
