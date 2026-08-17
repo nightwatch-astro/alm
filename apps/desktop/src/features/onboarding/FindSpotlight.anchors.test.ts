@@ -57,7 +57,7 @@ const ITEM_ANCHOR_SOURCES: Array<{
   {
     itemId: 'inbox.confirm_first',
     anchor: 'inbox.confirm-row',
-    sourceFile: '../inbox/InboxPage.tsx',
+    sourceFile: '../inbox/InboxTopBar.tsx',
   },
   {
     itemId: 'inbox.apply_first_plan',
