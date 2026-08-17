@@ -22,6 +22,7 @@ import { SegControl } from '@/ui';
 import type { SegControlOption } from '@/ui/SegControl';
 import { ThemePicker } from '@/components/ThemePicker';
 import { SettingsSection, RestoreDefaultsBtn } from './SettingsKit';
+import { selectBase } from '@/styles/select.css';
 
 /** In-code defaults (data/theme.ts + preferences.ts) — none of these are
  *  settings-DB-backed panes, so restore is a local reset, not a backend call
@@ -47,6 +48,9 @@ const LANGUAGE_OPTIONS: SegControlOption[] = SHIPPED_LOCALES.map((id) => {
   };
 });
 
+/**
+ * Renders controls for configuring general application settings, including theme, language, font size, zoom, and density.
+ */
 export function General() {
   const [, setChoice] = useThemeChoice();
   const [fontSize, setFontSize] = useFontSizeChoice();
@@ -106,7 +110,7 @@ export function General() {
           </div>
           <div className="pv-settings__row-content">
             <select
-              className="pv-select"
+              className={selectBase}
               value={fontSize}
               onChange={(e) => setFontSize(e.target.value as FontSizeChoice)}
             >
@@ -137,7 +141,7 @@ export function General() {
           </div>
           <div className="pv-settings__row-content">
             <select
-              className="pv-select"
+              className={selectBase}
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value) as ZoomPercent)}
             >
@@ -168,7 +172,7 @@ export function General() {
           </div>
           <div className="pv-settings__row-content">
             <select
-              className="pv-select"
+              className={selectBase}
               value={density}
               onChange={(e) => setDensity(e.target.value as Density)}
             >

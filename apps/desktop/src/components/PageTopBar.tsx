@@ -25,6 +25,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { pageBar } from '@/ui/page-layout.css';
 
 export interface PageTopBarProps {
   /** Heading / breadcrumb node (primary, left). */
@@ -37,6 +38,15 @@ export interface PageTopBarProps {
   actions?: ReactNode;
 }
 
+/**
+ * Renders a pinned top bar with optional title, summary, filters, and actions.
+ *
+ * @param title - Primary heading or breadcrumb content.
+ * @param summary - Secondary context or statistics content.
+ * @param filters - Filter controls displayed in the bar.
+ * @param actions - Action controls displayed in the bar.
+ * @returns The rendered top bar.
+ */
 export function PageTopBar({
   title,
   summary,
@@ -44,7 +54,7 @@ export function PageTopBar({
   actions,
 }: PageTopBarProps) {
   return (
-    <div className="pv-page__bar pv-topbar" data-testid="topbar">
+    <div className={`${pageBar} pv-topbar`} data-testid="topbar">
       {(title != null || summary != null) && (
         <div className="pv-topbar__lead">
           {title != null && <div className="pv-topbar__title">{title}</div>}

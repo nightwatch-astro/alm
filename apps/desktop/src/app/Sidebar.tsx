@@ -19,6 +19,26 @@ import { clsx } from 'clsx';
 import { usePreference } from '@/data/preferences';
 import { useStatusSummary, type StatusSummary } from './useStatusSummary';
 import { useVisibleOnboardingState } from '@/features/onboarding/store';
+import {
+  sidebar as sidebarCls,
+  sidebarCollapsed,
+  header as sidebarHeader,
+  brandName as sidebarBrandName,
+  collapseBtn as sidebarCollapse,
+  nav as sidebarNav,
+  item as sidebarItem,
+  itemActive as sidebarItemActive,
+  itemIcon as sidebarItemIcon,
+  itemLabel as sidebarItemLabel,
+  itemBadge as sidebarItemBadge,
+  itemBadgeAlert as sidebarItemBadgeAlert,
+  footer as sidebarFooter,
+  mark as sidebarMark,
+  version as sidebarVersion,
+  group as sidebarGroup,
+  groupLabel as sidebarGroupLabel,
+  settings as sidebarSettings,
+} from './sidebar.css';
 
 // ChecklistPopover → ChecklistSection → FindSpotlight → joyrideAdapter →
 // react-joyride. Lazy-load this subtree so joyride is not in the boot chunk;
@@ -122,6 +142,11 @@ function badgeFor(id: string, status: StatusSummary): number {
   }
 }
 
+/**
+ * Renders the application's sidebar navigation and root health summary.
+ *
+ * @returns The sidebar navigation element
+ */
 export function Sidebar() {
   const [collapsed, setCollapsed] = usePreference('sidebarCollapsed');
   const location = useRouterState({ select: (s) => s.location });
@@ -141,25 +166,20 @@ export function Sidebar() {
       <Link
         key={item.id}
         to={item.path}
-        className={clsx(
-          'pv-sidebar__item',
-          active && 'pv-sidebar__item--active',
-        )}
+        className={clsx(sidebarItem, active && sidebarItemActive)}
         aria-label={item.label()}
         aria-current={active ? 'page' : undefined}
         title={collapsed ? item.label() : undefined}
       >
-        <span className="pv-sidebar__item-icon">
+        <span className={sidebarItemIcon}>
           <Icon size={18} />
         </span>
-        {!collapsed && (
-          <span className="pv-sidebar__item-label">{item.label()}</span>
-        )}
+        {!collapsed && <span className={sidebarItemLabel}>{item.label()}</span>}
         {!collapsed && count > 0 && (
           <span
             className={clsx(
-              'pv-sidebar__item-badge',
-              item.id === 'inbox' && 'pv-sidebar__item-badge--alert',
+              sidebarItemBadge,
+              item.id === 'inbox' && sidebarItemBadgeAlert,
             )}
           >
             {count}
@@ -171,23 +191,23 @@ export function Sidebar() {
 
   return (
     <nav
-      className={clsx('pv-sidebar', collapsed && 'pv-sidebar--collapsed')}
+      className={clsx(sidebarCls, collapsed && sidebarCollapsed)}
       data-testid="sidebar"
       aria-label={m.nav_aria_label()}
     >
       {/* Header: brand mark + collapse, single line */}
-      <div className="pv-sidebar__header">
+      <div className={sidebarHeader}>
         {/* eslint-disable-next-line alm/no-user-string -- decorative brand glyph, not translatable content */}
-        {!collapsed && <div className="pv-sidebar__mark">P</div>}
+        {!collapsed && <div className={sidebarMark}>P</div>}
         {!collapsed && (
-          <span className="pv-sidebar__brand-name">{m.shell_brand_name()}</span>
+          <span className={sidebarBrandName}>{m.shell_brand_name()}</span>
         )}
         {!collapsed && (
-          <span className="pv-sidebar__version">{m.shell_version()}</span>
+          <span className={sidebarVersion}>{m.shell_version()}</span>
         )}
         <button
           type="button"
-          className="pv-sidebar__collapse"
+          className={sidebarCollapse}
           onClick={() => setCollapsed(!collapsed)}
           aria-label={
             collapsed
@@ -200,12 +220,12 @@ export function Sidebar() {
       </div>
 
       {/* Grouped nav */}
-      <div className="pv-sidebar__nav">
+      <div className={sidebarNav}>
         {NAV_GROUPS.map((group) => (
-          <div key={group.label()} className="pv-sidebar__group">
+          <div key={group.label()} className={sidebarGroup}>
             {!collapsed && (
               <div
-                className="pv-sidebar__group-label"
+                className={sidebarGroupLabel}
                 data-testid="sidebar-group-label"
               >
                 {group.label()}
@@ -233,11 +253,11 @@ export function Sidebar() {
       </div>
 
       {/* Settings pinned at the bottom, separated from the workflow nav */}
-      <div className="pv-sidebar__settings">{renderItem(SETTINGS_ITEM)}</div>
+      <div className={sidebarSettings}>{renderItem(SETTINGS_ITEM)}</div>
 
       {/* Footer: root health (hidden when collapsed) */}
       {!collapsed && (
-        <div className="pv-sidebar__footer">
+        <div className={sidebarFooter}>
           <Link
             to="/settings/$pane"
             params={{ pane: 'data-sources' }}

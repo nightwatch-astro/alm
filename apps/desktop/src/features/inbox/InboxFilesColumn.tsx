@@ -20,12 +20,21 @@ import { m } from '@/paraglide/messages';
 import { Banner, Table } from '@/ui';
 import { FileInspector } from './FileInspector';
 import { basename, formatExposureSeconds } from './inboxDetailHelpers';
+import {
+  head as detailHead,
+  muted as detailMuted,
+} from '@/components/two-col-detail-layout.css';
 
 export interface InboxFilesColumnProps {
   fileMetadata: InboxFileMetadata[] | null | undefined;
   /** FR-011 summary node, or null when the item is not a mixed folder. */
 }
 
+/**
+ * Displays file metadata in a popover with optional row inspection and warnings for missing required attributes.
+ *
+ * @param fileMetadata - Metadata for the files associated with the inbox item.
+ */
 export function InboxFilesColumn({ fileMetadata }: InboxFilesColumnProps) {
   // Files popover: which row is "inspected" inside the popover.
   const [inspectedIdx, setInspectedIdx] = useState<number | null>(null);
@@ -119,7 +128,7 @@ export function InboxFilesColumn({ fileMetadata }: InboxFilesColumnProps) {
 
   return (
     <Fragment>
-      <div className="pv-session-detail2__head">{m.inbox_col_files()}</div>
+      <div className={detailHead}>{m.inbox_col_files()}</div>
 
       {/* Files popover — trigger + portaled popup with metadata table + inspector */}
       {hasMetadata ? (
@@ -165,7 +174,7 @@ export function InboxFilesColumn({ fileMetadata }: InboxFilesColumnProps) {
           </Popover.Portal>
         </Popover.Root>
       ) : (
-        <span className="pv-session-detail2__muted">
+        <span className={detailMuted}>
           {m.inbox_no_file_metadata()}
           {/* #551: no per-file metadata means the required-destination-
             attribute gate has no data to evaluate here — say so

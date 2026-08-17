@@ -33,7 +33,7 @@ export interface OrientationStop {
    * Tooltip placement. REQUIRED and never undefined: react-joyride's
    * `getFallbackPlacements` calls `placement.startsWith(...)` and the adapter
    * forwards the key verbatim, so an undefined placement throws in a render
-   * loop. Whole-page stops use `center`: the target (`.pv-frame__main`) fills
+   * loop. Whole-page stops use `center`: the target (the frame `<main>`) fills
    * the viewport, so an anchored placement (`auto`/`bottom`) has no room and
    * the floater fails to render — `center` positions the copy on the viewport
    * and keeps the full-page dim overlay (its own whole-page spotlight, FR-002;
@@ -43,8 +43,15 @@ export interface OrientationStop {
   placement: 'center' | 'right';
 }
 
-/** Selector for the app's whole-page content region (route-independent). */
-const PAGE_SPOTLIGHT = '.pv-frame__main';
+/**
+ * Selector for the app's whole-page content region (route-independent).
+ *
+ * Targets the frame `<main>` by data-testid, not its class: the app-shell
+ * migration to vanilla-extract hashes the `frameMain` class, so a literal
+ * `.pv-frame__main` selector no longer resolves and react-joyride would fail to
+ * spotlight (tooltip never renders).
+ */
+const PAGE_SPOTLIGHT = '[data-testid="frame-main"]';
 
 export const ORIENTATION_STOPS: OrientationStop[] = [
   {

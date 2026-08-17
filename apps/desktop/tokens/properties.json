@@ -1,0 +1,51 @@
+{
+  "$description": "Component parameters — per-instance knobs, not design tokens. Each is emitted as BOTH a custom property and an @property registration, so the initial-value replaces the inline var() fallback it used to carry. $value may reference a design token; Style Dictionary resolves it before emission, which is the point: @property initial-value cannot contain var(), so hand-writing this block would hardcode a duplicate of the token's value and drift from it silently. A value local to one component is a component parameter rather than a token; registering it here keeps it visible to stylelint instead of hiding behind a fallback.",
+  "skel-w": {
+    "$value": "100%",
+    "$type": "dimension",
+    "$description": "Skeleton width, set per instance by Skeleton.tsx.",
+    "$extensions": { "pv.property": { "syntax": "<length-percentage>", "inherits": false } }
+  },
+  "skel-h": {
+    "$value": "{sp-3}",
+    "$type": "dimension",
+    "$description": "Skeleton height. Defaults to the sp-3 step; variants override.",
+    "$extensions": { "pv.property": { "syntax": "<length-percentage>", "inherits": false } }
+  },
+  "skel-r": {
+    "$value": "{radius-sm}",
+    "$type": "dimension",
+    "$description": "Skeleton corner radius; the circle variant overrides with 50%.",
+    "$extensions": { "pv.property": { "syntax": "<length-percentage>", "inherits": false } }
+  },
+  "row-indent": {
+    "$value": "0",
+    "$type": "dimension",
+    "$description": "Tree-row indent, set per row by Table.tsx from the row depth. MUST inherit: Table.tsx sets it on the <tr> while primitives.css consumes it two levels down, on `> td:first-child > :first-child`. With inherits:false the descendant reads initial-value 0 and every nested row renders flush left.",
+    "$extensions": { "pv.property": { "syntax": "<length>", "inherits": true } }
+  },
+  "toast-accent": {
+    "$value": "transparent",
+    "$type": "color",
+    "$description": "Toast edge accent; each severity class sets its own.",
+    "$extensions": { "pv.property": { "syntax": "<color>", "inherits": false } }
+  },
+  "side-detail-w": {
+    "$value": "420px",
+    "$type": "dimension",
+    "$description": "Side detail pane width.",
+    "$extensions": { "pv.property": { "syntax": "<length>", "inherits": false } }
+  },
+  "modal-w": {
+    "$value": "640px",
+    "$type": "dimension",
+    "$description": "Modal width; the narrow variant overrides to 420px.",
+    "$extensions": { "pv.property": { "syntax": "<length>", "inherits": false } }
+  },
+  "targets-star-w": {
+    "$value": "50px",
+    "$type": "dimension",
+    "$description": "Targets table star column width.",
+    "$extensions": { "pv.property": { "syntax": "<length>", "inherits": false } }
+  }
+}

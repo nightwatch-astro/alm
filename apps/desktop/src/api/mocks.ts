@@ -1,17 +1,7 @@
 // Copyright (C) 2024-2026 Sjors Robroek
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type {
-  AuditEntry,
-  SearchResult,
-  LibraryRoot,
-  Equipment,
-  SettingsData,
-  AppPreferences,
-  CalendarData,
-  MasterDetail,
-  MatchCandidate,
-} from '@/bindings/types';
+import type { LibraryRoot, Equipment, SettingsData } from '@/bindings/types';
 import type {
   CalibrationTolerances,
   CleanupPolicy,
@@ -20,13 +10,11 @@ import type {
   InboxClassifySourceGroupResponse,
   InboxScanFolderResponse_Serialize,
   InboxClassifyResponse_Serialize,
-  IngestionAttributionCandidateDto_Serialize,
   InboxConfirmResponse_Serialize,
   InboxConfirmActionsSummary,
   InboxConfirmDestination,
   InboxOpenPlansResponse,
   InboxOpenPlan,
-  InboxPlanAction,
   InboxPlanView,
   InboxApplyAllResponse,
   InboxPlanCancelResponse,
@@ -79,7 +67,6 @@ import type {
   UpdateFilter,
   CalibrationMatchSuggestResponse,
   CalibrationMatchBatchResponse,
-  CalibrationMatchDto_Serialize,
   IngestionSettings,
   UpdateIngestionSettings,
   AuditFilterDto,
@@ -110,18 +97,14 @@ import {
   mockCalibrationMatches,
 } from './mocks/calibration';
 import {
-  mockMoveAction,
-  mockCatalogueAction,
   seedInboxOpenPlans,
   MOCK_ORGANIZED_ITEM_IDS,
   MOCK_ATTRIBUTION_CANDIDATES,
   MOCK_PLAN_REQUIRED_EDGES,
 } from './mocks/inbox';
 import {
-  E2E_ONBOARDING_UNMET_STORE_ID,
   isE2EFlagSet,
   E2E_EMPTY_INVENTORY_STORE_ID,
-  unmetPrerequisiteIds,
   freshMockOnboardingItems,
   E2E_ONBOARDING_STORE_ID,
   type OnboardingSeed,

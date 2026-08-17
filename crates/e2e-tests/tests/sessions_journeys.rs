@@ -64,7 +64,7 @@ async fn complete_first_run(app: &E2eApp) -> anyhow::Result<()> {
 /// Force a real reload of the CURRENTLY-loaded route rather than calling
 /// `E2eApp::goto_route` again with the identical URL.
 ///
-/// `goto_route` builds `{APP_URL}/#{path}` and calls `driver.goto(url)`; when
+/// `goto_route` builds `{app_url()}/#{path}` and calls `driver.goto(url)`; when
 /// the app is already sitting on that exact URL (no intervening navigation
 /// away from it), asking the browser to "navigate to" a byte-identical URL
 /// is a well-known no-op in several engines (no reload, no route remount, no

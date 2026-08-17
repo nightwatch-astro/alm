@@ -45,9 +45,10 @@
 //!   sends `tauri:options.application` = the built `desktop_shell` binary
 //!   path in the New Session capabilities. No `browserName` is set (see
 //!   `quickstart.md`).
-//! - The app loads its own frontend from the Tauri `devUrl` (`:5173`)
+//! - The app loads its own frontend from the Tauri `devUrl` ([`app_url`])
 //!   automatically on launch, so the harness does **not** call
-//!   `driver.goto(...)` after connecting.
+//!   `driver.goto(...)` after connecting. Export `PV_DEV_URL` to put concurrent
+//!   local lanes on separate ports (issue #1409).
 //! - `window.__PV_E2E__.invoke(...)` (exposed by the frontend when built
 //!   with `VITE_E2E=1`, see `apps/desktop/src/main.tsx`) is the real-IPC
 //!   invoke bridge used by [`E2eApp::invoke`].
@@ -68,7 +69,7 @@ mod helpers;
 
 pub use app::E2eApp;
 pub use boot::{
-    APP_URL, DEFAULT_FIND_TIMEOUT, DRAIN_BACKED_TIMEOUT, LAUNCH_TIMEOUT, SCRIPT_TIMEOUT,
+    app_url, DEFAULT_FIND_TIMEOUT, DRAIN_BACKED_TIMEOUT, LAUNCH_TIMEOUT, SCRIPT_TIMEOUT,
     SCRIPT_TIMEOUT_PAGE_LOAD,
 };
 pub use fixtures::{
