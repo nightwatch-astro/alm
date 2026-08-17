@@ -378,10 +378,16 @@ mod tests {
     }
 
     #[test]
-    fn suggest_finds_matches_without_acquisition_fingerprint() {
-        // #867 regression: a session with no fingerprint row at all (both
-        // guard fields false/default) must still surface candidate matches,
-        // not observer_location_missing for every session.
+    fn suggest_finds_matches_without_observer_location() {
+        // #867 regression: an unset observer location must not turn into
+        // observer_location_missing for every session.
+        //
+        // This clears the guard flag only; the session keeps its dimensions.
+        // A session with NO `acquisition_fingerprint` row at all is a
+        // different shape, and no unit fixture can prove the production path
+        // writes one — `ingested_session_matches_a_calibration_master` in
+        // `app_core`'s `ingest_sessions_integration` covers that
+        // (astro-plan-siyk).
         let session = SessionInfo { has_observer_location: false, ..default_session() };
         let master = dark_master("m-001", 100.0, 50.0, 300.0, -10.0);
         let matches = suggest(&session, &[master], &[], &MatchingRuleConfig::default()).unwrap();

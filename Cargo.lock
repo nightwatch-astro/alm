@@ -320,6 +320,7 @@ dependencies = [
  "metadata_core",
  "metadata_fits",
  "metadata_xisf",
+ "persistence_calibration",
  "persistence_core",
  "persistence_lifecycle",
  "persistence_plans",
