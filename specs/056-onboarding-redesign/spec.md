@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-18
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "Replace the spec 010 guided sequential coach with a
 three-layer onboarding system: a one-time modal orientation walk after first-run

@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-17
 
-**Status**: Draft — researched and decision-complete; ready for `plan.md` review
+**Status**: Implemented
 and task generation
 
 **Input**: User report: "the app's text looks jagged and hard to read on

@@ -6,7 +6,7 @@
 
 **Feature Branch**: `008-project-create-onboard-edit`  
 **Created**: 2026-05-09  
-**Status**: Draft  
+**Status**: Implemented  
 **Input**: User description: "Specify project creation and onboarding as a single project setup/edit flow that creates required resources, sources, folder structure, and project markers without separate envelope/source-generation actions."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -235,54 +235,14 @@ As a user, when I confirm new light sessions at the Inbox gate, I want the app t
 
 ## Implementation Status
 
-The mockup at `apps/desktop/src/features/projects/ProjectsPage.tsx` together
-with the in-memory model in `apps/desktop/src/data/mock.ts` and the read/write
-hooks in `apps/desktop/src/data/store.ts` cover the **read** and the
-**lifecycle-edit** halves of this feature, but none of the create, onboard, or
-metadata-edit flows are wired yet.
+| Capability | Shipped surface |
+| --- | --- |
+| Create project | `projects_create` (`apps/desktop/src-tauri/src/commands/projects.rs`), contract `ProjectCreateRequest` (`crates/contracts/core/src/projects_v2.rs:232`) |
+| Add / remove source | `projects_source_add`, `projects_source_remove` |
+| Edit metadata | `projects_update` |
+| Channel inference | `projects_channels_reinfer`, `projects_channels_dismiss_drift` |
+| Marker write | `project_marker_to_disk_with_audit` (`crates/project/structure/src/lib.rs`) |
+| Folder structure write | plan-backed via `projects_create_plan` (spec 025) |
+| Framing layer (Q27) | `framing` / `framing_session` tables (`crates/persistence/core/migrations/0001_initial_schema.sql:914`), `crates/app/core/src/framing.rs`, `projects_framing_list` / `_merge` / `_split` / `_reassign` |
 
-### Wired (mockup)
-
-- Project listing with lifecycle and tool columns, filterable via header
-  controls (`useProjects`, lifecycle/tool filter chips).
-- Project drawer accordion sections for Lifecycle stepper, Sources,
-  Calibration sets, Channels, Plans, Manifests, Notes, and Tool launches.
-- Per-source rows surface `name`, `frames`, `filter`, `exposure` (from
-  `ProjectSource` in `mock.ts`).
-- `lastAction` denormalized marker rendered in row + drawer.
-- `setProjectLifecycle` writes lifecycle transitions to the in-memory store
-  (covered separately by spec 009).
-- `rowMenuGroupsForLifecycle` exposes contextual overflow actions per state.
-
-### Stubbed (no behavior)
-
-- **New project CTA** in the page header (`ProjectsPage.tsx:87`) is a
-  static button with no handler. There is no create wizard, no form, and no
-  store-side `addProject` mutation.
-- **Add source affordance** inside the drawer Sources section
-  (`ProjectsPage.tsx:277`, `<Plus size={12}/> Add source`) is rendered but
-  not wired. There is no inventory picker dialog and no `addProjectSource`
-  mutation.
-- **Edit project metadata** has no entry point. Name, tool, notes, and
-  channel inferences are read-only in the drawer. There is no Edit pane,
-  no inline edit, and no `updateProject` mutation.
-- **Onboard existing folder** (US 2) has no mockup surface at all; the
-  folder picker, marker-detection step, and source mapping reconciliation
-  are entirely absent.
-- Channels are stored as a flat string list on `Project`; there is no
-  inference step from source filters yet.
-- Project marker write, folder structure creation, and rollback semantics
-  (FR-007, FR-008) have no implementation; the mockup does not touch the
-  filesystem.
-
-### Cross-spec dependencies before implementation
-
-- Spec 003 (first-run source setup) provides the inventory items that the
-  source picker consumes; create cannot proceed without that surface.
-- Spec 009 (project lifecycle model) owns the `setup_incomplete → ready`
-  transition that successful creation emits.
-- Spec 010 (guided first project flow) is the orchestrator that calls into
-  this feature for the very first project; the wizard surface defined here
-  MUST be reusable from spec 010.
-- Spec 025 (filesystem plan application) owns the reviewable write that
-  produces the project folder structure and marker file.
+Task state lives in beads; this spec's `tasks.md` was retired (2026-08-17).

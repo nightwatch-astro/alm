@@ -29,20 +29,6 @@
 **Status**: **Closed (2026-06-23)** — US1–US4 shipped on gen-3 + caveats resolved + `speckit-verify` passed. `target.primary.rename` dropped; FR-005/FR-007 observing-plan refs deferred. See banner.  
 **Input**: User description: "Specify target identity, aliases, target history, observing-plan references, and notes as bounded follow-on features beyond FITS OBJECT lookup."
 
-## Implementation Status: NOT IMPLEMENTED
-
-Targets exist as a data model concept (cross-referenced from spec 013 FITS
-`OBJECT` lookup), but no dedicated UI route, alias workflow, history view, or
-note editor exists yet. Targets are intentionally **not** a top-level
-navigation surface. Target detail is reachable only via:
-
-- Global Cmd+K search (alias-aware lookup).
-- Deep links from Inventory rows (acquired-on records).
-- Deep links from Project detail (sources/targets references).
-
-This spec defines the durable target identity model and the detail route that
-those entry points open into.
-
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - View Target Identity (Priority: P1)
