@@ -93,6 +93,10 @@ async fn source_missing_retry_count(pool: &sqlx::SqlitePool, root_id: &str) -> i
     .unwrap()
 }
 
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "parameterised lifecycle fixture: setup, apply, and assertion phases in sequence"
+)]
 async fn run_lifecycle_case(initial_lifecycle: &str, should_block: bool) {
     let dir = tempfile::tempdir().unwrap();
     let kept = dir.path().join("light_001.fits");
@@ -388,6 +392,10 @@ async fn auto_block_mutation_rejects_completed_state() {
     assert_eq!(auto_block_audit_count(pool, project_id).await, 0);
 }
 
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "end-to-end fixture: setup, apply, and assertion phases in sequence"
+)]
 async fn run_production_allowed_cas_loss_case() {
     let dir = tempfile::tempdir().unwrap();
     let doomed = dir.path().join("light_001.fits");

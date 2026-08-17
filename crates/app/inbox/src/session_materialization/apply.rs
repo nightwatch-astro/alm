@@ -102,6 +102,10 @@ struct AppliedSession {
 ///
 /// Returns [`persistence_core::DbError`] on any SQL or CAS failure.
 #[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "staged apply: transition, per-frame write, and terminal transition phases"
+)]
 pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<String> {
     let now = Timestamp::now_iso();
 

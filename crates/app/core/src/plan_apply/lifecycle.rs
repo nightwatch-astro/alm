@@ -59,6 +59,10 @@ pub async fn list_crash_interrupted_plans(
 ///
 /// - `plan.not_found` — plan not found.
 /// - `plan.not_in_apply` — plan is not in applying or paused state.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "plan cancel state machine over plan and run status combinations"
+)]
 pub async fn cancel_plan(
     pool: &SqlitePool,
     bus: &EventBus,

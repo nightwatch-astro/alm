@@ -153,6 +153,7 @@ function hasOpenOverlay(): boolean {
  * @param onCloseBottomDetail - Callback invoked when the bottom detail panel is closed.
  * @param bottomDetailLabel - Accessible label for the bottom detail panel.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: layout render branching over optional top-bar, detail, and empty slots
 export function ListPageLayout({
   topBar,
   topBarProps,

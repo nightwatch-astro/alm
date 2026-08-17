@@ -53,6 +53,10 @@ include!("bootstrap/specta.rs");
 /// # Panics
 /// Panics if the Tauri runtime cannot be initialised.
 #[must_use]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "sequential Tauri builder wiring: plugin, state, and command registration"
+)]
 pub fn build_app() -> tauri::App {
     let builder = specta_builder();
 
@@ -437,6 +441,10 @@ fn sqlite_file_path(db_url: &str) -> Option<std::path::PathBuf> {
 /// deleting older ones after a successful backup.  A failure here (full disk,
 /// permission error) is non-fatal: the caller logs a warning and proceeds with
 /// migration rather than bricking startup.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "linear backup precondition chain, each step with its own skip and warn path"
+)]
 async fn run_pre_migration_backup(db: &Database, db_path: &std::path::Path, app_version: &str) {
     // Skip fresh databases (no _sqlx_migrations table) and up-to-date ones.
     match db.has_pending_migrations().await {

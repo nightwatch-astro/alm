@@ -109,6 +109,10 @@ impl StalePropagator {
     /// dispatching each through registered hooks. Pages in chunks of
     /// [`REPLAY_PAGE_SIZE`] to bound memory on large event tables. Returns the
     /// new cursor (highest processed `event_id`, or the incoming cursor on error).
+    #[expect(
+        clippy::cognitive_complexity,
+        reason = "paged replay loop over stored events with per-row cursor advance"
+    )]
     async fn replay_since(&self, bus: &EventBus, mut cursor: i64) -> i64 {
         use persistence_lifecycle::repositories::events::{
             list_since_by_topic_paged, REPLAY_PAGE_SIZE,

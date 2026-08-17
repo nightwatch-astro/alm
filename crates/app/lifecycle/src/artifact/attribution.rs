@@ -84,6 +84,10 @@ pub async fn resolve_project_id_for_path(
 ///
 /// # Errors
 /// Returns `Err(String)` on DB failure.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "per-artifact root reattribution loop with match and miss counters"
+)]
 pub async fn reattribute_root_keyed_artifacts(pool: &SqlitePool) -> Result<(usize, usize), String> {
     let roots = list_all_roots(pool).await.map_err(|e| format!("DB list roots failed: {e}"))?;
     if roots.is_empty() {

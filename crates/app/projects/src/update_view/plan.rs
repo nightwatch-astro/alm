@@ -72,6 +72,10 @@ pub async fn plan_update_view(
     }
 }
 
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "plan build: per-precondition error mapping then per-source diff classification"
+)]
 async fn plan_inner(
     conn: &mut sqlx::SqliteConnection,
     req: &PlanUpdateViewRequest<'_>,

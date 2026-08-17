@@ -29,6 +29,10 @@ use super::{
 /// - Calling `pause_run` / `resume_run` on the DB on `Paused`.
 /// - Writing the terminal plan state on `Completed`.
 #[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "per-item executor loop with failure taxonomy, cancellation, and retry paths"
+)]
 pub async fn execute_plan<C: ExecutorCallbacks>(
     items: Vec<ExecutorItem>,
     callbacks: &C,

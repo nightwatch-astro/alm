@@ -372,6 +372,7 @@ export function InboxList({
   // Map the visual rows onto shared-Table rows (group sub-headers + item rows).
   const rows = useMemo<TableRow[]>(
     () =>
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: virtual-row render dispatching over header, group, and item row kinds
       visualRows.map((row) => {
         if (row.kind === 'header') {
           const { node, depth, path, collapsed: isCollapsed } = row;

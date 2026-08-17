@@ -382,6 +382,7 @@ export function TargetsTable({
               </tr>
             )}
 
+            {/* biome-ignore lint/complexity/noExcessiveCognitiveComplexity: table row render with per-column conditional formatting */}
             {renderIndices.map((index) => {
               const row = flatRows[index];
 

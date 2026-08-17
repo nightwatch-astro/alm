@@ -86,6 +86,7 @@ export { ProjectDetailContent as ProjectDetail };
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: detail render branching over project health, sources, and artifact sections
 export function ProjectDetailContent({ projectId }: ProjectDetailContentProps) {
   const { data: project, loading, error } = useProjectDetail(projectId);
   // #663: resolve raw session UUIDs to the same human names Sessions shows.

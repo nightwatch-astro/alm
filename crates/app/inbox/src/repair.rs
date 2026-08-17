@@ -36,6 +36,10 @@ use targeting_resolver::simbad::ResolveCache;
 ///
 /// # Errors
 /// Returns the error string if the orphan query itself fails.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "per-orphan repair loop with independent failure accounting"
+)]
 pub async fn run_repair(
     pool: &SqlitePool,
     bus: &EventBus,

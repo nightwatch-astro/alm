@@ -113,6 +113,10 @@ impl PlanApplyCallbacks {
         self.flush_items(items).await;
     }
 
+    #[expect(
+        clippy::cognitive_complexity,
+        reason = "batched item flush aggregating per-outcome counter deltas before one UPDATE"
+    )]
     async fn flush_items(&self, items: Vec<BufferedItem>) {
         if items.is_empty() {
             return;
