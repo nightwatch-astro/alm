@@ -158,16 +158,33 @@ pub(super) async fn load_config(pool: &SqlitePool) -> MatchingRuleConfig {
 async fn load_config_from_db(pool: &SqlitePool) -> MatchingRuleConfig {
     let mut config = MatchingRuleConfig::default();
 
-    // `require_same_offset` is persisted on the `calibration_tolerances`
-    // singleton row (migration 0051), not the generic settings key/value
-    // store — it's user-controlled via the Settings > Calibration Matching
-    // "Offset match required" toggle (spec 043 P8). Falls back to
-    // `MatchingRuleConfig::default()` (true) on read failure.
+    // The `calibration_tolerances` singleton row (migration 0051) is the
+    // user-facing store behind Settings > Calibration Matching, separate from
+    // the generic settings key/value store. Falls back to
+    // `MatchingRuleConfig::default()` on read failure.
     if let Ok(row) = persistence_calibration::repositories::calibration_tolerances::get(pool).await
     {
+        // "Offset match required" toggle (spec 043 P8).
         config.require_same_offset = row.require_same_offset;
+
+        // Sensor temperature tolerance. Previously this row field was loaded
+        // and then ignored: the UI wrote `temperature_tolerance_c` here while
+        // the engine only ever read the `calibrationDarkTempTolerance` settings
+        // key below, so the control the user actually sees had no effect on
+        // matching (astro-plan-qgyu). The value round-tripped through the DTO
+        // and never reached `MatchingRuleConfig`.
+        //
+        // The column is `REAL NOT NULL DEFAULT 5.0`, so a value is always
+        // present; there is no "unset" case to fall back from. That is also why
+        // the mismatch was invisible: the engine kept its own 2.0 default while
+        // the row said 5.0, and nothing ever compared them.
+        config.dark_temp_tolerance_c = row.temperature_tolerance_c;
     }
 
+    // Read AFTER the row, so this key still wins where both are set. It is the
+    // older path and some installs will have it persisted; narrowing that
+    // precedence is a behaviour change for existing libraries, not a bug fix,
+    // so it is deliberately left alone here.
     if let Ok(Some(v)) =
         persistence_lifecycle::repositories::settings::get_raw(pool, KEY_DARK_TEMP).await
     {
