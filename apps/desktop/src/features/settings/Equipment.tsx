@@ -25,7 +25,7 @@
  */
 import { Btn, NumberField, Table } from '@/ui';
 import type { TableRow } from '@/ui';
-import { Modal } from '@/components';
+import { ConfirmModal } from '@/components';
 import { m } from '@/lib/i18n';
 import type { SensorType, FilterCategory } from './settingsIpc';
 import { SettingsSection, SettingsFormShell } from './SettingsKit';
@@ -42,7 +42,6 @@ import {
 } from './equipment-helpers';
 import { useEquipment } from './useEquipment';
 import { selectBase } from '@/styles/select.css';
-import { message as modalMessage } from '@/components/modal.css';
 
 interface EquipmentProps {
   save: (scope: string, values: Record<string, unknown>) => void;
@@ -822,33 +821,19 @@ export function Equipment({ save: _save }: EquipmentProps) {
         )}
       </SettingsSection>
 
-      <Modal
+      <ConfirmModal
         open={deleteTarget != null}
         onClose={closeDeleteConfirm}
         title={m.settings_equipment_delete_confirm_title({
           name: deleteTarget?.name ?? '',
         })}
-        size="sm"
-        hideClose
-        footer={
-          <>
-            <Btn variant="ghost" onClick={closeDeleteConfirm}>
-              {m.common_cancel()}
-            </Btn>
-            <Btn
-              variant="destructive"
-              onClick={() => void handleConfirmDelete()}
-            >
-              {deleteBusy ? m.common_removing() : m.common_remove()}
-            </Btn>
-          </>
-        }
-      >
-        <p className={modalMessage}>
-          {m.settings_equipment_delete_confirm_desc()}
-        </p>
-        {deleteError && <span className="pv-field-error">{deleteError}</span>}
-      </Modal>
+        message={m.settings_equipment_delete_confirm_desc()}
+        actionLabel={deleteBusy ? m.common_removing() : m.common_remove()}
+        busy={deleteBusy}
+        onConfirm={() => void handleConfirmDelete()}
+        error={deleteError}
+        data-testid="equipment-delete-confirm"
+      />
     </>
   );
 }

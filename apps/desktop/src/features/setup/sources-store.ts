@@ -1,7 +1,9 @@
 // Copyright (C) 2024-2026 Sjors Robroek
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { z } from 'zod';
 import { registerRootBatch } from './registerSources';
+import { readLocalStorage, writeLocalStorage } from '@/lib/local-storage';
 import { m } from '@/lib/i18n';
 import { errMessage } from '@/lib/errors';
 
@@ -11,15 +13,15 @@ const STORAGE_KEY = 'alm-setup-wizard-state';
 // (FITS IMAGETYP header) during scan/ingest — NOT inferred from which source
 // folder the file is in. 'calibration' here is only a user-facing folder
 // category that covers darks, flats, and bias frames together.
-export type SourceKind = 'light_frames' | 'calibration' | 'project' | 'inbox';
-export type OrganizationState = 'organized' | 'unorganized';
-
-export const ALL_SOURCE_KINDS: SourceKind[] = [
+export const ALL_SOURCE_KINDS = [
   'light_frames',
   'calibration',
   'project',
   'inbox',
-];
+] as const;
+
+export type SourceKind = (typeof ALL_SOURCE_KINDS)[number];
+export type OrganizationState = 'organized' | 'unorganized';
 
 // Values are render-time thunks so labels re-read the active locale (spec 046 #8).
 export const SOURCE_KIND_LABELS: Record<SourceKind, () => string> = {
@@ -88,58 +90,51 @@ export interface ValidationError {
   message: string;
 }
 
+/**
+ * One persisted source entry. `organizationState` is optional because entries
+ * written before the field existed still load; `loadSources` supplies it.
+ */
+const persistedEntrySchema = z.object({
+  path: z.string(),
+  kind: z.enum(ALL_SOURCE_KINDS),
+  organizationState: z.enum(['organized', 'unorganized']).optional(),
+});
+
+/**
+ * The wizard-state envelope, read for its `sources` key alone. Elements stay
+ * `unknown` here and are validated one at a time in `loadSources`: a single
+ * malformed entry must not discard the user's other registered folders.
+ */
+const persistedSourcesSchema = z
+  .object({ sources: z.array(z.unknown()) })
+  .partial();
+
 /** Load sources state from localStorage. */
 export function loadSources(): SourcesState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed?.sources)) {
-        // Accept persisted entries; supply organizationState default for
-        // entries written before this field existed (backward compat).
-        return parsed.sources
-          .filter(
-            (
-              e: unknown,
-            ): e is Omit<SourceEntry, 'organizationState'> & {
-              organizationState?: OrganizationState;
-            } =>
-              typeof e === 'object' &&
-              e !== null &&
-              typeof (e as SourceEntry).path === 'string' &&
-              typeof (e as SourceEntry).kind === 'string' &&
-              ALL_SOURCE_KINDS.includes((e as SourceEntry).kind),
-          )
-          .map(
-            (
-              e: Omit<SourceEntry, 'organizationState'> & {
-                organizationState?: OrganizationState;
-              },
-            ) => ({
-              ...e,
-              organizationState:
-                e.kind === 'inbox'
-                  ? ('unorganized' as OrganizationState)
-                  : (e.organizationState ?? 'organized'),
-            }),
-          );
-      }
-    }
-  } catch {
-    // corrupt state -- start fresh
-  }
-  return [];
+  const stored = readLocalStorage(STORAGE_KEY, persistedSourcesSchema, {});
+  return (stored.sources ?? []).flatMap((raw) => {
+    const entry = persistedEntrySchema.safeParse(raw);
+    if (!entry.success) return [];
+    return [
+      {
+        path: entry.data.path,
+        kind: entry.data.kind,
+        // spec 041 R-7: inbox is always unorganized regardless of what was
+        // persisted; other kinds default to the local-first-safe 'organized'.
+        organizationState:
+          entry.data.kind === 'inbox'
+            ? 'unorganized'
+            : (entry.data.organizationState ?? 'organized'),
+      },
+    ];
+  });
 }
 
 /** Persist sources state to localStorage under the wizard state key. */
 export function saveSources(sources: SourcesState): void {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const existing = raw ? JSON.parse(raw) : {};
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...existing, sources }));
-  } catch {
-    // storage full -- proceed without persistence
-  }
+  // Preserves the sibling wizard-state keys this module does not own.
+  const existing = readLocalStorage(STORAGE_KEY, z.looseObject({}), {});
+  writeLocalStorage(STORAGE_KEY, { ...existing, sources });
 }
 
 /**
@@ -154,12 +149,9 @@ export function saveSources(sources: SourcesState): void {
  * back to its own defaults for those fields.
  */
 export function resetWizardStateWithSources(sources: SourcesState): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sources }));
-  } catch {
-    // storage full / unavailable -- the wizard will start from loadSources()'s
-    // empty-array fallback instead of the prefilled sources; best-effort only.
-  }
+  // Storage full / unavailable is best-effort: the wizard then starts from
+  // loadSources()'s empty-array fallback instead of the prefilled sources.
+  writeLocalStorage(STORAGE_KEY, { sources });
 }
 
 /** Check whether adding a path to a kind would create duplicates. */

@@ -13,7 +13,8 @@
 import { useState, useEffect, useSyncExternalStore } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Btn } from '@/ui';
-import { getSettings, restartFirstRun } from './settingsIpc';
+import { getSettingsTyped, restartFirstRun } from './settingsIpc';
+import { AdvancedSettingsSchema, type LOG_LEVELS } from './settingsSchemas';
 import { m } from '@/lib/i18n';
 import { errMessage } from '@/lib/errors';
 import { setPreference, resetPreferences } from '@/data/preferences';
@@ -44,7 +45,7 @@ interface AdvancedProps {
   save: (scope: string, values: Record<string, unknown>) => void;
 }
 
-type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+type LogLevel = (typeof LOG_LEVELS)[number];
 
 const RESET_FEEDBACK_MS = 3000;
 
@@ -65,19 +66,22 @@ export function Advanced({ save }: AdvancedProps) {
   const [resetConfirming, setResetConfirming] = useState(false);
   const [resetDone, setResetDone] = useState(false);
 
+  // Callback used by RestoreDefaultsBtn.onRestored to re-apply values after a
+  // restore action (uses the same schema as the mount-time load).
   const applyValues = (vals: Record<string, unknown>) => {
-    if (vals?.logLevel && typeof vals.logLevel === 'string') {
-      setLogLevel(vals.logLevel as LogLevel);
+    const result = AdvancedSettingsSchema.safeParse(vals);
+    if (result.success && result.data.logLevel) {
+      setLogLevel(result.data.logLevel);
     }
   };
 
   // Load persisted logLevel from backend on mount (T015).
   useEffect(() => {
     let cancelled = false;
-    getSettings({ scope: 'advanced' })
-      .then((data) => {
+    getSettingsTyped('advanced', AdvancedSettingsSchema)
+      .then((vals) => {
         if (cancelled) return;
-        applyValues(data.values as Record<string, unknown>);
+        if (vals.logLevel) setLogLevel(vals.logLevel);
       })
       .catch(() => {
         // Backend unavailable — stay with in-code default.

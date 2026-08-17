@@ -277,6 +277,29 @@ describe('SetupWizard persisted-state migration', () => {
     window.localStorage.setItem(WIZARD_STORAGE_KEY, JSON.stringify(state));
   }
 
+  it('starts at Language when the stored state is unparseable JSON', () => {
+    window.localStorage.setItem(WIZARD_STORAGE_KEY, '{not json');
+    renderWizard();
+
+    expect(screen.getByText(/choose your language/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 1 of 8/i)).toBeInTheDocument();
+  });
+
+  it('drops a stale sub-state shape without losing the step position', () => {
+    // A `tools` shape from an older build must not reset the whole wizard.
+    persist({
+      version: WIZARD_STATE_VERSION,
+      currentStep: 1,
+      tools: { pixinsight: 'enabled' },
+    });
+    renderWizard();
+
+    expect(
+      screen.getByRole('heading', { name: /choose how platevault looks/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/step 2 of 8/i)).toBeInTheDocument();
+  });
+
   it('shifts an unversioned Source Folders step past the inserted Theme step', () => {
     persist({ currentStep: 1 });
     renderWizard();

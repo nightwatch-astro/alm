@@ -14,12 +14,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { Toggle, SegControl, Pill, Banner } from '@/ui';
 import {
-  getSettings,
+  getSettingsTyped,
+  parseSettingsValues,
   cleanupPolicyGet,
   cleanupPolicyUpdate,
   type CleanupAction,
   type CleanupPolicyEntry,
 } from './settingsIpc';
+import {
+  CleanupSettingsSchema,
+  type DefaultProtectionLevel,
+  type CleanupSettings,
+} from './settingsSchemas';
 import { m } from '@/lib/i18n';
 import {
   SettingsSection,
@@ -33,9 +39,6 @@ const CLEANUP_KEYS = [
   'defaultProtection',
   'protectedCategories',
 ];
-
-// 2-level model (issue #506): the third "normal" level is retired.
-type DefaultProtection = 'protected' | 'unprotected';
 
 /**
  * The data types the backend policy model knows (`DataType::as_str` in
@@ -105,19 +108,25 @@ export function Cleanup({ save }: CleanupProps) {
   // ── spec 018 owned state ─────────────────────────────────────────────────
   const [blockPermanentDelete, setBlockPermanentDelete] = useState(true);
   const [defaultProtection, setDefaultProtection] =
-    useState<DefaultProtection>('protected');
+    useState<DefaultProtectionLevel>('protected');
   // ── Cleanup policy (issue #804), owned by cleanup.policy.* ───────────────
   const [actions, setActions] =
     useState<Record<string, CleanupAction>>(DEFAULT_ACTIONS);
   const [autoOnCompletion, setAutoOnCompletion] = useState(false);
 
-  const applyValues = (vals: Record<string, unknown>) => {
-    if (typeof vals?.blockPermanentDelete === 'boolean') {
+  const applyTyped = (vals: CleanupSettings) => {
+    if (vals.blockPermanentDelete !== undefined) {
       setBlockPermanentDelete(vals.blockPermanentDelete);
     }
-    if (vals?.defaultProtection && typeof vals.defaultProtection === 'string') {
-      setDefaultProtection(vals.defaultProtection as DefaultProtection);
+    if (vals.defaultProtection !== undefined) {
+      setDefaultProtection(vals.defaultProtection);
     }
+  };
+
+  // `RestoreDefaultsBtn.onRestored` hands back a raw value bag, so it needs the
+  // same validation the mount-time read gets.
+  const applyValues = (vals: Record<string, unknown>) => {
+    applyTyped(parseSettingsValues(vals, CleanupSettingsSchema));
   };
 
   // Guards the mount-time fetch below against clobbering a user edit that
@@ -130,10 +139,10 @@ export function Cleanup({ save }: CleanupProps) {
   // Load persisted values from backend on mount (T015).
   useEffect(() => {
     let cancelled = false;
-    getSettings({ scope: 'cleanup' })
-      .then((data) => {
+    getSettingsTyped('cleanup', CleanupSettingsSchema)
+      .then((vals) => {
         if (cancelled || editedRef.current) return;
-        applyValues(data.values as Record<string, unknown>);
+        applyTyped(vals);
       })
       .catch(() => {
         // Backend unavailable — stay with in-code defaults.
@@ -236,7 +245,7 @@ export function Cleanup({ save }: CleanupProps) {
             value={defaultProtection}
             onChange={(e) => {
               editedRef.current = true;
-              const v = e.target.value as DefaultProtection;
+              const v = e.target.value as DefaultProtectionLevel;
               setDefaultProtection(v);
               save('cleanup', { defaultProtection: v });
             }}

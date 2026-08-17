@@ -24,11 +24,17 @@ import {
   type LogEntry,
 } from './logStore';
 
+/**
+ * `time` is derived arithmetically rather than string-formatted: a padded minute
+ * field yields `00:510:00` past n=59, which is not ISO-8601 and does not order.
+ */
 function makeEntry(n: number): LogEntry {
   return {
     id: `aud:${n}`,
     contractVersion: '1',
-    time: `2026-01-01T00:${String(n).padStart(2, '0')}:00Z`,
+    time: new Date(Date.UTC(2026, 0, 1) + n * 1000)
+      .toISOString()
+      .replace(/\.\d{3}Z$/, 'Z'),
     level: 'info',
     source: 'plan',
     message: `Entry ${n}`,
@@ -47,6 +53,53 @@ describe('logStore ring buffer', () => {
     expect(entries[0].id).toBe('aud:3');
     expect(entries[1].id).toBe('aud:2');
     expect(entries[2].id).toBe('aud:1');
+  });
+
+  it('orders a late-arriving older batch after an earlier live entry', () => {
+    // Production interleaving: the live listener attaches before hydration, so a
+    // freshly emitted entry can reach the buffer ahead of the older rows
+    // `log.recent` returns.
+    appendLog([makeEntry(9)]);
+    appendLog([makeEntry(1), makeEntry(2), makeEntry(3)]);
+
+    const { entries } = getLogSnapshot();
+    expect(entries.map((e) => e.id)).toEqual([
+      'aud:9',
+      'aud:3',
+      'aud:2',
+      'aud:1',
+    ]);
+  });
+
+  it('breaks whole-second ties by event id', () => {
+    const sameSecond = (n: number): LogEntry => ({
+      ...makeEntry(n),
+      time: '2026-01-01T00:00:00Z',
+    });
+    appendLog([sameSecond(2)]);
+    appendLog([sameSecond(1), sameSecond(3)]);
+
+    const { entries } = getLogSnapshot();
+    expect(entries.map((e) => e.id)).toEqual(['aud:3', 'aud:2', 'aud:1']);
+  });
+
+  it('sorts diagnostics after audit rows sharing their second', () => {
+    // `dia:` ids carry an independent in-memory sequence, so they cannot be
+    // compared against `event_id` directly.
+    appendLog([
+      {
+        id: 'dia:1',
+        contractVersion: '1',
+        time: '2026-01-01T00:00:00Z',
+        level: 'warn',
+        source: 'diagnostic',
+        message: 'lagged',
+      },
+    ]);
+    appendLog([{ ...makeEntry(7), time: '2026-01-01T00:00:00Z' }]);
+
+    const { entries } = getLogSnapshot();
+    expect(entries.map((e) => e.id)).toEqual(['dia:1', 'aud:7']);
   });
 
   it('starts with dropped=0', () => {
