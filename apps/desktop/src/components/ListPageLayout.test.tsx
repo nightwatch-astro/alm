@@ -43,7 +43,7 @@ function resizeWindowTo(width: number) {
 }
 
 describe('ListPageLayout', () => {
-  it('defaults to the bottom dock (no side variant classes)', () => {
+  it('defaults to the bottom dock', () => {
     render(
       <ListPageLayout topBar={<div>bar</div>} detail={<div>detail</div>}>
         <div>main</div>
@@ -51,10 +51,10 @@ describe('ListPageLayout', () => {
     );
     const body = screen.getByTestId('listpage-body');
     expect(body).toBeInTheDocument();
-    expect(body).not.toHaveAttribute('data-testid', 'listpage-body-side');
+    expect(body).toHaveAttribute('data-dock', 'bottom');
     const detail = screen.queryByTestId('listpage-detail');
     expect(detail).toBeInTheDocument();
-    expect(detail).not.toHaveAttribute('data-testid', 'listpage-detail-side');
+    expect(detail).toHaveAttribute('data-dock', 'bottom');
   });
 
   it('does not render the detail panel when detail is null', () => {
@@ -77,8 +77,14 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(screen.getByTestId('listpage-body-side')).toBeInTheDocument();
-    expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
+    expect(screen.getByTestId('listpage-body')).toHaveAttribute(
+      'data-dock',
+      'side',
+    );
+    expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+      'data-dock',
+      'side',
+    );
   });
 
   it('keeps role=complementary + detailLabel + close affordance in the side variant', () => {
@@ -383,7 +389,10 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       // narrow: bottom dock (no side testid).
-      expect(screen.queryByTestId('listpage-detail-side')).toBeNull();
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'bottom',
+      );
 
       resizeWindowTo(1600);
       rerender(
@@ -395,7 +404,10 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
+      );
     });
 
     it('honors adaptiveThreshold overrides per page', () => {
@@ -411,7 +423,10 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       // 1450 < 1500 → still bottom, even though it clears the generic default.
-      expect(screen.queryByTestId('listpage-detail-side')).toBeNull();
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'bottom',
+      );
     });
 
     it('pinning to side persists across remount (dockId-scoped preference)', () => {
@@ -426,7 +441,10 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       fireEvent.click(screen.getByRole('radio', { name: 'Right' }));
-      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
+      );
       unmount();
 
       render(
@@ -439,7 +457,10 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       // Narrow window (1024), but the pin from the previous mount survives.
-      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
+      );
     });
 
     // #1066: the placement model is three-state (side / bottom / null=auto),
@@ -459,11 +480,17 @@ describe('ListPageLayout', () => {
       );
       // Pin to Right on a narrow window — placement defies the width rule.
       fireEvent.click(screen.getByRole('radio', { name: 'Right' }));
-      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
+      );
 
       // Back to Auto: 1024 is below the threshold, so it must fall to bottom.
       fireEvent.click(screen.getByRole('radio', { name: 'Auto' }));
-      expect(screen.queryByTestId('listpage-detail-side')).toBeNull();
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'bottom',
+      );
       expect(screen.getByRole('radio', { name: 'Auto' })).toBeChecked();
 
       // And Auto must survive a remount — i.e. the persisted pin was actually
@@ -478,11 +505,17 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      expect(screen.queryByTestId('listpage-detail-side')).toBeNull();
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'bottom',
+      );
 
       // Auto still follows the width rule upward, not just downward.
       resizeWindowTo(1600);
-      expect(screen.queryByTestId('listpage-detail-side')).toBeInTheDocument();
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
+      );
     });
 
     it('renders a resize handle only in the side placement', () => {

@@ -312,14 +312,16 @@ export function ListPageLayout({
 
       <div
         className={bodyClass}
-        data-testid={isSide ? 'listpage-body-side' : 'listpage-body'}
+        data-testid="listpage-body"
+        data-dock={isSide ? 'side' : 'bottom'}
       >
         <div className={lpl.main}>{children}</div>
 
         {hasDetail && (
           <section
             className={detailClass}
-            data-testid={isSide ? 'listpage-detail-side' : 'listpage-detail'}
+            data-testid="listpage-detail"
+            data-dock={isSide ? 'side' : 'bottom'}
             // eslint-disable-next-line no-restricted-syntax -- dynamic: user-resizable side-panel width persisted per dockId, not a static design token
             style={detailStyle}
             role="complementary"
