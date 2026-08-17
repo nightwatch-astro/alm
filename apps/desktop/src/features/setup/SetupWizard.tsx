@@ -52,8 +52,8 @@ import {
   flushToDB,
   getMissingRequiredKinds,
 } from './sources-store';
-import { saveSites } from '@/features/targets/observing-sites/site-store';
-import type { ObserverSite } from '@/features/targets/observing-sites/observer-site';
+import { saveSites } from '@/shared/observing-sites/site-store';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import { page } from '@/ui/page-layout.css';
 
 // Registers the custom-almSettings Paraglide strategy as soon as this module

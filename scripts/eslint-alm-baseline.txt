@@ -7,7 +7,6 @@
 # for a genuinely non-user-facing string).
 # Regenerate with: node scripts/check-eslint-baseline.mjs --generate
 src/app/CommandPalette.tsx	215	alm/require-root-testid
-src/app/LogPanelContext.tsx	155	alm/require-root-testid
 src/app/OperationStatusContext.tsx	46	alm/require-root-testid
 src/app/PageStatusContext.tsx	52	alm/require-root-testid
 src/components/DetailPanel.tsx	134	alm/require-root-testid
@@ -65,6 +64,7 @@ src/features/sessions/SessionNotesSection.tsx	93	alm/require-root-testid
 src/features/settings/AuditLog.tsx	308	alm/require-root-testid
 src/features/settings/CalibrationMatching.tsx	189	alm/require-root-testid
 src/features/settings/Framing.tsx	137	alm/require-root-testid
+src/features/settings/ObservingSites.tsx	292	alm/require-root-testid
 src/features/settings/PatternChipsEditor.tsx	39	alm/require-root-testid
 src/features/settings/PerTypePatternChipsEditor.tsx	90	alm/require-root-testid
 src/features/settings/ProcessingTools.tsx	181	alm/require-root-testid
@@ -92,7 +92,5 @@ src/features/targets/NotesSection.tsx	41	alm/require-root-testid
 src/features/targets/TargetList.tsx	80	alm/require-root-testid
 src/features/targets/TargetsTableColumns.tsx	134	alm/require-root-testid
 src/features/targets/TonightPanel.tsx	166	alm/require-root-testid
-src/features/targets/observing-sites/ObservingSites.tsx	286	alm/require-root-testid
-src/features/targets/observing-sites/SiteLocationPicker.tsx	181	alm/require-root-testid
 src/ui/NumberField.tsx	40	alm/require-root-testid
 src/ui/Tooltip.tsx	51	alm/require-root-testid

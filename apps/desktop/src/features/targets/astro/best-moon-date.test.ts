@@ -48,7 +48,7 @@ import { targetUnitVector } from './lunar-separation';
 import {
   DEFAULT_MOON_AVOIDANCE,
   type MoonAvoidanceParams,
-} from './moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import { assertDefined } from '@/test/assertDefined';
 
 const MS_PER_DAY = 86_400_000;

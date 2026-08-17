@@ -22,7 +22,7 @@ import { PageStatusProvider } from './PageStatusContext';
 import { ToastContainer } from '@/ui/ToastContainer';
 import { RecoveryBanner } from '@/features/recovery/RecoveryBanner';
 import { useOnboardingState, useWalkActive } from '@/features/onboarding/store';
-import { loadObservingState } from '@/features/targets/observing-sites/site-store';
+import { loadObservingState } from '@/shared/observing-sites/site-store';
 import {
   startUpdateSubscription,
   stopUpdateSubscription,

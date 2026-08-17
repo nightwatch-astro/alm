@@ -45,8 +45,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import { ObservingSites } from './ObservingSites';
-import { __setObservingStateForTest } from './site-store';
-import type { ObserverSite } from './observer-site';
+import { __setObservingStateForTest } from '@/shared/observing-sites/site-store';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import { m } from '@/lib/i18n';
 
 /** Wrap a value in the generated `{ status: 'ok' }` Result envelope. */

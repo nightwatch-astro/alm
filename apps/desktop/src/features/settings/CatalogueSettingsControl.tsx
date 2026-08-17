@@ -13,12 +13,12 @@ import { Toggle } from '@/ui';
 import {
   PLANNER_CATALOGS,
   type CatalogueId,
-} from '@/features/targets/planner-catalog';
+} from '@/shared/planner/planner-catalog';
 import {
   DEFAULT_ENABLED_CATALOGUES,
   loadDefaultCatalogues,
   saveDefaultCatalogues,
-} from '@/features/targets/catalogue-settings';
+} from '@/shared/planner/catalogue-settings';
 import { m } from '@/lib/i18n';
 import { SettingsRow, RestoreDefaultsBtn } from './SettingsKit';
 

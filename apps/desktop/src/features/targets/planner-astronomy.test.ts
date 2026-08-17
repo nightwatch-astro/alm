@@ -34,7 +34,7 @@ import {
   type AltEvent,
 } from './planner-astronomy';
 import { targetUnitVector, angleBetweenDeg } from './astro/lunar-separation';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 
 /** Assert-and-narrow: fails the test with a clear message instead of `!`. */
 function required<T>(value: T | null, label: string): T {

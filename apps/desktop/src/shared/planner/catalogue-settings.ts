@@ -16,7 +16,10 @@
 
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
-import { PLANNER_CATALOGS, type CatalogueId } from './planner-catalog';
+import {
+  PLANNER_CATALOGS,
+  type CatalogueId,
+} from '@/shared/planner/planner-catalog';
 
 /** Settings scope for the default-enabled planner catalogues. */
 export const CATALOGUES_SCOPE = 'catalogues';

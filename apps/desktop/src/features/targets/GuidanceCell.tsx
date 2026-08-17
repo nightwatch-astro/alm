@@ -30,7 +30,7 @@ import {
   minSeparationDeg,
   type Band,
   type MoonAvoidanceParams,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import type { ObservingNight } from './astro/moon-state';
 import type { RowMoonPlanning } from './astro/row-planning';
 import { phaseLabel } from './MoonSummary';

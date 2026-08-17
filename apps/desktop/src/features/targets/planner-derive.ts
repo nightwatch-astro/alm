@@ -36,7 +36,7 @@ import {
   type TimeWindow,
   computeNightObservability,
 } from './planner-astronomy';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import {
   BANDS,
   BROADBAND_BANDS,
@@ -44,7 +44,7 @@ import {
   minSeparationDeg,
   type Band,
   type MoonAvoidanceParams,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import { nextOpposition } from './astro/opposition';
 
 /** A separation figure, or the explicit "Moon not up" state at the reference time/window (FR-020). */
