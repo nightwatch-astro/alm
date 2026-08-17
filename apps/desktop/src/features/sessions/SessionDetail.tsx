@@ -42,7 +42,6 @@ import { useCalibrationUnassign } from '@/features/calibration/useCalibration';
 import { SessionFrameInventory } from './SessionFrameInventory';
 import { SessionNotesSection } from './SessionNotesSection';
 import { RawFrameCleanupSection } from './RawFrameCleanupSection';
-import { SessionGroupBadge } from './SessionGroupBadge';
 import { sessionDisplayName } from './displayName';
 import { integrationSeconds } from './integration';
 import { formatIntegration } from '@/lib/format';
@@ -175,8 +174,6 @@ interface Props {
   revealVisible?: boolean;
   /** Open a linked project — wired by the page to navigation. */
   onOpenProject?: (projectId: string) => void;
-  /** Open a panel group detail view — spec 062. */
-  onOpenGroup?: (panelGroupId: string) => void;
   /** The session's owning source connectivity state (#889); `undefined` when
    * unknown (e.g. loading). A non-`active` state renders a chip explaining
    * why file-touching actions (Reveal) are unavailable. */
@@ -206,7 +203,6 @@ export function SessionDetail({
   onReveal,
   revealVisible = false,
   onOpenProject,
-  onOpenGroup,
   sourceState,
 }: Props) {
   if (!session) {
@@ -379,17 +375,11 @@ export function SessionDetail({
         }
       />
 
-      {/* Spec 062: panel group membership badge — light sessions only. Shows
-          the stable panel group this session belongs to, with a link to
-          the group detail. Hidden for calibration sessions (no panel group). */}
-      {session.type === 'light' && (
-        <Section title={m.sessions_panel_group_heading()} defaultOpen>
-          <SessionGroupBadge
-            sessionId={session.id}
-            onOpen={(id) => onOpenGroup?.(id)}
-          />
-        </Section>
-      )}
+      {/* Spec 062 US2 (astro-plan-6yep): the panel-group badge render site was
+          removed. `panel_group_list` has no Tauri command layer yet, and
+          SessionGroupBadge renders an empty state for both "no group" and a
+          failed call — an unreachable surface beats a silent wrong answer.
+          Restore this block when astro-plan-ic9h.20 wires the commands. */}
 
       {/* Calibration linkage (#772): the session's assigned calibration
           masters, or an explicit "no calibration match" state. */}
