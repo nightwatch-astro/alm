@@ -135,3 +135,35 @@ pub async fn wait_plan_terminal(pool: &sqlx::SqlitePool, plan_id: &str) {
     )
     .await;
 }
+
+/// Wait for ONE plan item to reach `expected` state. Polls every 25 ms, panics
+/// after 2 s.
+///
+/// Use this instead of [`wait_plan_terminal`] whenever the awaited work is a
+/// single item — most importantly after a retry. `wait_plan_terminal` returns as
+/// soon as the PLAN is not `applying`, which can already be true from an earlier
+/// attempt: it then returns instantly without the retried item having run, and
+/// the assertions that follow race the executor. That is a real flake source
+/// (astro-plan-9lkf), and the failure looks like a product bug rather than a
+/// test that waited for the wrong thing.
+///
+/// Waiting on the item's own state is what makes the wait mean "the thing I
+/// triggered finished", not merely "something finished at some point".
+pub async fn wait_item_state(pool: &sqlx::SqlitePool, item_id: &str, expected: &str) {
+    poll_until(
+        || async {
+            let row: Option<(String,)> =
+                sqlx::query_as("SELECT item_state FROM plan_items WHERE id = ?")
+                    .bind(item_id)
+                    .fetch_optional(pool)
+                    .await
+                    .expect("poll plan item state");
+            match row {
+                Some((s,)) if s == expected => Some(()),
+                _ => None,
+            }
+        },
+        &format!("plan item {item_id} never reached '{expected}' state"),
+    )
+    .await;
+}
