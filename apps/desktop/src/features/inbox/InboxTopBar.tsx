@@ -62,6 +62,7 @@ export function InboxTopBar({
   onRescan,
 }: InboxTopBarProps) {
   return (
+    // eslint-disable-next-line alm/require-root-testid -- PageTopBar renders data-testid="topbar" internally; the testid is present in the DOM, not on this JSX node
     <PageTopBar
       filters={
         <FilterToolbar
