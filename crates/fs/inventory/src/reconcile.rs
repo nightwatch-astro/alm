@@ -23,6 +23,7 @@
 //! aborts with [`RootUnavailable`] otherwise. Without that guard an unmounted
 //! drive reads as "every frame deleted".
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub use fs_pathsafe::RootUnavailable;
@@ -122,13 +123,18 @@ pub fn reconcile_root(
 ) -> Result<ReconcileReport, RootUnavailable> {
     probe_root(root_path, follow_symlinks)?;
 
-    let disk_files: Vec<PathBuf> = real_files_under(root_path, follow_symlinks);
+    // Hashed rather than scanned per frame: a linear `any()` here made the pass
+    // O(frames x files) (10k frames took ~7.5s). `Path`'s `Hash` and `PartialEq`
+    // are both defined component-wise, so set membership and `==` agree on the
+    // Windows casing/separator normalisation `components()` performs.
+    let disk_files: HashSet<PathBuf> =
+        real_files_under(root_path, follow_symlinks).into_iter().collect();
 
     let entries = known
         .iter()
         .map(|frame| {
             let candidate = root_path.join(&frame.relative_path);
-            let outcome = if disk_files.iter().any(|p| paths_match(p, &candidate)) {
+            let outcome = if disk_files.contains(&candidate) {
                 let real_size_bytes =
                     std::fs::metadata(&candidate).map(|m| i64::try_from(m.len()).unwrap_or(0));
                 match real_size_bytes {
@@ -149,16 +155,6 @@ pub fn reconcile_root(
         .collect();
 
     Ok(ReconcileReport { entries })
-}
-
-/// Compare two paths for equality after best-effort canonicalisation.
-///
-/// `real_files_under` yields paths built by walking `read_dir`, so they are
-/// already normalised the same way as `root_path.join(relative_path)` on
-/// POSIX; on Windows, path component casing/separators can differ, so this
-/// falls back to a component-wise comparison rather than raw string equality.
-fn paths_match(a: &Path, b: &Path) -> bool {
-    a == b || a.components().eq(b.components())
 }
 
 #[cfg(test)]
@@ -183,6 +179,28 @@ mod tests {
 
         assert_eq!(report.entries.len(), 1);
         assert_eq!(report.entries[0].outcome, FrameOutcome::Present { real_size_bytes: 4096 });
+    }
+
+    /// The disk-file lookup is a `HashSet`, so it only agrees with the
+    /// component-wise `Path` comparison it replaced while `Hash` and
+    /// `PartialEq` stay consistent across redundant separators and `.`
+    /// segments. A recorded `relative_path` carrying either must still match
+    /// the plainly-joined path `real_files_under` yields.
+    #[test]
+    fn redundant_separators_and_cur_dir_segments_still_match_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("session_0001")).unwrap();
+        std::fs::write(dir.path().join("session_0001").join("light_001.fits"), vec![0u8; 512])
+            .unwrap();
+
+        for relative in ["./session_0001/light_001.fits", "session_0001//light_001.fits"] {
+            let report = reconcile_root(dir.path(), &[known("f1", relative, 0)], false).unwrap();
+            assert_eq!(
+                report.entries[0].outcome,
+                FrameOutcome::Present { real_size_bytes: 512 },
+                "{relative} must match the walked path"
+            );
+        }
     }
 
     #[test]
