@@ -267,6 +267,57 @@ pub(super) async fn cumulative_counts(
     }
 }
 
+/// Reason code recorded on an item whose retry was accepted but whose run
+/// halted before executing it. Distinguishes it from a user cancellation for
+/// any surface that offers the retry again (astro-plan-ts1z window c).
+pub(super) const RETRY_NOT_EXECUTED_REASON: &str = "retry.not_executed";
+
+/// Put every retry this run accepted but never executed back to `failed`, and
+/// append an audit event naming why.
+///
+/// `execute_plan` closes the retry queue before returning, so this set is
+/// final: no further push can land. Restoring here — before the terminal
+/// handlers' `cancel_orphaned_applying_items` sweep — is what keeps a user's
+/// unexecuted retry retryable instead of terminal.
+pub(super) async fn restore_unexecuted_retries(
+    pool: &SqlitePool,
+    plan_id: &str,
+    run_id: &str,
+    retry_queue: &RetryQueue,
+) {
+    for item_id in retry_queue.take_orphaned() {
+        match apply_repo::item_retry_rollback_to_failed(pool, &item_id, plan_id).await {
+            Ok(()) => {
+                let _ = apply_repo::append_event(
+                    pool,
+                    &new_id(),
+                    run_id,
+                    plan_id,
+                    Some(&item_id),
+                    "applying",
+                    "failed",
+                    &Timestamp::now_iso(),
+                    Some(&apply_repo::EventFailure {
+                        code: RETRY_NOT_EXECUTED_REASON,
+                        message: "the run stopped before this retry was executed; \
+                                  the item was not retried and remains retryable",
+                        recoverable: true,
+                    }),
+                    None,
+                )
+                .await;
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = %e, plan_id, item_id,
+                    "could not restore an unexecuted retry to 'failed'; it will be swept to \
+                     'cancelled' and must be retried at plan level"
+                );
+            }
+        }
+    }
+}
+
 /// Drive `execute_plan` to completion/cancellation/pause on a background
 /// task and persist the outcome (terminal state, audit trail, long-op
 /// projection). Extracted from `apply_plan`'s inline `tokio::spawn` block so
@@ -313,6 +364,15 @@ pub(super) fn spawn_executor_run(params: SpawnExecutorParams) {
         // Mandatory flush: drain any items buffered in the last partial window
         // before the outcome branches below read cumulative plan counters.
         callbacks.flush().await;
+
+        // Restore any retry accepted by this run but never executed (the
+        // executor halted on cancel or pause before draining it). Runs BEFORE
+        // the terminal handlers so their `cancel_orphaned_applying_items`
+        // sweep finds nothing to convert: the item reads `failed` — the
+        // truth, and retryable — instead of `cancelled`, which is
+        // indistinguishable from a cancellation the user asked for
+        // (astro-plan-ts1z, constitution II).
+        restore_unexecuted_retries(&pool, &plan_id, &run_id, &retry_queue).await;
 
         // Compute terminal state and persist via per-outcome handlers.
         match outcome {

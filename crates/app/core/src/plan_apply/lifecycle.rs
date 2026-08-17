@@ -435,6 +435,13 @@ pub async fn resume_plan(
     // ones: the plan still owns its whole footprint for the run's
     // duration) before the executor can run again. Cancel/skip/retry state
     // does not carry over a pause boundary; a fresh set is correct here.
+    //
+    // The pre-pause run's queue is already closed by `execute_plan`, so a
+    // `retry_plan_item` call landing between here and the executor's start
+    // finds either no entry or a closed one, and is refused with the item left
+    // `failed` — never accepted onto a queue this registration is about to
+    // replace, which dropped it silently and let the completion sweep record it
+    // as `cancelled` (astro-plan-ts1z window b).
     let path_set = compute_plan_path_set(&item_rows, &root_map);
     let cancel_token = CancellationToken::new();
     let skip_set = SkipSet::new();
@@ -655,27 +662,28 @@ pub async fn retry_plan_item(
     // Transition item back to applying in DB (failed → applying).
     apply_repo::item_retry_applying(pool, item_id, plan_id).await.map_err(db_err)?;
 
-    // Enqueue for re-execution, and REFUSE if the run vanished in the meantime.
+    // Enqueue for re-execution, and REFUSE unless the queue accepts it.
     //
-    // The `active_runs()` check above closes the common case but not the window
-    // between it and here. Previously that window was swallowed: `if let
-    // Some(run)` simply did nothing when the run was gone, leaving the item
-    // `applying` in the DB with nothing that will ever execute it. Run
-    // completion then sweeps orphaned `applying` items to `cancelled`
-    // (`terminal.rs`), so the user's retry became a silent cancellation --
-    // file unmoved, audit trail reading `cancelled`, indistinguishable from a
+    // Two ways to lose here, both reported rather than swallowed:
+    //
+    // - No registry entry: the run finished (or `resume_plan` has not yet
+    //   registered the resumed one) between the check above and this point.
+    // - The entry's queue is closed: `execute_plan` closed it jointly with its
+    //   final drain, so this run will never read the id again.
+    //
+    // Previously both were swallowed -- `if let Some(run)` simply did nothing --
+    // leaving the item `applying` in the DB with nothing that will ever execute
+    // it. Run completion then sweeps orphaned `applying` items to `cancelled`
+    // (`terminal.rs`), so the user's retry became a silent cancellation: file
+    // unmoved, audit trail reading `cancelled`, indistinguishable from a
     // cancellation they asked for. That is a Tier-1 custody failure under
-    // constitution II: an approved action recorded terminal that never ran.
+    // constitution II -- an approved action recorded terminal that never ran.
     //
-    // Losing the race is now reported instead. The DB flip is rolled back
-    // first so the item stays `failed` -- retryable, and honest about not
-    // having run -- rather than stranded `applying`.
+    // The DB flip is rolled back first so the item stays `failed` -- retryable,
+    // and honest about not having run -- rather than stranded `applying`.
     let enqueued = {
         let registry = active_runs();
-        let queued = registry.get(plan_id).is_some_and(|run| {
-            run.retry_queue.push(item_id);
-            true
-        });
+        let queued = registry.get(plan_id).is_some_and(|run| run.retry_queue.push(item_id));
         drop(registry);
         queued
     };
@@ -697,9 +705,10 @@ pub async fn retry_plan_item(
         return Err(ContractError::new(
             ErrorCode::RunNotFound,
             format!(
-                "the run for plan {plan_id} finished while the retry of item {item_id} was \
-                 being accepted, so nothing re-executed it. The item was not retried. \
-                 Use plan.retry on the terminal plan."
+                "the run for plan {plan_id} stopped accepting retries while the retry of item \
+                 {item_id} was being accepted, so nothing re-executed it. The item was not \
+                 retried and is still failed; retry it again, or use plan.retry on the \
+                 terminal plan."
             ),
             ErrorSeverity::Blocking,
             true,

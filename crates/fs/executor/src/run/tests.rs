@@ -255,7 +255,11 @@ impl ExecutorCallbacks for RetryOnFailureCallbacks {
         Box::pin(async move {
             if event.item_id == "item-1" && event.new_state == "failed" {
                 let _ = std::fs::remove_file(&conflicting_destination);
-                retry_queue.push("item-1");
+                // The run is still live here, so the queue must accept. Asserting
+                // rather than discarding keeps this fixture honest: a silently
+                // refused push is exactly the failure `push`'s return value now
+                // reports, and the test would otherwise pass without retrying.
+                assert!(retry_queue.push("item-1"), "queue must accept while the run is live");
             }
             events.lock().await.push(event);
         })
@@ -349,7 +353,10 @@ impl ExecutorCallbacks for CancelDuringRetryDrainCallbacks {
         let cancel = self.cancel.clone();
         Box::pin(async move {
             if event.item_id == "item-1" && event.new_state == "succeeded" {
-                retry_queue.push("item-2");
+                // Pushed BEFORE cancelling, so the queue is still open and must
+                // accept. Ordering matters: after `cancel()` the queue closes and
+                // this push would legitimately return false.
+                assert!(retry_queue.push("item-2"), "queue must accept before cancellation");
                 cancel.cancel();
             }
             events.lock().await.push(event);
@@ -442,4 +449,218 @@ fn cancellation_token_default_not_cancelled() {
     assert!(!tok.is_cancelled());
     tok.cancel();
     assert!(tok.is_cancelled());
+}
+
+// ── retry-queue lifecycle (astro-plan-ts1z) ───────────────────────────────
+
+#[test]
+fn a_closed_queue_refuses_pushes() {
+    let q = RetryQueue::new();
+    assert!(q.push("item-1"), "an open queue accepts");
+    assert_eq!(q.drain_all(), vec!["item-1".to_owned()]);
+
+    assert!(q.close_if_empty(), "an empty queue closes");
+    assert!(
+        !q.push("item-2"),
+        "a closed queue must REFUSE, not silently accept an id nothing will drain — \
+         a silently accepted retry is swept to 'cancelled' without executing"
+    );
+    assert!(q.drain_all().is_empty(), "the refused id must not be queued");
+    assert!(q.take_orphaned().is_empty(), "a refused push is not an orphan; it never became one");
+}
+
+#[test]
+fn close_if_empty_refuses_to_close_over_a_queued_retry() {
+    let q = RetryQueue::new();
+    assert!(q.push("item-1"));
+    assert!(
+        !q.close_if_empty(),
+        "closing over a queued retry would drop it; the caller must drain and re-try the close"
+    );
+    assert!(q.push("item-2"), "the queue is still open, so pushes still land");
+}
+
+#[test]
+fn unconditional_close_reports_undrained_ids_as_orphans() {
+    let q = RetryQueue::new();
+    assert!(q.push("item-1"));
+    q.close();
+
+    assert!(!q.push("item-2"), "close is a one-way door");
+    assert_eq!(
+        q.take_orphaned(),
+        vec!["item-1".to_owned()],
+        "an accepted-but-unexecuted retry must be reported so its DB row can be restored"
+    );
+    assert!(q.take_orphaned().is_empty(), "take_orphaned drains, so two callers cannot both act");
+}
+
+/// Callbacks that file a retry for `chained` while `first` is being
+/// re-executed from the retry queue.
+///
+/// `drain_retries` works from a snapshot of the queue, so an id pushed during a
+/// re-execution is NOT in the batch being drained. It can only run if something
+/// drains again after the forward loop is done — which is the joint
+/// close-with-final-drain.
+#[derive(Clone)]
+struct ChainedRetryCallbacks {
+    events: Arc<Mutex<Vec<ItemProgressEvent>>>,
+    retry_queue: RetryQueue,
+    /// Filed when the forward pass finishes this item.
+    first: String,
+    /// Filed while `first` is being re-executed from the queue.
+    chained: String,
+    accepted: Arc<Mutex<Vec<(String, bool)>>>,
+}
+
+impl ExecutorCallbacks for ChainedRetryCallbacks {
+    fn on_item_start(
+        &self,
+        _item_id: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(async {})
+    }
+
+    fn on_item_progress(
+        &self,
+        event: ItemProgressEvent,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        let events = self.events.clone();
+        let retry_queue = self.retry_queue.clone();
+        let first = self.first.clone();
+        let chained = self.chained.clone();
+        let accepted = self.accepted.clone();
+        Box::pin(async move {
+            if event.new_state == "succeeded" {
+                // The forward pass of the last plain item files the first retry.
+                if event.item_id == "item-forward" {
+                    let ok = retry_queue.push(&first);
+                    accepted.lock().await.push((first.clone(), ok));
+                }
+                // `first` re-executing means we are inside a drain batch that
+                // was already snapshotted, so this push lands outside it.
+                else if event.item_id == first && event.prior_state == "applying" {
+                    let ok = retry_queue.push(&chained);
+                    accepted.lock().await.push((chained.clone(), ok));
+                }
+            }
+            events.lock().await.push(event);
+        })
+    }
+}
+
+/// astro-plan-ts1z windows (b) and (c): a retry the queue ACCEPTED must be
+/// executed by the run that accepted it. There must be no interval in which
+/// acceptance succeeds and nothing drains the id.
+///
+/// `item-chained` is pushed while `item-first` is being re-executed, i.e. after
+/// `drain_retries` took its batch snapshot and after the forward loop's last
+/// drain point. Before the joint close-with-final-drain, that id sat in a queue
+/// nobody read again: the run completed, and the caller's completion sweep
+/// converted the item's `applying` row to `cancelled` without it ever running.
+///
+/// Both retry targets carry `current_state: "failed"` — a pre-pause failure a
+/// resumed run holds only for `item_by_id` lookup — so the forward loop skips
+/// them as terminal and the retry drain is the only path that can execute them.
+#[tokio::test]
+async fn a_retry_accepted_after_the_last_drain_snapshot_is_still_executed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = utf8(dir.path());
+    let src_fwd = root.join("forward.fits");
+    let dst_fwd = root.join("forward_dst.fits");
+    let src_first = root.join("first.fits");
+    let dst_first = root.join("first_dst.fits");
+    let src_chained = root.join("chained.fits");
+    let dst_chained = root.join("chained_dst.fits");
+    for p in [&src_fwd, &src_first, &src_chained] {
+        std::fs::write(p, b"x").unwrap();
+    }
+
+    let forward = make_move_item("item-forward", &src_fwd, &dst_fwd);
+    let first = ExecutorItem {
+        current_state: "failed".to_owned(),
+        ..make_move_item("item-first", &src_first, &dst_first)
+    };
+    let chained = ExecutorItem {
+        current_state: "failed".to_owned(),
+        ..make_move_item("item-chained", &src_chained, &dst_chained)
+    };
+
+    let retry = RetryQueue::new();
+    let callbacks = ChainedRetryCallbacks {
+        events: Arc::new(Mutex::new(Vec::new())),
+        retry_queue: retry.clone(),
+        first: "item-first".to_owned(),
+        chained: "item-chained".to_owned(),
+        accepted: Arc::new(Mutex::new(Vec::new())),
+    };
+    let cancel = CancellationToken::new();
+    let skip = SkipSet::new();
+
+    let outcome =
+        execute_plan(vec![forward, first, chained], &callbacks, &cancel, &skip, &retry).await;
+
+    assert_eq!(
+        *callbacks.accepted.lock().await,
+        vec![("item-first".to_owned(), true), ("item-chained".to_owned(), true)],
+        "both retries were ACCEPTED, so both must be executed — an accepted retry that never \
+         runs is swept to 'cancelled' and reads as a cancellation the user asked for"
+    );
+    match outcome {
+        ApplyOutcome::Completed(counts) => assert_eq!(
+            counts.succeeded, 3,
+            "the forward item plus BOTH accepted retries; a chained retry accepted outside the \
+             drain snapshot must not be dropped"
+        ),
+        other => panic!("expected Completed, got {other:?}"),
+    }
+    assert!(!src_chained.exists(), "the chained retry's source really moved");
+    assert!(dst_chained.exists(), "the chained retry's destination really exists");
+    assert!(
+        retry.take_orphaned().is_empty(),
+        "an executed retry is not an orphan; nothing needs restoring"
+    );
+    assert!(
+        !retry.push("item-first"),
+        "execute_plan must leave the queue CLOSED, so a later retry is refused rather than \
+         accepted onto a queue nobody will read"
+    );
+}
+
+/// The halting paths (cancel, pause) must leave an accepted-but-unexecuted
+/// retry visible as an orphan rather than dropping it: its DB row is already
+/// `applying`, and only the caller can restore it.
+#[tokio::test]
+async fn a_retry_accepted_but_not_executed_before_a_cancel_becomes_an_orphan() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = utf8(dir.path());
+    let src1 = root.join("a.fits");
+    let dst1 = root.join("a_dst.fits");
+    std::fs::write(&src1, b"a").unwrap();
+
+    let retry = RetryQueue::new();
+    assert!(retry.push("item-never-run"), "the retry is accepted before the run halts");
+
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let callbacks = FakeCallbacks::default();
+    let skip = SkipSet::new();
+
+    let outcome = execute_plan(
+        vec![make_move_item("item-1", &src1, &dst1)],
+        &callbacks,
+        &cancel,
+        &skip,
+        &retry,
+    )
+    .await;
+
+    assert!(matches!(outcome, ApplyOutcome::Cancelled(_)), "got {outcome:?}");
+    assert_eq!(
+        retry.take_orphaned(),
+        vec!["item-never-run".to_owned()],
+        "the caller must be able to see the retry it accepted but never ran, or the item is \
+         swept to 'cancelled' with no record that a retry was owed"
+    );
+    assert!(!retry.push("late"), "a halted run's queue is closed");
 }

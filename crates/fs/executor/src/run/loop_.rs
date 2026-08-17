@@ -23,17 +23,39 @@ use super::{
 /// Returns `ApplyOutcome` when all items are resolved or a halt condition
 /// (cancel / pause) is observed.
 ///
+/// Owns `retry_queue`'s lifecycle: the queue is always closed by the time this
+/// returns, so a `retry_plan_item` call arriving after this run stopped
+/// draining is refused rather than accepted into a queue nobody will read
+/// (astro-plan-ts1z). Any id accepted but not executed is reported by
+/// [`RetryQueue::take_orphaned`] for the caller to restore.
+///
 /// The caller (app/core) is responsible for:
 /// - The CAS `approved → applying` transition before calling this.
 /// - Batch-cancelling pending items after `Cancelled` is returned.
 /// - Calling `pause_run` / `resume_run` on the DB on `Paused`.
 /// - Writing the terminal plan state on `Completed`.
+/// - Restoring the database rows of [`RetryQueue::take_orphaned`] ids.
+pub async fn execute_plan<C: ExecutorCallbacks>(
+    items: Vec<ExecutorItem>,
+    callbacks: &C,
+    cancel: &CancellationToken,
+    skip_set: &SkipSet,
+    retry_queue: &RetryQueue,
+) -> ApplyOutcome {
+    let outcome = drive_plan(items, callbacks, cancel, skip_set, retry_queue).await;
+    // Idempotent: the `Completed` path already closed the queue jointly with
+    // its final drain. This covers the cancel and pause exits, where remaining
+    // ids become orphans instead.
+    retry_queue.close();
+    outcome
+}
+
 #[allow(clippy::too_many_lines)]
 #[expect(
     clippy::cognitive_complexity,
     reason = "per-item executor loop with failure taxonomy, cancellation, and retry paths"
 )]
-pub async fn execute_plan<C: ExecutorCallbacks>(
+async fn drive_plan<C: ExecutorCallbacks>(
     items: Vec<ExecutorItem>,
     callbacks: &C,
     cancel: &CancellationToken,
@@ -90,39 +112,88 @@ pub async fn execute_plan<C: ExecutorCallbacks>(
         // every item — the same boundary already used for cancel/skip —
         // picks up a retry filed against ANY already-passed item, matching
         // this loop's "never mid-item" invariant.
-        for retry_id in retry_queue.drain_all() {
-            // Check cancellation between retry items too (same "never
-            // mid-item" semantics as the forward loop above). Any retry ids
-            // already drained but not yet reached here are dropped from the
-            // queue without executing — their DB row is already `applying`
-            // (flipped eagerly by `retry_plan_item`), so the caller sweeps
-            // them via `cancel_orphaned_applying_items` after `Cancelled` is
-            // returned (fs_executor has no DB dependency to do so itself).
-            if cancel.is_cancelled() {
+        match drain_retries(retry_queue, &item_by_id, callbacks, &mut counts, cancel).await {
+            DrainOutcome::Continue => {}
+            DrainOutcome::Cancelled => {
                 cancelled = true;
                 break 'items;
             }
-
-            let Some(retry_item) = item_by_id.get(retry_id.as_str()) else {
-                tracing::warn!(item_id = %retry_id, "retry queued for unknown item id; ignored");
-                continue;
-            };
-            // `retry_plan_item` already transitioned the DB row `failed ->
-            // applying` before queuing, so `on_item_start` (which would
-            // double-decrement `items_pending`) must NOT run again, and the
-            // gate/terminal events' prior_state is "applying", not "pending".
-            match process_single_item(retry_item, callbacks, &mut counts, "applying", false).await {
-                ItemOutcome::Pause(reason) => return ApplyOutcome::Paused { reason, counts },
-                ItemOutcome::Continue => {}
-            }
+            DrainOutcome::Pause(reason) => return ApplyOutcome::Paused { reason, counts },
         }
     }
 
     if cancelled {
-        ApplyOutcome::Cancelled(counts)
-    } else {
-        ApplyOutcome::Completed(counts)
+        return ApplyOutcome::Cancelled(counts);
     }
+
+    // Close the queue jointly with a final drain. A retry pushed at any point
+    // before the close is executed here; one arriving after is refused at
+    // `push`. There is no interval in which an accepted retry has no executor
+    // (astro-plan-ts1z windows b and c).
+    loop {
+        if retry_queue.close_if_empty() {
+            break;
+        }
+        match drain_retries(retry_queue, &item_by_id, callbacks, &mut counts, cancel).await {
+            DrainOutcome::Continue => {}
+            DrainOutcome::Cancelled => return ApplyOutcome::Cancelled(counts),
+            DrainOutcome::Pause(reason) => return ApplyOutcome::Paused { reason, counts },
+        }
+    }
+
+    ApplyOutcome::Completed(counts)
+}
+
+/// Outcome of one retry-queue drain pass.
+enum DrainOutcome {
+    Continue,
+    Cancelled,
+    Pause(String),
+}
+
+/// Drain the retry queue once and re-execute each drained item.
+///
+/// Cancellation is checked between retry items (same "never mid-item"
+/// semantics as the forward loop). A halt part-way through the batch hands the
+/// unprocessed remainder back as orphans: `drain_all` already removed them from
+/// the queue, and their database row is `applying`, so the caller must be able
+/// to see them (`fs_executor` has no database dependency to restore them
+/// itself). An id with no matching item is also an orphan — nothing in this run
+/// can execute it.
+async fn drain_retries<C: ExecutorCallbacks>(
+    retry_queue: &RetryQueue,
+    item_by_id: &HashMap<&str, &ExecutorItem>,
+    callbacks: &C,
+    counts: &mut TerminalCounts,
+    cancel: &CancellationToken,
+) -> DrainOutcome {
+    let drained = retry_queue.drain_all();
+    let mut remaining = drained.iter();
+
+    while let Some(retry_id) = remaining.next() {
+        if cancel.is_cancelled() {
+            retry_queue.orphan(std::iter::once(retry_id.clone()).chain(remaining.cloned()));
+            return DrainOutcome::Cancelled;
+        }
+
+        let Some(retry_item) = item_by_id.get(retry_id.as_str()) else {
+            tracing::warn!(item_id = %retry_id, "retry queued for unknown item id; ignored");
+            retry_queue.orphan(std::iter::once(retry_id.clone()));
+            continue;
+        };
+        // `retry_plan_item` already transitioned the DB row `failed ->
+        // applying` before queuing, so `on_item_start` (which would
+        // double-decrement `items_pending`) must NOT run again, and the
+        // gate/terminal events' prior_state is "applying", not "pending".
+        match process_single_item(retry_item, callbacks, counts, "applying", false).await {
+            ItemOutcome::Pause(reason) => {
+                retry_queue.orphan(remaining.cloned());
+                return DrainOutcome::Pause(reason);
+            }
+            ItemOutcome::Continue => {}
+        }
+    }
+    DrainOutcome::Continue
 }
 
 /// Outcome of processing a single item through the gate/execute pipeline.
