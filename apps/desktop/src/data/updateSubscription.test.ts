@@ -30,6 +30,8 @@ vi.mock('@tauri-apps/api/app', () => ({
 import {
   checkForUpdate,
   restartPendingUpdate,
+  startUpdateSubscription,
+  stopUpdateSubscription,
   getUpdateSnapshot,
   getRunningVersion,
 } from './updateSubscription';
@@ -143,6 +145,49 @@ describe('restartPendingUpdate', () => {
     await restartPendingUpdate();
 
     expect(mockRelaunch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('startUpdateSubscription — __PV_TEST__ override', () => {
+  beforeEach(() => {
+    stopUpdateSubscription();
+    delete (window as Window & { __PV_TEST__?: unknown }).__PV_TEST__;
+  });
+
+  it('seeds state from window.__PV_TEST__.updateState, skipping the real check', async () => {
+    (window as Window & { __PV_TEST__?: unknown }).__PV_TEST__ = {
+      updateState: { phase: 'ready', version: '99.0.0' },
+    };
+
+    await startUpdateSubscription();
+
+    expect(getUpdateSnapshot()).toEqual({ phase: 'ready', version: '99.0.0' });
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent: a second call with the hook set does not re-seed', async () => {
+    (window as Window & { __PV_TEST__?: unknown }).__PV_TEST__ = {
+      updateState: { phase: 'up-to-date' },
+    };
+
+    await startUpdateSubscription();
+    // Mutate the hook after first call — should have no effect.
+    (window as Window & { __PV_TEST__?: unknown }).__PV_TEST__ = {
+      updateState: { phase: 'check-failed', error: 'should not appear' },
+    };
+    await startUpdateSubscription();
+
+    expect(getUpdateSnapshot()).toEqual({ phase: 'up-to-date' });
+  });
+
+  it('falls through to IS_MOCK no-op when the hook is absent', async () => {
+    // No __PV_TEST__ set; IS_MOCK is false in vitest (VITE_USE_MOCKS unset),
+    // so it will call checkForUpdate() — mock it to resolve immediately.
+    mockCheck.mockResolvedValue(null);
+
+    await startUpdateSubscription();
+
+    expect(mockCheck).toHaveBeenCalledTimes(1);
   });
 });
 

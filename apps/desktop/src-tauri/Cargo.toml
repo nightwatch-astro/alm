@@ -41,6 +41,10 @@ persistence_targets = { path = "../../../crates/persistence/targets" }
 workflow_artifacts = { path = "../../../crates/workflow/artifacts" }
 serde = { workspace = true }
 serde_json.workspace = true
+# Version parsing for the dev-tools-gated PV_E2E_VERSION_OVERRIDE hook.
+# Already a transitive dep via tauri-plugin-updater; listed explicitly so it
+# is accessible at the crate boundary without relying on leakage.
+semver = { workspace = true }
 specta = { workspace = true }
 specta-typescript = { workspace = true }
 sqlx = { workspace = true }

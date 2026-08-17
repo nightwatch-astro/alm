@@ -1,9 +1,9 @@
 ---
 id: J17
 title: Learn about, install, and restart into a signed software update
-version: 1
-status: draft
-last_reviewed: 2026-07-14
+version: 2
+status: active
+last_reviewed: 2026-07-24
 actors: [astrophotographer]
 surfaces: [settings]
 interfaces: [desktop-ui]
@@ -36,6 +36,11 @@ previously running install completely untouched.
   since `downloadAndInstall()`/`relaunch()` replace the running executable —
   that specific requirement was not exercised live in that run (no update
   was available to install).
+  Mock-mode coverage for the UI phases (up-to-date, ready, check-failed) is
+  now available via `window.__PV_TEST__.updateState` — set by the Playwright
+  spec `tests/e2e/settings_update_check.spec.ts` before navigation so
+  `startUpdateSubscription()` seeds the requested phase without a real Tauri
+  host.
 - P2: The configured update endpoint (GitHub Releases `latest.json`) is
   reachable at startup. An endpoint that is unreachable from the app's very
   first check is indistinguishable from a genuine "up to date" result (see
@@ -60,13 +65,11 @@ previously running install completely untouched.
   check performed automatically once at app startup; the check never blocks
   the UI, never repeats later in the session, and never interrupts
   in-progress library work.
-- **Expect (negative):** The section never displays the currently running
-  app version number, in either state (open issue #845 — the value is
-  available to the app at runtime but nothing renders it). A check that
-  fails (unreachable feed, network error) is not surfaced as a distinct
-  state either — it falls back to the same "up to date" text as a genuine
-  no-update result, so a failed check is indistinguishable from a real one
-  from this screen alone.
+- **Expect (negative):** A check that fails (unreachable feed, network error)
+  is now a distinct "check failed" state (#873 resolved) and is surfaced with
+  the specific error message inline — it is never conflated with "up to date".
+  The section displays the currently running app version number alongside
+  the update status (#845 resolved).
 
 ### S2 — Install an available update {#S2}
 - **Do:** With "Update available" shown, choose Install & Restart.
@@ -124,3 +127,10 @@ previously running install completely untouched.
 - G5: (dissolved 2026-07-15) — tracked as issue #881; validation-campaign coverage tracker.
 
 ## Delta log
+- 2026-07-24 (v2): Status promoted to active. Added `window.__PV_TEST__.updateState`
+  injection hook to `updateSubscription.ts` for mock-mode coverage. Added
+  `PV_E2E_VERSION_OVERRIDE` dev-tools-gated Rust hook so a test run can spoof a
+  lower current version against a fixture endpoint. New e2e spec
+  `tests/e2e/settings_update_check.spec.ts` covers up-to-date, ready, and
+  check-failed UI phases (spec 051). S1 "negative" updated: failed checks are now
+  a distinct `check-failed` state (resolved gap G2 / #873).
