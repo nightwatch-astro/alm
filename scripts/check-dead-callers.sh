@@ -278,6 +278,74 @@ collect_dead() {
 # over-stripping and hiding a real caller. A detector that reports nothing, or
 # that reports everything — the vacuous-green failure this guard exists to
 # prevent — fails here.
+# Require every NEWLY baselined name to carry a tracking reference in the
+# comment block directly above it.
+#
+# Why: an entry here means "implemented, tested, and never called by shipped
+# code". That is a debt item, but the file was being used as a suppression list
+# -- 134 of 148 entries carried no bead or issue reference when this check was
+# added, so nothing connected them back to work that would remove them. An
+# untracked entry reads as settled, and a feature that never runs can then sit
+# indefinitely while specs report it as shipped. That is exactly how
+# `acquisition_fingerprint`'s missing writer disabled calibration matching for
+# ~2.5 months (astro-plan-siyk, fixed in #1655) and the pattern recorded on
+# astro-plan-68c7.
+#
+# Deliberately grandfathered: existing entries are NOT retro-required to carry a
+# reference. Demanding 134 back-annotations at once would either block unrelated
+# work or get satisfied with a copy-pasted placeholder, which is worse than
+# silence because it looks like tracking. New entries only, so the file shrinks
+# toward being fully tracked as it turns over.
+#
+# Accepts an `astro-plan-*` bead id or a `#NNNN` issue reference anywhere in the
+# preceding comment block.
+check_tracking_references() {
+    local baseline_head untracked="" baseline_rel
+    # `git show` needs a repo-relative path; $BASELINE is absolute.
+    baseline_rel="$(git -C "$SCRIPT_DIR" rev-parse --show-prefix 2>/dev/null)dead-callers-baseline.txt"
+    # Compare against origin/main so only names this branch ADDS are checked.
+    baseline_head="$(git show "origin/main:$baseline_rel" 2>/dev/null || true)"
+    [ -n "$baseline_head" ] || { echo "NOTE: no origin/main baseline to diff against; skipping tracking check."; return 0; }
+
+    local added
+    added="$(comm -13 \
+        <(printf '%s\n' "$baseline_head" | grep -vE '^\s*(#|$)' | sort) \
+        <(grep -vE '^\s*(#|$)' "$BASELINE" | sort))"
+    [ -n "$added" ] || return 0
+
+    local name
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        # The contiguous comment block immediately above this name.
+        local block
+        block="$(awk -v target="$name" '
+            /^[[:space:]]*#/ { buf = buf " " $0; next }
+            /^[[:space:]]*$/ { buf = ""; next }
+            $0 == target     { print buf; exit }
+                             { buf = "" }
+        ' "$BASELINE")"
+        if ! printf '%s' "$block" | grep -qE 'astro-plan-[a-z0-9.]+|#[0-9]+'; then
+            untracked="$untracked  $name"$'\n'
+        fi
+    done <<<"$added"
+
+    [ -n "$untracked" ] || return 0
+
+    echo "FAIL: these newly baselined names carry no tracking reference:" >&2
+    printf '%s' "$untracked" >&2
+    cat >&2 <<'EOF'
+
+An entry here means the function is implemented and tested but never called by
+shipped code. Add a comment directly above it naming the bead or issue that will
+remove it -- an `astro-plan-*` id or `#NNNN`.
+
+Without one the entry reads as settled rather than owed, and a feature that
+never runs can sit here indefinitely while the specs call it shipped. If the
+function is genuinely not needed, delete it instead of baselining it.
+EOF
+    return 1
+}
+
 self_test() {
     local tmp
     tmp="$(mktemp -d)"
@@ -448,6 +516,8 @@ EOF
         echo "NOTE: baseline entries now have callers (or were deleted); drop them from $BASELINE:" >&2
         printf '%s\n' "$stale" | sed 's/^/  /' >&2
     fi
+
+    check_tracking_references || exit 1
 
     echo "OK: no new dead pub fns ($(printf '%s\n' "$dead" | grep -c . || true) baselined)."
 }
