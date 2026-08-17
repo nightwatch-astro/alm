@@ -22,6 +22,15 @@ name: CI
 # runs real work (the `integration` matrix interleaves a Rust lane and a
 # frontend lane; its job-level gate fires only when BOTH lanes are idle).
 
+# Least-privilege GITHUB_TOKEN. Without this block the token inherits the
+# repository or organisation default, which may grant write scopes these jobs
+# never use. Every job here only reads the repo and uploads artifacts, and
+# `actions/upload-artifact` needs no `contents: write` -- it writes to the
+# Actions artifact store, not to git. Mirrors release-gate.yml, which already
+# declares `contents: read` (astro-plan-j14r).
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:
