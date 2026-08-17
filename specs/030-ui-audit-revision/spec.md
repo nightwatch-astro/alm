@@ -9,8 +9,8 @@
 truth, reached via Spec 031 Design V3). Surviving domain/back-end concepts
 (equipment CRUD, session grouping, calibration matching, lifecycle states,
 cleanup policy) are owned by their dependent backend specs (002, 005–019,
-023–026), not by this audit. Retained as the historical design-audit baseline;
-its 109 task checkboxes are NOT a live work queue.
+023–026), not by this audit. Retained as the historical design-audit baseline.
+Its `tasks.md` was retired (2026-08-17); task state lives in beads.
 
 **Input**: Interactive screen-by-screen UI audit of every screen in the Astro
 Library Manager desktop app, consolidating findings into a comprehensive
