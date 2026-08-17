@@ -156,8 +156,8 @@ check-generated:
     git diff --exit-code specs/*/contracts/*.generated.json apps/desktop/src/bindings/
 
 # Full pre-merge gate: lint + tests + typecheck + generated-artifact drift +
-# DB/dead-caller/hot-read/lifecycle-strings boundary ratchets.
-check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings
+# DB/dead-caller/hot-read/lifecycle-strings/pv-selector boundary ratchets.
+check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings pv-selector-ratchet
 
 # Placeholder fixture check hook.
 fixtures-check:

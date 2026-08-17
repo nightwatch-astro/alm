@@ -1,0 +1,24 @@
+// Replaces the SC-001 vitest guard from src/api/ipc-boundary.guard.test.ts:
+// a single-file pattern match for hand-written `invoke('cmd')` /
+// `invoke<T>('cmd')` calls. The generated bindings dispatch through the
+// distinct `__TAURI_INVOKE` identifier, so they never match this pattern.
+//
+// Loaded from a biome.json override rather than root `plugins`, because a root
+// entry applies everywhere and cannot be narrowed. The negated paths there are
+// src/api/ipc.ts (the dispatch switcher itself) plus the spec-062 feature-local
+// adapters sessionsGroupsIpc.ts and calibrationHandoffIpc.ts, whose raw invokes
+// are replaced once ic9h.20 generates their typed bindings.
+language js
+
+call_expression($function, $arguments) where {
+  $function <: `invoke`,
+  // `string()` does not match template literals, so a backtick command name
+  // slips past a `contains string()`-only guard. The regex branch covers both
+  // the plain and the generic `invoke<T>(`cmd`)` forms.
+  $arguments <: or { contains string(), r"[^\n]*`[^`\n]*`[^\n]*" },
+  register_diagnostic(
+    span = $arguments,
+    message = "Hand-written `invoke('...')` calls are confined to the dispatch switcher (spec 037 SC-001). Call the generated `commands.*` bindings instead.",
+    severity = "error"
+  )
+}
