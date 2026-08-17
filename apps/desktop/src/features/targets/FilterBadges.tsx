@@ -20,6 +20,7 @@ import {
   type Recommendation,
 } from '@/shared/planner/moon-avoidance';
 import { m } from '@/lib/i18n';
+import * as tt from './targets-table.css';
 
 /** i18n label for each derived recommendation category (render-time thunks). */
 const RECOMMENDATION_LABEL: Record<Recommendation, () => string> = {
@@ -51,8 +52,8 @@ export function FilterBadges({ viability, recommendation }: Props) {
 
   if (viability === null) {
     return (
-      <span className="pv-filter-badges" title={label}>
-        <span className="pv-filter-badge pv-filter-badge--unknown">
+      <span className={tt.filterBadges} title={label}>
+        <span className={`${tt.filterBadge} ${tt.filterBadgeUnknown}`}>
           {label}
         </span>
       </span>
@@ -60,17 +61,15 @@ export function FilterBadges({ viability, recommendation }: Props) {
   }
 
   return (
-    <span className="pv-filter-badges" title={label}>
+    <span className={tt.filterBadges} title={label}>
       {BANDS.map((band) => {
         const viable = viability[band];
         return (
           <span
             key={band}
             className={
-              `pv-filter-badge pv-filter-badge--${bandTier(band)}` +
-              (viable
-                ? ' pv-filter-badge--viable'
-                : ' pv-filter-badge--not-viable')
+              `${tt.filterBadge} ${tt.filterBadgeTier[bandTier(band)]} ` +
+              (viable ? tt.filterBadgeViable : tt.filterBadgeNotViable)
             }
             aria-label={
               viable

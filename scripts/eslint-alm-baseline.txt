@@ -45,7 +45,7 @@ src/features/projects/ProjectChannelsSection.tsx	36	alm/require-root-testid
 src/features/projects/ProjectDetail.tsx	138	alm/require-root-testid
 src/features/projects/ProjectSourcesSection.tsx	96	alm/require-root-testid
 src/features/projects/ProjectsPage.tsx	224	alm/require-root-testid
-src/features/projects/ProjectsTable.tsx	285	alm/require-root-testid
+src/features/projects/ProjectsTable.tsx	281	alm/require-root-testid
 src/features/projects/SessionSourcePicker.tsx	117	alm/require-root-testid
 src/features/projects/SourceViewsSection.tsx	206	alm/require-root-testid
 src/features/projects/ToolLaunchesAccordion.tsx	209	alm/require-root-testid
@@ -84,13 +84,13 @@ src/features/setup/steps/StepSite.tsx	131	alm/require-root-testid
 src/features/setup/steps/StepTools.tsx	155	alm/require-root-testid
 src/features/targets/AliasesSection.tsx	41	alm/require-root-testid
 src/features/targets/AltitudeGraph.tsx	105	alm/require-root-testid
-src/features/targets/FilterBadges.tsx	54	alm/require-root-testid
+src/features/targets/FilterBadges.tsx	55	alm/require-root-testid
 src/features/targets/GuidanceCell.tsx	70	alm/require-root-testid
 src/features/targets/LinkedItemsList.tsx	102	alm/require-root-testid
 src/features/targets/LinkedItemsList.tsx	37	alm/require-root-testid
 src/features/targets/NotesSection.tsx	41	alm/require-root-testid
 src/features/targets/TargetList.tsx	80	alm/require-root-testid
-src/features/targets/TargetsTableColumns.tsx	134	alm/require-root-testid
+src/features/targets/TargetsTableColumns.tsx	135	alm/require-root-testid
 src/features/targets/TonightPanel.tsx	167	alm/require-root-testid
 src/ui/NumberField.tsx	40	alm/require-root-testid
 src/ui/Tooltip.tsx	52	alm/require-root-testid
