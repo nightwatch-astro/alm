@@ -36,22 +36,10 @@ vi.mock('./SessionDetail', () => ({
   SessionDetail: () => <div data-testid="session-detail-stub" />,
 }));
 
-// Spec 062: RelationProposalList, ManualRelationDialog, PanelGroupView, and
-// MatchingSettingsPanel use TanStack Query; stub them so this test doesn't
-// need a QueryClientProvider (the gate under test is the stale-selection
-// wiring, not the groups surface).
-vi.mock('./RelationProposalList', () => ({
-  RelationProposalList: () => <div data-testid="proposal-list-stub" />,
-}));
-vi.mock('./ManualRelationDialog', () => ({
-  ManualRelationDialog: () => null,
-}));
-vi.mock('./PanelGroupView', () => ({
-  PanelGroupView: () => null,
-}));
-vi.mock('./MatchingSettingsPanel', () => ({
-  MatchingSettingsPanel: () => null,
-}));
+// The spec 062 US2 groups surface (RelationProposalList, ManualRelationDialog,
+// PanelGroupView, MatchingSettingsPanel) needed TanStack Query stubs here while
+// SessionsPage mounted it. Those render sites are gone until
+// astro-plan-ic9h.20 wires the Tauri commands; restore the stubs with them.
 
 const mockNavigate = vi.fn();
 const mockSelectedId = { current: undefined as string | undefined };

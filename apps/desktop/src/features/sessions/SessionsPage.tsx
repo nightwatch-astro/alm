@@ -52,12 +52,6 @@ import { addToast } from '@/shared/toast';
 import { m } from '@/lib/i18n';
 import { revealInventoryPath, resolveRevealPath } from './revealInventory';
 import { isSourceActionable } from './connectivity';
-import { RelationProposalList } from './RelationProposalList';
-import { RelationProposalDetail } from './RelationProposalDetail';
-import { ManualRelationDialog } from './ManualRelationDialog';
-import { PanelGroupView } from './PanelGroupView';
-import { MatchingSettingsPanel } from './MatchingSettingsPanel';
-import { Btn } from '@/ui';
 import type { InventoryFrameType, InventorySource } from '@/bindings/index';
 
 /**
@@ -131,16 +125,6 @@ export function SessionsPage() {
     validIds: ['target', 'filter', 'night', 'camera', 'month'],
     defaultDims: [],
   });
-
-  // Spec 062: proposal list/detail and panel group/mosaic side panels.
-  const [selectedProposalId, setSelectedProposalId] = useState<
-    string | undefined
-  >(undefined);
-  const [selectedPanelGroupId, setSelectedPanelGroupId] = useState<
-    string | undefined
-  >(undefined);
-  const [showManualRelationDialog, setShowManualRelationDialog] =
-    useState(false);
 
   // Group-by options share their labels with the table's grouping-hint footer.
   const SESSION_DIMENSIONS: FilterOption[] = Object.entries(
@@ -308,24 +292,8 @@ export function SessionsPage() {
     />
   );
 
-  // Spec 062: priority order for the detail pane:
-  //   1. panel group / mosaic view (triggered from SessionGroupBadge)
-  //   2. proposal detail (triggered from RelationProposalList)
-  //   3. session detail (default)
-  const panelGroupDetail =
-    selectedPanelGroupId != null ? (
-      <PanelGroupView panelGroupId={selectedPanelGroupId} />
-    ) : undefined;
-
-  const proposalDetail =
-    selectedProposalId != null ? (
-      <RelationProposalDetail proposalId={selectedProposalId} />
-    ) : undefined;
-
   const activeDetail =
-    panelGroupDetail ??
-    proposalDetail ??
-    (selectedSession != null ? (
+    selectedSession != null ? (
       <SessionDetail
         session={selectedSession}
         onReveal={() => void handleReveal()}
@@ -334,29 +302,13 @@ export function SessionsPage() {
         onOpenProject={(id) =>
           navigate({ to: '/projects', search: { selected: id } })
         }
-        onOpenGroup={(id) => {
-          setSelectedPanelGroupId(id);
-          setSelectedProposalId(undefined);
-        }}
       />
-    ) : undefined);
+    ) : undefined;
 
-  const handleCloseDetail = (() => {
-    if (selectedPanelGroupId != null)
-      return () => setSelectedPanelGroupId(undefined);
-    if (selectedProposalId != null)
-      return () => setSelectedProposalId(undefined);
-    if (selectedSession != null) return clearSelection;
-    return undefined;
-  })();
+  const handleCloseDetail =
+    selectedSession != null ? clearSelection : undefined;
 
-  const detailAriaLabel = (() => {
-    if (selectedPanelGroupId != null)
-      return m.cmp_listpage_close_proposal_details_aria();
-    if (selectedProposalId != null)
-      return m.cmp_listpage_close_proposal_details_aria();
-    return m.cmp_listpage_close_session_details_aria();
-  })();
+  const detailAriaLabel = m.cmp_listpage_close_session_details_aria();
 
   return (
     <ListPageLayout
@@ -373,11 +325,7 @@ export function SessionsPage() {
         <SessionsTable
           sources={sources}
           selected={selected ?? null}
-          onSelect={(id) => {
-            setSelectedProposalId(undefined);
-            setSelectedPanelGroupId(undefined);
-            void onSelect(id);
-          }}
+          onSelect={(id) => void onSelect(id)}
           loading={loading}
           sort={sort}
           onSort={handleSort}
@@ -385,46 +333,15 @@ export function SessionsPage() {
         />
       )}
 
-      {/* Spec 062: relation proposal list — shown beneath the session table
-          when no session is selected in the detail pane, or always visible
-          as a secondary disclosure zone. Keyboard-operable; selecting a
-          proposal opens RelationProposalDetail in the right panel. */}
-      <RelationProposalList
-        selectedId={selectedProposalId}
-        onSelect={(id) => {
-          setSelectedProposalId(id);
-          // Clear session selection so the detail panel shows the proposal.
-          void navigate({
-            search: (prev) => ({ ...prev, selected: undefined }),
-            replace: true,
-          });
-        }}
-        headerAction={
-          <Btn
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowManualRelationDialog(true)}
-            aria-label={m.manual_relation_open_btn_aria()}
-            data-testid="open-manual-relation-btn"
-          >
-            {m.manual_relation_open_btn()}
-          </Btn>
-        }
-      />
-
-      {/* Spec 062: manual relation creation dialog. */}
-      <ManualRelationDialog
-        open={showManualRelationDialog}
-        onClose={() => setShowManualRelationDialog(false)}
-        defaultSubjectIds={selected != null ? [selected] : undefined}
-      />
-
-      {/* Spec 062: matching geometry and calibration settings.
-          TODO(ic9h.20): move this pane into SettingsPage as a new 'matching'
-          pane alongside 'cal' once the Tauri commands are wired — the seam is
-          SettingsPage.renderPane() in src/features/settings/SettingsPage.tsx.
-          Kept here so the surface is reachable and reviewable before .20. */}
-      <MatchingSettingsPanel />
+      {/* Spec 062 US2 (astro-plan-6yep): the RelationProposalList,
+          ManualRelationDialog, and MatchingSettingsPanel render sites were
+          removed. Their IPC commands (relation_proposal_list,
+          matching_settings_get, …) have no Tauri command layer yet, so
+          mounting them showed error panels on every visit. The components and
+          sessionsGroupsIpc.ts are intact — restore these render sites when
+          astro-plan-ic9h.20 wires the commands. MatchingSettingsPanel belongs
+          in SettingsPage.renderPane() as a new 'matching' pane alongside
+          'cal', not back here. */}
     </ListPageLayout>
   );
 }
