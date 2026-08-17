@@ -72,7 +72,8 @@ use crate::commands::ingestion::{ingestion_settings_get, ingestion_settings_upda
 use crate::commands::inventory::{inventory_list, inventory_session_notes_update};
 use crate::commands::inventory_frame::{
     inventory_frame_list, inventory_frame_relink, inventory_reconcile_run,
-    inventory_root_config_get, inventory_root_config_set,
+    inventory_root_config_get, inventory_root_config_set, inventory_watcher_attach,
+    inventory_watcher_detach,
 };
 use crate::commands::lifecycle::{
     lifecycle_ledger_list, lifecycle_transition_apply, lifecycle_transition_preview,
@@ -413,6 +414,8 @@ macro_rules! app_commands {
             inventory_frame_relink,
             inventory_root_config_get,
             inventory_root_config_set,
+            inventory_watcher_attach,
+            inventory_watcher_detach,
             // ingestion settings (spec 030)
             ingestion_settings_get,
             ingestion_settings_update,

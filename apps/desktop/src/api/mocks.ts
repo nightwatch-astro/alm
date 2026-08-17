@@ -2330,6 +2330,16 @@ const mockHandlers = {
     return null;
   },
 
+  // spec 048 T023/T026: per-root frame watcher attach/detach — no real
+  // filesystem watching in mock mode, but the frame-inventory panel's
+  // mount/unmount effect calls these, so they must resolve.
+  inventory_watcher_attach: async () => {
+    return null;
+  },
+  inventory_watcher_detach: async () => {
+    return null;
+  },
+
   artifact_watcher_refresh: async () => {
     return [] as string[];
   },

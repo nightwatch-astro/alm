@@ -10,6 +10,7 @@
 pub mod clean_shutdown;
 pub mod commands;
 pub mod data_dir;
+pub mod frame_watcher;
 pub mod resolve_cache;
 pub mod watcher;
 
@@ -706,6 +707,11 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         bus.clone(),
         artifact_watcher_registry,
     ));
+    // spec 048 T023/T024/T026: per-root live frame watchers, attached/detached
+    // via `inventory.watcher.attach`/`.detach` as a surface showing a raw or
+    // calibration root's frame inventory opens/closes. No watch is held on an
+    // idle root (research R2), so nothing runs until a root is attached.
+    app.manage(crate::frame_watcher::new_frame_watcher_registry());
     // spec 012 (WP-012-A): one-time, idempotent fix-up for `processing_artifacts`
     // rows the retired global root watcher (pre-#400) keyed by a library-root id
     // instead of the owning project's id. Runs once per app start, before any

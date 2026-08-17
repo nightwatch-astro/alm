@@ -7,8 +7,12 @@
 //! the `notify` crate. Events are forwarded to a tokio broadcast channel so
 //! that multiple consumers (e.g. the Tauri event bridge) can subscribe.
 //!
-//! Per research R8, only inbox folders are watched — raw/calibration/project
-//! roots are scanned on demand.
+//! This service watches inbox folders only. Raw and calibration roots are
+//! watched per-root by `desktop_shell::frame_watcher`, whose live events
+//! schedule a reconcile pass instead of forwarding file events to the webview
+//! (spec 048 research R2, which supersedes spec-012's R8 "raw/calibration
+//! roots are scanned on demand"). Project output folders are watched by
+//! `crate::artifact_watcher`.
 
 use std::sync::Arc;
 

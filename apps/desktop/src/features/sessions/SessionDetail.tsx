@@ -414,7 +414,7 @@ export function SessionDetail({
 
       {/* Spec 048 T014/T025: on-demand per-frame inventory (present count +
           disk total) with a relink action for frames flagged missing. */}
-      <SessionFrameInventory sessionId={session.id} />
+      <SessionFrameInventory sessionId={session.id} rootId={session.sourceId} />
 
       {/* Spec 048 US3 T031: raw sub-frame cleanup review, grouped by this
           session — previously impossible (no per-frame inventory to scan). */}

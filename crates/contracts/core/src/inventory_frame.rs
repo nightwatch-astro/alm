@@ -210,6 +210,16 @@ pub struct RootConfigSetRequest {
     pub detection: Option<DetectionConfigUpdate>,
 }
 
+/// Request envelope for `inventory.watcher.attach` / `inventory.watcher.detach`
+/// (spec 048 T023/T026): binds a root's live/scheduled detection triggers to the
+/// lifetime of the surface showing its frame inventory, so no watch is held on
+/// an idle root (research R2).
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RootWatcherRequest {
+    pub root_id: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
