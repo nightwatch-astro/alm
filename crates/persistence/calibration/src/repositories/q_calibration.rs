@@ -148,6 +148,80 @@ pub async fn get_acquisition_fingerprint(
     Ok(row)
 }
 
+/// Dimensions written to one `acquisition_fingerprint` row.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UpsertAcquisitionFingerprint<'a> {
+    pub session_id: &'a str,
+    pub gain: Option<f64>,
+    pub offset_val: Option<f64>,
+    pub exposure_s: Option<f64>,
+    pub temp_c: Option<f64>,
+    pub filter_name: Option<&'a str>,
+    pub rotation_deg: Option<f64>,
+    pub binning: Option<&'a str>,
+    pub optic_train: Option<&'a str>,
+    pub observing_night_date: Option<&'a str>,
+    pub has_observer_location: bool,
+    pub has_exposure_start_utc: bool,
+}
+
+/// Write the `acquisition_fingerprint` row for a session, filling only the
+/// dimensions that are still NULL.
+///
+/// The primary key is `acquisition_session(id)`, so the row is accumulated
+/// across a session's frames: every `COALESCE` keeps the stored value and a
+/// later frame contributes only where nothing is recorded yet. A frame whose
+/// header omits a dimension therefore cannot regress a known value to NULL,
+/// and disagreeing frames leave the first non-NULL reading in place.
+///
+/// The two `has_*` flags are OR-accumulated for the same reason: they assert
+/// that some frame in the session supplied the evidence, so a later frame
+/// without it must not clear them.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn upsert_acquisition_fingerprint(
+    pool: &SqlitePool,
+    fp: &UpsertAcquisitionFingerprint<'_>,
+) -> DbResult<()> {
+    sqlx::query(
+        "
+        INSERT INTO acquisition_fingerprint
+            (id, session_type, gain, offset_val, exposure_s, temp_c, filter_name,
+             rotation_deg, binning, optic_train, observing_night_date,
+             has_observer_location, has_exposure_start_utc)
+        VALUES (?, 'light', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            gain                   = COALESCE(gain, excluded.gain),
+            offset_val             = COALESCE(offset_val, excluded.offset_val),
+            exposure_s             = COALESCE(exposure_s, excluded.exposure_s),
+            temp_c                 = COALESCE(temp_c, excluded.temp_c),
+            filter_name            = COALESCE(filter_name, excluded.filter_name),
+            rotation_deg           = COALESCE(rotation_deg, excluded.rotation_deg),
+            binning                = COALESCE(binning, excluded.binning),
+            optic_train            = COALESCE(optic_train, excluded.optic_train),
+            observing_night_date   = COALESCE(observing_night_date, excluded.observing_night_date),
+            has_observer_location  = MAX(has_observer_location, excluded.has_observer_location),
+            has_exposure_start_utc = MAX(has_exposure_start_utc, excluded.has_exposure_start_utc)
+        ",
+    )
+    .bind(fp.session_id)
+    .bind(fp.gain)
+    .bind(fp.offset_val)
+    .bind(fp.exposure_s)
+    .bind(fp.temp_c)
+    .bind(fp.filter_name)
+    .bind(fp.rotation_deg)
+    .bind(fp.binning)
+    .bind(fp.optic_train)
+    .bind(fp.observing_night_date)
+    .bind(i64::from(fp.has_observer_location))
+    .bind(i64::from(fp.has_exposure_start_utc))
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// List `acquisition_fingerprint` rows for `light` sessions (candidates for
 /// a calibration master's "compatible sessions" list — #868).
 ///

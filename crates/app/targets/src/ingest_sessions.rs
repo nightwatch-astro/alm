@@ -66,6 +66,7 @@ use std::sync::Arc;
 
 use audit::EventBus;
 use metadata_core::RawFileMetadata;
+use persistence_calibration::repositories::q_calibration;
 use persistence_lifecycle::repositories::first_run;
 use persistence_plans::repositories::plans as plans_repo;
 use persistence_plans::repositories::projects as repo_projects;
@@ -262,6 +263,13 @@ async fn ingest_light_frame(
         tracing::warn!(session_id, "ingest: failed to backfill session geometry: {e:?}");
     }
 
+    // Record this frame's calibration-matching dimensions on the session
+    // (astro-plan-siyk). Same error posture and null semantics as the
+    // geometry backfill above.
+    if let Err(e) = backfill_session_fingerprint(pool, &session_id, &meta).await {
+        tracing::warn!(session_id, "ingest: failed to backfill session fingerprint: {e:?}");
+    }
+
     // F-Framing-10: bind this session to the attribution pick recorded on
     // the confirming plan, if any — the earliest point a real session id
     // exists to add as a framing member. Logged, never propagated (same
@@ -325,6 +333,70 @@ async fn backfill_session_geometry(
         pointing_dec_deg,
         rotation_deg,
         optic_train_key.as_deref(),
+    )
+    .await
+    .map_err(db_err)
+}
+
+/// Record this frame's calibration-matching dimensions on the session's
+/// `acquisition_fingerprint` row (astro-plan-siyk).
+///
+/// Without this row `load_session` yields an all-`None` `SessionInfo`, and
+/// `calibration_core::rules::hard_rule_numeric` excludes every master because
+/// it requires both sides present — so calibration matching returned
+/// `no_match` for every ingested session.
+///
+/// The row is keyed by session id and accumulated across the session's frames.
+/// Conflict resolution is first-non-null-wins, delegated to the repository's
+/// `COALESCE` upsert: it mirrors `backfill_session_geometry` and
+/// `upsert_session`'s `root_id`, and matches the fact that `session_key`
+/// already partitions sessions by gain/filter/binning, so a frame that
+/// disagrees on a hard dimension normally lands in a different session.
+async fn backfill_session_fingerprint(
+    pool: &SqlitePool,
+    session_id: &str,
+    meta: &RawFileMetadata,
+) -> Result<(), ContractError> {
+    let binning = binning_of(meta);
+    let filter = meta.filter.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let optic_train = sessions::optic_train_key(
+        meta.telescop.as_deref(),
+        meta.instrume.as_deref(),
+        meta.focal_length_mm,
+    );
+
+    // Sensor set-point first: it is the temperature a calibration master is
+    // matched on, with the measured CCD reading as the fallback.
+    let temp_c = meta.set_temp_c.or(meta.ccd_temp_c);
+
+    let has_exposure_start_utc = meta.date_obs.as_deref().is_some_and(|d| !d.trim().is_empty());
+    let observing_night_date = sessions::observing_night(
+        parse_date_obs(meta.date_obs.as_deref()),
+        Some(&ObserverContext { utc_offset: UtcOffset::UTC }),
+    )
+    .ok();
+
+    q_calibration::upsert_acquisition_fingerprint(
+        pool,
+        &q_calibration::UpsertAcquisitionFingerprint {
+            session_id,
+            gain: meta.gain.as_deref().and_then(metadata_core::parse_f64),
+            // Sensor offsets are small integers; a value beyond f64 exactness is
+            // not a real header, so it is dropped rather than rounded.
+            offset_val: meta.offset.and_then(|o| i32::try_from(o).ok()).map(f64::from),
+            exposure_s: meta.exposure.as_deref().and_then(metadata_core::parse_f64),
+            temp_c,
+            filter_name: filter,
+            rotation_deg: meta.rotator_angle_deg,
+            binning: (!binning.is_empty()).then_some(binning.as_str()),
+            optic_train: optic_train.as_deref(),
+            observing_night_date: observing_night_date.as_deref(),
+            // R11: ingest always uses the UTC observing-night fallback, so no
+            // frame can assert a real observer location (mirrors
+            // `derive_session_key`'s `has_observer_location = false`).
+            has_observer_location: false,
+            has_exposure_start_utc,
+        },
     )
     .await
     .map_err(db_err)

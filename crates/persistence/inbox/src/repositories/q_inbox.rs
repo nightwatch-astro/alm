@@ -96,6 +96,17 @@ pub struct InsertCalibrationFingerprint<'a> {
     pub calibration_type: &'a str,
     pub exposure_s: Option<f64>,
     pub filter_name: Option<&'a str>,
+    /// Hard-rule dimension for every calibration kind: a master with a NULL
+    /// `gain` is excluded from every candidate list, because
+    /// `calibration_core::rules::hard_rule_numeric` requires both sides to be
+    /// present (astro-plan-siyk).
+    pub gain: Option<f64>,
+    pub offset_val: Option<f64>,
+    pub temp_c: Option<f64>,
+    /// Hard-rule dimension for flat matching.
+    pub binning: Option<&'a str>,
+    /// Hard-rule dimension for flat matching.
+    pub optic_train: Option<&'a str>,
 }
 
 /// Idempotency guard for master registration: does a `calibration_session`
@@ -150,13 +161,19 @@ pub async fn insert_calibration_fingerprint(
 ) -> DbResult<()> {
     sqlx::query(
         "INSERT INTO calibration_fingerprint
-            (id, calibration_type, exposure_s, filter_name)
-         VALUES (?, ?, ?, ?)",
+            (id, calibration_type, exposure_s, filter_name, gain, offset_val,
+             temp_c, binning, optic_train)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(fp.calibration_session_id)
     .bind(fp.calibration_type)
     .bind(fp.exposure_s)
     .bind(fp.filter_name)
+    .bind(fp.gain)
+    .bind(fp.offset_val)
+    .bind(fp.temp_c)
+    .bind(fp.binning)
+    .bind(fp.optic_train)
     .execute(pool)
     .await?;
     Ok(())

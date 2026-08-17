@@ -14,6 +14,10 @@ use std::path::Path;
 
 use audit::bus::EventBus;
 use audit::event_bus::{PlanApplyingCompleted, Source, TOPIC_PLAN_APPLYING_COMPLETED};
+use contracts_core::calibration_match::{
+    CalibrationMatchSuggestRequest, CalibrationType, SUGGEST_CONTRACT_VERSION,
+};
+use persistence_inbox::repositories::q_inbox;
 use persistence_plans::repositories::plans as plans_repo;
 use targeting_resolver::cache::upsert_resolved;
 use targeting_resolver::{
@@ -73,6 +77,11 @@ fn write_fits(
     write_card(&format!("{:<80}", "GAIN    = 100"));
     write_card(&format!("{:<80}", "XBINNING= 1"));
     write_card(&format!("{:<80}", "YBINNING= 1"));
+    // Remaining calibration-matching dimensions: `OFFSET` is a dark/bias
+    // hard rule, `EXPTIME`/`SET-TEMP` the soft ones (astro-plan-siyk).
+    write_card(&format!("{:<80}", "OFFSET  = 50"));
+    write_card(&format!("{:<80}", "EXPTIME = 300.0"));
+    write_card(&format!("{:<80}", "SET-TEMP= -10.0"));
     block[idx * 80..idx * 80 + 3].copy_from_slice(b"END");
     let mut f = std::fs::File::create(path).unwrap();
     f.write_all(&block).unwrap();
@@ -518,5 +527,113 @@ async fn ingested_session_total_size_is_sum_of_real_frame_sizes() {
     assert_eq!(
         detail.total_size_bytes, expected_total,
         "detail total must match the same real sum"
+    );
+}
+
+// ── astro-plan-siyk: real ingest populates the calibration-matching fingerprint ──
+
+/// The real ingest path must record the session's calibration-matching
+/// dimensions, and `calibration.match.suggest` must then return candidates.
+///
+/// This drives the production writer end to end — a plan-apply event through
+/// the real plan listener over a real FITS file — rather than seeding
+/// `acquisition_fingerprint` directly. A fixture that inserted the row itself
+/// (or a `SessionInfo` built in memory) passed for 2.5 months while no
+/// production writer existed at all: `load_session` returned an all-`None`
+/// `SessionInfo` and `hard_rule_numeric` excluded every master.
+#[tokio::test]
+async fn ingested_session_matches_a_calibration_master() {
+    let (db, _repo, bus) = support::setup().await;
+    let pool = db.pool();
+    let tmp = tempfile::tempdir().unwrap();
+    let root_id = "src-raw";
+    register_source(pool, root_id, tmp.path().to_str().unwrap()).await;
+    upsert_resolved(pool, &m31()).await.unwrap();
+
+    // `write_fits` emits GAIN=100 / OFFSET=50 / EXPTIME=300 / SET-TEMP=-10.
+    write_fits(
+        tmp.path(),
+        "light.fits",
+        "Light Frame",
+        Some("M 31"),
+        Some("Ha"),
+        Some("2026-06-21T22:00:00"),
+    );
+    build_applied_plan(pool, "plan-siyk", root_id, &[("light.fits", "move", true)]).await;
+
+    app_core::inbox::plan_listener::start_inbox_plan_listener(
+        pool.clone(),
+        &bus,
+        targeting_resolver::simbad::ResolveCache::in_memory().unwrap(),
+    );
+    publish_applied(&bus, "plan-siyk").await;
+
+    let session_id = support::poll_until(
+        || async {
+            sqlx::query_scalar::<_, String>("SELECT id FROM acquisition_fingerprint")
+                .fetch_optional(pool)
+                .await
+                .unwrap()
+        },
+        "acquisition_fingerprint row never appeared after plan-siyk apply-completed event",
+    )
+    .await;
+
+    // The dimensions the dark hard rules read must be present, not NULL.
+    let dims: (Option<f64>, Option<f64>, Option<f64>, Option<f64>) =
+        sqlx::query_as("SELECT gain, offset_val, exposure_s, temp_c FROM acquisition_fingerprint")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(dims.0, Some(100.0), "GAIN must reach the fingerprint (hard rule, every kind)");
+    assert_eq!(dims.1, Some(50.0), "OFFSET must reach the fingerprint (dark hard rule)");
+    assert_eq!(dims.2, Some(300.0), "EXPTIME must reach the fingerprint");
+    assert_eq!(dims.3, Some(-10.0), "SET-TEMP must reach the fingerprint");
+
+    // A dark master with the same gain/offset, seeded through the same
+    // production insert the master-registration path uses.
+    let master_id = "master-siyk";
+    sqlx::query(
+        "INSERT INTO calibration_session (id, session_key, frame_ids, kind, created_at)
+         VALUES (?, 'dark-dark', '[]', 'dark', '2026-06-20T00:00:00Z')",
+    )
+    .bind(master_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    q_inbox::insert_calibration_fingerprint(
+        pool,
+        &q_inbox::InsertCalibrationFingerprint {
+            calibration_session_id: master_id,
+            calibration_type: "dark",
+            exposure_s: Some(300.0),
+            filter_name: None,
+            gain: Some(100.0),
+            offset_val: Some(50.0),
+            temp_c: Some(-10.0),
+            binning: Some("1x1"),
+            optic_train: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let resp = app_core::calibration::suggest(
+        pool,
+        CalibrationMatchSuggestRequest {
+            contract_version: SUGGEST_CONTRACT_VERSION.to_owned(),
+            request_id: "req-siyk".to_owned(),
+            session_id: session_id.clone(),
+            calibration_types: Some(vec![CalibrationType::Dark]),
+        },
+    )
+    .await
+    .expect("suggest must not error");
+
+    assert_eq!(resp.status, "success", "suggest failed: {:?}", resp.error);
+    let matches = resp.matches.expect("suggest must return a matches list");
+    assert!(
+        matches.iter().any(|m| m.master_id == master_id),
+        "a production-shaped ingested session must match a compatible dark master; got {matches:?}"
     );
 }

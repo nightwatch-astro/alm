@@ -352,9 +352,11 @@ async fn register_master_if_applicable(pool: &SqlitePool, plan_id: &str) -> Resu
     // real calibration master's `root_id` stayed `NULL` (silently decoded as
     // `""` by sqlx-sqlite, masking the gap from a plain string comparison).
     let mut resolved_root_id: Option<String> = None;
+    let mut dims = MasterFingerprintDims::default();
     let frame_id = match resolve_applied_frame_path(pool, plan_id).await {
         Ok(Some((root_id, relative_path))) => {
             let outcome = write_calibration_frame_record(pool, &root_id, &relative_path).await;
+            dims = read_master_fingerprint_dims(pool, &root_id, &relative_path).await;
             resolved_root_id = Some(root_id);
             match outcome {
                 Ok(id) => Some(id),
@@ -399,17 +401,7 @@ async fn register_master_if_applicable(pool: &SqlitePool, plan_id: &str) -> Resu
     .await
     .map_err(|e| format!("insert calibration_session: {e}"))?;
 
-    q_inbox::insert_calibration_fingerprint(
-        pool,
-        &InsertCalibrationFingerprint {
-            calibration_session_id: &session_id,
-            calibration_type: cal_kind,
-            exposure_s: item.master_exposure_s,
-            filter_name: item.master_filter.as_deref(),
-        },
-    )
-    .await
-    .map_err(|e| format!("insert calibration_fingerprint: {e}"))?;
+    write_master_fingerprint(pool, &session_id, cal_kind, &item, &dims).await?;
 
     // F0 invalidate-after-commit contract (crates/app/cache/src/lib.rs): both
     // inserts above have committed (sqlx pool auto-commits per statement; no
@@ -456,6 +448,87 @@ async fn resolve_applied_frame_path(
         (_, Some(r)) => Some((r, row.from_relative_path)),
         _ => None,
     })
+}
+
+/// Write the master's `calibration_fingerprint` row from the detector's
+/// findings plus the frame's own header dimensions.
+async fn write_master_fingerprint(
+    pool: &SqlitePool,
+    session_id: &str,
+    cal_kind: &str,
+    item: &inbox_repo::InboxItemRow,
+    dims: &MasterFingerprintDims,
+) -> Result<(), String> {
+    q_inbox::insert_calibration_fingerprint(
+        pool,
+        &InsertCalibrationFingerprint {
+            calibration_session_id: session_id,
+            calibration_type: cal_kind,
+            // The detector's exposure wins when present (it already reconciled
+            // filename and header evidence); the header supplies it otherwise.
+            exposure_s: item.master_exposure_s.or(dims.exposure_s),
+            filter_name: item.master_filter.as_deref(),
+            gain: dims.gain,
+            offset_val: dims.offset_val,
+            temp_c: dims.temp_c,
+            binning: dims.binning.as_deref(),
+            optic_train: dims.optic_train.as_deref(),
+        },
+    )
+    .await
+    .map_err(|e| format!("insert calibration_fingerprint: {e}"))
+}
+
+/// Calibration-matching dimensions read from a master frame's own header.
+#[derive(Debug, Default)]
+struct MasterFingerprintDims {
+    gain: Option<f64>,
+    offset_val: Option<f64>,
+    exposure_s: Option<f64>,
+    temp_c: Option<f64>,
+    binning: Option<String>,
+    optic_train: Option<String>,
+}
+
+/// Read the applied master frame's header for the dimensions
+/// `calibration_fingerprint` matches on (astro-plan-siyk).
+///
+/// An unreadable file yields all-`None` rather than an error: master
+/// registration must still record the session, and the resulting fingerprint
+/// simply matches nothing until re-derived.
+async fn read_master_fingerprint_dims(
+    pool: &SqlitePool,
+    root_id: &str,
+    relative_path: &str,
+) -> MasterFingerprintDims {
+    let Ok(Some(root_path)) =
+        app_core_targets::ingest_sessions::ensure_library_root(pool, root_id).await
+    else {
+        return MasterFingerprintDims::default();
+    };
+    let abs_path = std::path::Path::new(&root_path).join(relative_path);
+    let Ok(meta) = app_core_targets::metadata_cache::cached_extract(&abs_path) else {
+        return MasterFingerprintDims::default();
+    };
+
+    let binning = match (meta.x_binning.as_deref(), meta.y_binning.as_deref()) {
+        (Some(x), Some(y)) => Some(format!("{}x{}", x.trim(), y.trim())),
+        (Some(x), None) => Some(x.trim().to_owned()),
+        _ => None,
+    };
+
+    MasterFingerprintDims {
+        gain: meta.gain.as_deref().and_then(metadata_core::parse_f64),
+        offset_val: meta.offset.and_then(|o| i32::try_from(o).ok()).map(f64::from),
+        exposure_s: meta.exposure.as_deref().and_then(metadata_core::parse_f64),
+        temp_c: meta.set_temp_c.or(meta.ccd_temp_c),
+        binning,
+        optic_train: sessions::optic_train_key(
+            meta.telescop.as_deref(),
+            meta.instrume.as_deref(),
+            meta.focal_length_mm,
+        ),
+    }
 }
 
 /// Write the calibration master's `file_record` with its real on-disk size
