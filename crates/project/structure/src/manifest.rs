@@ -17,8 +17,6 @@
 
 use std::path::{Path, PathBuf};
 
-use time::OffsetDateTime;
-
 /// Current front-matter schema version written by this module.
 pub const MANIFEST_VERSION: i64 = 1;
 
@@ -238,11 +236,11 @@ pub async fn write_manifest_file(
 }
 
 /// Build the current UTC timestamp used for both the filename and the DB row.
+///
+/// Delegates to the canonical `domain_core::ids::Timestamp::now_iso()` (bd astro-plan-kyo7.88).
 #[must_use]
 pub fn now_utc_iso() -> String {
-    OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+    domain_core::ids::Timestamp::now_iso()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ use contracts_core::targets::{
 use contracts_core::ContractError;
 use targeting_resolver::cache;
 
-use super::{db_err, get, invalid_id, not_found};
+use super::{cache_err, get, invalid_id, not_found};
 
 /// `target.display_alias.set` — set the user presentation label (gen-3, FR-012).
 ///
@@ -27,7 +27,8 @@ pub async fn display_alias_set(
     req: &TargetDisplayAliasSetRequest,
 ) -> Result<TargetDetailV3, ContractError> {
     let uuid = Uuid::parse_str(&req.target_id).map_err(|_| invalid_id(&req.target_id))?;
-    let updated = cache::set_display_alias(pool, uuid, &req.display_alias).await.map_err(db_err)?;
+    let updated =
+        cache::set_display_alias(pool, uuid, &req.display_alias).await.map_err(cache_err)?;
     if !updated {
         return Err(not_found(&req.target_id));
     }
@@ -49,7 +50,7 @@ pub async fn display_alias_clear(
     req: &TargetDisplayAliasClearRequest,
 ) -> Result<TargetDetailV3, ContractError> {
     let uuid = Uuid::parse_str(&req.target_id).map_err(|_| invalid_id(&req.target_id))?;
-    let updated = cache::clear_display_alias(pool, uuid).await.map_err(db_err)?;
+    let updated = cache::clear_display_alias(pool, uuid).await.map_err(cache_err)?;
     if !updated {
         return Err(not_found(&req.target_id));
     }

@@ -11,8 +11,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { useState } from 'react';
+// Convention: use userEvent for user-driven interactions; fireEvent for synthetic/edge cases.
+// See src/test/userEvent.ts for the project setup helper.
+import { setupUser } from '../test/userEvent';
 import { RadioGroup, type RadioOption } from './RadioGroup';
 
 const settingsCss = readFileSync(
@@ -78,7 +81,8 @@ describe('RadioGroup a11y', () => {
     );
   });
 
-  it('calls onChange when a radio item is clicked', () => {
+  it('calls onChange when a radio item is clicked', async () => {
+    const user = setupUser();
     const onChange = vi.fn();
     render(
       <RadioGroup
@@ -88,17 +92,15 @@ describe('RadioGroup a11y', () => {
         aria-label="Destination"
       />,
     );
-    fireEvent.click(screen.getByRole('radio', { name: 'Trash' }));
+    await user.click(screen.getByRole('radio', { name: 'Trash' }));
     expect(onChange).toHaveBeenCalledWith('trash');
   });
 
   it('ArrowDown selects the next item, wrapping at the end', async () => {
+    const user = setupUser();
     render(<Harness initial="delete" />);
-    const item = screen.getByRole('radio', { name: 'Delete' });
-    await act(async () => {
-      item.focus();
-      fireEvent.keyDown(item, { key: 'ArrowDown' });
-    });
+    await user.click(screen.getByRole('radio', { name: 'Delete' }));
+    await user.keyboard('{ArrowDown}');
     expect(screen.getByRole('radio', { name: 'Archive' })).toHaveAttribute(
       'aria-checked',
       'true',
@@ -106,12 +108,10 @@ describe('RadioGroup a11y', () => {
   });
 
   it('ArrowUp selects the previous item, wrapping at the start', async () => {
+    const user = setupUser();
     render(<Harness initial="archive" />);
-    const item = screen.getByRole('radio', { name: 'Archive' });
-    await act(async () => {
-      item.focus();
-      fireEvent.keyDown(item, { key: 'ArrowUp' });
-    });
+    await user.click(screen.getByRole('radio', { name: 'Archive' }));
+    await user.keyboard('{ArrowUp}');
     expect(screen.getByRole('radio', { name: 'Delete' })).toHaveAttribute(
       'aria-checked',
       'true',

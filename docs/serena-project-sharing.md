@@ -1,7 +1,7 @@
 # Serena project sharing
 
-Status: Proposed  
-Tracking: `astro-plan-txk6`  
+Status: Proposed
+Tracking: `astro-plan-txk6`
 Implementation owner: `mcp-serena` package
 Research: [Serena project-sharing patterns](research/serena-project-sharing-ecosystem.md)
 

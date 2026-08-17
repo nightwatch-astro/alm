@@ -86,6 +86,17 @@ pub struct AcquisitionSession {
     pub warnings: Vec<String>,
 }
 
+/// Slim session summary for list views that only need identification and counts
+/// (GF-10: session pickers, label surfaces). Avoids transferring `metadata`,
+/// `warnings`, and `project_ids` over IPC when unused.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummary {
+    pub id: String,
+    pub session_key: SessionKey,
+    pub frame_count: u32,
+}
+
 // ── Detail types ────────────────────────────────────────────────────────────
 
 /// A group of frames within a session (per-filter breakdown).

@@ -17,6 +17,7 @@
 import { Component } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
 import { m } from '@/lib/i18n';
+import { logError } from '@/lib/diagnosticLog';
 
 interface Props {
   children: ReactNode;
@@ -45,6 +46,9 @@ export class AppErrorBoundary extends Component<Props, State> {
       '[AppErrorBoundary] Uncaught render error:',
       error,
       info.componentStack,
+    );
+    logError(
+      `[AppErrorBoundary] ${error.name}: ${error.message}${info.componentStack ?? ''}`,
     );
   }
 

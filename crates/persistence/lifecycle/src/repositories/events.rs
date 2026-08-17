@@ -25,7 +25,7 @@ pub struct EventRow {
 /// Append a durable event row. Returns the assigned `event_id`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_event(
     pool: &SqlitePool,
     topic: &str,
@@ -48,7 +48,7 @@ pub async fn insert_event(
 /// transaction). Returns the assigned `event_id`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_event_conn(
     conn: &mut SqliteConnection,
     topic: &str,
@@ -67,10 +67,46 @@ pub async fn insert_event_conn(
     Ok(result.last_insert_rowid())
 }
 
+/// Rows per multi-row INSERT: SQLite's 32766-parameter limit over 4 columns.
+const EVENT_INSERT_BATCH_SIZE: usize = 32766 / 4;
+
+/// Append many durable event rows in as few statements as the parameter limit
+/// allows, on an existing connection (for use inside a transaction).
+///
+/// `rows` are `(topic, source, emitted_at, payload)`, matching
+/// [`insert_event_conn`]'s argument order. Assigned `event_id`s are not
+/// returned: a multi-row insert reports only the last rowid.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn insert_events_conn(
+    conn: &mut SqliteConnection,
+    rows: &[(&str, &str, &str, &str)],
+) -> DbResult<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    for chunk in rows.chunks(EVENT_INSERT_BATCH_SIZE) {
+        let placeholders = std::iter::repeat_n("(?,?,?,?)", chunk.len()).collect::<Vec<_>>();
+        let sql = format!(
+            "INSERT INTO events (topic, source, emitted_at, payload) VALUES {}",
+            placeholders.join(",")
+        );
+        // AssertSqlSafe: only a generated placeholder list is interpolated;
+        // every value is bound.
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for (topic, source, emitted_at, payload) in chunk {
+            query = query.bind(*topic).bind(*source).bind(*emitted_at).bind(*payload);
+        }
+        query.execute(&mut *conn).await?;
+    }
+    Ok(())
+}
+
 /// List all events with `event_id > since_id`, oldest first.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_since(pool: &SqlitePool, since_id: i64) -> DbResult<Vec<EventRow>> {
     let rows = sqlx::query_as::<_, EventRow>(
         "SELECT event_id, topic, emitted_at, payload \
@@ -85,7 +121,7 @@ pub async fn list_since(pool: &SqlitePool, since_id: i64) -> DbResult<Vec<EventR
 /// List events on a single topic with `event_id > since_id`, oldest first.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_since_by_topic(
     pool: &SqlitePool,
     since_id: i64,
@@ -102,12 +138,38 @@ pub async fn list_since_by_topic(
     Ok(rows)
 }
 
+/// Page size for bounded replay loops in durable-event subscribers.
+pub const REPLAY_PAGE_SIZE: i64 = 500;
+
+/// Like [`list_since_by_topic`] but limited to `limit` rows (ascending by
+/// event_id). Use in subscriber replay loops to bound memory per iteration.
+///
+/// # Errors
+/// Returns [`DbError::Database`] on query failure.
+pub async fn list_since_by_topic_paged(
+    pool: &SqlitePool,
+    since_id: i64,
+    topic: &str,
+    limit: i64,
+) -> DbResult<Vec<EventRow>> {
+    let rows = sqlx::query_as::<_, EventRow>(
+        "SELECT event_id, topic, emitted_at, payload \
+         FROM events WHERE event_id > ? AND topic = ? ORDER BY event_id ASC LIMIT ?",
+    )
+    .bind(since_id)
+    .bind(topic)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// Most-recent `limit` events with `event_id > since_id`, newest first
 /// (caller reverses for oldest-first display — mirrors the former
 /// `log_stream::recent_entries` query shape).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_recent_since(
     pool: &SqlitePool,
     since_id: i64,
@@ -129,7 +191,7 @@ pub async fn list_recent_since(
 /// query shape.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_by_emitted_at_range(
     pool: &SqlitePool,
     since: Option<&str>,
@@ -175,15 +237,24 @@ pub async fn list_by_emitted_at_range(
     Ok(rows)
 }
 
-/// Largest assigned `event_id`, or `0` if the table is empty. Used to seed a
-/// live forwarder's cursor so only events emitted after subscribe are sent.
+/// Exclusive cursor that replays at most the newest `window` rows.
+///
+/// Callers pass the result to [`list_since`]. With `window` rows or fewer in the
+/// table the cursor is `0`, which replays the whole table.
+///
+/// A live subscriber seeds its cursor with this rather than the table's maximum
+/// `event_id` so rows committed before it started are still delivered, bounded
+/// so a long history cannot be replayed in full on every launch.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
-pub async fn max_event_id(pool: &SqlitePool) -> DbResult<i64> {
-    let (max_id,): (i64,) =
-        sqlx::query_as("SELECT COALESCE(MAX(event_id), 0) FROM events").fetch_one(pool).await?;
-    Ok(max_id)
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn rewound_cursor(pool: &SqlitePool, window: i64) -> DbResult<i64> {
+    let cursor: Option<i64> =
+        sqlx::query_scalar("SELECT event_id FROM events ORDER BY event_id DESC LIMIT 1 OFFSET ?")
+            .bind(window)
+            .fetch_optional(pool)
+            .await?;
+    Ok(cursor.unwrap_or(0))
 }
 
 /// Smallest retained `event_id`, or `None` if the table is empty. Used to
@@ -191,11 +262,56 @@ pub async fn max_event_id(pool: &SqlitePool) -> DbResult<i64> {
 /// row still on disk.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn min_event_id(pool: &SqlitePool) -> DbResult<Option<i64>> {
     let min_id: Option<i64> =
         sqlx::query_scalar("SELECT MIN(event_id) FROM events").fetch_one(pool).await?;
     Ok(min_id)
+}
+
+/// Total number of rows in the `events` table.  Used for monitoring and to
+/// decide whether a prune pass is warranted.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+#[allow(dead_code)] // retention pruner will call this; no production caller yet
+pub(crate) async fn count_events(pool: &SqlitePool) -> DbResult<i64> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM events").fetch_one(pool).await?;
+    Ok(count)
+}
+
+/// Delete events older than `older_than_iso` (exclusive upper-bound on
+/// `emitted_at`).
+///
+/// # Replay-watermark safety
+///
+/// All in-process event-bus subscribers that replay from the durable table
+/// start their cursor at 0 on first lag, then advance it as they process
+/// rows.  There is currently no persistent cursor registry, so the pruner
+/// cannot know the exact per-subscriber watermark.  The caller is expected
+/// to pass an `older_than_iso` that is conservatively far enough in the past
+/// that no live subscriber cursor can still be behind it:
+///
+/// - The default retention window (90 days) exceeds any realistic lag window
+///   on a desktop application, so in practice every subscriber has already
+///   processed events older than the cutoff.
+/// - Hooks are unconditionally idempotent (research.md §6.1), so replaying
+///   a pruned range a second time after a prune is safe — the worst outcome
+///   is a no-op re-dispatch.
+/// - kyo7.100 will add cursor advancement on live events; once that lands the
+///   replay window on a healthy app will shrink further, making the 90-day
+///   floor even more conservative.
+///
+/// Returns the number of rows deleted.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn prune_events_older_than(pool: &SqlitePool, older_than_iso: &str) -> DbResult<u64> {
+    let result = sqlx::query("DELETE FROM events WHERE emitted_at < ?")
+        .bind(older_than_iso)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
 }
 
 #[cfg(test)]
@@ -203,8 +319,9 @@ mod tests {
     use sqlx::SqlitePool;
 
     use super::{
-        insert_event, list_by_emitted_at_range, list_recent_since, list_since, list_since_by_topic,
-        max_event_id, min_event_id,
+        count_events, insert_event, list_by_emitted_at_range, list_recent_since, list_since,
+        list_since_by_topic, list_since_by_topic_paged, min_event_id, prune_events_older_than,
+        rewound_cursor,
     };
 
     async fn setup() -> SqlitePool {
@@ -295,13 +412,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn max_event_id_empty_is_zero() {
+    async fn rewound_cursor_bounds_the_replay_to_the_window() {
         let pool = setup().await;
-        assert_eq!(max_event_id(&pool).await.expect("max_event_id"), 0);
+        assert_eq!(rewound_cursor(&pool, 2).await.expect("empty table"), 0);
 
-        let id1 = insert_event(&pool, "t.a", "system", "2026-01-01T00:00:00Z", "{}").await.unwrap();
-        insert_event(&pool, "t.b", "system", "2026-01-01T00:00:01Z", "{}").await.unwrap();
-        assert_eq!(max_event_id(&pool).await.expect("max_event_id"), id1 + 1);
+        for i in 0..5 {
+            insert_event(&pool, "t.a", "system", &format!("2026-01-01T00:00:0{i}Z"), "{}")
+                .await
+                .unwrap();
+        }
+
+        // Window larger than the table replays everything.
+        assert_eq!(rewound_cursor(&pool, 10).await.expect("wide window"), 0);
+
+        // A window of 2 leaves ids 1..=3 behind the cursor and replays 4 and 5,
+        // where seeding the cursor at the table maximum would replay nothing.
+        let cursor = rewound_cursor(&pool, 2).await.expect("narrow window");
+        assert_eq!(cursor, 3);
+        assert_eq!(list_since(&pool, cursor).await.unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -311,5 +439,72 @@ mod tests {
 
         insert_event(&pool, "t.a", "system", "2026-01-01T00:00:00Z", "{}").await.unwrap();
         assert_eq!(min_event_id(&pool).await.expect("min_event_id"), Some(1));
+    }
+
+    #[tokio::test]
+    async fn count_events_empty_is_zero() {
+        let pool = setup().await;
+        assert_eq!(count_events(&pool).await.expect("count"), 0);
+    }
+
+    #[tokio::test]
+    async fn count_events_after_inserts() {
+        let pool = setup().await;
+        for i in 0..5 {
+            insert_event(&pool, "t.a", "system", &format!("2026-01-0{}T00:00:00Z", i + 1), "{}")
+                .await
+                .unwrap();
+        }
+        assert_eq!(count_events(&pool).await.expect("count"), 5);
+    }
+
+    #[tokio::test]
+    async fn prune_removes_older_rows_and_keeps_newer() {
+        let pool = setup().await;
+        // Insert three events on separate days.
+        insert_event(&pool, "t.a", "system", "2026-01-01T00:00:00Z", "{}").await.unwrap();
+        insert_event(&pool, "t.a", "system", "2026-01-02T00:00:00Z", "{}").await.unwrap();
+        insert_event(&pool, "t.a", "system", "2026-01-03T00:00:00Z", "{}").await.unwrap();
+
+        // Prune rows older than 2026-01-03 (exclusive upper bound).
+        let deleted = prune_events_older_than(&pool, "2026-01-03T00:00:00Z").await.expect("prune");
+        assert_eq!(deleted, 2, "two rows are older than the cutoff");
+
+        let remaining = list_since(&pool, 0).await.expect("list_since");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].emitted_at, "2026-01-03T00:00:00Z");
+    }
+
+    #[tokio::test]
+    async fn prune_all_rows_leaves_empty_table() {
+        let pool = setup().await;
+        insert_event(&pool, "t.a", "system", "2026-01-01T00:00:00Z", "{}").await.unwrap();
+        insert_event(&pool, "t.a", "system", "2026-01-02T00:00:00Z", "{}").await.unwrap();
+
+        let deleted =
+            prune_events_older_than(&pool, "2099-01-01T00:00:00Z").await.expect("prune all");
+        assert_eq!(deleted, 2);
+        assert_eq!(count_events(&pool).await.expect("count"), 0);
+    }
+
+    #[tokio::test]
+    async fn prune_empty_table_is_noop() {
+        let pool = setup().await;
+        let deleted =
+            prune_events_older_than(&pool, "2026-01-01T00:00:00Z").await.expect("prune empty");
+        assert_eq!(deleted, 0);
+    }
+
+    #[tokio::test]
+    async fn list_since_by_topic_paged_respects_limit() {
+        let pool = setup().await;
+        for i in 0..5 {
+            insert_event(&pool, "t.a", "system", &format!("2026-01-01T00:00:0{i}Z"), "{}")
+                .await
+                .unwrap();
+        }
+        let page = list_since_by_topic_paged(&pool, 0, "t.a", 3).await.expect("paged");
+        assert_eq!(page.len(), 3, "limit=3 must return at most 3 rows");
+        assert!(page[0].event_id < page[2].event_id, "ascending order");
     }
 }

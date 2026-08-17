@@ -283,15 +283,12 @@ fn parse_binning(s: &str) -> Option<(i32, i32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use persistence_core::Database;
     use persistence_inbox::repositories::inbox::{
         InsertEvidence, InsertInboxItem, UpsertFileMetadata,
     };
 
-    async fn test_db() -> Database {
-        let db = Database::in_memory().await.unwrap();
-        db.migrate().await.unwrap();
-        db
+    async fn test_db() -> persistence_core::Database {
+        persistence_core::test_support::setup_db().await
     }
 
     /// R-14 drift guard (#1116): the mandatory set the user is *shown* must equal

@@ -69,8 +69,8 @@ pub struct CreateHandoffParams<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
-/// Returns [`DbError::CasFailed`] if the head advance fails (cannot occur
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::CasFailed` if the head advance fails (cannot occur
 /// on initial creation, but included for type consistency).
 pub async fn create_initial_handoff(
     conn: &mut SqliteConnection,
@@ -171,9 +171,9 @@ pub struct AddReviewedSelectionParams<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] when `expected_head_generation` does not
+/// Returns `persistence_core::DbError::CasFailed` when `expected_head_generation` does not
 /// match the current head generation.
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn add_reviewed_selection_snapshot(
     conn: &mut SqliteConnection,
     params: &AddReviewedSelectionParams<'_>,
@@ -239,7 +239,7 @@ pub async fn add_reviewed_selection_snapshot(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_operation_for_handoff(
     conn: &mut SqliteConnection,
     public_id: &str,

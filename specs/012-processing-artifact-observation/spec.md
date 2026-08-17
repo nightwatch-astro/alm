@@ -7,7 +7,12 @@
 **Feature Branch**: `012-processing-artifact-observation`  
 **Created**: 2026-05-09  
 **Last Updated**: 2026-05-22  
-**Status**: Draft  
+**Status**: Implemented (post-hoc record, verified 2026-07-28). Artifact
+observation ships at HEAD via `crates/workflow/artifacts` and the app-layer
+artifact use-cases. The two remaining unchecked boxes in `tasks.md` are a missing
+e2e mock fixture and a missing research doc, tracked as a bead; the underlying
+behaviour already has unit coverage. That file is legacy paper and task state
+lives in beads.  
 **Input**: User description: "Specify how the app observes outputs from PixInsight, Siril, planetary/lunar tools, and future workflow profiles without becoming the processing tool."
 
 ## Implementation Status: Substantially implemented (2026-07-03)

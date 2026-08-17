@@ -23,6 +23,8 @@ use std::fs::{self, Metadata};
 use std::io;
 use std::path::{Path, PathBuf};
 
+use camino::Utf8Path;
+
 /// Returns `true` when `path` is a symlink or (on Windows) a junction /
 /// reparse-point entry, as reported by `symlink_metadata`.
 ///
@@ -58,6 +60,75 @@ pub fn is_link_or_junction_metadata(meta: &Metadata) -> bool {
         }
     }
     false
+}
+
+/// Why a root cannot be walked by [`real_files_under`] / [`real_dirs_under`].
+///
+/// Callers need this because both walkers return an empty list for a root they
+/// refuse to descend, which is indistinguishable from a genuinely empty root.
+/// Treating the two as the same thing lets an unmounted drive read as "every
+/// file was deleted".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RootUnavailable {
+    /// The path does not exist (unmounted drive, deleted root).
+    Missing,
+    /// The path exists but is not a directory.
+    NotADirectory,
+    /// The root itself is a symlink/junction and `follow_symlinks` is off, so
+    /// the walkers will not descend it.
+    GatedLink,
+    /// The path exists as a directory but cannot be stat'd or listed
+    /// (permission denied, I/O error, stale network mount).
+    Unreadable,
+}
+
+impl std::fmt::Display for RootUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Missing => "root path does not exist",
+            Self::NotADirectory => "root path is not a directory",
+            Self::GatedLink => "root path is a symlink or junction and follow_symlinks is disabled",
+            Self::Unreadable => "root path could not be read",
+        })
+    }
+}
+
+/// Check that `root` is a directory the link-aware walkers will actually
+/// descend, under the same `follow_symlinks` rule they apply.
+///
+/// This is the availability precondition for [`real_files_under`] and
+/// [`real_dirs_under`]: it must be checked with the same `follow_symlinks`
+/// value, because a symlinked root is walkable with `true` and gated with
+/// `false`. Note that `Path::is_dir()` alone is not a substitute — it follows
+/// links, so it accepts a symlinked root the gated walkers then refuse.
+///
+/// # Errors
+///
+/// Returns the [`RootUnavailable`] reason; `Ok(())` means the walkers will
+/// traverse this root.
+pub fn probe_root(root: &Path, follow_symlinks: bool) -> Result<(), RootUnavailable> {
+    let meta = fs::symlink_metadata(root).map_err(|e| match e.kind() {
+        io::ErrorKind::NotFound => RootUnavailable::Missing,
+        _ => RootUnavailable::Unreadable,
+    })?;
+
+    if is_link_or_junction_metadata(&meta) {
+        if !follow_symlinks {
+            return Err(RootUnavailable::GatedLink);
+        }
+        // Following is enabled: classify the link's target instead.
+        let target = fs::metadata(root).map_err(|e| match e.kind() {
+            io::ErrorKind::NotFound => RootUnavailable::Missing,
+            _ => RootUnavailable::Unreadable,
+        })?;
+        if !target.is_dir() {
+            return Err(RootUnavailable::NotADirectory);
+        }
+    } else if !meta.is_dir() {
+        return Err(RootUnavailable::NotADirectory);
+    }
+
+    fs::read_dir(root).map(|_| ()).map_err(|_| RootUnavailable::Unreadable)
 }
 
 /// Recursively collect every real (non-link) directory under `root`,
@@ -165,6 +236,38 @@ pub fn create_symlink(source: &Path, destination: &Path) -> io::Result<()> {
     }
 }
 
+// ── Wire-path helpers ─────────────────────────────────────────────────────────
+
+/// Convert `path` to a forward-slash UTF-8 string for wire and contract fields.
+///
+/// Uses `camino::Utf8Path` for a lossless conversion when the path is valid
+/// UTF-8, falling back to `to_string_lossy` (which replaces invalid sequences
+/// with U+FFFD) for the rare non-UTF-8 path. The fallback is defensive only;
+/// in production all paths pass the non-UTF-8 skip at the `read_dir` boundary
+/// before reaching this function.
+///
+/// This is the canonical single home for `replace('\\', "/")` on a `Path`
+/// so the wire format (`relative_file_path` contract field) cannot drift
+/// between scan, classify, and confirm (bd `astro-plan-kyo7.88`).
+#[must_use]
+pub fn wire_path(path: &Path) -> String {
+    Utf8Path::from_path(path).map_or_else(
+        || path.to_string_lossy().replace('\\', "/"),
+        |u| u.as_str().replace('\\', "/"),
+    )
+}
+
+/// Compute the forward-slash UTF-8 path of `path` relative to `root`.
+///
+/// Strips the `root` prefix via `strip_prefix`; falls back to `wire_path(path)`
+/// if `path` does not start with `root`. Callers must ensure `path` is a
+/// descendant of `root` — the fallback is purely defensive.
+#[must_use]
+pub fn relative_wire_path(root: &Path, path: &Path) -> String {
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    wire_path(rel)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +288,37 @@ mod tests {
         assert!(dirs.contains(&dir.path().to_path_buf()));
         assert!(dirs.contains(&dir.path().join("a")));
         assert!(dirs.contains(&nested));
+    }
+
+    #[test]
+    fn probe_root_classifies_unwalkable_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(probe_root(dir.path(), false), Ok(()));
+
+        let file = dir.path().join("frame.fits");
+        std::fs::write(&file, b"data").unwrap();
+        assert_eq!(probe_root(&file, false), Err(RootUnavailable::NotADirectory));
+
+        assert_eq!(probe_root(&dir.path().join("absent"), false), Err(RootUnavailable::Missing));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_root_gates_a_symlinked_root_unless_following_is_enabled() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        let link = dir.path().join("link");
+        symlink(&real, &link).unwrap();
+
+        assert_eq!(probe_root(&link, false), Err(RootUnavailable::GatedLink));
+        assert_eq!(probe_root(&link, true), Ok(()));
+
+        // A link whose target is gone is Missing, not GatedLink, when following.
+        std::fs::remove_dir_all(&real).unwrap();
+        assert_eq!(probe_root(&link, true), Err(RootUnavailable::Missing));
     }
 
     #[test]

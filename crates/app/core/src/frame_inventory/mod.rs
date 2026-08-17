@@ -16,12 +16,13 @@
 //! emitting `frame.missing`/`frame.recovered`. It NEVER creates, deletes, or
 //! moves a file (FR-008/INV-2) — only `file_record` rows are written.
 //!
-//! Applying a root's `reconcile.mode` to session `frame_ids` array membership
-//! (dropping a missing id from the array in auto-reconcile mode, FR-010) is
-//! left for the full US2 T021 implementation: this pass always retains the
-//! id in the array and relies on the existing `state != 'missing'` filter
-//! (`app_core::sessions::active_frame_summary`) to exclude it from active
-//! counts/totals, which already satisfies FR-009's flag-missing behaviour.
+//! A missing frame keeps its session `frame_ids` membership in both reconcile
+//! modes. Active counts, totals, and lists already exclude a `missing` frame
+//! via the `state != 'missing'` filter
+//! (`app_core::sessions::active_frame_summary`, `list_frames`), so removing
+//! the id changed no user-visible number while irreversibly discarding the
+//! frame-to-session attribution (Constitution V, Tier 1) a returning frame
+//! needs in order to be restored.
 
 use contracts_core::error_code::ErrorCode;
 use contracts_core::inventory_frame::RawFrameType;
@@ -55,7 +56,7 @@ use contracts_core::inventory_frame::{
 ///
 /// # Errors
 ///
-/// Returns `ContractError` per [`reconcile::run_reconcile`]. A failed
+/// Returns `ContractError` per `reconcile::run_reconcile`. A failed
 /// project-health check is retried on the next reconcile for the same root,
 /// because the frame-state writes have already committed by then.
 pub async fn run_reconcile(
@@ -206,8 +207,50 @@ pub(crate) async fn owning_session_frame_type(
     Ok((None, RawFrameType::Light))
 }
 
+/// Batch-build a reverse lookup from frame_id to (session_id, frame_type) for
+/// all sessions in the database. Replaces the per-frame LIKE full-table scan in
+/// the root-scoped list path (DSD-8). Callers that list frames by root can call
+/// this once and look up each frame in O(1) instead of issuing a LIKE query per
+/// frame.
+pub(crate) async fn build_frame_session_map(
+    pool: &sqlx::SqlitePool,
+) -> Result<std::collections::HashMap<String, (String, RawFrameType)>, ContractError> {
+    use std::collections::HashMap;
+
+    let mut map: HashMap<String, (String, RawFrameType)> = HashMap::new();
+
+    // Acquisition sessions (light frames).
+    let acq_rows = persistence_core::repositories::q_core::all_acquisition_session_frame_ids(pool)
+        .await
+        .map_err(db_err)?;
+
+    for (session_id, frame_ids_json) in acq_rows {
+        let ids: Vec<String> = serde_json::from_str(&frame_ids_json).unwrap_or_default();
+        for fid in ids {
+            map.entry(fid).or_insert_with(|| (session_id.clone(), RawFrameType::Light));
+        }
+    }
+
+    // Calibration sessions (dark/flat/bias frames).
+    let cal_rows = persistence_core::repositories::q_core::all_calibration_session_frame_ids(pool)
+        .await
+        .map_err(db_err)?;
+
+    for (session_id, frame_ids_json, kind) in cal_rows {
+        let frame_type = raw_frame_type_from_calibration_kind(&kind);
+        let ids: Vec<String> = serde_json::from_str(&frame_ids_json).unwrap_or_default();
+        for fid in ids {
+            map.entry(fid).or_insert_with(|| (session_id.clone(), frame_type));
+        }
+    }
+
+    Ok(map)
+}
+
 fn iso_now() -> String {
-    time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Iso8601::DEFAULT)
-        .unwrap_or_default()
+    // Redirect to canonical Timestamp::now_iso() (bd astro-plan-kyo7.88).
+    // NOTE: previously used Iso8601::DEFAULT (sub-second precision); now Rfc3339
+    // (no sub-second). Persisted mtime/created_at string sort order is unchanged
+    // (both are lexicographically sortable ISO 8601). New rows get Rfc3339 format.
+    domain_core::ids::Timestamp::now_iso()
 }

@@ -45,12 +45,7 @@ use app_core_errors::db_internal_ctx;
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn db_err(e: persistence_core::DbError) -> ContractError {
-    match e {
-        persistence_core::DbError::NotFound(msg) => {
-            ContractError::new(ErrorCode::ViewNotFound, msg, ErrorSeverity::Blocking, false)
-        }
-        other => app_core_errors::db_err(other),
-    }
+    app_core_errors::db_err_with_not_found(ErrorCode::ViewNotFound)(e)
 }
 
 /// Compute an absolute, collision-free archive destination for a
@@ -77,17 +72,7 @@ fn compute_archive_destination(plan_id: &str, item_id: &str, from_relative_path:
 }
 
 pub(crate) fn project_db_err(e: persistence_core::DbError) -> ContractError {
-    match e {
-        persistence_core::DbError::NotFound(msg) => {
-            ContractError::new(ErrorCode::ProjectNotFound, msg, ErrorSeverity::Blocking, false)
-        }
-        other => ContractError::new(
-            ErrorCode::InternalDatabase,
-            format!("{other}"),
-            ErrorSeverity::Fatal,
-            true,
-        ),
-    }
+    app_core_errors::db_err_with_not_found(ErrorCode::ProjectNotFound)(e)
 }
 
 /// Check that the owning project's lifecycle is in the allowed set for view

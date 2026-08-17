@@ -14,7 +14,8 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { m } from '@/lib/i18n';
-import { getSettings } from './settingsIpc';
+import { getSettingsTyped, parseSettingsValues } from './settingsIpc';
+import { FramingSettingsSchema, type FramingSettings } from './settingsSchemas';
 import {
   SettingsSection,
   SettingsRow,
@@ -70,27 +71,33 @@ export function Framing({ save }: FramingProps) {
   // (same convention as Cleanup.tsx/SourceViews.tsx).
   const editedRef = useRef(false);
 
-  function applyValues(values: Record<string, unknown>) {
-    if (typeof values.framingPointingFractionOfFov === 'number') {
+  function applyTyped(values: FramingSettings) {
+    if (values.framingPointingFractionOfFov !== undefined) {
       setPointingFraction(values.framingPointingFractionOfFov);
     }
-    if (typeof values.framingPointingFallbackDeg === 'number') {
+    if (values.framingPointingFallbackDeg !== undefined) {
       setPointingFallback(values.framingPointingFallbackDeg);
     }
-    if (typeof values.framingRotationToleranceDeg === 'number') {
+    if (values.framingRotationToleranceDeg !== undefined) {
       setRotationTolerance(values.framingRotationToleranceDeg);
     }
-    if (typeof values.framingMosaicEnvelopeFractionOfFov === 'number') {
+    if (values.framingMosaicEnvelopeFractionOfFov !== undefined) {
       setMosaicEnvelope(values.framingMosaicEnvelopeFractionOfFov);
     }
   }
 
+  // `RestoreDefaultsBtn.onRestored` hands back a raw value bag, so it needs the
+  // same validation the mount-time read gets.
+  function applyValues(values: Record<string, unknown>) {
+    applyTyped(parseSettingsValues(values, FramingSettingsSchema));
+  }
+
   useEffect(() => {
     let cancelled = false;
-    getSettings({ scope: FRAMING_SCOPE })
-      .then((data) => {
+    getSettingsTyped(FRAMING_SCOPE, FramingSettingsSchema)
+      .then((values) => {
         if (cancelled || editedRef.current) return;
-        applyValues(data.values as Record<string, unknown>);
+        applyTyped(values);
       })
       .catch(() => {
         // Backend unavailable — stay with in-code R11a defaults.

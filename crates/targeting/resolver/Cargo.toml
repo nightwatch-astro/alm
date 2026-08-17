@@ -47,10 +47,10 @@ persistence_targets = { path = "../../persistence/targets" }
 # Published SIMBAD TAP client + Caldwell map + normalize/fuzzy helpers + the
 # cache-first facade (see crate doc above). Same author/org as this
 # workspace's own CI app.
-simbad-resolver = "0.4.0"
+simbad-resolver = "0.5.0"
 # IAU constellation-from-coordinates, for `canonical_target.constellation`
 # enrichment at the in-use write (spec 052 P1 D8).
-skymath = "0.6.0"
+skymath = "0.7.1"
 
 [dev-dependencies]
 # `#[tokio::test]` only — no production `tokio` usage in this crate (the
@@ -62,7 +62,7 @@ tokio = { workspace = true }
 # drop-and-rebuild pointed at the same redb file — astro-plan's production
 # `simbad::SimbadResolver` wrapper only ever builds a real `TapResolver`, so
 # this test constructs the crate's facade directly.
-simbad-resolver = { version = "0.4.0", features = ["test-util"] }
+simbad-resolver = { version = "0.5.0", features = ["test-util"] }
 tempfile = { workspace = true }
 
 [features]

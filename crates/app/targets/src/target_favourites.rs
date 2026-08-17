@@ -26,9 +26,7 @@ use contracts_core::{error_code::ErrorCode, ContractError, ErrorSeverity};
 use domain_core::ids::Timestamp;
 use persistence_targets::repositories::target_favourites;
 
-fn db_err(e: impl std::fmt::Display) -> ContractError {
-    ContractError::new(ErrorCode::InternalDatabase, format!("{e}"), ErrorSeverity::Fatal, true)
-}
+use app_core_errors::db_err;
 
 fn not_found(id: &str) -> ContractError {
     ContractError::new(
@@ -168,7 +166,7 @@ mod tests {
         let err = add(
             db.pool(),
             &cache,
-            &TargetFavouriteRequest { target_id: Uuid::new_v4().to_string() },
+            &TargetFavouriteRequest { target_id: domain_core::ids::new_id() },
         )
         .await
         .unwrap_err();

@@ -56,7 +56,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, () => string> = {
   'file.not_found': m.err_file_not_found,
   'note.content_too_large': m.err_note_content_too_large,
   'session.not_found': m.err_session_not_found,
-  'session.mixed_state': m.err_session_mixed_state,
+  'session.mixed_state': m.calibration_session_mixed_state,
   'operation.handler_duplicate': m.err_operation_handler_duplicate,
   'operation.not_found': m.err_operation_not_found,
   'plan.approval_required': m.err_plan_approval_required,
@@ -94,6 +94,32 @@ export const ERROR_MESSAGES: Record<ErrorCode, () => string> = {
   'lifecycle.last_confirmed_source': m.err_lifecycle_last_confirmed_source,
   'project.not_found': m.err_project_not_found,
   'project.read_only': m.err_project_read_only,
+  // spec 062 — project session membership.
+  'project.session_already_pinned': m.err_project_session_already_pinned,
+  'project.session_not_pinned': m.err_project_session_not_pinned,
+  'project.lifecycle_disallows_session_add':
+    m.err_project_lifecycle_disallows_session_add,
+  'project.reclassification_revision_invalid':
+    m.err_project_reclassification_revision_invalid,
+  'project.membership_conflict': m.err_project_membership_conflict,
+  // spec 062 — Update View (US3/US5).
+  'project.update_view_no_additions': m.err_project_update_view_no_additions,
+  'project.update_view_plan_not_found':
+    m.err_project_update_view_plan_not_found,
+  'project.update_view_plan_not_open': m.err_project_update_view_plan_not_open,
+  'project.update_view_plan_not_approved':
+    m.err_project_update_view_plan_not_approved,
+  'project.update_view_plan_stale': m.err_project_update_view_plan_stale,
+  'project.update_view_path_conflict': m.err_project_update_view_path_conflict,
+  'project.update_view_source_unavailable':
+    m.err_project_update_view_source_unavailable,
+  'project.update_view_root_changed': m.err_project_update_view_root_changed,
+  'project.update_view_plan_digest_mismatch':
+    m.err_project_update_view_plan_digest_mismatch,
+  'project.update_view_session_too_large':
+    m.err_project_update_view_session_too_large,
+  'project.update_view_operation_not_cancellable':
+    m.err_project_update_view_operation_not_cancellable,
   'view.mixed_kind': m.err_view_mixed_kind,
   'view.not_found': m.err_view_not_found,
   'view.unsupported_kind': m.err_view_unsupported_kind,

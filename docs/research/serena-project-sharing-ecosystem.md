@@ -1,7 +1,7 @@
 # Research report: Serena project-sharing patterns
 
-Date: 2026-07-22  
-Tracking: `astro-plan-txk6`  
+Date: 2026-07-22
+Tracking: `astro-plan-txk6`
 Design: [Serena project sharing](../serena-project-sharing.md)
 
 ## Executive summary

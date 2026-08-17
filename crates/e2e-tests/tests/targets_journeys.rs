@@ -26,7 +26,7 @@ mod common;
 use std::time::Duration;
 
 use anyhow::Context;
-use common::E2eApp;
+use common::{settle_first_run_redirect, E2eApp};
 use serde_json::{json, Value};
 use thirtyfour::{By, WebElement};
 
@@ -45,20 +45,6 @@ const TARGETS_TABLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// instead of silently drifting.
 const OPPOSITION_UNKNOWN_TITLE: &str = "Opposition date unknown — this target has no coordinates.";
 const LUNAR_UNKNOWN_TITLE: &str = "Lunar distance unknown — this target has no coordinates.";
-
-/// Wait for the index route's async first-run redirect to land on `/setup`
-/// BEFORE navigating anywhere (mirrors `inbox_ui_journeys.rs`'s
-/// `settle_first_run_redirect`). A fresh DB (the harness resets it every
-/// launch) makes `checkFirstRunComplete` redirect `/` → `/setup` from an
-/// async `beforeLoad`; if a journey `goto_route`s while that redirect is
-/// still pending, the late-resolving redirect can yank the app off the
-/// target route.
-async fn settle_first_run_redirect(app: &E2eApp) -> anyhow::Result<()> {
-    app.wait_url_contains("/setup", Duration::from_secs(15))
-        .await
-        .map(drop)
-        .map_err(|e| anyhow::anyhow!("expected a fresh DB to redirect to /setup: {e}"))
-}
 
 /// Complete first-run via the invoke bridge (native folder pickers can't be
 /// driven by WebDriver — same documented constraint as `journeys.rs`/
@@ -892,40 +878,60 @@ async fn targets_ui_identity_columns_stay_pinned_while_table_scrolls() -> anyhow
     )
     .await?;
 
-    // Poll until the table overflows by >= MIN_SCROLL, retrying set_viewport
-    // if the geometry is still wrong. Two failure modes are observed on CI:
+    // Gate: wait for the side dock to settle to its seeded 420px width AND for
+    // the table to have sufficient horizontal overflow before asserting on column
+    // positions. Two failure modes are observed on CI:
     //
-    // (a) Dock-width transient: `useAdaptiveDock` initialises correctly from
-    //     storage (width=420), but the flex layout reports a narrower
-    //     clientWidth (~880 = dock ~300px) for a few seconds while WebKit
-    //     settles the CSS variable after a SPA navigation. Retrying set_viewport
-    //     nudges the layout engine to recompute.
+    // (a) Dock-width transient (the root cause): `useAdaptiveDock` reads
+    //     width=420 from preferences synchronously on first render, setting the
+    //     `--pv-side-detail-w` CSS variable immediately. However WebKit's flex
+    //     layout can take several seconds to commit the CSS-variable reflow after
+    //     a SPA navigation — `rendered_side_width` reads back ~300px while the
+    //     reflow is in flight. Polling dock width directly is the settle signal;
+    //     calling `set_viewport` nudges the layout engine to recompute.
     //
-    // (b) Viewport didn't converge: set_viewport returned (1400, 900) but the
-    //     webview snapped back to the xvfb screen default (1600x1200) after the
-    //     seed_preference refresh(). At 1600px the dock IS 420px but the table
-    //     is ~960px wide and overflows by only 40px — below MIN_SCROLL. A
-    //     second set_viewport call inside this loop corrects the window size and
-    //     causes the layout to remount at 1400px with the expected ~760px table.
-    let before = {
+    // (b) Viewport drift: `seed_preference` calls `driver.refresh()`, which can
+    //     snap the WebView back to the xvfb screen default (1600px). At 1600px
+    //     the dock IS 420px (correctly read from preferences) but the table gets
+    //     ~960px and overflows by only ~40px — below MIN_SCROLL. `set_viewport`
+    //     corrects the window size, which also triggers the layout reflow from (a).
+    //
+    // The gate checks BOTH conditions: dock_w >= SEEDED_WIDTH-tolerance (primary:
+    // guards (a)) and overflow >= MIN_SCROLL (secondary: guards (b)). This bails
+    // with a specific diagnostic on timeout instead of silently falling through
+    // to an assert — distinguishing "dock never settled" from "viewport drifted".
+    {
+        const SEEDED_WIDTH: i64 = 420;
+        const SETTLE_TOLERANCE: i64 = 20;
         const DOCK_SETTLE_TIMEOUT: Duration = Duration::from_secs(15);
         let deadline = tokio::time::Instant::now() + DOCK_SETTLE_TIMEOUT;
-        let mut last = measure_pinned_columns(&app).await?;
         loop {
-            let overflow = px(&last, "scrollWidth")? - px(&last, "clientWidth")?;
-            if overflow >= MIN_SCROLL {
-                break last;
+            let dock_w = rendered_side_width(&app).await?;
+            let cols = measure_pinned_columns(&app).await?;
+            let overflow = px(&cols, "scrollWidth")? - px(&cols, "clientWidth")?;
+            if dock_w >= SEEDED_WIDTH - SETTLE_TOLERANCE && overflow >= MIN_SCROLL {
+                break;
             }
             if tokio::time::Instant::now() >= deadline {
-                break last; // let the assertion below produce the diagnostic
+                anyhow::bail!(
+                    "dock did not settle within {DOCK_SETTLE_TIMEOUT:?}: \
+                     dock_w={dock_w}px (need >= {}), overflow={overflow}px \
+                     (need >= {MIN_SCROLL}). \
+                     Failure mode (a) if dock_w is low: WebKit has not yet \
+                     committed the CSS-variable flex reflow after SPA navigation \
+                     (bead astro-plan-l3rw). \
+                     Failure mode (b) if dock_w is correct but overflow is low: \
+                     seed_preference refresh() snapped innerWidth back to the xvfb \
+                     screen default. viewport={viewport_w}x{viewport_h}. cols={cols}",
+                    SEEDED_WIDTH - SETTLE_TOLERANCE
+                );
             }
-            // Re-assert the viewport on every other poll: covers both the
-            // dock-settle transient and the viewport-didn't-converge case.
             let _ = app.set_viewport(1400, 900).await;
             tokio::time::sleep(Duration::from_millis(500)).await;
-            last = measure_pinned_columns(&app).await?;
         }
-    };
+    }
+
+    let before = measure_pinned_columns(&app).await?;
     let overflow = px(&before, "scrollWidth")? - px(&before, "clientWidth")?;
     anyhow::ensure!(
         overflow >= MIN_SCROLL,

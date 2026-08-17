@@ -31,15 +31,15 @@
 //!
 //! Split by responsibility (refactor sweep #972): [`create`] owns path
 //! anchoring + the Constitution II folder plan builder; [`update`] is
-//! metadata-only; [`sources`] links/unlinks Inventory sessions and recomputes
-//! channels; [`channels`] handles the reinfer/dismiss-drift pair; [`read`]
+//! metadata-only; `sources` links/unlinks Inventory sessions and recomputes
+//! channels; `channels` handles the reinfer/dismiss-drift pair; `read`
 //! covers the `list`/`get` DTO projections. Helpers shared by more than one
 //! use case (error mapping, exposure/channel aggregation, the auto-transition
 //! seam, the source-change manifest trigger) stay here so siblings pull them
 //! via `super::`.
 
 use contracts_core::projects_v2::ProjectChannelDto;
-use contracts_core::{error_code::ErrorCode, ContractError, ErrorSeverity, FieldError};
+use contracts_core::{error_code::ErrorCode, ContractError, FieldError};
 use domain_core::project::channels::{infer_channels, Channel};
 use persistence_core::repositories::q_core;
 use persistence_plans::repositories::projects as repo;
@@ -72,7 +72,7 @@ fn str_to_error_code(code: &str) -> ErrorCode {
         "name.too_long" => ErrorCode::NameTooLong,
         "tool.unknown" => ErrorCode::ToolUnknown,
         _ => {
-            tracing::warn!("unknown validation code '{code}', using InternalData");
+            tracing::warn!(code, "unknown validation code; using InternalData");
             ErrorCode::InternalData
         }
     }
@@ -92,13 +92,9 @@ fn field_error(field: &str, error_code: ErrorCode, message: impl Into<String>) -
     FieldError { field: field.to_owned(), code, message: message.into() }
 }
 
+// Domain-scoped DB error mapper: routes NotFound to project.not_found code.
 fn db_err(e: persistence_core::DbError) -> ContractError {
-    match e {
-        persistence_core::DbError::NotFound(msg) => {
-            ContractError::new(ErrorCode::ProjectNotFound, msg, ErrorSeverity::Blocking, false)
-        }
-        other => app_core_errors::db_err(other),
-    }
+    app_core_errors::db_err_with_not_found(ErrorCode::ProjectNotFound)(e)
 }
 
 /// A project source's snapshot of its inventory session, taken at link time
@@ -183,7 +179,7 @@ fn parse_exposure_seconds(exposure: &str) -> u64 {
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
         Ok(v) if v.is_finite() && v >= 0.0 => v as u64,
         _ => {
-            tracing::debug!("unparseable exposure snapshot '{exposure}', treating as 0s");
+            tracing::debug!(exposure, "unparseable exposure snapshot; treating as 0s");
             0
         }
     }

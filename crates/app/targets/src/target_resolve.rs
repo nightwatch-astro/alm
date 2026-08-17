@@ -16,7 +16,7 @@
 //! [`promote_by_id`], called from the app-layer commit points (add to
 //! project, link to session, favourite, Inbox-confirm) with the redb-cache id
 //! a prior `target.search`/`target.resolve` response already returned. The
-//! manual `override` path ([`apply_override`], FR-014/T032) is itself such a
+//! manual `override` path (`apply_override`, FR-014/T032) is itself such a
 //! commit — the user has explicitly bound a query to a chosen target — and
 //! keeps writing `canonical_target` directly.
 //!
@@ -63,7 +63,7 @@ async fn write_audit(
     request_id: &str,
     query: &str,
 ) {
-    let audit_id = Uuid::new_v4().to_string();
+    let audit_id = domain_core::ids::new_id();
     let at = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
@@ -82,7 +82,24 @@ async fn write_audit(
 // ── Error mapping ───────────────────────────────────────────────────────────
 
 fn db_err(e: &cache::CacheError) -> ContractError {
-    ContractError::new(ErrorCode::InternalDatabase, format!("{e}"), ErrorSeverity::Fatal, true)
+    use cache::CacheError;
+    use persistence_core::DbError;
+    // Delegate Persistence(NotFound) to Blocking (canonical severity).
+    // Other persistence variants and cache-specific errors map as Fatal.
+    match e {
+        CacheError::Persistence(DbError::NotFound(msg)) => ContractError::new(
+            ErrorCode::InternalDatabase,
+            msg.clone(),
+            ErrorSeverity::Blocking,
+            false,
+        ),
+        other => ContractError::new(
+            ErrorCode::InternalDatabase,
+            format!("{other}"),
+            ErrorSeverity::Fatal,
+            true,
+        ),
+    }
 }
 
 fn redb_err(e: &simbad_resolver::CacheError) -> ContractError {
@@ -690,7 +707,7 @@ mod tests {
     async fn override_unknown_target_is_unresolved() {
         let db = setup().await;
         let resolver = FakeResolver::new();
-        let missing = Uuid::new_v4().to_string();
+        let missing = domain_core::ids::new_id();
         let resp = resolve(db.pool(), &resolver, &override_req("X", &missing)).await.unwrap();
         assert_eq!(resp.status, TargetResolveStatus::Unresolved);
     }

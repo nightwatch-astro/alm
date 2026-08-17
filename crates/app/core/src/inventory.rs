@@ -294,35 +294,6 @@ fn parse_session_key_fields(key: &str) -> SessionKeyFields {
     (non_empty(target), non_empty(filter), non_empty(binning), non_empty(gain), non_empty(night))
 }
 
-/// The session's target: the linked `target_name` when present, otherwise the
-/// `target` field parsed out of `session_key`. `target_name` is currently
-/// always NULL in the projection (gen-3 canonical_target is not joined), so
-/// the session_key fallback is what gives every acquisition row its object
-/// identity instead of a generic "Session — <date>".
-fn effective_target(row: &SessionProjectionRow) -> Option<String> {
-    if let Some(ref t) = row.target_name {
-        return Some(t.clone());
-    }
-    parse_session_key_fields(&row.session_key).0
-}
-
-/// Derive a human display name for an inventory session.
-fn derive_session_name(row: &SessionProjectionRow) -> String {
-    let date = &row.created_at[..10.min(row.created_at.len())];
-    if row.session_kind == "calibration" {
-        return format!("{} calibration — {date}", row.frame_type);
-    }
-    match effective_target(row) {
-        Some(target) => {
-            let (_, filter, _, _, night) = parse_session_key_fields(&row.session_key);
-            let filter = filter.as_deref().unwrap_or("?");
-            let night = night.as_deref().unwrap_or(date);
-            format!("{target} · {filter} — {night}")
-        }
-        None => format!("Session — {date}"),
-    }
-}
-
 /// Parse one `calibration_assignment` row into the contract's match DTO.
 /// The DB `CHECK` constrains `calibration_type` to dark/flat/bias; an
 /// unrecognized value falls back to `Dark`, matching
@@ -349,9 +320,26 @@ fn project_row_to_session(
 ) -> InventorySession {
     let frames = u32::try_from(row.frame_count).unwrap_or(0);
     let relative_path = folder_map.get(&row.id).cloned();
-    let name = derive_session_name(&row);
-    let target = effective_target(&row);
     let frame_type = map_frame_type(&row.frame_type);
+
+    // Parse session_key once — replaces 3 redundant parses via
+    // effective_target + derive_session_name + inline destructure.
+    let (parsed_target, filter, binning, gain, night) = parse_session_key_fields(&row.session_key);
+    let target = row.target_name.clone().or(parsed_target);
+
+    let date = &row.created_at[..10.min(row.created_at.len())];
+    let name = if row.session_kind == "calibration" {
+        format!("{} calibration — {date}", row.frame_type)
+    } else {
+        match target.as_deref() {
+            Some(t) => {
+                let f = filter.as_deref().unwrap_or("?");
+                let n = night.as_deref().unwrap_or(date);
+                format!("{t} · {f} — {n}")
+            }
+            None => format!("Session — {date}"),
+        }
+    };
 
     let linked = proj_map.get(&row.id).map(|projs| InventoryLinkedRefs {
         projects: Some(
@@ -363,8 +351,6 @@ fn project_row_to_session(
         session: None,
         calibration: None,
     });
-
-    let (_, filter, binning, gain, night) = parse_session_key_fields(&row.session_key);
 
     // Provenance summary: derive from session_key metadata where available.
     let provenance = if target.is_some() || filter.is_some() {
@@ -391,7 +377,7 @@ fn project_row_to_session(
     });
 
     // No exposure in session_key; would come from the fingerprint/provenance
-    // join in a full implementation (TODO(037)).
+    // join in a full implementation (TODO(astro-plan-kyo7.88)).
     let exposure = None;
 
     let camera = camera_map.get(&row.id).cloned();
@@ -657,6 +643,76 @@ mod tests {
         let session = &sources[0].sessions[0];
         assert!(session.calibration_matches.is_empty());
         assert!(session.notes.is_none());
+    }
+
+    // ── provenance summary (spec 006 T204) ───────────────────────────────────
+
+    /// A session key carrying neither target nor filter yields no provenance
+    /// summary at all, rather than an all-`None` object. The UI relies on the
+    /// absent object to skip the provenance fact rows entirely.
+    #[tokio::test]
+    async fn list_session_without_target_or_filter_has_no_provenance_summary() {
+        let db = setup().await;
+        let pool = db.pool();
+        sqlx::query(
+            "INSERT INTO library_root (id, label, kind, current_path, state, created_at) \
+             VALUES ('root-np', 'Lib', 'local', '/lib', 'active', '2026-07-14T00:00:00Z')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO calibration_session (id, session_key, kind, root_id, frame_ids, created_at) \
+             VALUES ('cal-np', '||1x1|100|2026-01-01', 'dark', 'root-np', '[\"f1\"]', \
+                     '2026-07-14T00:00:00Z')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let sources = list(pool, None).await.unwrap();
+        let session = &sources[0].sessions[0];
+        assert!(session.target.is_none());
+        assert!(session.filter.is_none());
+        assert!(
+            session.provenance.is_none(),
+            "provenance must be absent when neither target nor filter is known"
+        );
+        // Binning/gain are still projected — they are not provenance inputs.
+        assert_eq!(session.binning.as_deref(), Some("1x1"));
+    }
+
+    /// The populated branch mirrors the same rule: `target`/`filter` are the
+    /// only fields the projection can derive. `inferred`/`confirmed_by` have no
+    /// source of truth (no writer populates `provenance_history_archive`, and
+    /// spec 041 FR-051 dropped the session review lifecycle), so they stay
+    /// `None` — see the T203 follow-up.
+    #[tokio::test]
+    async fn list_provenance_summary_carries_target_and_filter_only() {
+        let db = setup().await;
+        let pool = db.pool();
+        sqlx::query(
+            "INSERT INTO library_root (id, label, kind, current_path, state, created_at) \
+             VALUES ('root-pv', 'Lib', 'local', '/lib', 'active', '2026-07-14T00:00:00Z')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, root_id, frame_ids, created_at) \
+             VALUES ('acq-pv', 'M 51|L|1x1|100|2025-05-03', 'root-pv', '[\"f1\"]', \
+                     '2026-07-14T00:00:00Z')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let sources = list(pool, None).await.unwrap();
+        let prov = sources[0].sessions[0].provenance.as_ref().expect("provenance summary");
+        assert_eq!(prov.target.as_deref(), Some("M 51"));
+        assert_eq!(prov.filter.as_deref(), Some("L"));
+        assert!(prov.inferred.is_none());
+        assert!(prov.confirmed_by.is_none());
     }
 
     #[tokio::test]

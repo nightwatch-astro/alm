@@ -267,6 +267,40 @@ pub enum ErrorCode {
     ProjectNotFound,
     #[serde(rename = "project.read_only")]
     ProjectReadOnly,
+    // ── Project session membership (spec 062) ────────────────────────────────
+    #[serde(rename = "project.session_already_pinned")]
+    ProjectSessionAlreadyPinned,
+    #[serde(rename = "project.session_not_pinned")]
+    ProjectSessionNotPinned,
+    #[serde(rename = "project.lifecycle_disallows_session_add")]
+    ProjectLifecycleDisallowsSessionAdd,
+    #[serde(rename = "project.reclassification_revision_invalid")]
+    ProjectReclassificationRevisionInvalid,
+    #[serde(rename = "project.membership_conflict")]
+    ProjectMembershipConflict,
+    // ── Project Update View (spec 062 US3/US5) ───────────────────────────────
+    #[serde(rename = "project.update_view_no_additions")]
+    ProjectUpdateViewNoAdditions,
+    #[serde(rename = "project.update_view_plan_not_found")]
+    ProjectUpdateViewPlanNotFound,
+    #[serde(rename = "project.update_view_plan_not_open")]
+    ProjectUpdateViewPlanNotOpen,
+    #[serde(rename = "project.update_view_plan_not_approved")]
+    ProjectUpdateViewPlanNotApproved,
+    #[serde(rename = "project.update_view_plan_stale")]
+    ProjectUpdateViewPlanStale,
+    #[serde(rename = "project.update_view_path_conflict")]
+    ProjectUpdateViewPathConflict,
+    #[serde(rename = "project.update_view_source_unavailable")]
+    ProjectUpdateViewSourceUnavailable,
+    #[serde(rename = "project.update_view_root_changed")]
+    ProjectUpdateViewRootChanged,
+    #[serde(rename = "project.update_view_plan_digest_mismatch")]
+    ProjectUpdateViewPlanDigestMismatch,
+    #[serde(rename = "project.update_view_session_too_large")]
+    ProjectUpdateViewSessionTooLarge,
+    #[serde(rename = "project.update_view_operation_not_cancellable")]
+    ProjectUpdateViewOperationNotCancellable,
 
     // ── Framing (spec 008 Q27, F-Framing-3) ────────────────────────────────────
     #[serde(rename = "framing.not_found")]

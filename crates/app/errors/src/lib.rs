@@ -45,16 +45,6 @@ fn retry_action() -> RecoveryAction {
     }
 }
 
-/// Convert a `sqlx::Error` inline (command-handler shorthand).
-///
-/// Wraps the sqlx error as `persistence_core::DbError::Database` then delegates
-/// to `db_to_contract`.  Use this in command handlers that run inline sqlx
-/// queries instead of calling a repository function.
-#[must_use]
-pub fn sqlx_to_contract(e: sqlx::Error) -> ContractError {
-    db_to_contract(persistence_core::DbError::from(e))
-}
-
 /// Convert a database-layer error (`sqlx::Error` or
 /// [`persistence_core::DbError`]) to an `internal.database` `ContractError`
 /// while preserving the originating error and adding which operation failed.
@@ -124,6 +114,35 @@ pub fn db_err(e: persistence_core::DbError) -> ContractError {
     }
 }
 
+/// Returns a `DbError → ContractError` closure that maps `NotFound` to a
+/// caller-supplied domain-specific error code (e.g. `project.not_found`) and
+/// delegates every other variant to the generic [`db_err`] path.
+///
+/// # Usage
+///
+/// ```rust,ignore
+/// use app_core_errors::{db_err_with_not_found};
+/// use contracts_core::error_code::ErrorCode;
+///
+/// repo::get_project(pool, id).await.map_err(db_err_with_not_found(ErrorCode::ProjectNotFound))?;
+/// ```
+///
+/// This collapses the 6-line `match`-and-delegate domain wrappers to a single
+/// expression while preserving the correct `Blocking`/`retryable=false`
+/// classification for `NotFound` and `Fatal`/`retryable=true` for every other
+/// variant (bd `astro-plan-kyo7.88`).
+#[must_use = "use the returned closure as a .map_err argument"]
+pub fn db_err_with_not_found(
+    not_found_code: ErrorCode,
+) -> impl Fn(persistence_core::DbError) -> ContractError {
+    move |e| match e {
+        persistence_core::DbError::NotFound(msg) => {
+            ContractError::new(not_found_code, msg, ErrorSeverity::Blocking, false)
+        }
+        other => db_err(other),
+    }
+}
+
 /// Back-compat alias for the US8 name. Delegates to the canonical [`db_err`].
 #[must_use]
 pub fn db_to_contract(e: persistence_core::DbError) -> ContractError {
@@ -184,6 +203,26 @@ mod tests {
         let err = bus_err(src);
         assert_eq!(err.recovery_actions.len(), 1);
         assert_eq!(err.recovery_actions[0].code, "retry");
+    }
+
+    #[test]
+    fn db_err_with_not_found_routes_not_found_to_domain_code() {
+        use contracts_core::error_code::ErrorCode;
+        let f = db_err_with_not_found(ErrorCode::ProjectNotFound);
+        let err = f(persistence_core::DbError::NotFound("project 1".to_owned()));
+        assert_eq!(err.code, ErrorCode::ProjectNotFound);
+        assert!(!err.retryable);
+        assert!(err.recovery_actions.is_empty());
+    }
+
+    #[test]
+    fn db_err_with_not_found_routes_other_to_generic_db_err() {
+        use contracts_core::error_code::ErrorCode;
+        let f = db_err_with_not_found(ErrorCode::ProjectNotFound);
+        let err = f(persistence_core::DbError::CasFailed("stale".to_owned()));
+        assert_eq!(err.code, ErrorCode::InternalDatabase);
+        assert!(err.retryable);
+        assert_eq!(err.recovery_actions.len(), 1);
     }
 }
 

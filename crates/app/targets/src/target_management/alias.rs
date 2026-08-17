@@ -13,7 +13,7 @@ use contracts_core::targets::{
 use contracts_core::{error_code::ErrorCode, ContractError, ErrorSeverity};
 use targeting_resolver::cache;
 
-use super::{alias_not_removable, db_err, invalid_id, not_found};
+use super::{alias_not_removable, cache_err, db_err, invalid_id, not_found};
 
 /// `target.alias.add` — add a user alias to a target (gen-3).
 ///
@@ -76,7 +76,7 @@ pub async fn alias_add(
         }
     }
 
-    let result = cache::insert_user_alias(pool, uuid, &req.alias).await.map_err(db_err)?;
+    let result = cache::insert_user_alias(pool, uuid, &req.alias).await.map_err(cache_err)?;
 
     match result {
         None => Err(ContractError::new(
@@ -132,7 +132,7 @@ pub async fn alias_remove(
         )),
         Some(kind) if kind != "user" => Err(alias_not_removable()),
         Some(_) => {
-            let deleted = cache::delete_user_alias(pool, &req.alias_id).await.map_err(db_err)?;
+            let deleted = cache::delete_user_alias(pool, &req.alias_id).await.map_err(cache_err)?;
             if deleted {
                 // Invalidate after the write commits (never before) per the
                 // `SnapshotCache` usage contract.

@@ -446,7 +446,6 @@ mod tests {
     use contracts_core::projects_v2::{ProjectCreateRequest, ProjectSourceAddRequest};
     use persistence_core::Database;
     use sqlx::SqlitePool;
-    use uuid::Uuid;
 
     use super::*;
     use crate::project_setup;
@@ -459,7 +458,7 @@ mod tests {
     }
 
     fn new_id() -> String {
-        Uuid::new_v4().to_string()
+        domain_core::ids::new_id()
     }
 
     /// These tests create projects with no `canonical_target_id`, so

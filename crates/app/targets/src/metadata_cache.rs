@@ -29,6 +29,7 @@
 //! `invalidate_*` entry point because there is nothing to explicitly track.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use app_core_cache::{CacheConfig, TtlCache};
@@ -47,7 +48,9 @@ type CacheKey = (PathBuf, u64, u64);
 /// `(path, mtime, size)` is deterministic (same bytes in, same parse
 /// failure out), so caching `Err` under the TTI is safe and avoids
 /// re-parsing an unreadable/malformed file on every lookup.
-type CacheValue = Result<RawFileMetadata, MetadataExtractError>;
+// Arc wraps Ok so cache hits return a cheap pointer bump instead of
+// deep-cloning the struct on every moka `get_with`.
+type CacheValue = Result<Arc<RawFileMetadata>, MetadataExtractError>;
 
 static METADATA_CACHE: std::sync::OnceLock<TtlCache<CacheKey, CacheValue>> =
     std::sync::OnceLock::new();
@@ -72,7 +75,7 @@ fn cache() -> &'static TtlCache<CacheKey, CacheValue> {
 /// or contents cannot be read, or the extension is not `.fits`/`.fit`/`.fts`/
 /// `.xisf`. Returns [`MetadataExtractError::Parse`] if the matched extractor
 /// cannot parse the header.
-pub fn cached_extract(path: &Path) -> Result<RawFileMetadata, MetadataExtractError> {
+pub fn cached_extract(path: &Path) -> Result<Arc<RawFileMetadata>, MetadataExtractError> {
     let key = cache_key(path)?;
     cache().get_or_insert_with(key, || extract_uncached(path))
 }
@@ -90,7 +93,7 @@ fn cache_key(path: &Path) -> Result<CacheKey, MetadataExtractError> {
     Ok((path.to_path_buf(), mtime, meta.len()))
 }
 
-fn extract_uncached(path: &Path) -> Result<RawFileMetadata, MetadataExtractError> {
+fn extract_uncached(path: &Path) -> Result<Arc<RawFileMetadata>, MetadataExtractError> {
     let ext =
         path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
 
@@ -105,7 +108,7 @@ fn extract_uncached(path: &Path) -> Result<RawFileMetadata, MetadataExtractError
         });
     };
 
-    extracted.ok_or_else(|| MetadataExtractError::Parse {
+    extracted.map(Arc::new).ok_or_else(|| MetadataExtractError::Parse {
         path: path.display().to_string(),
         msg: "extractor matched extension but produced no metadata".to_owned(),
     })

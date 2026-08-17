@@ -7,7 +7,7 @@
 //!
 //! - [`list`]  — list manifest summaries for a project (newest first, paginated).
 //! - [`get`]   — fetch one manifest with its full structured body.
-//! - [`write`] — generate and persist a manifest snapshot (called by lifecycle
+//! - [`fn@write`] — generate and persist a manifest snapshot (called by lifecycle
 //!   triggers and the `workflow.run_completed` subscriber).
 //!
 //! ## Architecture
@@ -31,7 +31,6 @@
 use audit::bus::EventBus;
 use audit::event_bus::Source;
 use sqlx::SqlitePool;
-use uuid::Uuid;
 
 use contracts_core::manifests::{
     ManifestBodyDto, ManifestDto, ManifestGetResponse, ManifestListRequest, ManifestListResponse,
@@ -51,7 +50,7 @@ use std::path::Path;
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn new_uuid() -> String {
-    Uuid::new_v4().to_string()
+    domain_core::ids::new_id()
 }
 
 fn manifest_op_error(code: &str, message: &str) -> ManifestOpError {
@@ -280,7 +279,7 @@ pub async fn write(
 /// Build the `source_map`/`calibration` snapshot for a manifest body from the
 /// project's currently-linked sources and their calibration assignments.
 ///
-/// FR-001 requires manifests to "document project source mappings [and]
+/// FR-001 requires manifests to "document project source mappings \[and\]
 /// calibration choices" — `spawn_workflow_run_subscriber` previously always
 /// passed `None` for both, the only trigger a real user ever exercises
 /// (#665 tracks the other 4 triggers being unwired).
@@ -298,7 +297,7 @@ pub async fn build_source_calibration_snapshot(
     let sources = match projects_repo::list_project_sources(pool, project_id).await {
         Ok(s) => s,
         Err(e) => {
-            tracing::debug!("manifest snapshot: failed to list project sources: {e}");
+            tracing::debug!(error = %e, "manifest snapshot: failed to list project sources");
             return (None, None);
         }
     };
@@ -335,8 +334,9 @@ pub async fn build_source_calibration_snapshot(
             }
             Err(e) => {
                 tracing::debug!(
-                    "manifest snapshot: failed to list calibration for session {}: {e}",
-                    s.inventory_session_id
+                    session_id = s.inventory_session_id,
+                    error = %e,
+                    "manifest snapshot: failed to list calibration for session"
                 );
             }
         }
@@ -374,7 +374,7 @@ pub async fn write_lifecycle_manifest(
     let row = match persistence_plans::repositories::projects::get_project(pool, project_id).await {
         Ok(row) => row,
         Err(e) => {
-            tracing::debug!("manifest snapshot: could not load project {project_id}: {e}");
+            tracing::debug!(project_id, error = %e, "manifest snapshot: could not load project");
             return;
         }
     };
@@ -394,7 +394,7 @@ pub async fn write_lifecycle_manifest(
     )
     .await
     {
-        tracing::warn!("manifest write failed for project {project_id}: {e}");
+        tracing::warn!(project_id, error = %e, "manifest write failed");
     }
 }
 
@@ -422,14 +422,30 @@ pub fn spawn_workflow_run_subscriber(
 
     let mut rx = bus.subscribe();
     tokio::spawn(async move {
-        // Cursor starts at 0: replay from the beginning on first lag.
-        // write() is idempotent (produces a new file per call), so replaying
-        // historical workflow.run_completed events is safe.
+        // Cursor starts at 0, so the first lag replays from the beginning; every
+        // lag thereafter resumes from the high-water mark the replay leaves
+        // behind, and the pruner bounds how far back that can reach.
+        //
+        // Replay is SAFE but not free, and `write()` is not idempotent: it
+        // inserts a `manifests` row with a fresh id per call, so a replayed
+        // event adds a row the user can see in the manifest list. Same-second
+        // replays collapse on disk (the path is second-granular and
+        // `write_manifest_file` refuses to overwrite), but the DB rows do not.
+        // Duplicate rows beat a silently missing manifest, which is what
+        // advancing this cursor on the live path used to cause.
         let mut cursor: i64 = 0;
 
         loop {
             match rx.recv().await {
                 Ok(env) if env.topic == TOPIC_WORKFLOW_RUN_COMPLETED => {
+                    // The live path deliberately leaves `cursor` alone. Advancing it
+                    // here to `max_event_id` would read the table-wide max rather
+                    // than this event's row: any event inserted between the
+                    // broadcast and that query gets jumped, so a later `Lagged`
+                    // replay starts *after* it and it is lost rather than late.
+                    // The envelope carries no `event_id`, so this branch cannot
+                    // know its own row to advance to. Only the replay below moves
+                    // the cursor, and it does so per row.
                     handle_workflow_run_event(&pool, &bus, &env.payload).await;
                 }
                 Ok(_) => {}
@@ -484,47 +500,54 @@ async fn handle_workflow_run_event(pool: &SqlitePool, bus: &EventBus, payload: &
             )
             .await;
             if let Err(e) = result {
-                tracing::warn!("workflow_run manifest write failed for project {pid}: {e}");
+                tracing::warn!(project_id = pid, error = %e, "workflow_run manifest write failed");
             }
         }
     }
 }
 
 /// Replay `workflow.run_completed` events from the durable table since `cursor`.
-/// Returns the updated cursor.
-async fn replay_workflow_events_since(pool: &SqlitePool, bus: &EventBus, cursor: i64) -> i64 {
+/// Pages in chunks of [`REPLAY_PAGE_SIZE`] to bound memory. Returns the updated
+/// cursor (highest processed `event_id`, or the incoming cursor on error).
+async fn replay_workflow_events_since(pool: &SqlitePool, bus: &EventBus, mut cursor: i64) -> i64 {
     use audit::event_bus::TOPIC_WORKFLOW_RUN_COMPLETED;
-
-    let rows = persistence_lifecycle::repositories::events::list_since_by_topic(
-        bus.pool(),
-        cursor,
-        TOPIC_WORKFLOW_RUN_COMPLETED,
-    )
-    .await;
-
-    let rows = match rows {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("workflow_run_subscriber: replay query failed: {e}");
-            return cursor;
-        }
+    use persistence_lifecycle::repositories::events::{
+        list_since_by_topic_paged, REPLAY_PAGE_SIZE,
     };
 
-    let mut new_cursor = cursor;
-    for row in &rows {
-        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&row.payload) {
-            handle_workflow_run_event(pool, bus, &payload).await;
+    loop {
+        let rows = list_since_by_topic_paged(
+            bus.pool(),
+            cursor,
+            TOPIC_WORKFLOW_RUN_COMPLETED,
+            REPLAY_PAGE_SIZE,
+        )
+        .await;
+
+        let rows = match rows {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(error = %e, "workflow_run_subscriber: replay query failed");
+                break;
+            }
+        };
+
+        if rows.is_empty() {
+            break;
         }
-        new_cursor = row.event_id;
+
+        for row in &rows {
+            if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&row.payload) {
+                handle_workflow_run_event(pool, bus, &payload).await;
+            }
+            cursor = row.event_id;
+        }
+        tracing::info!(replayed = rows.len(), cursor, "workflow_run_subscriber: replay page");
+        if rows.len() < usize::try_from(REPLAY_PAGE_SIZE).unwrap_or(usize::MAX) {
+            break; // last page
+        }
     }
-    if !rows.is_empty() {
-        tracing::info!(
-            replayed = rows.len(),
-            new_cursor,
-            "workflow_run_subscriber: replay complete"
-        );
-    }
-    new_cursor
+    cursor
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -781,6 +804,113 @@ mod tests {
                 "manifest row not found within 2 s after workflow.run_completed event"
             );
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    /// A `Lagged` replay must never skip a durable event the live path never
+    /// delivered — regression test for the cursor-jump defect (astro-plan-hyk0).
+    ///
+    /// The live branch used to advance the cursor with `max_event_id`, the
+    /// TABLE-WIDE max, rather than the row it had just handled. An event that
+    /// reached the table without reaching this subscriber therefore sat *below*
+    /// the new cursor and was never replayed, so its manifest was never written
+    /// — lost, not merely late.
+    ///
+    /// Deterministic by ordering rather than by racing: the never-broadcast row
+    /// is inserted FIRST, so it always holds the lower `event_id`.
+    #[tokio::test]
+    async fn lag_replay_writes_the_manifest_for_an_event_the_live_path_never_saw() {
+        let pool = setup().await;
+        let dir = tempfile::tempdir().unwrap();
+        for id in ["proj-lost", "proj-live"] {
+            // `projects.path` is UNIQUE, so each project needs its own directory.
+            let project_dir = dir.path().join(id);
+            std::fs::create_dir_all(&project_dir).unwrap();
+            sqlx::query(
+                "INSERT INTO projects (id, name, tool, lifecycle, path, notes, channel_drift, created_at, updated_at) \
+                 VALUES (?,?,?,?,?,?,?,?,?)",
+            )
+            .bind(id)
+            .bind(id)
+            .bind("PixInsight")
+            .bind("ready")
+            .bind(project_dir.to_str().unwrap())
+            .bind::<Option<String>>(None)
+            .bind(false)
+            .bind("2026-01-01T00:00:00Z")
+            .bind("2026-01-01T00:00:00Z")
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        // Capacity 1 so a lag is reachable at all.
+        let bus = EventBus::new(pool.clone(), 1);
+        let _handle = spawn_workflow_run_subscriber(pool.clone(), bus.clone());
+
+        // The event the subscriber can never see live: durable row, no broadcast.
+        // Inserted first, so a jumped cursor would strand it.
+        persistence_lifecycle::repositories::events::insert_event(
+            &pool,
+            "workflow.run_completed",
+            "system",
+            "2026-01-01T00:00:00Z",
+            &serde_json::json!({
+                "projectId": "proj-lost",
+                "toolId": "pixinsight",
+                "toolLaunchId": "tl-lost",
+                "completedAt": "2026-06-01T10:00:00Z",
+                "artifactIds": [],
+            })
+            .to_string(),
+        )
+        .await
+        .unwrap();
+
+        // A live event, which is what used to jump the cursor past the row above.
+        let _ = bus
+            .publish(
+                "workflow.run_completed",
+                audit::event_bus::Source::System,
+                serde_json::json!({
+                    "projectId": "proj-live",
+                    "toolId": "pixinsight",
+                    "toolLaunchId": "tl-live",
+                    "completedAt": "2026-06-01T10:00:00Z",
+                    "artifactIds": [],
+                }),
+            )
+            .await;
+
+        // Wait for the live one to be handled, so the cursor logic has run.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            let (rows, _) = list_manifests_for_project(&pool, "proj-live", None, 10).await.unwrap();
+            if !rows.is_empty() {
+                break;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "live manifest not written in time");
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        // Force a lag: two broadcasts with no await between them, so the
+        // subscriber cannot drain the channel in between.
+        let _ = bus.broadcast_only("tick.heartbeat");
+        let _ = bus.broadcast_only("tick.heartbeat");
+
+        // The replay must reach the stranded row and write ITS manifest.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let (rows, _) = list_manifests_for_project(&pool, "proj-lost", None, 10).await.unwrap();
+            if !rows.is_empty() {
+                return; // success
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the lag replay never wrote a manifest for the event the live path \
+                 never saw: the cursor jumped past it"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
         }
     }
 

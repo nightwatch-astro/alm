@@ -429,13 +429,20 @@ async fn audit_list_filters_by_entity_type() {
 }
 
 #[tokio::test]
-async fn audit_export_returns_ndjson_of_real_rows() {
+async fn audit_export_writes_ndjson_file_of_real_rows() {
     let app = mock_lifecycle_app().await;
     let state = app.state::<AppState>();
     insert_audit_row(state.repo.pool(), "a1", "session", "ses-1", "Confirm session").await;
 
-    let res = audit_export(state, None).await.expect("audit_export ok");
-    let lines: Vec<&str> = res.lines().collect();
+    let tmp_dir = tempfile::tempdir().expect("tmp dir");
+    let file_path = tmp_dir.path().join("export.ndjson").to_string_lossy().into_owned();
+
+    let res = audit_export(state, file_path.clone(), None).await.expect("audit_export ok");
+    assert_eq!(res.count, 1);
+    assert_eq!(res.file_path, file_path);
+
+    let contents = std::fs::read_to_string(&file_path).expect("read exported file");
+    let lines: Vec<&str> = contents.lines().collect();
     assert_eq!(lines.len(), 1);
     let parsed: serde_json::Value = serde_json::from_str(lines[0]).expect("valid ndjson line");
     assert_eq!(parsed["id"], "a1");

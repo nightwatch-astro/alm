@@ -12,7 +12,7 @@ use specta::Type;
 
 use crate::targets::TargetObjectType;
 
-/// Coordinate-source quality for a derived [`Pointing`] (FR-012).
+/// Coordinate-source quality for a derived pointing (FR-012).
 ///
 /// `Wcs` (plate-solved `CRVAL1/2`) is high confidence; `Mount` (`OBJCTRA`/
 /// `OBJCTDEC` or decimal `RA`/`DEC`) is medium; `None` means no reliable

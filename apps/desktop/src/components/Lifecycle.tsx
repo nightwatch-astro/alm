@@ -3,6 +3,14 @@
 
 import { PROJECT_LIFECYCLE, projectStateIndex } from '@/lib/lifecycle';
 import { m } from '@/lib/i18n';
+import {
+  root,
+  step as stepCls,
+  connector as connectorCls,
+  dotVariants,
+  lineVariants,
+  labelVariants,
+} from './lifecycle.css';
 
 export interface LifecycleProps {
   /** Stored project state (e.g. "processing", "setup_incomplete", "blocked"). */
@@ -10,9 +18,9 @@ export interface LifecycleProps {
 }
 
 /**
- * Vertical lifecycle flowchart for a project's state. Renders the centralized
- * PROJECT_LIFECYCLE steps with done/active styling, plus a trailing blocked
- * marker when the project is off-track. Lives in the detail rail (design v4).
+ * Renders the project's lifecycle steps with completed and current styling, and adds a blocked marker for blocked projects.
+ *
+ * @param state - The project's current state.
  */
 export function Lifecycle({ state }: LifecycleProps) {
   // `state` is an arbitrary string; `projectStateIndex` is now keyed by the
@@ -23,53 +31,40 @@ export function Lifecycle({ state }: LifecycleProps) {
   const isBlocked = state === 'blocked';
 
   return (
-    <div className="pv-lifecycle">
-      {PROJECT_LIFECYCLE.map((step, i) => {
+    <div className={root} data-testid="lifecycle">
+      {PROJECT_LIFECYCLE.map((label, i) => {
         const isDone = !isBlocked && i < currentIdx;
         const isCurrent = !isBlocked && i === currentIdx;
 
-        const dotClass = [
-          'pv-lifecycle__dot',
-          isDone && 'pv-lifecycle__dot--done',
-          isCurrent && 'pv-lifecycle__dot--active',
-        ]
-          .filter(Boolean)
-          .join(' ');
-
-        const labelClass = [
-          'pv-lifecycle__label',
-          isDone && 'pv-lifecycle__label--done',
-          isCurrent && 'pv-lifecycle__label--active',
-        ]
-          .filter(Boolean)
-          .join(' ');
+        const dotKey = isDone ? 'done' : isCurrent ? 'active' : 'default';
+        const labelKey = isDone ? 'done' : isCurrent ? 'active' : 'default';
 
         return (
-          <div key={step} className="pv-lifecycle__step">
-            <div className="pv-lifecycle__connector">
+          <div key={label} className={stepCls}>
+            <div className={connectorCls}>
               {i > 0 && (
                 <div
-                  className={`pv-lifecycle__line${isDone || isCurrent ? ' pv-lifecycle__line--done' : ''}`}
+                  className={
+                    lineVariants[isDone || isCurrent ? 'done' : 'default']
+                  }
                 />
               )}
-              <div className={dotClass} />
+              <div className={dotVariants[dotKey]} />
               {i < PROJECT_LIFECYCLE.length - 1 && (
-                <div
-                  className={`pv-lifecycle__line${isDone ? ' pv-lifecycle__line--done' : ''}`}
-                />
+                <div className={lineVariants[isDone ? 'done' : 'default']} />
               )}
             </div>
-            <span className={labelClass}>{step}</span>
+            <span className={labelVariants[labelKey]}>{label}</span>
           </div>
         );
       })}
       {isBlocked && (
-        <div className="pv-lifecycle__step">
-          <div className="pv-lifecycle__connector">
-            <div className="pv-lifecycle__line" />
-            <div className="pv-lifecycle__dot pv-lifecycle__dot--blocked" />
+        <div className={stepCls}>
+          <div className={connectorCls}>
+            <div className={lineVariants.default} />
+            <div className={dotVariants.blocked} />
           </div>
-          <span className="pv-lifecycle__label pv-lifecycle__label--danger">
+          <span className={labelVariants.danger}>
             {m.projects_stepper_blocked_chip()}
           </span>
         </div>

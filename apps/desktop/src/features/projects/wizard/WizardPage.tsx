@@ -25,6 +25,10 @@ import {
   projectCreateErrorField,
   type ProjectCreateErrorField,
 } from '@/features/projects/projectCreateErrors';
+import { page, pageBar } from '@/ui/page-layout.css';
+
+import { z } from 'zod';
+import { readLocalStorage, writeLocalStorage } from '@/lib/local-storage';
 
 const STORAGE_KEY = 'alm-project-wizard-draft';
 
@@ -52,7 +56,7 @@ async function assignWizardCalibrationSelections(
 
   let sessions: Array<{ id: string; sessionKey: { filter: string } }> = [];
   try {
-    sessions = unwrap(await commands.sessionsList()).filter((s) =>
+    sessions = unwrap(await commands.sessionsList(null, null)).filter((s) =>
       sessionIds.includes(s.id),
     );
   } catch {
@@ -111,22 +115,50 @@ const INITIAL_DATA: WizardData = {
   layout: { namingPattern: '' },
 };
 
+/**
+ * Validation schema for the persisted draft.
+ *
+ * Deliberately looser than `wizardNameSchema`: a draft is saved on every step
+ * change, so `name` is legitimately empty until the user types one and the
+ * create-time gate — not this reader — is what enforces a non-empty name.
+ * `.partial()` at the top level preserves the previous spread-over-defaults
+ * merge, so a draft written before a step existed still loads.
+ */
+const draftSchema = z
+  .object({
+    name: z.object({
+      name: z.string(),
+      workflowProfile: z.enum(['pixinsight', 'siril', 'planetary']),
+      target: z
+        .object({
+          targetId: z.string(),
+          primaryDesignation: z.string(),
+          commonName: z.string().nullable(),
+        })
+        .nullable(),
+    }),
+    sources: z.object({ selectedSessionIds: z.array(z.string()) }),
+    calibration: z.object({
+      flatMappings: z.record(z.string(), z.string()),
+      sharedDarkId: z.string(),
+      sharedBiasId: z.string(),
+      sharedDarkFlatId: z.string(),
+    }),
+    views: z.object({
+      strategy: z.enum(['symlink', 'hardlink', 'copy', 'junction']),
+      conflictPolicy: z.enum(['fail', 'rename', 'skip', 'manual']).optional(),
+    }),
+    layout: z.object({ namingPattern: z.string() }),
+  })
+  .partial();
+
 function loadDraft(): WizardData {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...INITIAL_DATA, ...JSON.parse(raw) };
-  } catch {
-    // ignore
-  }
-  return INITIAL_DATA;
+  const stored = readLocalStorage(STORAGE_KEY, draftSchema, {});
+  return { ...INITIAL_DATA, ...stored };
 }
 
 function saveDraft(data: WizardData): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {
-    // ignore
-  }
+  writeLocalStorage(STORAGE_KEY, data);
 }
 
 function clearDraft(): void {
@@ -185,6 +217,13 @@ function deriveProjectPath(trimmedName: string): string {
   return safeName || 'new-project';
 }
 
+/**
+ * Renders the project creation wizard for configuring and creating a project.
+ *
+ * The wizard restores and saves its draft, supports optional target prefill,
+ * validates navigation between steps, and reports project creation errors on
+ * the relevant step.
+ */
 export function WizardPage() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
@@ -205,7 +244,7 @@ export function WizardPage() {
   // In mock mode, allow skipping all validation to walk through the wizard quickly
   const devSkip = import.meta.env.VITE_USE_MOCKS === 'true';
 
-  // #612/#783: a caller (e.g. TargetDetailV2's "+ New project here") can pass
+  // #612/#783: a caller (e.g. TargetDetail's "+ New project here") can pass
   // a real target id via `?targetId=`. `strict: false` reads it without this
   // route declaring its own search schema. Resolve it to a real target once
   // and prefill the name-step target picker, instead of the prior behaviour
@@ -217,7 +256,7 @@ export function WizardPage() {
   // the same `sessions.list` cache StepSources/StepViews already populate.
   const { data: allSessions } = useQuery({
     queryKey: queryKeys.sessions.all(),
-    queryFn: async () => unwrap(await commands.sessionsList()),
+    queryFn: async () => unwrap(await commands.sessionsList(null, null)),
   });
   useEffect(() => {
     if (!incomingTargetId || wizardData.name.target) return;
@@ -595,9 +634,9 @@ export function WizardPage() {
   // T078c layout fix: min-height: 0 prevents flex overflow that caused the
   // wizard to render at the bottom of the window instead of filling the main area.
   return (
-    <div className="pv-page pv-wizard-page">
+    <div className={`${page} pv-wizard-page`}>
       {/* Wizard toolbar — styled consistently with other page toolbars */}
-      <div className="pv-page__bar pv-wizard-page__toolbar">
+      <div className={`${pageBar} pv-wizard-page__toolbar`}>
         <span className="pv-wizard-page__toolbar-title">
           {m.projects_wizard_toolbar_title()} {projectLabel}
         </span>
@@ -620,7 +659,7 @@ export function WizardPage() {
       </div>
 
       {/* Sub-toolbar: workflow profile breadcrumb */}
-      <div className="pv-page__bar pv-wizard-page__subbbar">
+      <div className={`${pageBar} pv-wizard-page__subbbar`}>
         <span>
           {m.projects_wizard_workflow_profile_label()} {profileLabel}
         </span>

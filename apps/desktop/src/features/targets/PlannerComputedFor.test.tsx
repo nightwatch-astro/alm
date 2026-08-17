@@ -31,8 +31,8 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 import { PlannerComputedFor } from './PlannerComputedFor';
-import { __setObservingStateForTest } from './observing-sites/site-store';
-import type { ObserverSite } from './observing-sites/observer-site';
+import { __setObservingStateForTest } from '@/shared/observing-sites/site-store';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 
 const SITE: ObserverSite = {
   id: 'site-test',

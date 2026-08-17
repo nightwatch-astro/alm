@@ -4,4 +4,5 @@
 pub mod cross_target;
 pub mod mosaics;
 pub mod panels;
+pub mod project_membership;
 pub mod proposals;

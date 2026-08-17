@@ -11,6 +11,8 @@
 
 import type { InboxPlanAction } from './store';
 import { m } from '@/lib/i18n';
+import { basename } from '@/lib/path';
+export { basename };
 
 function actionLabel(kind: string): string {
   switch (kind) {
@@ -25,11 +27,6 @@ function actionLabel(kind: string): string {
     default:
       return kind;
   }
-}
-
-export function basename(path: string): string {
-  const parts = path.replace(/\\/g, '/').split('/');
-  return parts[parts.length - 1] || path;
 }
 
 /**
@@ -113,22 +110,23 @@ function shortDestination(path: string): string {
 
 /**
  * Resolve the frame-type label for one action (spec 043 #75). Priority:
- *   1. a frame keyword present in the destination OR source path (handles split
- *      plans where each type lands in its own typed folder), then
- *   2. the per-ingestion hint from the inbox item's classification/breakdown
+ *   1. `action.frameType` from the backend (set at plan creation since kyo7.85),
+ *   2. a frame keyword present in the destination OR source path (handles split
+ *      plans where each type lands in its own typed folder — legacy fallback),
+ *   3. the per-ingestion hint from the inbox item's classification/breakdown
  *      (`itemFrameType` — e.g. a single-type catalogue folder of darks whose
  *      in-place destination carries no frame keyword), then
- *   3. the action kind (e.g. "catalogue") as a last resort.
- *
- * Putting the path keyword first lets a MIXED/split plan still distinguish
- * per-type buckets, while the item hint rescues single-type catalogue plans
- * from degenerating to one line per file.
+ *   4. the action kind (e.g. "catalogue") as a last resort.
  */
 export function frameTypeLabel(
   action: InboxPlanAction,
   destination: string,
   itemFrameType?: string,
 ): string {
+  // Prefer the backend-supplied frame type (no path inference needed).
+  if (action.frameType) return normalizeFrameTypeHint(action.frameType);
+
+  // Legacy path: infer from destination/source path keywords (pre-kyo7.85 plans).
   const segments = [
     ...pathSegments(destination),
     ...pathSegments(action.fromPath),

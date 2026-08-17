@@ -747,6 +747,11 @@ pub struct InboxPlanAction {
     pub destination_preview: String,
     /// True when this action requires explicit destructive confirmation before apply.
     pub requires_destructive_confirm: bool,
+    /// Frame type of the file being acted on (e.g. `"light"`, `"dark"`, `"flat"`,
+    /// `"bias"`, `"master_flat"`, etc.). `None` for legacy plans that pre-date this
+    /// field or for catalogue / archive / trash actions without a classification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_type: Option<String>,
 }
 
 /// Response from `inbox.plan` — plan(s) linked to an inbox item (spec 041).

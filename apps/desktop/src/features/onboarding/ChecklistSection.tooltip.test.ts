@@ -36,7 +36,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-const source = readFileSync(join(__dirname, 'ChecklistSection.tsx'), 'utf8');
+const source = readFileSync(join(__dirname, 'ChecklistItemRow.tsx'), 'utf8');
 
 /**
  * Source with comments stripped. The component documents the two previous

@@ -16,7 +16,7 @@ use super::result::{GroupKey, GroupLabel, GroupResult, GroupWarning};
 ///
 /// The key is a canonical serialization of `frame_type` followed by each
 /// **enabled** dimension's normalized/bucketed value, rendered in the fixed
-/// [`Dimension::order`] order. A missing value for an enabled dimension renders
+/// `Dimension::order` order. A missing value for an enabled dimension renders
 /// [`SENTINEL_MISSING`]. Identical `(metadata, config)` always yields an
 /// identical key (FR-042) — there is no clock, hashing of floats, or map
 /// iteration involved.
@@ -205,8 +205,24 @@ fn normalize_text(value: Option<&str>) -> Option<String> {
     if v.is_empty() {
         return None;
     }
-    let collapsed: String = v.split_whitespace().collect::<Vec<_>>().join(" ");
-    Some(collapsed.to_ascii_lowercase())
+    // Single-pass fold: collapse whitespace + ASCII lowercase without a Vec
+    // intermediate. ASCII lowercase is intentional — group_key values are
+    // persisted to the DB and must not change when non-ASCII casing rules
+    // change (e.g. Turkish İ). Matches the original to_ascii_lowercase() call.
+    let mut out = String::with_capacity(v.len());
+    let mut prev_ws = false;
+    for c in v.chars() {
+        if c.is_whitespace() {
+            if !prev_ws {
+                out.push(' ');
+            }
+            prev_ws = true;
+        } else {
+            out.push(c.to_ascii_lowercase());
+            prev_ws = false;
+        }
+    }
+    Some(out)
 }
 
 /// Snap a continuous value to the nearest multiple of `size` (FR-036). A

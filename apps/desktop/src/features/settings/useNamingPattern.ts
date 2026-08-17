@@ -6,12 +6,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useMountedRef } from '@/hooks/useMountedRef';
 import { m } from '@/lib/i18n';
 import {
-  getSettings,
+  getSettingsTyped,
+  parseSettingsValues,
   type PatternPart,
   type PatternPreviewResponse,
   patternPreview,
   patternValidate,
 } from './settingsIpc';
+import { NamingSettingsSchema, type NamingSettings } from './settingsSchemas';
 import { DEFAULT_PATTERN, SAMPLE_METADATA } from './naming-model';
 
 export function useNamingPattern(
@@ -30,21 +32,26 @@ export function useNamingPattern(
 
   const mountedRef = useMountedRef();
 
-  const applyValues = (vals: Record<string, unknown>) => {
-    if (Array.isArray(vals.pattern) && vals.pattern.length > 0) {
-      setPattern(vals.pattern as PatternPart[]);
+  const applyTyped = (vals: NamingSettings) => {
+    if (vals.pattern !== undefined && vals.pattern.length > 0) {
+      setPattern(vals.pattern);
     }
-    if (typeof vals.autoApplyPattern === 'boolean') {
+    if (vals.autoApplyPattern !== undefined) {
       setAutoApplyPattern(vals.autoApplyPattern);
     }
   };
 
+  // `RestoreDefaultsBtn.onRestored` hands back a raw value bag, so it needs the
+  // same validation the mount-time read gets.
+  const applyValues = (vals: Record<string, unknown>) => {
+    applyTyped(parseSettingsValues(vals, NamingSettingsSchema));
+  };
+
   // ── Load saved pattern on mount (spec 018 keys: pattern, autoApplyPattern) ─
   useEffect(() => {
-    getSettings({ scope: 'naming' })
-      .then((data) => {
-        if (mountedRef.current)
-          applyValues(data.values as Record<string, unknown>);
+    getSettingsTyped('naming', NamingSettingsSchema)
+      .then((vals) => {
+        if (mountedRef.current) applyTyped(vals);
       })
       .catch(() => {
         // Use defaults on load failure (e.g. in test/mock environment).

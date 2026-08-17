@@ -2013,3 +2013,129 @@ async fn gfd2_completed_path_sweeps_orphaned_applying_items() {
         "GFD-2 sweep on Completed path must emit a durable audit row for the swept item"
     );
 }
+
+/// Boot reconciliation classifies each crashed-plan item against filesystem
+/// reality: a completed move heals to `succeeded`, an untouched move is left
+/// for resume, and an ambiguous (both endpoints present) move is flagged for
+/// user review. Exercises the real `resolve_root_path` + fs-probe path.
+#[tokio::test]
+async fn reconcile_crashed_plans_classifies_all_three_verdicts() {
+    use contracts_core::first_run::{
+        OrganizationState, RegisterSourceRequest, ScanDepth, SourceKind,
+    };
+
+    async fn item_state(db: &Database, id: &str) -> String {
+        sqlx::query_scalar::<_, String>("SELECT item_state FROM plan_items WHERE id = ?")
+            .bind(id)
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
+    }
+
+    let (db, bus) = setup().await;
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path().to_str().unwrap().to_owned();
+
+    let reg = crate::first_run::register_source(
+        db.pool(),
+        &bus,
+        &RegisterSourceRequest {
+            kind: SourceKind::Project,
+            path: root_path.clone(),
+            kind_subtype: None,
+            scan_depth: ScanDepth::Recursive,
+            organization_state: OrganizationState::Organized,
+        },
+    )
+    .await
+    .unwrap();
+    let root_id = reg.source_id;
+
+    repo::insert_plan(
+        db.pool(),
+        &repo::InsertPlan {
+            id: "prc",
+            title: "Recover",
+            origin: "cleanup",
+            origin_path: None,
+            plan_type: "cleanup",
+            destructive_destination: "archive",
+            parent_plan_id: None,
+            total_bytes_required: 0,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Three move items rooted at the tempdir. src/dst are root-relative.
+    let cases = [
+        ("done", "raw/done.fits", "out/done.fits"),
+        ("todo", "raw/todo.fits", "out/todo.fits"),
+        ("ambig", "raw/ambig.fits", "out/ambig.fits"),
+    ];
+    for (i, (name, from, to)) in cases.iter().enumerate() {
+        repo::insert_plan_item(
+            db.pool(),
+            &repo::InsertPlanItem {
+                id: &format!("prc-{name}"),
+                plan_id: "prc",
+                item_index: i64::try_from(i + 1).unwrap(),
+                name: "f.fits",
+                action: "move",
+                from_root_id: Some(&root_id),
+                from_relative_path: from,
+                to_root_id: Some(&root_id),
+                to_relative_path: to,
+                reason: "test",
+                protection: "normal",
+                linked_entity: None,
+                provenance_json: None,
+                archive_path: None,
+                source_id: None,
+                category: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    repo::update_plan_state(db.pool(), "prc", "ready_for_review").await.unwrap();
+    repo::set_approved(db.pool(), "prc", "2026-06-01T00:00:00Z", "tok").await.unwrap();
+
+    // Drive to applying + simulate crash sweep.
+    let run_id = new_id();
+    apply_repo::cas_approved_to_applying(db.pool(), "prc", &run_id, "tok", 3, 3).await.unwrap();
+    let swept = sweep_crashed_applying_plans(db.pool()).await.unwrap();
+    assert_eq!(swept, vec!["prc".to_owned()]);
+
+    // Materialize filesystem states matching each verdict.
+    let mk = |rel: &str| {
+        let p = root.path().join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, b"x").unwrap();
+    };
+    // done: source gone, destination present -> Completed
+    mk("out/done.fits");
+    // todo: source present, destination absent -> NotStarted
+    mk("raw/todo.fits");
+    // ambig: both present -> Ambiguous
+    mk("raw/ambig.fits");
+    mk("out/ambig.fits");
+
+    let report = reconcile_crashed_plans(db.pool(), &swept).await.unwrap();
+    assert_eq!(report.healed, 1, "the completed move heals to succeeded");
+    assert_eq!(report.left_for_resume, 1, "the untouched move is left for resume");
+    assert_eq!(report.ambiguous_plan_ids, vec!["prc".to_owned()]);
+    assert!(report.needs_user_review());
+
+    assert_eq!(item_state(&db, "prc-done").await, "succeeded");
+    assert_eq!(
+        item_state(&db, "prc-todo").await,
+        "pending",
+        "not-started item stays pending for resume"
+    );
+    assert_eq!(
+        item_state(&db, "prc-ambig").await,
+        "failed",
+        "ambiguous item is flagged failed for review"
+    );
+}

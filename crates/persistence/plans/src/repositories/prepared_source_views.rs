@@ -67,7 +67,7 @@ pub struct InsertPreparedSourceViewItem<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn insert_view(pool: &SqlitePool, data: &InsertPreparedSourceView<'_>) -> DbResult<()> {
     let now = Timestamp::now_iso();
     sqlx::query(
@@ -89,7 +89,7 @@ pub async fn insert_view(pool: &SqlitePool, data: &InsertPreparedSourceView<'_>)
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn insert_view_item(
     pool: &SqlitePool,
     item: &InsertPreparedSourceViewItem<'_>,
@@ -116,7 +116,7 @@ pub async fn insert_view_item(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] when the row does not exist.
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_view(pool: &SqlitePool, view_id: &str) -> DbResult<PreparedSourceViewRow> {
     sqlx::query_as::<_, PreparedSourceViewRow>(
         "SELECT id, project_id, kind, state, created_at, removed_at
@@ -133,7 +133,7 @@ pub async fn get_view(pool: &SqlitePool, view_id: &str) -> DbResult<PreparedSour
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_view_items(
     pool: &SqlitePool,
     view_id: &str,
@@ -155,7 +155,7 @@ pub async fn list_view_items(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_views_for_project(
     pool: &SqlitePool,
     project_id: &str,
@@ -176,7 +176,7 @@ pub async fn list_views_for_project(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn update_view_state(pool: &SqlitePool, view_id: &str, new_state: &str) -> DbResult<()> {
     sqlx::query("UPDATE prepared_source_views SET state = ? WHERE id = ?")
         .bind(new_state)
@@ -191,7 +191,7 @@ pub async fn update_view_state(pool: &SqlitePool, view_id: &str, new_state: &str
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn mark_view_removed(pool: &SqlitePool, view_id: &str) -> DbResult<()> {
     let now = Timestamp::now_iso();
     sqlx::query(
@@ -211,7 +211,7 @@ pub async fn mark_view_removed(pool: &SqlitePool, view_id: &str) -> DbResult<()>
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn update_item_observed_state(
     pool: &SqlitePool,
     item_id: &str,

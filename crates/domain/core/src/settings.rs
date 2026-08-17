@@ -156,13 +156,13 @@ pub struct SettingsState {
     /// Pre-fill the calibration assign dialog with the top candidate (spec 007 R-Prefill).
     pub calibration_prefill_suggestion: bool,
 
-    /// Confidence penalty when user overrides dark suggestion [0,1] (spec 007).
+    /// Confidence penalty when user overrides dark suggestion \[0,1\] (spec 007).
     pub calibration_dark_override_penalty: f64,
 
-    /// Confidence penalty when user overrides flat suggestion [0,1] (spec 007).
+    /// Confidence penalty when user overrides flat suggestion \[0,1\] (spec 007).
     pub calibration_flat_override_penalty: f64,
 
-    /// Confidence penalty when user overrides bias suggestion [0,1] (spec 007).
+    /// Confidence penalty when user overrides bias suggestion \[0,1\] (spec 007).
     pub calibration_bias_override_penalty: f64,
 
     /// Days after which a calibration master is considered aging (spec 007/018 FR-023).

@@ -48,6 +48,7 @@ use contracts_core::first_run::{OrganizationState, SourceKind};
 use contracts_core::framing::{
     AttributionAppliedDto, ChosenAttributionDto, IngestionAttributionCandidateDto,
 };
+use contracts_core::lifecycle::PlanState;
 use contracts_core::plans::ProvenanceEntry;
 use contracts_core::settings::PatternPart as ContractPatternPart;
 use metadata_core::v1_normalization_table;
@@ -171,68 +172,10 @@ pub async fn confirm(
     // columns, no plan-item provenance encoding — and keeps masters on the exact
     // same move/catalogue plan path as every other item (Constitution §II).
 
-    // 2. Dedupe open plan (Ref: E1)
-    if let Some(link) = inbox_repo::get_plan_link(pool, &req.inbox_item_id).await.unwrap_or(None) {
-        return Err(ContractError::new(
-            ErrorCode::InboxHasOpenPlan,
-            format!("Inbox item already has an open plan: {}", link.plan_id),
-            ErrorSeverity::Blocking,
-            false,
-        ));
-    }
-
-    // 3. T070 / FR-049 / SC-015: reject any item still flagged `needs_review`
-    // (missing mandatory attributes; spec 058 FR-028).  Splitting /
-    // recalculation happens at classify/reclassify (before confirm), never here.
-    if item.needs_review != 0 {
-        return Err(ContractError::new(
-            ErrorCode::InboxMissingPathAttributes,
-            "This item is in the needs-review bucket: one or more files are missing mandatory \
-             attributes. Supply the missing values via inbox.reclassify before confirming.",
-            ErrorSeverity::Blocking,
-            false,
-        ));
-    }
-
-    // 4. Load classification
-    let classification = inbox_repo::get_classification(pool, &req.inbox_item_id)
-        .await
-        .unwrap_or(None)
-        .ok_or_else(|| {
-            ContractError::new(
-                ErrorCode::InboxItemNotFound,
-                "Classification not found — run inbox.classify first",
-                ErrorSeverity::Blocking,
-                false,
-            )
-        })?;
-
-    // 5. TOCTOU content_signature guard (Ref: A8)
-    if item.content_signature.as_deref() != Some(&req.content_signature) {
-        return Err(ContractError::new(
-            ErrorCode::ClassificationStale,
-            "Folder has changed since classification. Re-classify before confirming.",
-            ErrorSeverity::Blocking,
-            false,
-        ));
-    }
-
-    // 7. Validate the request. Spec 041 FR-050/T071/T072: the "split" action
-    // and the mixed per-type confirm branch are removed — the request no
-    // longer carries an `action` field at all; `classified` (migration
-    // 0049's CHECK-constrained single-type DB value) is the only confirmable
-    // classification result. A folder that classified as `unclassified`
-    // (zero or multiple distinct frame types) is not confirmable directly; it
-    // must be re-split into single-type sub-items (T066 materialization)
-    // before confirming.
-    if classification.result != "classified" {
-        return Err(ContractError::new(
-            ErrorCode::ClassificationAmbiguous,
-            format!("Classification result '{}' is not confirmable", classification.result),
-            ErrorSeverity::Blocking,
-            false,
-        ));
-    }
+    // 2–7. Pre-flight guards: no open plan, not needs-review, classification
+    //      exists and is "classified", content signature fresh.
+    let classification =
+        check_confirm_preflight(pool, &req.inbox_item_id, &req.content_signature, &item).await?;
 
     // 9. Enumerate files from evidence (Ref: A9) — NOT from file_count
     let evidence_rows = inbox_repo::list_evidence(pool, &req.inbox_item_id)
@@ -253,8 +196,7 @@ pub async fn confirm(
     }
 
     // 9b. Attribution pass (spec 008 Q27, F-Framing-5, FR-019) — the first
-    // pre-ingest pass at the confirm gate (composition point for the Q22
-    // duplicate sweep once it lands, see `crate::attribution` module docs).
+    // pre-ingest pass at the confirm gate.
     let is_light_item = evidence_is_light(&evidence_rows);
 
     if req.chosen_attribution.is_some() && !is_light_item {
@@ -266,41 +208,9 @@ pub async fn confirm(
         ));
     }
 
-    // `item_geometry` is also consumed by the apply-path below once the plan
-    // (and its id) exists — computed once here rather than twice. The
-    // attribution pass is a suggestion surface (FR-019/FR-020): a query
-    // failure here must degrade to "no candidates" rather than abort
-    // confirm() — missing/absent geometry is the ordinary, expected case
-    // (Q16 NULL-geometry exclusion), never a reason to block plan creation,
-    // and an unexpected transient failure computing suggestions is not a
-    // reason to lose the user's confirm either. Only an explicit
-    // `chosenAttribution` pick that itself requires geometry (the apply-path
-    // below) is allowed to fail the request.
-    let item_geometry = if is_light_item {
-        match attribution::compute_item_geometry(pool, &req.inbox_item_id).await {
-            Ok(geometry) => Some(geometry),
-            Err(e) => {
-                tracing::warn!(
-                    inbox_item_id = %req.inbox_item_id,
-                    "confirm: attribution geometry computation failed, degrading to no \
-                     candidates: {e:?}"
-                );
-                Some(attribution::ItemGeometry::default())
-            }
-        }
-    } else {
-        None
-    };
-    let attribution_candidates = match &item_geometry {
-        Some(geometry) => attribution::compute_candidates(pool, geometry).await.unwrap_or_else(|e| {
-            tracing::warn!(
-                inbox_item_id = %req.inbox_item_id,
-                "confirm: attribution candidate ranking failed, degrading to no candidates: {e:?}"
-            );
-            Vec::new()
-        }),
-        None => Vec::new(),
-    };
+    // `item_geometry` is consumed by the apply-path below once the plan exists.
+    let (item_geometry, attribution_candidates) =
+        compute_attribution_candidates(pool, &req.inbox_item_id, is_light_item).await;
 
     // Spec 041 FR-050/T071: per-type action grouping is retired along with the
     // "split" action — a confirmable item is single-type (classification.result
@@ -326,25 +236,12 @@ pub async fn confirm(
 
     // 8b. Destination-root resolution (spec 041 US8/FR-027–FR-031).
     //
-    // Default: a file stays under its own root (`item.root_id`) — non-inbox
-    // sources catalogue/move in place. An INBOX source is never a destination,
-    // so its files MUST move into a chosen library root. Candidate roots are
-    // enumerated per frame-type category (see `select_destination_root`); with
-    // one candidate the root is auto-selected, with several the caller's
-    // `req.root_id` must pick one (else a blocking error lists the candidates).
-    let source_kind = first_run_repo::list_sources(pool)
-        .await
-        .map_err(|e| {
-            ContractError::new(
-                ErrorCode::InternalDatabase,
-                e.to_string(),
-                ErrorSeverity::Fatal,
-                true,
-            )
-        })?
-        .into_iter()
-        .find(|s| s.source_id == item.root_id)
-        .map(|s| s.kind);
+    // Load the full source list once; both the inbox-source check and the
+    // root-path map for FR-031 absolute previews draw from it.
+    let sources = first_run_repo::list_sources(pool).await.map_err(|e| {
+        ContractError::new(ErrorCode::InternalDatabase, e.to_string(), ErrorSeverity::Fatal, true)
+    })?;
+    let source_kind = sources.iter().find(|s| s.source_id == item.root_id).map(|s| s.kind);
     let item_is_inbox_source = source_kind == Some(SourceKind::Inbox);
 
     // 8c. Resolve destination paths for each file via its per-type pattern
@@ -363,152 +260,20 @@ pub async fn confirm(
     // degrades to raw header strings rather than failing the confirm.
     let cameras = app_core_calibration::equipment::list_cameras(pool).await.unwrap_or_default();
 
-    let mut resolved_items: Vec<ResolvedRow> = Vec::with_capacity(plan_files.len());
-    // Per-file missing path attributes for the US9 gate (FR-032/FR-033).
-    let mut missing_by_file: Vec<(String, Vec<String>)> = Vec::new();
-    // Cache the chosen destination root per category (keyed by the category's
-    // stable string name) so a multi-category item resolves each category once.
-    let mut chosen_root_cache: std::collections::HashMap<&'static str, DestinationRoot> =
-        std::collections::HashMap::new();
-    // Tier 2.5: cache the resolved per-type destination pattern by (frame_type,
-    // is_master) so a confirmable item (single-type per FR-050) fetches its
-    // pattern once instead of once per file in the loop below.
-    let mut pattern_cache: std::collections::HashMap<(String, bool), Option<String>> =
-        std::collections::HashMap::new();
+    let ctx = ResolveFilesCtx {
+        root_absolute_path: &req.root_absolute_path,
+        norm_table: &norm_table,
+        cameras: &cameras,
+        org_state,
+        item_root_id: &item.root_id,
+        item_is_inbox_source,
+        selected_root_id: req.root_id.as_deref(),
+    };
+    let (resolved_items, missing_by_file) =
+        resolve_per_file_plan_items(pool, &plan_files, &ctx).await?;
 
-    for ev in &plan_files {
-        let ft = effective_frame_type(ev).unwrap_or("unknown");
-        let is_master = ev.is_master != 0;
-        let abs_path = req.root_absolute_path.join(&ev.relative_file_path);
-        let filename = abs_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown.fits");
-        let basename = ev.relative_file_path.rsplit('/').next().unwrap_or(&ev.relative_file_path);
-        let item_name = format!("[{}] {basename}", ft.to_uppercase());
-
-        // Built once per file for both branches so a catalogued item carries the
-        // same frozen context as a moved one; the unorganized branch below also
-        // resolves its destination pattern against this bundle.
-        let bundle = build_metadata_bundle(&abs_path, ft, &norm_table, &cameras);
-
-        match org_state {
-            OrganizationState::Organized => {
-                // Catalogue-in-place: dest == source; stays under its own root.
-                resolved_items.push(ResolvedRow {
-                    source_rel: ev.relative_file_path.clone(),
-                    dest_rel: ev.relative_file_path.clone(),
-                    item_name,
-                    action: "catalogue",
-                    to_root_id: item.root_id.clone(),
-                    provenance: freeze_confirm_provenance(&bundle, is_master, None),
-                });
-            }
-            OrganizationState::Unorganized => {
-                // Select the per-type pattern. `None` → frame type is not a known
-                // class (missing/garbage IMAGETYP) → needs-review (same flow as
-                // missing IMAGETYP: surfaced as a missing path attribute below).
-                let cache_key = (ft.to_owned(), is_master);
-                let pattern = if let Some(cached) = pattern_cache.get(&cache_key) {
-                    cached.clone()
-                } else {
-                    let fetched = settings_repo::effective_pattern_for(pool, ft, is_master)
-                        .await
-                        .map_err(|e| {
-                        ContractError::new(
-                            ErrorCode::InternalDatabase,
-                            e.to_string(),
-                            ErrorSeverity::Fatal,
-                            true,
-                        )
-                    })?;
-                    pattern_cache.insert(cache_key, fetched.clone());
-                    fetched
-                };
-                let Some(pattern) = pattern else {
-                    // Unclassified frame: image type is the missing attribute.
-                    missing_by_file
-                        .push((ev.relative_file_path.clone(), vec!["image type".to_owned()]));
-                    continue;
-                };
-
-                let result = match resolve_pattern_str(&pattern, &bundle) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        return Err(ContractError::new(
-                            ErrorCode::PatternUnset,
-                            format!(
-                                "Pattern resolution failed for '{}': {e:?}",
-                                ev.relative_file_path
-                            ),
-                            ErrorSeverity::Blocking,
-                            false,
-                        ));
-                    }
-                };
-
-                // US9 gate (FR-032/FR-033): any token that fell back to its
-                // default is a path-load-bearing attribute the file lacks. Block
-                // and collect, rather than producing a nonsensical destination.
-                if !result.missing_tokens.is_empty() {
-                    missing_by_file
-                        .push((ev.relative_file_path.clone(), result.missing_tokens.clone()));
-                    continue;
-                }
-
-                // Destination root: inbox sources move into a chosen library
-                // root; non-inbox sources move within their own root.
-                let dest_root = if item_is_inbox_source {
-                    let class = classify_frame(ft, is_master).ok_or_else(|| {
-                        ContractError::new(
-                            ErrorCode::InboxNoDestinationRoot,
-                            format!("Cannot route '{ft}': unknown frame-type category"),
-                            ErrorSeverity::Blocking,
-                            false,
-                        )
-                    })?;
-                    if let Some(cached) = chosen_root_cache.get(class.as_str()) {
-                        cached.clone()
-                    } else {
-                        let chosen =
-                            select_destination_root(pool, class, req.root_id.as_deref()).await?;
-                        chosen_root_cache.insert(class.as_str(), chosen.clone());
-                        chosen
-                    }
-                } else {
-                    DestinationRoot { root_id: item.root_id.clone(), path: String::new() }
-                };
-
-                let dest_with_file = format!("{}/{filename}", result.relative_path);
-                resolved_items.push(ResolvedRow {
-                    source_rel: ev.relative_file_path.clone(),
-                    dest_rel: dest_with_file,
-                    item_name,
-                    action: "move",
-                    to_root_id: dest_root.root_id,
-                    provenance: freeze_confirm_provenance(&bundle, is_master, Some(&pattern)),
-                });
-            }
-        }
-    }
-
-    // 8d. US9 gate: if any file is missing a path-load-bearing attribute, block
-    // plan generation and surface the offending files + attributes (FR-032).
-    if !missing_by_file.is_empty() {
-        let files: Vec<serde_json::Value> = missing_by_file
-            .iter()
-            .map(|(path, attrs)| json!({ "filePath": path, "missingPathAttributes": attrs }))
-            .collect();
-        let summary = missing_by_file
-            .iter()
-            .map(|(p, a)| format!("{p}: {}", a.join(", ")))
-            .collect::<Vec<_>>()
-            .join("; ");
-        return Err(ContractError::new(
-            ErrorCode::InboxMissingPathAttributes,
-            format!("Files are missing attributes their destination pattern requires: {summary}"),
-            ErrorSeverity::Blocking,
-            false,
-        )
-        .with_details(json!({ "files": files })));
-    }
+    // 8d. US9 gate: reject if any file is missing a path-load-bearing attribute.
+    reject_if_missing_path_attrs(&missing_by_file)?;
 
     // 10. Build the plan.
     // A move-only split is non-destructive from the user perspective but the
@@ -548,74 +313,18 @@ pub async fn confirm(
     // Map destination root id → absolute path for the FR-031 absolute preview.
     // (Catalogue actions and non-inbox moves keep their own root; inbox moves
     // use the chosen library root resolved above.)
-    let root_paths: std::collections::HashMap<String, String> = first_run_repo::list_sources(pool)
-        .await
-        .map_err(|e| {
-            ContractError::new(
-                ErrorCode::InternalDatabase,
-                e.to_string(),
-                ErrorSeverity::Fatal,
-                true,
-            )
-        })?
-        .into_iter()
-        .map(|s| (s.source_id, s.path))
-        .collect();
+    let root_paths: std::collections::HashMap<String, String> =
+        sources.into_iter().map(|s| (s.source_id, s.path)).collect();
 
     // 11. Insert plan items — one per classified file, with resolved
     // destinations and per-item destination root (spec 041 US8/FR-027–FR-031).
     let items_total = resolved_items.len();
-    let mut move_count = 0usize;
-    let mut catalogue_count = 0usize;
-    let mut destinations: Vec<ResolvedDestination> = Vec::with_capacity(resolved_items.len());
-    for (idx, row) in resolved_items.iter().enumerate() {
-        let item_id = Uuid::new_v4().to_string();
-
-        match row.action {
-            "catalogue" => catalogue_count += 1,
-            _ => move_count += 1,
-        }
-
-        let plan_item = plans_repo::InsertPlanItem {
-            id: &item_id,
-            plan_id: &plan_id,
-            item_index: i64::try_from(idx).unwrap_or(i64::MAX),
-            name: &row.item_name,
-            action: row.action,
-            from_root_id: Some(&item.root_id),
-            from_relative_path: &row.source_rel,
-            to_root_id: Some(&row.to_root_id),
-            to_relative_path: &row.dest_rel,
-            reason: "inbox_confirm",
-            protection: "normal",
-            linked_entity: None,
-            provenance_json: row.provenance.as_deref(),
-            archive_path: None,
-            source_id: None,
-            category: None,
-        };
-
-        plans_repo::insert_plan_item(pool, &plan_item)
-            .await
-            .map_err(|e| db_internal_ctx(e, "insert plan item"))?;
-
-        // FR-031: absolute destination = root path + "/" + relative path. For
-        // display only; the row itself keeps root_id + relative.
-        let to_absolute_path = root_paths.get(&row.to_root_id).map_or_else(
-            || row.dest_rel.clone(),
-            |root| format!("{}/{}", root.trim_end_matches('/'), row.dest_rel),
-        );
-        destinations.push(ResolvedDestination {
-            from_path: row.source_rel.clone(),
-            to_relative_path: row.dest_rel.clone(),
-            to_absolute_path,
-            to_root_id: row.to_root_id.clone(),
-            action: row.action,
-        });
-    }
+    let (move_count, catalogue_count, destinations) =
+        insert_plan_items_batch(pool, &plan_id, &item.root_id, &resolved_items, &root_paths)
+            .await?;
 
     // 12. Transition plan to ready_for_review
-    plans_repo::update_plan_state(pool, &plan_id, "ready_for_review")
+    plans_repo::update_plan_state(pool, &plan_id, PlanState::ReadyForReview.as_str())
         .await
         .map_err(|e| db_internal_ctx(e, "transition plan to ready_for_review"))?;
 
@@ -643,41 +352,13 @@ pub async fn confirm(
         _ => None,
     };
 
-    // 15. Publish `inventory.confirmed` so the onboarding tick subscriber can
-    // auto-check the `inbox.confirm_first` item (spec 056; this use case takes an
-    // EventBus for this domain-completion signal).
-    //
-    // Best-effort: the plan, plan_items, plan-link, and inbox_item.state=plan_open
-    // are already durably committed above, so confirm() has succeeded by this
-    // point — a transient bus publish failure must not surface as a Fatal error
-    // for a confirm that already landed (mirrors plan_apply.rs's item-progress
-    // publish and the write_audit failure-semantics doc in audit/src/bus.rs).
-    let confirmed_at = time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-    if let Err(e) = bus
-        .publish(
-            TOPIC_INVENTORY_CONFIRMED,
-            Source::User,
-            InventoryConfirmed {
-                inbox_item_id: req.inbox_item_id.clone(),
-                plan_id: plan_id.clone(),
-                at: confirmed_at,
-            },
-        )
-        .await
-    {
-        tracing::warn!(
-            inbox_item_id = %req.inbox_item_id,
-            plan_id = %plan_id,
-            error = %e,
-            "audit bus publish failed for inventory.confirmed"
-        );
-    }
+    // 15. Publish `inventory.confirmed` (best-effort; durable writes above already
+    //     succeeded — a bus failure must not surface as Fatal).
+    publish_inventory_confirmed(bus, &req.inbox_item_id, &plan_id).await;
 
     Ok(ConfirmResponse {
         plan_id,
-        plan_state: "ready_for_review".to_owned(),
+        plan_state: PlanState::ReadyForReview.as_str().to_owned(),
         items_total,
         // spec 041 US4: masters no longer register at confirm; registration is
         // relocated to plan-apply completion. Always false now.
@@ -693,6 +374,214 @@ pub async fn confirm(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Context threaded through [`resolve_per_file_plan_items`] to avoid a
+/// >7-argument signature.
+struct ResolveFilesCtx<'a> {
+    root_absolute_path: &'a PathBuf,
+    norm_table: &'a metadata_core::ImageTypNormalizationTable,
+    cameras: &'a [contracts_core::equipment::Camera],
+    org_state: contracts_core::first_run::OrganizationState,
+    item_root_id: &'a str,
+    item_is_inbox_source: bool,
+    selected_root_id: Option<&'a str>,
+}
+
+/// Resolve per-file destination rows from evidence, returning
+/// `(resolved_items, missing_by_file)`.
+///
+/// For organized sources: catalogue-in-place (dest == source). For
+/// unorganized: pattern-resolve the destination; collect files whose tokens
+/// are missing into `missing_by_file` for the US9 gate.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+async fn resolve_per_file_plan_items(
+    pool: &SqlitePool,
+    plan_files: &[&persistence_inbox::repositories::inbox::InboxEvidenceRow],
+    ctx: &ResolveFilesCtx<'_>,
+) -> Result<(Vec<ResolvedRow>, Vec<(String, Vec<String>)>), ContractError> {
+    use contracts_core::first_run::OrganizationState;
+
+    let mut resolved_items: Vec<ResolvedRow> = Vec::with_capacity(plan_files.len());
+    let mut missing_by_file: Vec<(String, Vec<String>)> = Vec::new();
+    // Cache the chosen destination root per category.
+    let mut chosen_root_cache: std::collections::HashMap<&'static str, DestinationRoot> =
+        std::collections::HashMap::new();
+    // Cache the resolved per-type destination pattern by (frame_type, is_master).
+    let mut pattern_cache: std::collections::HashMap<(String, bool), Option<String>> =
+        std::collections::HashMap::new();
+
+    for ev in plan_files {
+        let ft = effective_frame_type(ev).unwrap_or("unknown");
+        let is_master = ev.is_master != 0;
+        let abs_path = ctx.root_absolute_path.join(&ev.relative_file_path);
+        let filename = abs_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown.fits");
+        let basename = ev.relative_file_path.rsplit('/').next().unwrap_or(&ev.relative_file_path);
+        let item_name = format!("[{}] {basename}", ft.to_uppercase());
+
+        // Built once per file for both branches so a catalogued item carries the
+        // same frozen context as a moved one.
+        let bundle = build_metadata_bundle(&abs_path, ft, ctx.norm_table, ctx.cameras);
+
+        match ctx.org_state {
+            OrganizationState::Organized => {
+                // Catalogue-in-place: dest == source; stays under its own root.
+                resolved_items.push(ResolvedRow {
+                    source_rel: ev.relative_file_path.clone(),
+                    dest_rel: ev.relative_file_path.clone(),
+                    item_name,
+                    action: "catalogue",
+                    to_root_id: ctx.item_root_id.to_owned(),
+                    provenance: freeze_confirm_provenance(&bundle, is_master, None),
+                    frame_type: Some(ft.to_owned()),
+                });
+            }
+            OrganizationState::Unorganized => {
+                // Select the per-type pattern. `None` → image type is missing.
+                let cache_key = (ft.to_owned(), is_master);
+                let pattern = if let Some(cached) = pattern_cache.get(&cache_key) {
+                    cached.clone()
+                } else {
+                    let fetched = settings_repo::effective_pattern_for(pool, ft, is_master)
+                        .await
+                        .map_err(|e| {
+                        ContractError::new(
+                            ErrorCode::InternalDatabase,
+                            e.to_string(),
+                            ErrorSeverity::Fatal,
+                            true,
+                        )
+                    })?;
+                    pattern_cache.insert(cache_key, fetched.clone());
+                    fetched
+                };
+                let Some(pattern) = pattern else {
+                    // Unclassified frame: image type is the missing attribute.
+                    missing_by_file
+                        .push((ev.relative_file_path.clone(), vec!["image type".to_owned()]));
+                    continue;
+                };
+
+                let result = match resolve_pattern_str(&pattern, &bundle) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        return Err(ContractError::new(
+                            ErrorCode::PatternUnset,
+                            format!(
+                                "Pattern resolution failed for '{}': {e:?}",
+                                ev.relative_file_path
+                            ),
+                            ErrorSeverity::Blocking,
+                            false,
+                        ));
+                    }
+                };
+
+                // US9 gate (FR-032/FR-033): missing tokens = missing attributes.
+                if !result.missing_tokens.is_empty() {
+                    missing_by_file
+                        .push((ev.relative_file_path.clone(), result.missing_tokens.clone()));
+                    continue;
+                }
+
+                // Destination root: inbox sources move into a chosen library
+                // root; non-inbox sources move within their own root.
+                let dest_root = if ctx.item_is_inbox_source {
+                    let class = classify_frame(ft, is_master).ok_or_else(|| {
+                        ContractError::new(
+                            ErrorCode::InboxNoDestinationRoot,
+                            format!("Cannot route '{ft}': unknown frame-type category"),
+                            ErrorSeverity::Blocking,
+                            false,
+                        )
+                    })?;
+                    if let Some(cached) = chosen_root_cache.get(class.as_str()) {
+                        cached.clone()
+                    } else {
+                        let chosen =
+                            select_destination_root(pool, class, ctx.selected_root_id).await?;
+                        chosen_root_cache.insert(class.as_str(), chosen.clone());
+                        chosen
+                    }
+                } else {
+                    DestinationRoot { root_id: ctx.item_root_id.to_owned(), path: String::new() }
+                };
+
+                let dest_with_file = format!("{}/{filename}", result.relative_path);
+                resolved_items.push(ResolvedRow {
+                    source_rel: ev.relative_file_path.clone(),
+                    dest_rel: dest_with_file,
+                    item_name,
+                    action: "move",
+                    to_root_id: dest_root.root_id,
+                    provenance: freeze_confirm_provenance(&bundle, is_master, Some(&pattern)),
+                    frame_type: Some(ft.to_owned()),
+                });
+            }
+        }
+    }
+    Ok((resolved_items, missing_by_file))
+}
+
+/// Insert one plan item per resolved row; return `(move_count, catalogue_count,
+/// destinations)` (spec 041 US8/FR-027–FR-031, step 11).
+async fn insert_plan_items_batch(
+    pool: &SqlitePool,
+    plan_id: &str,
+    from_root_id: &str,
+    resolved_items: &[ResolvedRow],
+    root_paths: &std::collections::HashMap<String, String>,
+) -> Result<(usize, usize, Vec<ResolvedDestination>), ContractError> {
+    let mut move_count = 0usize;
+    let mut catalogue_count = 0usize;
+    let mut destinations: Vec<ResolvedDestination> = Vec::with_capacity(resolved_items.len());
+
+    for (idx, row) in resolved_items.iter().enumerate() {
+        let item_id = Uuid::new_v4().to_string();
+
+        match row.action {
+            "catalogue" => catalogue_count += 1,
+            _ => move_count += 1,
+        }
+
+        let plan_item = plans_repo::InsertPlanItem {
+            id: &item_id,
+            plan_id,
+            item_index: i64::try_from(idx).unwrap_or(i64::MAX),
+            name: &row.item_name,
+            action: row.action,
+            from_root_id: Some(from_root_id),
+            from_relative_path: &row.source_rel,
+            to_root_id: Some(&row.to_root_id),
+            to_relative_path: &row.dest_rel,
+            reason: "inbox_confirm",
+            protection: "normal",
+            linked_entity: None,
+            provenance_json: row.provenance.as_deref(),
+            archive_path: None,
+            source_id: None,
+            // Store frame type in category so InboxPlanAction::frame_type is populated.
+            category: row.frame_type.as_deref(),
+        };
+
+        plans_repo::insert_plan_item(pool, &plan_item)
+            .await
+            .map_err(|e| db_internal_ctx(e, "insert plan item"))?;
+
+        // FR-031: absolute destination = root path + "/" + relative path.
+        let to_absolute_path = root_paths.get(&row.to_root_id).map_or_else(
+            || row.dest_rel.clone(),
+            |root| format!("{}/{}", root.trim_end_matches('/'), row.dest_rel),
+        );
+        destinations.push(ResolvedDestination {
+            from_path: row.source_rel.clone(),
+            to_relative_path: row.dest_rel.clone(),
+            to_absolute_path,
+            to_root_id: row.to_root_id.clone(),
+            action: row.action,
+        });
+    }
+    Ok((move_count, catalogue_count, destinations))
+}
+
 /// One resolved per-file plan row before insertion. Carries the per-item
 /// destination root (spec 041 US8) so inbox moves can target a chosen library
 /// root while non-inbox files stay under their own root.
@@ -704,6 +593,10 @@ struct ResolvedRow {
     to_root_id: String,
     /// Frozen inferred context at approval time (`freeze_confirm_provenance`).
     provenance: Option<String>,
+    /// Frame-type class string (e.g. `"light"`, `"dark_flat"`) stored in the
+    /// `category` column so `InboxPlanAction::frame_type` can be populated
+    /// without a new column.
+    frame_type: Option<String>,
 }
 
 /// A chosen destination library root (id + absolute path) for inbox moves.
@@ -715,6 +608,167 @@ struct DestinationRoot {
     /// `root_paths` map at insert time.
     #[allow(dead_code)]
     path: String,
+}
+
+/// Run all pre-flight guard checks (steps 2–7 of `confirm`) and return the
+/// classification row. Fails fast on the first violated guard.
+async fn check_confirm_preflight(
+    pool: &SqlitePool,
+    inbox_item_id: &str,
+    content_signature: &str,
+    item: &persistence_inbox::repositories::inbox::InboxItemRow,
+) -> Result<persistence_inbox::repositories::inbox::InboxClassificationRow, ContractError> {
+    // 2. Dedupe open plan (Ref: E1)
+    if let Some(link) = inbox_repo::get_plan_link(pool, inbox_item_id).await.unwrap_or(None) {
+        return Err(ContractError::new(
+            ErrorCode::InboxHasOpenPlan,
+            format!("Inbox item already has an open plan: {}", link.plan_id),
+            ErrorSeverity::Blocking,
+            false,
+        ));
+    }
+
+    // 3. Reject needs-review items (T070/FR-049/SC-015/spec 058 FR-028).
+    if item.needs_review != 0 {
+        return Err(ContractError::new(
+            ErrorCode::InboxMissingPathAttributes,
+            "This item is in the needs-review bucket: one or more files are missing mandatory \
+             attributes. Supply the missing values via inbox.reclassify before confirming.",
+            ErrorSeverity::Blocking,
+            false,
+        ));
+    }
+
+    // 4. Load classification.
+    let classification = inbox_repo::get_classification(pool, inbox_item_id)
+        .await
+        .unwrap_or(None)
+        .ok_or_else(|| {
+            ContractError::new(
+                ErrorCode::InboxItemNotFound,
+                "Classification not found — run inbox.classify first",
+                ErrorSeverity::Blocking,
+                false,
+            )
+        })?;
+
+    // 5. TOCTOU content_signature guard (Ref: A8).
+    if item.content_signature.as_deref() != Some(content_signature) {
+        return Err(ContractError::new(
+            ErrorCode::ClassificationStale,
+            "Folder has changed since classification. Re-classify before confirming.",
+            ErrorSeverity::Blocking,
+            false,
+        ));
+    }
+
+    // 7. Spec 041 FR-050/T071/T072: only "classified" result is confirmable.
+    if classification.result != "classified" {
+        return Err(ContractError::new(
+            ErrorCode::ClassificationAmbiguous,
+            format!("Classification result '{}' is not confirmable", classification.result),
+            ErrorSeverity::Blocking,
+            false,
+        ));
+    }
+
+    Ok(classification)
+}
+
+/// Fail with `InboxMissingPathAttributes` if any file is missing path-load-
+/// bearing attributes (US9 gate, FR-032/FR-033).
+fn reject_if_missing_path_attrs(
+    missing_by_file: &[(String, Vec<String>)],
+) -> Result<(), ContractError> {
+    if missing_by_file.is_empty() {
+        return Ok(());
+    }
+    let files: Vec<serde_json::Value> = missing_by_file
+        .iter()
+        .map(|(path, attrs)| json!({ "filePath": path, "missingPathAttributes": attrs }))
+        .collect();
+    let summary = missing_by_file
+        .iter()
+        .map(|(p, a)| format!("{p}: {}", a.join(", ")))
+        .collect::<Vec<_>>()
+        .join("; ");
+    Err(ContractError::new(
+        ErrorCode::InboxMissingPathAttributes,
+        format!("Files are missing attributes their destination pattern requires: {summary}"),
+        ErrorSeverity::Blocking,
+        false,
+    )
+    .with_details(json!({ "files": files })))
+}
+
+/// Publish `inventory.confirmed` to the event bus (spec 056).
+///
+/// Best-effort: the plan is already durably committed before this call, so a
+/// transient bus failure must not surface as a Fatal error for a confirm that
+/// already landed.
+async fn publish_inventory_confirmed(bus: &EventBus, inbox_item_id: &str, plan_id: &str) {
+    let confirmed_at = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+    if let Err(e) = bus
+        .publish(
+            TOPIC_INVENTORY_CONFIRMED,
+            Source::User,
+            InventoryConfirmed {
+                inbox_item_id: inbox_item_id.to_owned(),
+                plan_id: plan_id.to_owned(),
+                at: confirmed_at,
+            },
+        )
+        .await
+    {
+        tracing::warn!(
+            inbox_item_id = %inbox_item_id,
+            plan_id = %plan_id,
+            error = %e,
+            "audit bus publish failed for inventory.confirmed"
+        );
+    }
+}
+
+/// Compute item geometry and attribution candidates for a light-frame confirm.
+///
+/// Returns `(item_geometry, attribution_candidates)`.  For non-light items both
+/// are empty/None.  Attribution is a suggestion surface (FR-019/FR-020): any
+/// transient failure degrades to "no candidates" rather than aborting confirm.
+async fn compute_attribution_candidates(
+    pool: &SqlitePool,
+    inbox_item_id: &str,
+    is_light_item: bool,
+) -> (Option<attribution::ItemGeometry>, Vec<IngestionAttributionCandidateDto>) {
+    if !is_light_item {
+        return (None, Vec::new());
+    }
+    let item_geometry = match attribution::compute_item_geometry(pool, inbox_item_id).await {
+        Ok(geometry) => Some(geometry),
+        Err(e) => {
+            tracing::warn!(
+                inbox_item_id = %inbox_item_id,
+                "confirm: attribution geometry computation failed, degrading to no \
+                 candidates: {e:?}"
+            );
+            Some(attribution::ItemGeometry::default())
+        }
+    };
+    let candidates = match &item_geometry {
+        Some(geometry) => {
+            attribution::compute_candidates(pool, geometry).await.unwrap_or_else(|e| {
+                tracing::warn!(
+                    inbox_item_id = %inbox_item_id,
+                    "confirm: attribution candidate ranking failed, degrading to no candidates: \
+                     {e:?}"
+                );
+                Vec::new()
+            })
+        }
+        None => Vec::new(),
+    };
+    (item_geometry, candidates)
 }
 
 /// Map a frame-type class to the source kind that can host it (spec 041 FR-027).
@@ -1008,10 +1062,8 @@ mod tests {
         EventBus::with_pool(db.pool().clone())
     }
 
-    async fn test_db() -> Database {
-        let db = Database::in_memory().await.unwrap();
-        db.migrate().await.unwrap();
-        db
+    async fn test_db() -> persistence_core::Database {
+        persistence_core::test_support::setup_db().await
     }
 
     /// Write a minimal single-block FITS file from the optional cards the
@@ -2967,10 +3019,10 @@ mod tests {
             None,
             Some(instrume),
         );
-        settings_repo::set_pattern_for(
+        settings_repo::set_raw(
             db.pool(),
-            patterns::FrameTypeClass::Light,
-            "{camera}/light/",
+            settings_repo::PATTERNS_BY_TYPE_KEY,
+            &serde_json::json!({"light": "{camera}/light/"}),
         )
         .await
         .unwrap();

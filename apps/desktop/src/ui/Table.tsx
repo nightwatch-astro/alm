@@ -27,6 +27,9 @@ export function tableIndent(depth: number): number {
 /**
  * Move keyboard focus to the adjacent focusable (selectable) row, skipping
  * spacer rows and non-clickable rows. Wired to Arrow Up/Down on clickable rows.
+ *
+ * Non-virtualized path: DOM query within the same tbody. This only sees
+ * rendered rows, which is fine when all rows are in the DOM.
  */
 function focusAdjacentRow(current: HTMLTableRowElement, dir: 1 | -1) {
   const scope = current.closest('tbody') ?? current.parentElement;
@@ -43,6 +46,8 @@ function focusAdjacentRow(current: HTMLTableRowElement, dir: 1 | -1) {
 /**
  * Move keyboard focus to the first or last focusable (selectable) row in the
  * same scope as `current`. Wired to Home/End on clickable rows.
+ *
+ * Non-virtualized path only — see virtualizer-aware counterparts below.
  */
 function focusEdgeRow(current: HTMLTableRowElement, edge: 'first' | 'last') {
   const scope = current.closest('tbody') ?? current.parentElement;
@@ -53,6 +58,29 @@ function focusEdgeRow(current: HTMLTableRowElement, edge: 'first' | 'last') {
   const target =
     edge === 'first' ? clickable[0] : clickable[clickable.length - 1];
   target?.focus();
+}
+
+/**
+ * Focus a row by its model index after the virtualizer has scrolled it into
+ * view. Uses a single rAF so the DOM settles (virtualizer flushes its state
+ * synchronously via scrollToIndex, but the React re-render painting the new
+ * rows happens on the next frame).
+ *
+ * `scrollContainer` is the element with `data-virtual-scroll="true"` — the
+ * same element the virtualizer measures against.
+ */
+function focusRowByIndex(
+  scrollContainer: Element,
+  targetIdx: number,
+  scrollToIndex: (idx: number, opts?: { behavior?: ScrollBehavior }) => void,
+) {
+  scrollToIndex(targetIdx);
+  requestAnimationFrame(() => {
+    const el = scrollContainer.querySelector<HTMLTableRowElement>(
+      `tr[data-row-index="${targetIdx}"][data-row-clickable="true"]`,
+    );
+    el?.focus();
+  });
 }
 
 export interface TableColumn {
@@ -159,7 +187,11 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
     enabled: virtualized,
   });
 
-  const renderRow = (row: TableRow, ri: number) => {
+  const renderRow = (
+    row: TableRow,
+    ri: number,
+    onNav?: (currentIdx: number, dir: 1 | -1 | 'first' | 'last') => void,
+  ) => {
     const onClick = row._onClick;
     const clickable = typeof onClick === 'function';
     const style: CSSProperties | undefined =
@@ -194,16 +226,32 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
                   onClick(e as unknown as MouseEvent);
                 } else if (e.key === 'ArrowDown') {
                   e.preventDefault();
-                  focusAdjacentRow(e.currentTarget, 1);
+                  if (onNav) {
+                    onNav(ri, 1);
+                  } else {
+                    focusAdjacentRow(e.currentTarget, 1);
+                  }
                 } else if (e.key === 'ArrowUp') {
                   e.preventDefault();
-                  focusAdjacentRow(e.currentTarget, -1);
+                  if (onNav) {
+                    onNav(ri, -1);
+                  } else {
+                    focusAdjacentRow(e.currentTarget, -1);
+                  }
                 } else if (e.key === 'Home') {
                   e.preventDefault();
-                  focusEdgeRow(e.currentTarget, 'first');
+                  if (onNav) {
+                    onNav(ri, 'first');
+                  } else {
+                    focusEdgeRow(e.currentTarget, 'first');
+                  }
                 } else if (e.key === 'End') {
                   e.preventDefault();
-                  focusEdgeRow(e.currentTarget, 'last');
+                  if (onNav) {
+                    onNav(ri, 'last');
+                  } else {
+                    focusEdgeRow(e.currentTarget, 'last');
+                  }
                 }
               }
             : undefined
@@ -212,6 +260,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
         tabIndex={clickable ? 0 : undefined}
         aria-selected={row._selected}
         data-row-clickable={clickable ? 'true' : undefined}
+        data-row-index={ri}
         data-testid={row._testid}
         data-kind={row._rowKind}
         data-guide-anchor={row._guideAnchor}
@@ -263,6 +312,44 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
     : 0;
   const colCount = columns.length;
 
+  // Model-aware navigation for virtualized mode: navigate by row-model index
+  // so Arrow keys can reach rows outside the render window. When the target
+  // index is off-screen, scrollToIndex brings it into the window; a rAF then
+  // focuses the newly-rendered <tr>. Home/End scan the rows model array (not
+  // the DOM) so they always land on the true first/last clickable row.
+  const handleVirtNav = (
+    currentIdx: number,
+    dir: 1 | -1 | 'first' | 'last',
+  ) => {
+    if (!scrollEl) return;
+    let targetIdx: number;
+    if (dir === 'first') {
+      targetIdx = rows.findIndex((r) => typeof r._onClick === 'function');
+    } else if (dir === 'last') {
+      // findLastIndex is ES2023; scan manually to stay within the ES2022 lib target.
+      targetIdx = -1;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (typeof rows[i]._onClick === 'function') {
+          targetIdx = i;
+          break;
+        }
+      }
+    } else {
+      // Walk the model in the given direction, skipping non-clickable rows.
+      let next = currentIdx + dir;
+      while (next >= 0 && next < rows.length) {
+        if (typeof rows[next]._onClick === 'function') break;
+        next += dir;
+      }
+      if (next < 0 || next >= rows.length) return;
+      targetIdx = next;
+    }
+    if (targetIdx < 0) return;
+    focusRowByIndex(scrollEl, targetIdx, (idx, opts) =>
+      rowVirtualizer.scrollToIndex(idx, opts),
+    );
+  };
+
   return (
     <div
       ref={scrollRef}
@@ -287,7 +374,9 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
                   />
                 </tr>
               )}
-              {virtualItems.map((vi) => renderRow(rows[vi.index], vi.index))}
+              {virtualItems.map((vi) =>
+                renderRow(rows[vi.index], vi.index, handleVirtNav),
+              )}
               {paddingAfter > 0 && (
                 <tr aria-hidden="true" className="pv-table__spacer">
                   {/* eslint-disable-next-line jsx-a11y/control-has-associated-label -- decorative spacer in aria-hidden row, no label needed */}
@@ -300,7 +389,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
               )}
             </>
           ) : (
-            rows.map((row, ri) => renderRow(row, ri))
+            rows.map((row, ri) => renderRow(row, ri, handleVirtNav))
           )}
         </tbody>
       </table>

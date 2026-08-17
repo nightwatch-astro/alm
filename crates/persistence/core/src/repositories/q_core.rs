@@ -17,7 +17,7 @@ use crate::DbResult;
 /// `frame_ids` JSON string for an `acquisition_session`, if it exists.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_acquisition_session_frame_ids(
     pool: &SqlitePool,
     session_id: &str,
@@ -33,7 +33,7 @@ pub async fn get_acquisition_session_frame_ids(
 /// `(frame_ids, kind)` for a `calibration_session`, if it exists.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_calibration_session_frame_ids_and_kind(
     pool: &SqlitePool,
     session_id: &str,
@@ -60,7 +60,7 @@ pub struct FileRecordRow {
 /// without querying.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn file_records_by_ids(
     pool: &SqlitePool,
     ids: &[String],
@@ -83,7 +83,7 @@ pub async fn file_records_by_ids(
 /// `file_record` rows for a given root.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn file_records_by_root(
     pool: &SqlitePool,
     root_id: &str,
@@ -101,7 +101,7 @@ pub async fn file_records_by_root(
 /// given frame id, matched via `LIKE`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_acquisition_session_id_by_frame_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -118,7 +118,7 @@ pub async fn find_acquisition_session_id_by_frame_like(
 /// array contains a given frame id, matched via `LIKE`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_calibration_session_by_frame_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -136,7 +136,7 @@ pub async fn find_calibration_session_by_frame_like(
 /// untouched while still forming a valid `UPDATE`).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn mark_file_record_missing(pool: &SqlitePool, id: &str) -> DbResult<()> {
     sqlx::query(
         "UPDATE file_record SET state = 'missing', last_seen_at = last_seen_at WHERE id = ?",
@@ -147,80 +147,12 @@ pub async fn mark_file_record_missing(pool: &SqlitePool, id: &str) -> DbResult<(
     Ok(())
 }
 
-/// `(session id, frame_ids JSON)` rows from `acquisition_session` whose
-/// `frame_ids` array contains a given frame id, matched via `LIKE` (spec 048
-/// T021 auto-reconcile membership drop).
-///
-/// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
-pub async fn acquisition_sessions_by_frame_like(
-    pool: &SqlitePool,
-    like_pattern: &str,
-) -> DbResult<Vec<(String, String)>> {
-    let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT id, frame_ids FROM acquisition_session WHERE frame_ids LIKE ?")
-            .bind(like_pattern)
-            .fetch_all(pool)
-            .await?;
-    Ok(rows)
-}
-
-/// Same as [`acquisition_sessions_by_frame_like`] for `calibration_session`.
-///
-/// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
-pub async fn calibration_sessions_by_frame_like(
-    pool: &SqlitePool,
-    like_pattern: &str,
-) -> DbResult<Vec<(String, String)>> {
-    let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT id, frame_ids FROM calibration_session WHERE frame_ids LIKE ?")
-            .bind(like_pattern)
-            .fetch_all(pool)
-            .await?;
-    Ok(rows)
-}
-
-/// Overwrite an `acquisition_session`'s `frame_ids` JSON array.
-///
-/// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
-pub async fn update_acquisition_session_frame_ids(
-    pool: &SqlitePool,
-    id: &str,
-    frame_ids_json: &str,
-) -> DbResult<()> {
-    sqlx::query("UPDATE acquisition_session SET frame_ids = ? WHERE id = ?")
-        .bind(frame_ids_json)
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-/// Overwrite a `calibration_session`'s `frame_ids` JSON array.
-///
-/// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
-pub async fn update_calibration_session_frame_ids(
-    pool: &SqlitePool,
-    id: &str,
-    frame_ids_json: &str,
-) -> DbResult<()> {
-    sqlx::query("UPDATE calibration_session SET frame_ids = ? WHERE id = ?")
-        .bind(frame_ids_json)
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 /// `file_record.content_hash` for a frame id. Assumes the row exists (the
 /// caller already resolved it via [`file_records_by_ids`]); errors if it
 /// does not.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_file_record_content_hash(pool: &SqlitePool, id: &str) -> DbResult<Option<String>> {
     let hash: Option<String> =
         sqlx::query_scalar("SELECT content_hash FROM file_record WHERE id = ?")
@@ -235,7 +167,7 @@ pub async fn get_file_record_content_hash(pool: &SqlitePool, id: &str) -> DbResu
 /// `classified` (spec 048 T025).
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn relink_file_record(
     pool: &SqlitePool,
     id: &str,
@@ -273,7 +205,7 @@ pub struct TargetSearchRow {
 /// already wrapped in `%...%`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn search_targets_by_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -284,14 +216,14 @@ pub async fn search_targets_by_like(
         "SELECT t.id, COALESCE(t.display_alias, t.primary_designation) AS label,
                 (SELECT ta.alias FROM target_alias ta
                  WHERE ta.target_id = t.id
-                   AND ta.normalized LIKE ?
+                   AND ta.normalized LIKE ? ESCAPE '\\'
                  LIMIT 1) AS alias_match
          FROM canonical_target t
-         WHERE LOWER(t.primary_designation) LIKE ?
+         WHERE LOWER(t.primary_designation) LIKE ? ESCAPE '\\'
             OR EXISTS (
                 SELECT 1 FROM target_alias ta2
                 WHERE ta2.target_id = t.id
-                  AND ta2.normalized LIKE ?
+                  AND ta2.normalized LIKE ? ESCAPE '\\'
             )
          ORDER BY t.primary_designation ASC
          LIMIT 10",
@@ -315,7 +247,7 @@ pub struct IdLabelRow {
 /// Most-recently-resolved `canonical_target` rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn recent_targets(pool: &SqlitePool) -> DbResult<Vec<IdLabelRow>> {
     let rows = sqlx::query_as::<_, IdLabelRow>(
         "SELECT id, COALESCE(display_alias, primary_designation) AS label FROM canonical_target \
@@ -330,7 +262,7 @@ pub async fn recent_targets(pool: &SqlitePool) -> DbResult<Vec<IdLabelRow>> {
 /// wrapped in `%...%`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn search_sessions_by_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -338,7 +270,7 @@ pub async fn search_sessions_by_like(
     let rows = sqlx::query_as::<_, IdLabelRow>(
         "SELECT id, session_key AS label
          FROM acquisition_session
-         WHERE LOWER(session_key) LIKE ?
+         WHERE LOWER(session_key) LIKE ? ESCAPE '\\'
          ORDER BY created_at DESC
          LIMIT 10",
     )
@@ -351,7 +283,7 @@ pub async fn search_sessions_by_like(
 /// Most-recently-created `acquisition_session` rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn recent_sessions(pool: &SqlitePool) -> DbResult<Vec<IdLabelRow>> {
     let rows = sqlx::query_as::<_, IdLabelRow>(
         "SELECT id, session_key AS label
@@ -375,7 +307,7 @@ pub struct ProjectSearchRow {
 /// Search `projects` by `name`, `like_pattern` already wrapped in `%...%`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn search_projects_by_like(
     pool: &SqlitePool,
     like_pattern: &str,
@@ -383,7 +315,7 @@ pub async fn search_projects_by_like(
     let rows = sqlx::query_as::<_, ProjectSearchRow>(
         "SELECT id, name, lifecycle
          FROM projects
-         WHERE LOWER(name) LIKE ?
+         WHERE LOWER(name) LIKE ? ESCAPE '\\'
          ORDER BY name ASC
          LIMIT 10",
     )
@@ -396,7 +328,7 @@ pub async fn search_projects_by_like(
 /// Most-recently-created `projects` rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn recent_projects(pool: &SqlitePool) -> DbResult<Vec<IdLabelRow>> {
     let rows = sqlx::query_as::<_, IdLabelRow>(
         "SELECT id, name AS label FROM projects ORDER BY created_at DESC LIMIT 5",
@@ -424,24 +356,52 @@ pub struct SessionJoinRow {
 /// All `acquisition_session` rows, newest first.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_sessions_joined(pool: &SqlitePool) -> DbResult<Vec<SessionJoinRow>> {
-    let rows = sqlx::query_as::<_, SessionJoinRow>(
-        "SELECT s.id, s.session_key, s.target_id, s.frame_ids, s.created_at,
-                s.canonical_target_id, ct.primary_designation AS canonical_target_name
-         FROM acquisition_session s
-         LEFT JOIN canonical_target ct ON ct.id = s.canonical_target_id
-         ORDER BY s.created_at DESC",
-    )
-    .fetch_all(pool)
-    .await?;
+    list_sessions_joined_paginated(pool, None, None).await
+}
+
+/// Paginated variant of [`list_sessions_joined`].
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn list_sessions_joined_paginated(
+    pool: &SqlitePool,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> DbResult<Vec<SessionJoinRow>> {
+    let sql = match (limit, offset) {
+        (Some(l), Some(o)) => format!(
+            "SELECT s.id, s.session_key, s.target_id, s.frame_ids, s.created_at, \
+                    s.canonical_target_id, ct.primary_designation AS canonical_target_name \
+             FROM acquisition_session s \
+             LEFT JOIN canonical_target ct ON ct.id = s.canonical_target_id \
+             ORDER BY s.created_at DESC LIMIT {l} OFFSET {o}"
+        ),
+        (Some(l), None) => format!(
+            "SELECT s.id, s.session_key, s.target_id, s.frame_ids, s.created_at, \
+                    s.canonical_target_id, ct.primary_designation AS canonical_target_name \
+             FROM acquisition_session s \
+             LEFT JOIN canonical_target ct ON ct.id = s.canonical_target_id \
+             ORDER BY s.created_at DESC LIMIT {l}"
+        ),
+        _ => "SELECT s.id, s.session_key, s.target_id, s.frame_ids, s.created_at, \
+                    s.canonical_target_id, ct.primary_designation AS canonical_target_name \
+             FROM acquisition_session s \
+             LEFT JOIN canonical_target ct ON ct.id = s.canonical_target_id \
+             ORDER BY s.created_at DESC"
+            .to_owned(),
+    };
+    // AssertSqlSafe: limit/offset are u32 literals formatted directly — no user strings.
+    let rows =
+        sqlx::query_as::<_, SessionJoinRow>(sqlx::AssertSqlSafe(sql)).fetch_all(pool).await?;
     Ok(rows)
 }
 
 /// A single `acquisition_session` row by id.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_session_joined(pool: &SqlitePool, id: &str) -> DbResult<Option<SessionJoinRow>> {
     let row = sqlx::query_as::<_, SessionJoinRow>(
         "SELECT s.id, s.session_key, s.target_id, s.frame_ids, s.created_at,
@@ -487,7 +447,7 @@ pub struct FingerprintRow {
 /// `acquisition_fingerprint` row for a session, if present.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_fingerprint(
     pool: &SqlitePool,
     session_id: &str,
@@ -508,7 +468,7 @@ pub async fn get_fingerprint(
 /// `(0, 0)` without querying.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn active_frame_summary(pool: &SqlitePool, ids: &[String]) -> DbResult<(i64, i64)> {
     if ids.is_empty() {
         return Ok((0, 0));
@@ -541,7 +501,7 @@ pub async fn active_frame_summary(pool: &SqlitePool, ids: &[String]) -> DbResult
 /// single frame into multiple summed rows.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn active_frame_exposure_seconds(pool: &SqlitePool, ids: &[String]) -> DbResult<f64> {
     if ids.is_empty() {
         return Ok(0.0);
@@ -574,7 +534,7 @@ pub async fn active_frame_exposure_seconds(pool: &SqlitePool, ids: &[String]) ->
 /// whether a single per-sub value exists.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn active_frame_exposures(pool: &SqlitePool, ids: &[String]) -> DbResult<Vec<f64>> {
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -606,7 +566,7 @@ pub async fn active_frame_exposures(pool: &SqlitePool, ids: &[String]) -> DbResu
 /// `project_id`s linked to a session via `project_sources`.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn project_ids_for_session(pool: &SqlitePool, session_id: &str) -> DbResult<Vec<String>> {
     let ids = sqlx::query_scalar::<_, String>(
         "SELECT project_id FROM project_sources WHERE inventory_session_id = ?",
@@ -632,7 +592,7 @@ pub struct CalibrationAssignmentRow {
 /// Calibration matches assigned to a session.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn calibration_matches_for_session(
     pool: &SqlitePool,
     session_id: &str,
@@ -660,7 +620,7 @@ pub struct AuditHistoryRow {
 /// oldest first.
 ///
 /// # Errors
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn session_history(
     pool: &SqlitePool,
     session_id: &str,
@@ -674,6 +634,291 @@ pub async fn session_history(
     .bind(session_id)
     .fetch_all(pool)
     .await?;
+    Ok(rows)
+}
+
+// ── Frame-session map (DSD-8 LIKE-scan inversion) ───────────────────────────
+
+/// All `(id, frame_ids)` pairs from `acquisition_session`.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn all_acquisition_session_frame_ids(
+    pool: &SqlitePool,
+) -> DbResult<Vec<(String, String)>> {
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT id, frame_ids FROM acquisition_session").fetch_all(pool).await?;
+    Ok(rows)
+}
+
+/// All `(id, frame_ids, kind)` triples from `calibration_session`.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn all_calibration_session_frame_ids(
+    pool: &SqlitePool,
+) -> DbResult<Vec<(String, String, String)>> {
+    let rows: Vec<(String, String, String)> =
+        sqlx::query_as("SELECT id, frame_ids, kind FROM calibration_session")
+            .fetch_all(pool)
+            .await?;
+    Ok(rows)
+}
+
+// ── Batch queries for sessions.list ──────────────────────────────────────────
+
+/// Keyed fingerprint row for batch loading.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct KeyedFingerprintRow {
+    pub id: String,
+    pub gain: Option<f64>,
+    pub filter_name: Option<String>,
+    pub binning: Option<String>,
+    pub optic_train: Option<String>,
+    pub observing_night_date: Option<String>,
+}
+
+/// Batch-load `acquisition_fingerprint` rows for multiple session ids.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn get_fingerprints_batch(
+    pool: &SqlitePool,
+    session_ids: &[String],
+) -> DbResult<Vec<KeyedFingerprintRow>> {
+    if session_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut builder = sqlx::QueryBuilder::new(
+        "SELECT id, gain, filter_name, binning, optic_train, observing_night_date \
+         FROM acquisition_fingerprint WHERE id IN (",
+    );
+    let mut sep = builder.separated(", ");
+    for id in session_ids {
+        sep.push_bind(id);
+    }
+    sep.push_unseparated(")");
+    let rows: Vec<KeyedFingerprintRow> = builder.build_query_as().fetch_all(pool).await?;
+    Ok(rows)
+}
+
+/// Batch-load `project_id` values for multiple sessions via `project_sources`.
+/// Returns `(session_id, project_id)` pairs.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn project_ids_for_sessions_batch(
+    pool: &SqlitePool,
+    session_ids: &[String],
+) -> DbResult<Vec<(String, String)>> {
+    if session_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut builder = sqlx::QueryBuilder::new(
+        "SELECT inventory_session_id, project_id FROM project_sources \
+         WHERE inventory_session_id IN (",
+    );
+    let mut sep = builder.separated(", ");
+    for id in session_ids {
+        sep.push_bind(id);
+    }
+    sep.push_unseparated(")");
+    let rows: Vec<(String, String)> = builder.build_query_as().fetch_all(pool).await?;
+    Ok(rows)
+}
+
+// ── entity.names batch lookup ─────────────────────────────────────────────────
+
+/// Batch-fetch display names for a list of project ids via IN-clause.
+///
+/// Returns `(id, name)` pairs only for ids that exist in the DB.
+///
+/// # Errors
+/// Returns [`crate::DbError::Database`] on query failure.
+pub async fn project_names_batch(
+    pool: &SqlitePool,
+    ids: &[String],
+) -> DbResult<Vec<(String, String)>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut builder = sqlx::QueryBuilder::new("SELECT id, name FROM projects WHERE id IN (");
+    let mut sep = builder.separated(", ");
+    for id in ids {
+        sep.push_bind(id);
+    }
+    builder.push(")");
+    let rows: Vec<(String, String)> = builder.build_query_as().fetch_all(pool).await?;
+    Ok(rows)
+}
+
+/// Batch active frame summary: returns `(session_frame_ids_hash, count, total_size_bytes)`
+/// per session. Takes a slice of `(session_id, frame_ids_json)` pairs.
+/// Internally collects all frame IDs, runs one query, then re-attributes by session.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn active_frame_summaries_batch(
+    pool: &SqlitePool,
+    sessions_frame_ids: &[(String, Vec<String>)],
+) -> DbResult<std::collections::HashMap<String, (i64, i64)>> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut result: HashMap<String, (i64, i64)> = HashMap::new();
+    if sessions_frame_ids.is_empty() {
+        return Ok(result);
+    }
+
+    // Collect all unique frame ids and build reverse map (frame_id -> session_ids).
+    let mut all_ids: Vec<&String> = Vec::new();
+    let mut frame_to_session: HashMap<&str, &str> = HashMap::new();
+    let mut seen: HashSet<&str> = HashSet::new();
+
+    for (session_id, frame_ids) in sessions_frame_ids {
+        result.insert(session_id.clone(), (0, 0));
+        for fid in frame_ids {
+            if seen.insert(fid.as_str()) {
+                all_ids.push(fid);
+                frame_to_session.insert(fid.as_str(), session_id.as_str());
+            }
+        }
+    }
+
+    if all_ids.is_empty() {
+        return Ok(result);
+    }
+
+    // Query all at once: id, state, size_bytes for the frame ids.
+    let mut builder = sqlx::QueryBuilder::new(
+        "SELECT id, size_bytes FROM file_record WHERE state != 'missing' AND id IN (",
+    );
+    let mut sep = builder.separated(", ");
+    for id in &all_ids {
+        sep.push_bind(*id);
+    }
+    sep.push_unseparated(")");
+
+    let rows: Vec<(String, i64)> = builder.build_query_as().fetch_all(pool).await?;
+
+    for (frame_id, size_bytes) in rows {
+        if let Some(&sid) = frame_to_session.get(frame_id.as_str()) {
+            let entry = result.entry(sid.to_owned()).or_insert((0, 0));
+            entry.0 += 1;
+            entry.1 += size_bytes;
+        }
+    }
+
+    Ok(result)
+}
+
+/// Batch active frame exposure seconds: one query for all frame ids, re-attributed
+/// per session. Returns `session_id -> total_exposure_s`.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn active_frame_exposure_seconds_batch(
+    pool: &SqlitePool,
+    sessions_frame_ids: &[(String, Vec<String>)],
+) -> DbResult<std::collections::HashMap<String, f64>> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut result: HashMap<String, f64> = HashMap::new();
+    if sessions_frame_ids.is_empty() {
+        return Ok(result);
+    }
+
+    let mut all_ids: Vec<&String> = Vec::new();
+    let mut frame_to_session: HashMap<&str, &str> = HashMap::new();
+    let mut seen: HashSet<&str> = HashSet::new();
+
+    for (session_id, frame_ids) in sessions_frame_ids {
+        result.insert(session_id.clone(), 0.0);
+        for fid in frame_ids {
+            if seen.insert(fid.as_str()) {
+                all_ids.push(fid);
+                frame_to_session.insert(fid.as_str(), session_id.as_str());
+            }
+        }
+    }
+
+    if all_ids.is_empty() {
+        return Ok(result);
+    }
+
+    // Same join as active_frame_exposure_seconds but batched.
+    let mut builder = sqlx::QueryBuilder::new(
+        "SELECT fr.id, MAX(ifm.exposure_s) AS exposure_s \
+         FROM file_record fr \
+         LEFT JOIN inbox_items ii ON ii.root_id = fr.root_id \
+         LEFT JOIN inbox_file_metadata ifm \
+             ON ifm.inbox_item_id = ii.id AND ifm.relative_file_path = fr.relative_path \
+         WHERE fr.state != 'missing' AND fr.id IN (",
+    );
+    let mut sep = builder.separated(", ");
+    for id in &all_ids {
+        sep.push_bind(*id);
+    }
+    sep.push_unseparated(") GROUP BY fr.id");
+
+    let rows: Vec<(String, Option<f64>)> = builder.build_query_as().fetch_all(pool).await?;
+
+    for (frame_id, exposure) in rows {
+        if let Some(&sid) = frame_to_session.get(frame_id.as_str()) {
+            let entry = result.entry(sid.to_owned()).or_insert(0.0);
+            *entry += exposure.unwrap_or(0.0);
+        }
+    }
+
+    Ok(result)
+}
+
+/// Batch-fetch display titles for a list of plan ids via IN-clause.
+///
+/// Returns `(id, title)` pairs only for ids that exist in the DB.
+///
+/// # Errors
+/// Returns [`crate::DbError::Database`] on query failure.
+pub async fn plan_titles_batch(
+    pool: &SqlitePool,
+    ids: &[String],
+) -> DbResult<Vec<(String, String)>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut builder = sqlx::QueryBuilder::new("SELECT id, title FROM plans WHERE id IN (");
+    let mut sep = builder.separated(", ");
+    for id in ids {
+        sep.push_bind(id);
+    }
+    builder.push(")");
+    let rows: Vec<(String, String)> = builder.build_query_as().fetch_all(pool).await?;
+    Ok(rows)
+}
+
+/// Batch-fetch primary designations for a list of canonical target ids via IN-clause.
+///
+/// Returns `(id, primary_designation)` pairs only for ids that exist in the DB.
+///
+/// # Errors
+/// Returns [`crate::DbError::Database`] on query failure.
+pub async fn target_names_batch(
+    pool: &SqlitePool,
+    ids: &[String],
+) -> DbResult<Vec<(String, String)>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut builder = sqlx::QueryBuilder::new(
+        "SELECT CAST(id AS TEXT), \
+         COALESCE(display_alias, primary_designation) \
+         FROM canonical_target WHERE CAST(id AS TEXT) IN (",
+    );
+    let mut sep = builder.separated(", ");
+    for id in ids {
+        sep.push_bind(id);
+    }
+    builder.push(")");
+    let rows: Vec<(String, String)> = builder.build_query_as().fetch_all(pool).await?;
     Ok(rows)
 }
 

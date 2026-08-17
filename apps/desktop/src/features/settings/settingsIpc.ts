@@ -13,6 +13,7 @@
  * imports from this one module.
  */
 
+import type { ZodType } from 'zod';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
 import { ipcArgs } from '@/lib/ipc-args';
@@ -68,6 +69,7 @@ import type {
   CreateFilter,
   UpdateFilter,
   RemapVerification,
+  AuditExportResponse,
   AuditListResponse,
   AuditFilterDto,
   AuditPaginationDto,
@@ -116,6 +118,72 @@ export async function getSettings(args: {
   scope: string;
 }): Promise<SettingsData> {
   return unwrap(await commands.settingsGet(args.scope));
+}
+
+/**
+ * Validate a raw settings-scope value bag against a per-scope Zod schema
+ * (C-5). Unknown/extra keys are dropped. Never throws — settings reads are
+ * always best-effort.
+ *
+ * Validation is per field, not whole-object. `safeParse` on the whole object
+ * rejects it entirely when a single field is bad, which would discard every
+ * other valid persisted setting in the scope; a stale enum member left by an
+ * older build would silently reset the whole pane. Each key is validated
+ * against its own `schema.shape` entry instead, so a bad field is dropped and
+ * its neighbours survive.
+ *
+ * Note there is no "return the schema defaults" behaviour to fall back on: the
+ * per-scope schemas are `.partial()` with no `.default()`, so an absent field
+ * is simply absent and callers handle `undefined`.
+ *
+ * Exported separately from `getSettingsTyped` because `RestoreDefaultsBtn`'s
+ * `onRestored` hands panes an already-fetched raw value bag, which must go
+ * through the same validation as the mount-time read.
+ */
+export function parseSettingsValues<T extends Record<string, unknown>>(
+  raw: unknown,
+  schema: ZodType<T>,
+): T {
+  // Narrow to a plain object: a primitive or array here cannot carry named
+  // fields, and `in` is not valid against a primitive.
+  const values: Record<string, unknown> =
+    typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+
+  const result = schema.safeParse(values);
+  if (result.success) return result.data;
+
+  // Fall back to per-field salvage. `shape` exists on object schemas; if this
+  // is not one, there is nothing to iterate and the empty object is correct.
+  const shape = (schema as unknown as { shape?: Record<string, ZodType> })
+    .shape;
+  if (!shape) return {} as T;
+
+  const salvaged: Record<string, unknown> = {};
+  for (const [key, fieldSchema] of Object.entries(shape)) {
+    if (!(key in values)) continue;
+    const field = fieldSchema.safeParse(values[key]);
+    if (field.success) salvaged[key] = field.data;
+  }
+  return salvaged as T;
+}
+
+/**
+ * Type-safe variant of `getSettings` (C-5): reads a scope and validates
+ * `data.values` with `parseSettingsValues`, so callers receive a typed object
+ * rather than `Record<string, unknown>`.
+ *
+ * Usage:
+ *   const vals = await getSettingsTyped('advanced', AdvancedSettingsSchema);
+ *   if (vals.logLevel) setLogLevel(vals.logLevel);
+ */
+export async function getSettingsTyped<T extends Record<string, unknown>>(
+  scope: string,
+  schema: ZodType<T>,
+): Promise<T> {
+  const data = await getSettings({ scope });
+  return parseSettingsValues(data.values, schema);
 }
 
 export async function updateSettings(args: {
@@ -571,9 +639,10 @@ export async function auditList(
   return unwrap(await commands.auditList(filters, pagination));
 }
 
-/** `audit.export` — export the filtered audit entries as newline-delimited JSON. */
+/** `audit.export` — export filtered audit entries to a file (NDJSON). */
 export async function auditExport(
+  filePath: string,
   filters: AuditFilterDto | null,
-): Promise<string> {
-  return unwrap(await commands.auditExport(filters));
+): Promise<AuditExportResponse> {
+  return unwrap(await commands.auditExport(filePath, filters));
 }

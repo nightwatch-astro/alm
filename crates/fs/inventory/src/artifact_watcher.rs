@@ -112,7 +112,7 @@ pub fn start_artifact_watcher(
             Err(e) => {
                 // Item (a): forward OS watcher errors as NeedsRescan so the
                 // consumer triggers a reconciliation pass.
-                tracing::error!("artifact watcher error: {e}");
+                tracing::error!(error = %e, "artifact watcher error");
                 let _ = handler_tx.try_send(ArtifactFileEvent {
                     path: Utf8PathBuf::new(),
                     kind: ArtifactEventKind::NeedsRescan,

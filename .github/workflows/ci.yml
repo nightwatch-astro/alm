@@ -26,6 +26,14 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Required for the merge queue. A queued PR waits on the same contexts branch
+  # protection requires; a workflow that does not trigger on `merge_group`
+  # publishes none of them, so the entry never resolves and the queue stalls
+  # instead of failing. The `changes` job needs no adjustment: dorny/paths-filter
+  # v4 handles this event by diffing `merge_group.base_sha..head_sha` (v3 has no
+  # merge_group branch at all), so path gating scopes to the queued changes
+  # rather than the whole tree.
+  merge_group:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -233,17 +241,27 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "changes: rust=$rust frontend=$frontend frontend_full=$frontend_full docs_only=$docs_only scripts=${{ steps.filter.outputs.scripts }}"
 
-  # Two lanes share this matrix (Rust and frontend), each with its own step-level
-  # gate, so it is NOT split into two jobs: whenever either lane is active every
-  # OS leg still runs real work — `Rust tests` + `Generated contract/binding
-  # drift` are OS-agnostic under the Rust lane, as are the frontend lint / unit
-  # test / typecheck steps under the frontend lane. The job-level gate below
-  # therefore fires only when BOTH lanes are idle, which is exactly the case
-  # where the job had nothing to do and must not report `success`.
+  # Three lanes share this matrix (Rust, frontend, scripts), each with its own
+  # step-level gate, so it is NOT split into separate jobs. The job-level gate
+  # below fires only when ALL lanes are idle -- the case where the job had
+  # nothing to do at all, handled by the `integration-idle` shim so the required
+  # contexts still appear.
+  #
+  # `scripts` must appear here as well as on the ratchet steps: those steps gate
+  # on it, so without it a scripts-only PR skips this job entirely and silently
+  # bypasses every ratchet it was meant to trigger.
+  #
+  # Per-leg work is asymmetric, and deliberately so. `Rust tests` is the only
+  # step that must run on all three platforms (real SQLite, real migrations,
+  # per-OS path semantics). Every frontend step and every OS-agnostic Rust step
+  # (fmt, clippy, doctests, generated drift, the ratchets) is Linux-only, so a
+  # frontend-only change leaves the macOS and Windows legs with no real work.
+  # Those legs then run the explicit no-op notice step at the end of this job
+  # rather than reporting a bare green that looks like it tested something.
   integration:
     name: Unit + integration (L1+L2) — ${{ matrix.os }}
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.scripts == 'true'
     strategy:
       fail-fast: false # report each platform distinctly (FR-011)
       matrix:
@@ -318,8 +336,9 @@ jobs:
       # config and re-optimizes on mismatch, so a stale restore degrades to
       # today's cold behaviour rather than serving wrong modules. The key
       # mirrors those same inputs so the common case is a clean hit.
+      # Linux-only, matching the vitest step this cache exists to warm.
       - name: Cache Vite transform/deps output
-        if: needs.changes.outputs.frontend == 'true'
+        if: runner.os == 'Linux' && needs.changes.outputs.frontend == 'true'
         uses: actions/cache@v4
         with:
           path: apps/desktop/node_modules/.vite
@@ -342,12 +361,18 @@ jobs:
       # scripts/check-eslint-baseline.mjs + eslint-alm-baseline.txt so
       # pre-existing violations drain via the refactor sweep instead of
       # blocking every PR), type-aware typescript-eslint, react-hooks,
-      # jsx-a11y, and the inline-style ban — then the design-token guard
+      # jsx-a11y, and the inline-style ban — then stylelint, which is the only
+      # tool in the repo that parses CSS (Biome's includes are scoped to
+      # `src/**/*.{ts,tsx,js,jsx}`), then the design-token guard
       # (check-tokens.sh) and the i18n catalog lint
       # (check-i18n-catalog.mjs: raw `{code}` interpolation + duplicate
       # catalog values, same baseline-drain pattern).
-      - name: Frontend lint (Biome + ESLint gates + tokens)
-        if: needs.changes.outputs.frontend == 'true'
+      #
+      # Linux-only: Biome, ESLint, stylelint and the token/i18n scripts read
+      # `.ts`/`.tsx`/`.css`, all pinned to `eol=lf` in .gitattributes, so no rule
+      # can reach a per-OS difference.
+      - name: Frontend lint (Biome + ESLint gates + stylelint + tokens)
+        if: runner.os == 'Linux' && needs.changes.outputs.frontend == 'true'
         run: pnpm --filter @astro-plan/desktop run lint
 
       # `tests/` is outside the pnpm workspace globs (`apps/*`, `packages/*`),
@@ -356,7 +381,7 @@ jobs:
       # unformatted. Runs off the root biome.json, which is scoped to `tests/**`
       # so it cannot shadow the nested desktop config.
       - name: Test-suite lint (Biome over tests/)
-        if: needs.changes.outputs.frontend == 'true'
+        if: runner.os == 'Linux' && needs.changes.outputs.frontend == 'true'
         run: pnpm run lint:tests
 
       # Formatting is OS-agnostic; running it on all 3 legs is pure redundancy.
@@ -401,6 +426,28 @@ jobs:
       - name: Hot-read ratchet
         if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
         run: just hot-read
+
+      # Lifecycle string-comparison ratchet: sealed at zero raw
+      # `.lifecycle == "..."` comparisons in production Rust (#1534, #1556).
+      # Local-only until now, so raw comparisons could reach main through CI.
+      # Pure grep, no compile — same Linux-only gating as the ratchets above.
+      - name: Lifecycle string ratchet
+        if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
+        run: just lifecycle-strings
+
+      # .pv-* selector ratchet: sealed at zero class selectors in e2e test
+      # files (Playwright TS under tests/e2e/ and Rust journeys under
+      # crates/e2e-tests/), which the eslint alm/require-root-testid rule
+      # cannot reach.
+      #
+      # Gated on rust/scripts only, NOT frontend: `just` is installed under the
+      # rust lane alone, so a `|| frontend` clause here makes a PR touching only
+      # apps/desktop/src/** run this step with no `just` on PATH. Both scanned
+      # trees (tests/e2e/, crates/e2e-tests/) match the `rust` filter via
+      # `tests/**` and `crates/**`, so the frontend clause added no coverage.
+      - name: .pv-* selector ratchet
+        if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
+        run: just pv-selector-ratchet
 
       # Compilation warnings/lints are OS-agnostic; running clippy on all 3 legs
       # is pure redundancy — the nextest step below builds the workspace anyway.
@@ -478,8 +525,13 @@ jobs:
       # CHANGED_FILES is passed via env, never interpolated into the script
       # body, so a crafted filename cannot inject shell commands (same rule as
       # the Rust scoping step).
+      # Linux-only: the suite runs under jsdom, and the only two specs that read
+      # a platform (reveal-label.test.ts, SessionsPage.inventory.test.tsx) inject
+      # a fake `navigator` rather than the host's. There are no snapshots and no
+      # separator or line-ending assertions, so the macOS and Windows legs
+      # produced an identical result for ~7.5 min each.
       - name: Frontend unit tests
-        if: needs.changes.outputs.frontend == 'true'
+        if: runner.os == 'Linux' && needs.changes.outputs.frontend == 'true'
         shell: bash
         env:
           CHANGED_FILES: ${{ needs.changes.outputs.all_files }}
@@ -560,8 +612,10 @@ jobs:
             exit "$rc"
           fi
 
+      # Linux-only: tsc resolves the same graph on every OS and emits no
+      # platform-conditional diagnostics for this project.
       - name: TypeScript typecheck
-        if: needs.changes.outputs.frontend == 'true'
+        if: runner.os == 'Linux' && needs.changes.outputs.frontend == 'true'
         run: pnpm -r --if-present typecheck
 
       # Bundle-size budget gate: build the desktop bundle and fail if any
@@ -578,10 +632,23 @@ jobs:
 
       # --- Generated contract / binding drift gate (review finding W1) ---
       # Regenerates Rust->TS bindings and contracts and fails on drift. Compiles
-      # Rust, so it belongs to the Rust lane.
+      # Rust, so it belongs to the Rust lane. Linux-only for the same reason as
+      # clippy and the doctests above: the generator's output is OS-agnostic and
+      # every file it writes is pinned to `eol=lf` in .gitattributes, so the
+      # `git diff --exit-code` verdict cannot differ per platform.
       - name: Generated contract/binding drift
-        if: needs.changes.outputs.rust == 'true'
+        if: runner.os == 'Linux' && needs.changes.outputs.rust == 'true'
         run: just check-generated
+
+      # A frontend-only change leaves this leg with every step skipped on macOS
+      # and Windows. The leg still has to report its required context, so say in
+      # the log that nothing ran instead of letting a bare green imply the
+      # platform was tested.
+      - name: No platform-specific work on this leg
+        if: runner.os != 'Linux' && needs.changes.outputs.rust != 'true'
+        run: |
+          echo "Only the frontend lane is active, and every frontend gate runs on ubuntu."
+          echo "No tests ran on this leg, and none were applicable."
 
   # Required-check shim for the case where BOTH lanes are idle.
   #
@@ -763,3 +830,33 @@ jobs:
             exit 0
           fi
           [ "$RESULT" = "success" ] || exit 1
+
+  # Dead-caller ratchet — main-push guard.
+  #
+  # The `integration` job (above) evaluates the dead-caller ratchet only when
+  # the Rust or scripts lane is active. On a main push that touches neither
+  # (docs, workflow edits, spec files) the `integration` job is skipped via
+  # its job-level `if:`, and the ratchet never runs. A dead `pub fn` that
+  # landed via such a merge is then invisible until the next Rust-touching PR,
+  # where it fires on an unrelated author.
+  #
+  # This job closes that window by evaluating the ratchet against main after
+  # every merge, regardless of which paths changed. It is gated to main pushes
+  # only (`github.event_name == 'push'`) so it does not double-run alongside
+  # `integration` on Rust-touching PRs.
+  #
+  # The check is pure grep (no Rust toolchain, no compile) — just checkout +
+  # `just` — so it adds negligible wall-clock time to the post-merge queue.
+  # It is NOT a branch-protection required check; it is a canary that surfaces
+  # accumulated debt on main before it can block a contributor's PR.
+  dead-caller-main:
+    name: Dead-caller ratchet (main)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Dead-caller ratchet
+        run: just dead-callers

@@ -71,10 +71,6 @@ export interface InventorySession {
   target: string | null;
   filter: string | null;
   exposure: string | null;
-  /**
-   * Canonical spec 002 state. UI maps display labels locally: discovered+candidate → 'Needs review'. ignored sessions only appear when reviewFilter='ignored'.
-   */
-  state: "discovered" | "candidate" | "needs_review" | "confirmed" | "rejected" | "ignored";
   camera?: string;
   gain?: string;
   binning?: string;

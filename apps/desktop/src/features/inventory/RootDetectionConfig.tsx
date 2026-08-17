@@ -33,6 +33,7 @@ import { m } from '@/lib/i18n';
 import { errMessage } from '@/lib/errors';
 import { useRootConfig, useSetRootConfig } from './store';
 import type { ReconcileMode } from '@/bindings/index';
+import { selectBase } from '@/styles/select.css';
 
 export interface RootDetectionConfigProps {
   rootId: string;
@@ -62,6 +63,12 @@ export function RootDetectionConfig({ rootId }: RootDetectionConfigProps) {
   );
 }
 
+/**
+ * Displays and updates root inventory detection settings.
+ *
+ * @param rootId - Identifies the root whose detection settings are displayed
+ * @param onClose - Closes the configuration panel
+ */
 function RootDetectionConfigPanel({
   rootId,
   onClose,
@@ -102,7 +109,7 @@ function RootDetectionConfigPanel({
             </div>
             <div className="pv-settings__row-content">
               <select
-                className="pv-select"
+                className={selectBase}
                 value={data.reconcileMode}
                 aria-label={m.inventory_detection_mode_label()}
                 onChange={(e) =>

@@ -47,9 +47,14 @@ pub struct SessionSplitResult {
 #[specta::specta]
 pub async fn sessions_list(
     state: State<'_, AppState>,
+    limit: Option<u32>,
+    offset: Option<u32>,
 ) -> Result<Vec<AcquisitionSession>, ContractError> {
-    tracing::debug!("sessions.list");
-    sessions_uc::list_sessions(state.repo.pool()).await.map_err(ContractError::internal)
+    let limit = limit.map(|l| l.clamp(1, 500));
+    tracing::debug!("sessions.list limit={limit:?} offset={offset:?}");
+    sessions_uc::list_sessions_paginated(state.repo.pool(), limit, offset)
+        .await
+        .map_err(ContractError::internal)
 }
 
 /// `sessions.get` -- returns a single session detail from real DB rows.

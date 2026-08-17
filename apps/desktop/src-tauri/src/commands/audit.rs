@@ -17,7 +17,10 @@
 //! IPC boundary does not leak the persistence-internal `AuditLogFilter` type.
 
 use app_core::errors::db_err;
-use contracts_core::audit::{AuditActor, AuditEntry, AuditListResponse, AuditOutcome};
+use contracts_core::audit::{
+    AuditActor, AuditEntry, AuditExportResponse, AuditListResponse, AuditOutcome, EntityNameRef,
+    EntityNamesResponse,
+};
 use contracts_core::ContractError;
 use persistence_lifecycle::repositories::audit::{
     count_audit_entries, list_audit_entries, AuditLogFilter, AuditLogRow,
@@ -257,6 +260,9 @@ fn build_filter(
 
 /// `audit.list` — returns paginated audit entries read from `audit_log_entry`.
 ///
+/// Applies a server-side default limit clamp (1..=500, default 100) to prevent
+/// unbounded result sets over IPC.
+///
 /// # Errors
 /// Returns `Err(ContractError)` on database failure.
 #[tauri::command]
@@ -267,7 +273,9 @@ pub async fn audit_list(
     pagination: Option<AuditPaginationDto>,
 ) -> Result<AuditListResponse, ContractError> {
     let pool = state.repo.pool();
-    let filter = build_filter(filters, pagination);
+    let mut filter = build_filter(filters, pagination);
+    // Default limit clamp — same pattern as plans/read.rs:47.
+    filter.limit = Some(filter.limit.unwrap_or(100).clamp(1, 500));
 
     let rows = list_audit_entries(pool, &filter).await.map_err(db_err)?;
     let total = count_audit_entries(pool, &filter).await.map_err(db_err)?;
@@ -276,26 +284,82 @@ pub async fn audit_list(
     Ok(AuditListResponse { entries, total })
 }
 
-/// `audit.export` — export the filtered audit entries as newline-delimited
-/// JSON (one `AuditEntry` per line, matching `audit.list`'s entry shape).
-/// Ignores pagination — export is always the full filtered set.
+/// `audit.export` — export filtered audit entries as newline-delimited JSON to
+/// a file (mirrors `log.export`). Streams backend-side; only the path and count
+/// cross IPC.
 ///
 /// # Errors
-/// Returns `Err(ContractError)` on database failure.
+/// Returns `Err(ContractError)` on database or filesystem failure.
 #[tauri::command]
 #[specta::specta]
 pub async fn audit_export(
     state: State<'_, AppState>,
+    file_path: String,
     filters: Option<AuditFilterDto>,
-) -> Result<String, ContractError> {
+) -> Result<AuditExportResponse, ContractError> {
+    use std::io::Write;
+    use std::path::Path;
+
     let pool = state.repo.pool();
     let filter = build_filter(filters, None);
 
+    let dest = Path::new(&file_path);
+    let parent = dest.parent().ok_or_else(|| {
+        ContractError::internal(format!("No parent directory for path {}", dest.display()))
+    })?;
+    if !parent.exists() {
+        return Err(ContractError::internal(format!(
+            "Parent directory does not exist: {}",
+            parent.display()
+        )));
+    }
+
     let rows = list_audit_entries(pool, &filter).await.map_err(db_err)?;
-    let lines: Vec<String> = rows
-        .into_iter()
-        .map(row_to_entry)
-        .map(|e| serde_json::to_string(&e).unwrap_or_default())
-        .collect();
-    Ok(lines.join("\n"))
+    let entries: Vec<AuditEntry> = rows.into_iter().map(row_to_entry).collect();
+    let count = entries.len();
+
+    // Write to a sibling temp path, then rename atomically.
+    let tmp_path = parent.join(format!(".audit-export-{}.tmp", std::process::id()));
+    let file = std::fs::File::create(&tmp_path)
+        .map_err(|e| ContractError::internal(format!("failed to create temp file: {e}")))?;
+    let mut writer = std::io::BufWriter::new(file);
+    for entry in &entries {
+        serde_json::to_writer(&mut writer, entry)
+            .map_err(|e| ContractError::internal(format!("serialisation error: {e}")))?;
+        writer
+            .write_all(b"\n")
+            .map_err(|e| ContractError::internal(format!("write error: {e}")))?;
+    }
+    writer.flush().map_err(|e| ContractError::internal(format!("flush error: {e}")))?;
+    drop(writer);
+
+    let bytes = std::fs::metadata(&tmp_path).map_or(0, |m| m.len());
+
+    std::fs::rename(&tmp_path, dest)
+        .map_err(|e| ContractError::internal(format!("rename error: {e}")))?;
+
+    Ok(AuditExportResponse { file_path: dest.to_string_lossy().into_owned(), count, bytes })
+}
+
+// ── entity.names ─────────────────────────────────────────────────────────────
+
+/// `entity.names` — batch display-name lookup for `(entityType, entityId)` refs.
+///
+/// Resolves project, plan, and target refs in three IN-clause DB queries instead
+/// of one IPC round-trip per unseen ref.  Session names are not included —
+/// callers read those from the inventory-sources query that is already in the
+/// session store.
+///
+/// Absent ids (not in the DB) are simply omitted from the response map; the
+/// frontend hook treats absence as "unresolved".
+///
+/// # Errors
+/// Returns `Err(ContractError)` with code `internal.database` on query failure.
+#[tauri::command]
+#[specta::specta]
+pub async fn entity_names(
+    state: State<'_, AppState>,
+    refs: Vec<EntityNameRef>,
+) -> Result<EntityNamesResponse, ContractError> {
+    app_core::entity_names::entity_names(state.repo.pool(), refs).await
 }

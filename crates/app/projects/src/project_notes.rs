@@ -27,7 +27,6 @@ use std::path::Path;
 use audit::bus::EventBus;
 use audit::event_bus::Source;
 use sqlx::SqlitePool;
-use uuid::Uuid;
 
 use contracts_core::manifests::{
     ManifestOpError, ProjectNoteUpdateRequest, ProjectNoteUpdateResult,
@@ -44,7 +43,7 @@ const MAX_NOTE_BYTES: usize = 16_384;
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn new_uuid() -> String {
-    Uuid::new_v4().to_string()
+    domain_core::ids::new_id()
 }
 
 fn op_error(code: &str, message: &str) -> ManifestOpError {
@@ -129,7 +128,7 @@ pub async fn update_note_with_adapter(
     if let Some(root) = project_root {
         if let Err(e) = adapter.write(root, &req.content).await {
             // Non-fatal: DB is the durable record. Log but don't fail.
-            tracing::warn!("project_notes: disk write failed for project {}: {e}", req.project_id);
+            tracing::warn!(project_id = req.project_id, error = %e, "project_notes: disk write failed");
         }
     }
 
@@ -193,7 +192,7 @@ pub async fn sync_notes_to_disk(
 
     match content {
         None => {
-            tracing::debug!("sync_notes_to_disk: no notes for project {project_id}");
+            tracing::debug!(project_id, "sync_notes_to_disk: no notes for project");
             Ok(0)
         }
         Some(body) => {

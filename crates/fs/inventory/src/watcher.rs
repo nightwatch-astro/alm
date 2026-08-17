@@ -122,7 +122,7 @@ impl WatcherService {
                     // Item (a): forward OS watcher errors as NeedsRescan events
                     // so consumers know to reconcile, rather than silently
                     // dropping them.
-                    tracing::error!("filesystem watcher error: {e}");
+                    tracing::error!(error = %e, "filesystem watcher error");
                     let _ = tx.send(InboxFileEvent::NeedsRescan { reason: e.to_string() });
                 }
                 Ok(event) => {

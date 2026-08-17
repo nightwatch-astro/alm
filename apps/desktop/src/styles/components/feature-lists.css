@@ -509,7 +509,7 @@
      the banned side-tab border pattern while looking identical to a 3px rule.
      The variant classes below only swap the accent color via the custom prop. */
   box-shadow:
-    inset 3px 0 0 var(--pv-toast-accent, transparent),
+    inset 3px 0 0 var(--pv-toast-accent),
     0 4px 12px color-mix(in srgb, var(--pv-ink) 30%, transparent);
 }
 

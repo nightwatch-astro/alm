@@ -21,9 +21,7 @@ use contracts_core::targets::{
 };
 use contracts_core::{error_code::ErrorCode, ContractError, ErrorSeverity};
 
-fn db_err(e: impl std::fmt::Display) -> ContractError {
-    ContractError::new(ErrorCode::InternalDatabase, e.to_string(), ErrorSeverity::Fatal, true)
-}
+use app_core_errors::db_err;
 
 /// In-code defaults, mirroring the migration 0031 column defaults. Used when the
 /// singleton row is somehow absent (it is seeded, so this is a safety net).

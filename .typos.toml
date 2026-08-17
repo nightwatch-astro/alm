@@ -15,6 +15,8 @@ extend-exclude = [
     # release-please generated; full of commit-hash substrings that read as
     # misspellings ("ede"/"caf" fragments of full SHAs)
     "CHANGELOG.md",
+    # local dev artifact; full of SHA prefixes that trip the checker
+    "local-branches.txt",
     # generated star-catalog seed data (Bayer designations trip the checker)
     "assets/seed/",
     # non-English UI catalogue (Portuguese text trips the English checker)
@@ -54,3 +56,5 @@ transitionable = "transitionable"
 UNIO = "UNIO"
 LIK = "LIK"
 Desig = "Desig"
+# logical conjunction past-tense used in inline comments (e.g. "ANDed")
+Ded = "Ded"

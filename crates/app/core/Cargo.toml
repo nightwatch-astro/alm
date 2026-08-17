@@ -36,7 +36,7 @@ workflow_artifacts = { path = "../../workflow/artifacts" }
 workflow_profiles = { path = "../../workflow/profiles" }
 # spec 052 P1: project_create::create threads the shared redb resolve cache
 # through to app_core_projects::project_setup::create for in-use promotion.
-simbad-resolver = "0.4.0"
+simbad-resolver = "0.5.0"
 # In-memory caching layer (F0 foundation).
 app_core_cache = { path = "../cache" }
 camino = { workspace = true }
@@ -59,8 +59,14 @@ uuid = { version = "1", features = ["serde", "v4", "v5"] }
 [dev-dependencies]
 app_core_cache = { path = "../cache" }
 tempfile = { workspace = true }
+# spec 048 T010: forces two fixture frames to a single mtime so the
+# moved-vs-catalogued `file_record` comparison tests the writer, not the clock.
+filetime = "0.2"
 rstest = { workspace = true }
 proptest = { workspace = true }
+# artifact_reconcile_batching.rs counts sqlx statement-execution tracing events
+# to assert each reconcile phase batches its writes.
+tracing-subscriber = { workspace = true }
 # spec 052 P1 (resolution_e2e.rs): computes the same deterministic UUIDv5 the
 # resolver crate and app_core_targets already derive, to assert target_id
 # stability across the redb cache / SQLite promotion boundary.
@@ -72,8 +78,10 @@ targeting_resolver = { path = "../../targeting/resolver", features = ["test-fixt
 # Enable shared DB test fixtures in tests/support/mod.rs. The test-fixture feature
 # gates the `test_support` modules in both persistence crates; must not be
 # enabled in production builds.
+app_core_inbox = { path = "../inbox" }
 persistence_core = { path = "../../persistence/core", features = ["test-fixture"] }
 persistence_lifecycle = { path = "../../persistence/lifecycle", features = ["test-fixture"] }
+persistence_sessions = { path = "../../persistence/sessions", features = ["test-fixture"] }
 
 [features]
 # Developer-mode surface (spec 021). Release binaries must NOT enable this.

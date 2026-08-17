@@ -868,3 +868,25 @@ pub struct CalibrationMatchSourceRecovered {
 }
 
 pub const TOPIC_CALIBRATION_MATCH_SOURCE_RECOVERED: &str = "calibration_match.source_recovered";
+
+// ── Topic-family prefix constants ─────────────────────────────────────────────
+//
+// These anchor `from_topic` prefix checks (contracts_core::log) to the same
+// crate that defines the individual topic strings, so adding a new topic family
+// requires editing only audit-types (bd astro-plan-kyo7.88).
+
+pub const TOPIC_FAMILY_CATALOG: &str = "catalog.";
+pub const TOPIC_FAMILY_PLAN: &str = "plan.";
+pub const TOPIC_FAMILY_ARCHIVE: &str = "archive.";
+pub const TOPIC_FAMILY_WORKFLOW: &str = "workflow.";
+pub const TOPIC_FAMILY_ARTIFACT: &str = "artifact.";
+pub const TOPIC_FAMILY_LIFECYCLE: &str = "lifecycle.";
+pub const TOPIC_FAMILY_INVENTORY: &str = "inventory.";
+pub const TOPIC_FAMILY_SETTINGS: &str = "settings.";
+pub const TOPIC_FAMILY_PROJECT: &str = "project.";
+pub const TOPIC_FAMILY_TARGET: &str = "target.";
+pub const TOPIC_FAMILY_TOOL: &str = "tool.";
+pub const TOPIC_FAMILY_AUDIT: &str = "audit.";
+pub const TOPIC_FAMILY_NATIVE: &str = "native.";
+pub const TOPIC_FAMILY_FIRST_RUN: &str = "first_run.";
+pub const TOPIC_FAMILY_PROTECTION: &str = "protection.";

@@ -29,6 +29,7 @@ pub mod property_registry;
 pub mod reclassify;
 pub mod repair;
 pub mod scan;
+pub mod session_materialization;
 pub mod signature;
 pub mod stats;
 pub mod target_recommendations;

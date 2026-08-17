@@ -16,6 +16,7 @@ import { errMessage } from '@/lib/errors';
 import { formatDateTime, toEpochMs } from '@/lib/datetime';
 import { m } from '@/lib/i18n';
 import { SettingsSection } from './SettingsKit';
+import { selectBase } from '@/styles/select.css';
 
 /** All `AuditOutcome` values, for the structured outcome filter (#749). */
 const OUTCOME_VALUES: AuditOutcome[] = [
@@ -208,6 +209,9 @@ function buildFilters(
   return hasFilter ? filters : null;
 }
 
+/**
+ * Displays the audit log with filtering, pagination, and export controls.
+ */
 export function AuditLog() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -275,17 +279,22 @@ export function AuditLog() {
     setExportError(null);
     setExporting(true);
     try {
-      const ndjson = await auditExport(filters);
-      const blob = new Blob([ndjson], { type: 'application/x-ndjson' });
-      const url = URL.createObjectURL(blob);
+      let filePath: string | null = null;
       try {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `audit-log-export-${Date.now()}.ndjson`;
-        link.click();
-      } finally {
-        URL.revokeObjectURL(url);
+        const { save: showSaveDialog } = await import(
+          '@tauri-apps/plugin-dialog'
+        );
+        filePath = await showSaveDialog({
+          // eslint-disable-next-line alm/no-user-string -- native OS file-picker chrome, not rendered in the app
+          title: 'Export Audit Log',
+          defaultPath: `audit-log-export-${Date.now()}.ndjson`,
+          filters: [{ name: 'NDJSON', extensions: ['ndjson', 'json'] }],
+        });
+      } catch {
+        filePath = null;
       }
+      if (!filePath) return;
+      await auditExport(filePath, filters);
     } catch (err: unknown) {
       setExportError(errMessage(err));
     } finally {
@@ -355,7 +364,7 @@ export function AuditLog() {
           {/* eslint-disable-next-line jsx-a11y/control-has-associated-label -- labelled by the wrapping <label> (htmlFor + id + visible text); rule misses the wrapping-label association */}
           <select
             id={outcomeFilterId}
-            className="pv-select pv-audit-log__date-input"
+            className={`${selectBase} pv-audit-log__date-input`}
             value={outcomeFilter}
             onChange={(e) => {
               setOutcomeFilter(e.target.value as AuditOutcome | '');
@@ -378,7 +387,7 @@ export function AuditLog() {
           {/* eslint-disable-next-line jsx-a11y/control-has-associated-label -- labelled by the wrapping <label> (htmlFor + id + visible text); rule misses the wrapping-label association */}
           <select
             id={entityTypeFilterId}
-            className="pv-select pv-audit-log__date-input"
+            className={`${selectBase} pv-audit-log__date-input`}
             value={entityTypeFilter}
             onChange={(e) => {
               setEntityTypeFilter(e.target.value);

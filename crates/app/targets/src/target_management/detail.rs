@@ -10,7 +10,7 @@ use contracts_core::targets::{TargetDetailV3, TargetGetRequest};
 use contracts_core::ContractError;
 use targeting_resolver::cache;
 
-use super::{cached_to_detail, db_err, invalid_id, load_alias_dtos, not_found};
+use super::{cache_err, cached_to_detail, invalid_id, load_alias_dtos, not_found};
 
 /// `target.get` — return full detail (gen-3).
 ///
@@ -23,7 +23,7 @@ pub async fn get(
     req: &TargetGetRequest,
 ) -> Result<TargetDetailV3, ContractError> {
     let uuid = Uuid::parse_str(&req.target_id).map_err(|_| invalid_id(&req.target_id))?;
-    let target = cache::get_by_id(pool, uuid).await.map_err(db_err)?;
+    let target = cache::get_by_id(pool, uuid).await.map_err(cache_err)?;
     match target {
         None => Err(not_found(&req.target_id)),
         Some(t) => {

@@ -8,8 +8,9 @@
  * Sources, and the Calibration match panel share one implementation instead
  * of three ad hoc treatments (#809).
  *
- * - `project` / `target` / `plan`: one IPC round-trip per unseen id, cached
- *   module-wide since ids repeat across pages within a session.
+ * - `project` / `target` / `plan`: one batched `entity.names` IPC call for
+ *   all unseen refs, cached module-wide since ids repeat across pages within
+ *   a session.  Previously one round-trip per unseen id (GF-7 / DS-14 fix).
  * - `session`: sessions have no cheap per-id name lookup (`sessions.get`
  *   returns session detail, not a display name), so names are read from the
  *   already-fetched inventory-sources query instead of adding a new IPC
@@ -23,6 +24,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { commands } from '@/bindings/index';
+import { unwrap } from '@/api/ipc';
 import { useInventorySources } from '@/features/sessions/store';
 
 export interface EntityNameRef {
@@ -30,8 +32,13 @@ export interface EntityNameRef {
   entityId: string;
 }
 
-/** Module-scope cache for the per-id IPC lookups (project/target/plan). */
+/** Module-scope cache for the IPC batch lookups (project/target/plan). */
 const entityNameCache = new Map<string, string | null>();
+
+/** Clear the entity-name cache — for use in tests to prevent cross-test pollution. */
+export function clearEntityNameCache(): void {
+  entityNameCache.clear();
+}
 
 export function entityNameKey(ref: EntityNameRef): string {
   return `${ref.entityType}:${ref.entityId}`;
@@ -46,35 +53,48 @@ export function useEntityNames(
 
   useEffect(() => {
     let cancelled = false;
-    for (const ref of refs) {
-      if (ref.entityType === 'session') continue;
-      const cacheKey = entityNameKey(ref);
-      if (entityNameCache.has(cacheKey) || requested.current.has(cacheKey)) {
-        continue;
-      }
-      const fetcher =
-        ref.entityType === 'project'
-          ? commands
-              .projectsGet(ref.entityId)
-              .then((r) => (r.status === 'ok' ? r.data.name : null))
-          : ref.entityType === 'target'
-            ? commands
-                .targetGet({ targetId: ref.entityId })
-                .then((r) => (r.status === 'ok' ? r.data.effectiveLabel : null))
-            : ref.entityType === 'plan'
-              ? commands
-                  .plansGet(ref.entityId)
-                  .then((r) => (r.status === 'ok' ? r.data.title : null))
-              : null;
-      if (!fetcher) continue;
-      requested.current.add(cacheKey);
-      void fetcher
-        .catch(() => null)
-        .then((name) => {
-          entityNameCache.set(cacheKey, name);
-          if (!cancelled) forceRender((n) => n + 1);
-        });
+
+    // Collect refs not yet cached or in-flight.  Session names come from the
+    // inventory-sources store; unknown types are skipped (backend ignores them
+    // anyway but filtering here avoids a wasted IPC call).
+    const BATCH_TYPES = new Set(['project', 'plan', 'target']);
+    const unseen = refs.filter((ref) => {
+      if (!BATCH_TYPES.has(ref.entityType)) return false;
+      const key = entityNameKey(ref);
+      return !entityNameCache.has(key) && !requested.current.has(key);
+    });
+
+    if (unseen.length === 0) return;
+
+    // Mark all unseen as in-flight before the async call to prevent
+    // duplicate dispatches from concurrent renders.
+    for (const ref of unseen) {
+      requested.current.add(entityNameKey(ref));
     }
+
+    // Single batch IPC call instead of N sequential round-trips (GF-7).
+    void commands
+      .entityNames(
+        unseen.map((r) => ({ entityType: r.entityType, entityId: r.entityId })),
+      )
+      .then(unwrap)
+      .then(({ names }) => {
+        // Populate cache for all refs in the batch — present entries get their
+        // name, absent entries (not in DB) get null so we don't re-request.
+        for (const ref of unseen) {
+          const key = entityNameKey(ref);
+          entityNameCache.set(key, names[key] ?? null);
+        }
+        if (!cancelled) forceRender((n) => n + 1);
+      })
+      .catch(() => {
+        // On failure leave the cache empty — the hook will retry on the next
+        // render cycle when the refs change (e.g. page navigation).
+        for (const ref of unseen) {
+          requested.current.delete(entityNameKey(ref));
+        }
+      });
+
     return () => {
       cancelled = true;
     };

@@ -45,7 +45,7 @@ pub struct InsertManifest<'a> {
 /// Insert a new manifest row.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn insert_manifest(pool: &SqlitePool, data: InsertManifest<'_>) -> DbResult<String> {
     let ts = Timestamp::now_iso();
     sqlx::query(
@@ -75,7 +75,7 @@ pub async fn insert_manifest(pool: &SqlitePool, data: InsertManifest<'_>) -> DbR
 /// results exist beyond the returned page.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_manifests_for_project(
     pool: &SqlitePool,
     project_id: &str,

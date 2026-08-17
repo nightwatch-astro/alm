@@ -9,6 +9,7 @@
       "src/**/*.jsx",
       "!src/bindings",
       "!src/paraglide",
+      "!src/styles/themes.css.ts",
       "!**/src-archived-2026-05-24",
       "!node_modules",
       "!dist"
@@ -40,6 +41,33 @@
       }
     }
   },
+  "plugins": [
+    "./biome-plugins/no-retired-commands-wrapper.grit"
+  ],
+  "overrides": [
+    {
+      "includes": [
+        "src/**",
+        "!src/api/ipc.ts",
+        "!src/features/sessions/sessionsGroupsIpc.ts",
+        "!src/features/calibration/calibrationHandoffIpc.ts"
+      ],
+      "plugins": [
+        "./biome-plugins/no-raw-invoke.grit"
+      ]
+    },
+    {
+      "includes": [
+        "src/**",
+        "!**/*.test.ts",
+        "!**/*.test.tsx"
+      ],
+      "plugins": [
+        "./biome-plugins/no-legacy-token-namespace.grit",
+        "./biome-plugins/no-bare-pv-radius.grit"
+      ]
+    }
+  ],
   "assist": {
     "enabled": false
   },

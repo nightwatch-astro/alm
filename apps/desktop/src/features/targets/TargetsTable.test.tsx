@@ -47,7 +47,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 // The no-site banner (spec 044 US3) links to Settings via `Link`, which needs
 // a router context this test doesn't provide. Stub it as a plain anchor —
-// consistent with TargetDetailV2.test.tsx's `@tanstack/react-router` mock.
+// consistent with TargetDetail.test.tsx's `@tanstack/react-router` mock.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
@@ -65,7 +65,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 // #634: real lunar separation + opposition now come from ONE batched
 // `target.moon_opposition.batch` IPC call instead of synchronous TS
-// `astronomy-engine` math — mock it (mirrors `TargetDetailV2.test.tsx`'s
+// `astronomy-engine` math — mock it (mirrors `TargetDetail.test.tsx`'s
 // `targetAstroFormatBatch` mock). `moonSeparationDeg: raDeg` reproduces the
 // exact degrees the old synchronous test fixtures assumed (a Dec-0 target's
 // separation from a Moon at RA0/Dec0 equals its RA), without hardcoding by id.
@@ -120,10 +120,10 @@ import {
   DEFAULT_TARGET_SORT,
   __testExports,
 } from './TargetsTable';
-import { __setObservingStateForTest } from './observing-sites/site-store';
-import type { ObserverSite } from './observing-sites/observer-site';
+import { __setObservingStateForTest } from '@/shared/observing-sites/site-store';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import type { ObservingNight } from './astro/moon-state';
-import { DEFAULT_MOON_AVOIDANCE } from './astro/moon-avoidance';
+import { DEFAULT_MOON_AVOIDANCE } from '@/shared/planner/moon-avoidance';
 
 function item(
   primaryDesignation: string,
@@ -136,7 +136,6 @@ function item(
     objectType,
     raDeg: 0,
     decDeg: 0,
-    aliases: [],
     sessionCount: 0,
   };
 }
@@ -365,7 +364,6 @@ describe('TargetsTable — no-site prompt (US6/T015/T018)', () => {
       objectType: 'other',
       raDeg: 0,
       decDeg: 85, // circumpolar at 52°N regardless of date/time
-      aliases: [],
       sessionCount: 0,
     };
     // Pin "now" to a winter night: mid-summer at 52°N never reaches
@@ -438,7 +436,6 @@ function coordItem(
     objectType: 'other',
     raDeg,
     decDeg,
-    aliases: [],
     sessionCount: 0,
   };
 }

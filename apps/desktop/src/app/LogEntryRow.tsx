@@ -4,7 +4,7 @@
 /**
  * LogEntryRow — single virtualized row in the log panel.
  *
- * Extracted from LogPanel.tsx for isolation and testability.
+ * Migrated to vanilla-extract (pilot/css-vanilla-extract branch).
  */
 
 import { useCallback } from 'react';
@@ -16,6 +16,16 @@ import {
   type EntityNavigateFn,
   type AuditNavigateFn,
 } from './log-panel-model';
+import {
+  event,
+  eventLink,
+  eventTime,
+  levelVariants,
+  eventSource,
+  eventContext,
+  eventMsg,
+  eventLinkIndicator,
+} from './logpanel.css';
 
 export interface LogEntryRowProps {
   entry: LogEntry;
@@ -38,16 +48,10 @@ export function LogEntryRow({
   measureRef,
 }: LogEntryRowProps) {
   const hasEntity = entry.entityType != null && entry.entityId != null;
-  // #626: a link is only "linkable" when a real route exists for it (e.g.
-  // `plan` has no destination yet — buildEntityPath returns null for it).
   const hasEntityLink =
     hasEntity &&
     buildEntityPath(entry.entityType ?? '', entry.entityId ?? '') != null;
   const hasAuditLink = entry.requestId != null && !hasEntity;
-  // Subject context (#583): the entity/request the line is about, surfaced
-  // as visible text rather than only implied by the click-to-navigate arrow.
-  // Shown even when the entity has no link yet (e.g. `plan`, #626) so the
-  // context isn't lost, just the click affordance.
   const contextLabel = hasEntity
     ? `${entry.entityType} · ${entry.entityId}`
     : hasAuditLink
@@ -65,16 +69,17 @@ export function LogEntryRow({
   const isClickable = hasEntityLink || hasAuditLink;
 
   return (
-    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- interactivity is conditional; role/tabindex/keydown all upgrade to button only when clickable
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <li
       ref={measureRef}
+      data-testid="log-entry-row"
       data-index={index}
-      // eslint-disable-next-line no-restricted-syntax -- dynamic: virtualizer row style passthrough (absolute + translateY)
+      // eslint-disable-next-line no-restricted-syntax
       style={style}
-      className={`pv-logpanel__event${isClickable ? ' pv-logpanel__event--link' : ''}`}
+      className={`${event}${isClickable ? ` ${eventLink}` : ''}`}
       onClick={isClickable ? handleClick : undefined}
       role={isClickable ? 'button' : 'listitem'}
-      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- only focusable when clickable, where role becomes button
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
       tabIndex={isClickable ? 0 : undefined}
       onKeyDown={
         isClickable
@@ -95,28 +100,25 @@ export function LogEntryRow({
           : undefined
       }
     >
-      <span className="pv-logpanel__event-time">
-        {formatTimeOfDay(entry.time)}
-      </span>
-      <span
-        className={`pv-logpanel__event-level pv-logpanel__event-level--${entry.level}`}
-        aria-label={entry.level}
-      >
+      <span className={eventTime}>{formatTimeOfDay(entry.time)}</span>
+      <span className={levelVariants[entry.level]} aria-label={entry.level}>
         {entry.level}
       </span>
       <span
-        className={`pv-logpanel__event-source pv-logpanel__event-source--${entry.source}`}
+        className={eventSource}
+        data-testid="logpanel-event-source"
+        data-source={entry.source}
       >
         {entry.source}
       </span>
       {contextLabel && (
-        <span className="pv-logpanel__event-context" title={contextLabel}>
+        <span className={eventContext} title={contextLabel}>
           {contextLabel}
         </span>
       )}
-      <span className="pv-logpanel__event-msg">{entry.message}</span>
+      <span className={eventMsg}>{entry.message}</span>
       {hasEntityLink && (
-        <span className="pv-logpanel__event-link-indicator" aria-hidden="true">
+        <span className={eventLinkIndicator} aria-hidden="true">
           →
         </span>
       )}

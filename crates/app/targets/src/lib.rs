@@ -21,6 +21,7 @@ pub mod caches;
 pub mod frame_writer;
 pub mod ingest_resolution;
 pub mod ingest_sessions;
+pub mod ingestion_operation;
 /// Cached FITS/XISF header extraction (in-memory caching layer, F0/W-FITS).
 /// Lives here (not `app_core`) so both `app_core_inbox` and
 /// `app_core_targets::ingest_sessions` — the two current extractor call

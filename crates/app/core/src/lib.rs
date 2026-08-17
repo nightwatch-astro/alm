@@ -74,6 +74,8 @@ pub mod calibration_archive_generator;
 pub mod cleanup_generator;
 #[cfg(feature = "dev-tools")]
 pub mod dev_contracts;
+/// `entity.names` — batch display-name lookup (GF-7 / DS-14).
+pub mod entity_names;
 pub mod first_run;
 /// Per-frame inventory use cases (spec 048): `inventory.frame.list` and the
 /// on-demand `inventory.reconcile.run` pass.

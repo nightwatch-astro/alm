@@ -17,13 +17,13 @@ export interface StepLayoutProps {
   onChange: (data: StepLayoutData) => void;
 }
 
-const DEFAULT_PATTERN = '{target}_{filter}_{exposure}s_{sequence:04d}';
+// Default matches the v1 token registry — no {sequence} which is not a registered token.
+const DEFAULT_PATTERN = '{target}_{filter}_{exposure}s';
 
 const AVAILABLE_TOKENS = [
   { token: '{target}', example: 'NGC7000' },
   { token: '{filter}', example: 'Ha' },
   { token: '{exposure}', example: '600' },
-  { token: '{sequence:04d}', example: '0001' },
   { token: '{date}', example: '2026-04-15' },
   { token: '{gain}', example: '100' },
   { token: '{binning}', example: '1x1' },
@@ -50,10 +50,11 @@ export function StepLayout({
       .replace('{target}', 'NGC7000')
       .replace('{filter}', 'Ha')
       .replace('{exposure}', '600')
-      .replace('{sequence:04d}', '0001')
       .replace('{date}', '2026-04-15')
       .replace('{gain}', '100')
-      .replace('{binning}', '1x1');
+      .replace('{binning}', '1x1')
+      .replace('{set_temp}', '-10C')
+      .replace('{frame_type}', 'light');
 
     return {
       root: base,

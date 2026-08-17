@@ -57,7 +57,7 @@ pub struct InsertInboxItem<'a> {
 /// Insert a new inbox item in `pending_classification` state.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn insert_inbox_item(pool: &SqlitePool, item: &InsertInboxItem<'_>) -> DbResult<()> {
     let now = Timestamp::now_iso();
     sqlx::query(
@@ -82,7 +82,7 @@ pub async fn insert_inbox_item(pool: &SqlitePool, item: &InsertInboxItem<'_>) ->
 /// Fetch an inbox item by ID. Returns `DbError::NotFound` if absent.
 ///
 /// # Errors
-/// Returns [`DbError::NotFound`] or [`DbError::Database`].
+/// Returns [`DbError::NotFound`] or `persistence_core::DbError::Database`.
 pub async fn get_inbox_item(pool: &SqlitePool, id: &str) -> DbResult<InboxItemRow> {
     sqlx::query_as::<_, InboxItemRow>("SELECT * FROM inbox_items WHERE id = ?")
         .bind(id)
@@ -94,7 +94,7 @@ pub async fn get_inbox_item(pool: &SqlitePool, id: &str) -> DbResult<InboxItemRo
 /// Update `state` and `last_scanned_at` for an inbox item.
 ///
 /// # Errors
-/// Returns [`DbError::NotFound`] if no row was updated, or [`DbError::Database`].
+/// Returns [`DbError::NotFound`] if no row was updated, or `persistence_core::DbError::Database`.
 pub async fn update_inbox_item_state(pool: &SqlitePool, id: &str, state: &str) -> DbResult<()> {
     update_inbox_item_state_conn(pool.acquire().await?.as_mut(), id, state).await
 }
@@ -102,7 +102,7 @@ pub async fn update_inbox_item_state(pool: &SqlitePool, id: &str, state: &str) -
 /// Connection-level variant of [`update_inbox_item_state`].
 ///
 /// # Errors
-/// Returns [`DbError::NotFound`] if no row was updated, or [`DbError::Database`].
+/// Returns [`DbError::NotFound`] if no row was updated, or `persistence_core::DbError::Database`.
 pub async fn update_inbox_item_state_conn(
     conn: &mut SqliteConnection,
     id: &str,
@@ -123,10 +123,10 @@ pub async fn update_inbox_item_state_conn(
     Ok(())
 }
 
-/// Connection-level variant of [`update_inbox_item_scan`].
+/// Connection-level variant of `update_inbox_item_scan`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn update_inbox_item_scan_conn(
     conn: &mut SqliteConnection,
     id: &str,
@@ -190,7 +190,7 @@ pub struct UpsertInboxSubItem<'a> {
 /// file_count, and state are refreshed.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn upsert_inbox_sub_item(
     pool: &SqlitePool,
     item: &UpsertInboxSubItem<'_>,
@@ -201,7 +201,7 @@ pub async fn upsert_inbox_sub_item(
 /// Connection-level variant of [`upsert_inbox_sub_item`].
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn upsert_inbox_sub_item_conn(
     conn: &mut SqliteConnection,
     item: &UpsertInboxSubItem<'_>,
@@ -255,10 +255,10 @@ pub async fn upsert_inbox_sub_item_conn(
     Ok(persisted_id)
 }
 
-/// Connection-level variant of [`delete_sub_item_if_unlinked`].
+/// Connection-level variant of `delete_sub_item_if_unlinked`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn delete_sub_item_if_unlinked_conn(
     conn: &mut SqliteConnection,
     id: &str,
@@ -283,7 +283,7 @@ pub async fn delete_sub_item_if_unlinked_conn(
 /// included correctly.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn list_inbox_sub_items(
     pool: &SqlitePool,
     source_group_id: &str,
@@ -293,11 +293,11 @@ pub async fn list_inbox_sub_items(
 
 /// Connection-level variant of [`list_inbox_sub_items`].
 ///
-/// Used by [`materialize_sub_items_tx`] to read existing sub-items within the
+/// Used by `materialize_sub_items_tx` to read existing sub-items within the
 /// same transaction so the orphan-cleanup step sees the current write state.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn list_inbox_sub_items_conn(
     conn: &mut SqliteConnection,
     source_group_id: &str,
@@ -322,7 +322,7 @@ pub async fn list_inbox_sub_items_conn(
 /// pre-T065 items).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn get_source_group_id_for_item(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -341,7 +341,7 @@ pub async fn get_source_group_id_for_item(
 /// `sourceGroupId` instead of an `inboxItemId`.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn list_item_ids_for_source_group(
     pool: &SqlitePool,
     source_group_id: &str,
@@ -365,7 +365,7 @@ pub async fn list_item_ids_for_source_group(
 /// statement also rules out a read-then-write race with a concurrent classify.
 ///
 /// # Errors
-/// Returns [`DbError::NotFound`] if no row was updated, or [`DbError::Database`].
+/// Returns [`DbError::NotFound`] if no row was updated, or `persistence_core::DbError::Database`.
 pub async fn reset_inbox_item_to_unconfirmed(pool: &SqlitePool, id: &str) -> DbResult<()> {
     let now = Timestamp::now_iso();
     let rows = sqlx::query(

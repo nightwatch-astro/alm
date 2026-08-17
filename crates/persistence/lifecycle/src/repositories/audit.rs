@@ -76,13 +76,8 @@ pub struct AuditLogFilter {
     pub offset: Option<u32>,
 }
 
-/// Escape SQLite `LIKE` metacharacters (`%`, `_`) and the escape character
-/// itself in user-supplied search text, so a search for an astro name like
-/// `M31_L` matches literally instead of `_` acting as a single-char wildcard.
-/// Pairs with `ESCAPE '\'` on the `LIKE` clauses in `build_where`.
-fn escape_like(input: &str) -> String {
-    input.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
-}
+// Delegate to the shared helper in persistence_core (bd astro-plan-kyo7.88).
+use persistence_core::repositories::sql::escape_like;
 
 /// Shared WHERE-clause builder for `list_audit_entries` / `count_audit_entries`
 /// so the filter semantics can never drift between the two queries.
@@ -206,7 +201,7 @@ pub async fn count_audit_entries(pool: &SqlitePool, filter: &AuditLogFilter) -> 
 /// `request_id` UUIDs and the RFC3339 `at` timestamp.
 ///
 /// # Errors
-/// Returns [`DbError`](persistence_core::DbError) if the insert fails.
+/// Returns `persistence_core::DbError`(persistence_core::DbError) if the insert fails.
 pub async fn insert_project_auto_transition(
     pool: &SqlitePool,
     project_id: &str,
@@ -223,7 +218,7 @@ pub async fn insert_project_auto_transition(
 /// Delegates to [`persistence_core::repositories::audit_writes::insert_audit_entry`].
 ///
 /// # Errors
-/// Returns [`DbError`](persistence_core::DbError) if the insert fails.
+/// Returns `persistence_core::DbError`(persistence_core::DbError) if the insert fails.
 pub async fn insert_audit_entry(pool: &SqlitePool, entry: &AuditLogEntry) -> DbResult<()> {
     audit_writes::insert_audit_entry(pool, entry).await
 }

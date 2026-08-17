@@ -14,11 +14,11 @@
 //! - §III Metadata/identity only — no image processing.
 //! - §V SQLite (resolution cache / canonical_target) is the durable record.
 //!
-//! Split by responsibility (refactor sweep #986): [`detail`] is `target.get`;
-//! [`list`] is `target.list` (+ session-count enrichment); [`alias`] is
-//! `target.alias.add`/`.remove`; [`display_alias`] is `.set`/`.clear`;
-//! [`sessions_projects`] is spec 023 US2/US3 (`target.sessions.list` /
-//! `target.projects.list`); [`note`] is spec 023 US4 (`target.note.get`/
+//! Split by responsibility (refactor sweep #986): `detail` is `target.get`;
+//! [`list`] is `target.list` (+ session-count enrichment); `alias` is
+//! `target.alias.add`/`.remove`; `display_alias` is `.set`/`.clear`;
+//! `sessions_projects` is spec 023 US2/US3 (`target.sessions.list` /
+//! `target.projects.list`); `note` is spec 023 US4 (`target.note.get`/
 //! `.update`). Error mapping and DTO conversion helpers used by more than one
 //! use case stay here.
 
@@ -59,11 +59,26 @@ fn not_found(id: &str) -> ContractError {
     )
 }
 
-/// Map any DB-layer error (`cache::CacheError` or `persistence_core::DbError`) to
-/// the `internal.database` `ContractError` shape. Collapses the previously
-/// byte-identical `db_err`/`persist_err` pair (Tier-3 dedup).
-fn db_err(e: impl std::fmt::Display) -> ContractError {
-    ContractError::new(ErrorCode::InternalDatabase, format!("{e}"), ErrorSeverity::Fatal, true)
+use app_core_errors::db_err;
+
+/// Map a `targeting_resolver::cache::CacheError` to a `ContractError`.
+///
+/// Delegates `Persistence(NotFound)` to `Blocking`; other variants are Fatal.
+#[allow(clippy::needless_pass_by_value)]
+fn cache_err(e: targeting_resolver::cache::CacheError) -> ContractError {
+    use persistence_core::DbError;
+    use targeting_resolver::cache::CacheError;
+    match e {
+        CacheError::Persistence(DbError::NotFound(msg)) => {
+            ContractError::new(ErrorCode::InternalDatabase, msg, ErrorSeverity::Blocking, false)
+        }
+        other => ContractError::new(
+            ErrorCode::InternalDatabase,
+            format!("{other}"),
+            ErrorSeverity::Fatal,
+            true,
+        ),
+    }
 }
 
 fn invalid_id(id: &str) -> ContractError {

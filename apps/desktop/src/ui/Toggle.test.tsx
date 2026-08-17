@@ -3,8 +3,11 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+// Convention: use userEvent for user-driven interactions; fireEvent for synthetic/edge cases.
+// See src/test/userEvent.ts for the project setup helper.
+import { setupUser } from '../test/userEvent';
 import { Toggle } from './Toggle';
 
 const settingsCss = readFileSync(
@@ -34,14 +37,15 @@ describe('Toggle', () => {
     expect(focusRule).toContain('outline: 2px solid transparent');
   });
 
-  it('exposes checked state and preserves click changes', () => {
+  it('exposes checked state and preserves click changes', async () => {
+    const user = setupUser();
     const onChange = vi.fn();
     render(<Toggle checked onChange={onChange} aria-label="Auto scan" />);
 
     const checkbox = screen.getByRole('checkbox', { name: 'Auto scan' });
     expect(checkbox).toBeChecked();
 
-    fireEvent.click(checkbox);
+    await user.click(checkbox);
     expect(onChange).toHaveBeenCalledWith(false);
   });
 

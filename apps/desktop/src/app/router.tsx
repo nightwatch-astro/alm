@@ -8,10 +8,11 @@ import {
   createRoute,
   lazyRouteComponent,
   redirect,
-  Navigate,
   Outlet,
 } from '@tanstack/react-router';
 import { Shell } from './Shell';
+import { RouteError } from './RouteError';
+import { RouteNotFound } from './RouteNotFound';
 import { checkFirstRunComplete } from './first-run';
 import {
   makeValidateSearch,
@@ -149,7 +150,7 @@ const projectsRoute = createRoute({
   path: '/projects',
   validateSearch: makeValidateSearch({
     // spec 023: project IDs are UUIDs (strings). Switched from legacy numeric
-    // index so linked-project deep-links from TargetDetailV2 work correctly.
+    // index so linked-project deep-links from TargetDetail work correctly.
     selected: parseString,
     lifecycle: parseCsvEnum(PROJECT_STATES),
   }),
@@ -312,9 +313,11 @@ export const router = createRouter({
   routeTree,
   history: hashHistory,
   defaultPreload: 'intent',
-  // Unknown routes (stale deep links) fall through to the index resolver
-  // rather than flashing a blank not-found page (spec 020 US3 / T031).
-  defaultNotFoundComponent: () => <Navigate to="/" />,
+  // Scoped error panel instead of a blank app shell when any route throws.
+  defaultErrorComponent: RouteError,
+  // Unknown routes show a not-found page instead of silently redirecting to
+  // home; the index route's beforeLoad still handles first-run gating (T031).
+  defaultNotFoundComponent: RouteNotFound,
 });
 
 declare module '@tanstack/react-router' {

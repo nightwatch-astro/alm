@@ -8,22 +8,33 @@
  * - Oldest entries are evicted first when capacity is exceeded.
  * - `dropped` counter increments correctly.
  * - Deduplication by `id` prevents double-appending.
+ *
+ * The listener-notification test runs in an isolated module instance
+ * (vi.resetModules + dynamic import) because logStore is a process singleton
+ * and orphan requestAnimationFrame callbacks from other test files in the same
+ * vitest worker can fire during this test, inflating the listener call count.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   appendLog,
   getLogSnapshot,
   resetLogStore,
-  subscribeLog,
+  type subscribeLog,
   LOG_BUFFER_SIZE,
   type LogEntry,
 } from './logStore';
 
+/**
+ * `time` is derived arithmetically rather than string-formatted: a padded minute
+ * field yields `00:510:00` past n=59, which is not ISO-8601 and does not order.
+ */
 function makeEntry(n: number): LogEntry {
   return {
     id: `aud:${n}`,
     contractVersion: '1',
-    time: `2026-01-01T00:${String(n).padStart(2, '0')}:00Z`,
+    time: new Date(Date.UTC(2026, 0, 1) + n * 1000)
+      .toISOString()
+      .replace(/\.\d{3}Z$/, 'Z'),
     level: 'info',
     source: 'plan',
     message: `Entry ${n}`,
@@ -42,6 +53,53 @@ describe('logStore ring buffer', () => {
     expect(entries[0].id).toBe('aud:3');
     expect(entries[1].id).toBe('aud:2');
     expect(entries[2].id).toBe('aud:1');
+  });
+
+  it('orders a late-arriving older batch after an earlier live entry', () => {
+    // Production interleaving: the live listener attaches before hydration, so a
+    // freshly emitted entry can reach the buffer ahead of the older rows
+    // `log.recent` returns.
+    appendLog([makeEntry(9)]);
+    appendLog([makeEntry(1), makeEntry(2), makeEntry(3)]);
+
+    const { entries } = getLogSnapshot();
+    expect(entries.map((e) => e.id)).toEqual([
+      'aud:9',
+      'aud:3',
+      'aud:2',
+      'aud:1',
+    ]);
+  });
+
+  it('breaks whole-second ties by event id', () => {
+    const sameSecond = (n: number): LogEntry => ({
+      ...makeEntry(n),
+      time: '2026-01-01T00:00:00Z',
+    });
+    appendLog([sameSecond(2)]);
+    appendLog([sameSecond(1), sameSecond(3)]);
+
+    const { entries } = getLogSnapshot();
+    expect(entries.map((e) => e.id)).toEqual(['aud:3', 'aud:2', 'aud:1']);
+  });
+
+  it('sorts diagnostics after audit rows sharing their second', () => {
+    // `dia:` ids carry an independent in-memory sequence, so they cannot be
+    // compared against `event_id` directly.
+    appendLog([
+      {
+        id: 'dia:1',
+        contractVersion: '1',
+        time: '2026-01-01T00:00:00Z',
+        level: 'warn',
+        source: 'diagnostic',
+        message: 'lagged',
+      },
+    ]);
+    appendLog([{ ...makeEntry(7), time: '2026-01-01T00:00:00Z' }]);
+
+    const { entries } = getLogSnapshot();
+    expect(entries.map((e) => e.id)).toEqual(['dia:1', 'aud:7']);
   });
 
   it('starts with dropped=0', () => {
@@ -106,18 +164,39 @@ describe('logStore ring buffer', () => {
     expect(entries.length).toBe(1);
   });
 
-  it('notifies listeners on append', () => {
-    let callCount = 0;
-    const unsub = subscribeLog(() => {
-      callCount++;
+  // Listener notification test is in a nested describe with its own fresh
+  // module instance so orphan rAF callbacks from other test files cannot
+  // inflate the call count (logStore singleton shared across vitest worker).
+  describe('listener notification (isolated module)', () => {
+    let isolatedAppendLog: typeof appendLog;
+    let isolatedSubscribeLog: typeof subscribeLog;
+
+    beforeEach(async () => {
+      vi.resetModules();
+      const mod = await import('./logStore');
+      isolatedAppendLog = mod.appendLog;
+      isolatedSubscribeLog = mod.subscribeLog;
     });
 
-    appendLog([makeEntry(1)]);
-    expect(callCount).toBe(1);
+    it('notifies listeners on append (async via rAF batch)', async () => {
+      vi.useFakeTimers();
 
-    appendLog([makeEntry(2)]);
-    expect(callCount).toBe(2);
+      let callCount = 0;
+      const unsub = isolatedSubscribeLog(() => {
+        callCount++;
+      });
 
-    unsub();
+      isolatedAppendLog([makeEntry(1)]);
+      // notify() schedules a requestAnimationFrame — flush it.
+      await vi.runAllTimersAsync();
+      expect(callCount).toBe(1);
+
+      isolatedAppendLog([makeEntry(2)]);
+      await vi.runAllTimersAsync();
+      expect(callCount).toBe(2);
+
+      unsub();
+      vi.useRealTimers();
+    });
   });
 });

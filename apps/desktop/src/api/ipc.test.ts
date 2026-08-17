@@ -19,7 +19,7 @@ describe('generated bindings route through the IPC switcher (FR-002)', () => {
       calls.push(cmd);
       return Promise.resolve([]);
     });
-    const res = await commands.sessionsList();
+    const res = await commands.sessionsList(null, null);
     expect(calls).toContain('sessions_list');
     expect(res.status).toBe('ok');
   });

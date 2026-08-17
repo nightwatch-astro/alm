@@ -54,20 +54,6 @@ pub use discard::discard_plan;
 pub use read::{get_plan, list_plans};
 pub use retry::retry_plan;
 
-// ── State helpers ─────────────────────────────────────────────────────────────
-
-/// Returns true for terminal plan states (retry creates a NEW plan from these).
-fn is_terminal(state: PlanState) -> bool {
-    matches!(
-        state,
-        PlanState::Applied
-            | PlanState::PartiallyApplied
-            | PlanState::Failed
-            | PlanState::Cancelled
-            | PlanState::Discarded
-    )
-}
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /// Default age cutoff for plan list (R-Ret-1). Overridable via spec 018 setting.
@@ -78,13 +64,9 @@ pub const PERMANENT_DELETE_CONFIRM_TEXT: &str = "DELETE";
 
 // ── Error helpers ─────────────────────────────────────────────────────────────
 
+// Domain-scoped DB error mapper: routes NotFound to plan.not_found code.
 fn db_err(e: persistence_core::DbError) -> ContractError {
-    match e {
-        persistence_core::DbError::NotFound(msg) => {
-            ContractError::new(ErrorCode::PlanNotFound, msg, ErrorSeverity::Blocking, false)
-        }
-        other => crate::errors::db_err(other),
-    }
+    crate::errors::db_err_with_not_found(ErrorCode::PlanNotFound)(e)
 }
 
 // ── Row mapping helpers ───────────────────────────────────────────────────────

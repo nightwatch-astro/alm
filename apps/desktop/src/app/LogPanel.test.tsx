@@ -220,17 +220,15 @@ describe('LogPanel expand/collapse + filters (T006)', () => {
       expect(screen.getByText('All good')).toBeInTheDocument();
     });
 
-    // Scope to <span> only — the source-filter chip group (#666) also
-    // renders a plain-text "audit" button sharing the same visible text.
-    const sourceSpans = screen
-      .getAllByText('audit')
-      .filter((el) => el.tagName === 'SPAN');
+    // Use data-testid to locate the source span — class names are VE-generated
+    // hashes after the vanilla-extract migration (#1542 pattern).
+    const sourceSpans = screen.getAllByTestId('logpanel-event-source');
     expect(sourceSpans.length).toBeGreaterThan(0);
     for (const span of sourceSpans) {
-      expect(span).toHaveClass('pv-logpanel__event-source');
-      expect(span).toHaveClass('pv-logpanel__event-source--audit');
+      // Verify the source value is correctly interpolated via data-source.
+      expect(span).toHaveAttribute('data-source', 'audit');
       // Regression guard: must not render the un-interpolated literal template.
-      expect(span.className).not.toContain('{entry.source}');
+      expect(span.textContent).not.toContain('{entry.source}');
     }
   });
 
@@ -260,8 +258,9 @@ describe('LogPanel expand/collapse + filters (T006)', () => {
     // With reduced motion, the follow-tail effect pins scrollTop directly
     // (no smooth `scrollTo` animation call). Assert the scroll container is
     // present and matchMedia is consulted and reports reduced motion.
-    const list = document.querySelector('.pv-logpanel__events');
-    expect(list).not.toBeNull();
+    // Use data-testid — class names are VE-generated hashes post-migration.
+    const list = screen.getByTestId('logpanel-events');
+    expect(list).toBeInTheDocument();
     expect(window.matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(
       true,
     );

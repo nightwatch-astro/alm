@@ -14,6 +14,7 @@ import { queryClient } from './data/queryClient';
 import { initAppearance, hydrateThemeFromSettings } from './data/theme';
 import { hydrateScope } from './data/persisted-state';
 import { registerLocaleStrategy, LocaleProvider } from './data/locale';
+import { logError } from './lib/diagnosticLog';
 
 // Register the `custom-almSettings` strategy before the first render, so the
 // very first `getLocale()` already consults the stored choice. Without this
@@ -112,6 +113,18 @@ const unsubscribeBootReady = router.subscribe('onRendered', () => {
   void import('@tauri-apps/api/event').then(({ emit }) =>
     emit('app:boot-ready').catch(() => {}),
   );
+});
+
+// Forward uncaught errors to the rotating diagnostics log for crash forensics.
+// logError() is a no-op outside a Tauri host — safe in all non-production envs.
+// Parallel to (not replacing) the VITE_E2E buffer above.
+window.addEventListener('error', (event) => {
+  logError(
+    `[window.onerror] ${event.message} at ${event.filename}:${event.lineno}`,
+  );
+});
+window.addEventListener('unhandledrejection', (event) => {
+  logError(`[unhandledrejection] ${String(event.reason)}`);
 });
 
 const root = document.getElementById('root');

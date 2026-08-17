@@ -38,6 +38,9 @@ export const commands = {
 	/**
 	 *  `lifecycle.ledger.list` Tauri command.
 	 * 
+	 *  Applies a server-side default limit clamp (1..=500, default 100) to prevent
+	 *  unbounded result sets over IPC.
+	 * 
 	 *  # Errors
 	 *  Returns a stringified persistence error when the repository query fails
 	 *  (e.g. transient DB unavailability). Successful empty results are `Ok(vec![])`.
@@ -52,7 +55,7 @@ export const commands = {
 	 *  # Errors
 	 *  Returns `Err(String)` on database failure.
 	 */
-	sessionsList: () => typedError<AcquisitionSession_Serialize[], ContractError_Serialize>(__TAURI_INVOKE("sessions_list")),
+	sessionsList: (limit: number | null, offset: number | null) => typedError<AcquisitionSession_Serialize[], ContractError_Serialize>(__TAURI_INVOKE("sessions_list", { limit, offset })),
 	/**
 	 *  `sessions.get` -- returns a single session detail from real DB rows.
 	 * 
@@ -186,13 +189,18 @@ export const commands = {
 	 */
 	targetGet: (req: TargetGetRequest) => typedError<TargetDetailV3_Serialize, ContractError_Serialize>(__TAURI_INVOKE("target_get", { req })),
 	/**
-	 *  `target.list` — list all canonical targets ordered by primary designation.
+	 *  `target.list` — list canonical targets ordered by primary designation.
+	 * 
+	 *  When `search` is provided, returns only targets whose primary designation,
+	 *  effective label, or any alias (designation, common name, user-added)
+	 *  case-insensitively contains the query string.  An empty `search` string is
+	 *  treated as no filter (returns all targets).
 	 * 
 	 *  # Errors
 	 * 
 	 *  Returns `Err(ContractError)` with code `internal.database`.
 	 */
-	targetList: () => typedError<TargetListItem_Serialize[], ContractError_Serialize>(__TAURI_INVOKE("target_list")),
+	targetList: (search: string | null) => typedError<TargetListItem_Serialize[], ContractError_Serialize>(__TAURI_INVOKE("target_list", { search })),
 	/**
 	 *  `target.alias.add` — add a user alias to a canonical target (gen-3).
 	 * 
@@ -821,7 +829,19 @@ export const commands = {
 	 */
 	plansConfirmDestructive: (planId: string) => typedError<PlanDestructiveConfirmResponse, ContractError_Serialize>(__TAURI_INVOKE("plans_confirm_destructive", { planId })),
 	/**
+	 *  `recovery.status` — input for the unclean-shutdown recovery prompt.
+	 * 
+	 *  # Errors
+	 * 
+	 *  Returns [`ContractError`] on a database failure while listing interrupted
+	 *  plans.
+	 */
+	recoveryStatus: () => typedError<RecoveryStatus, ContractError_Serialize>(__TAURI_INVOKE("recovery_status")),
+	/**
 	 *  `audit.list` — returns paginated audit entries read from `audit_log_entry`.
+	 * 
+	 *  Applies a server-side default limit clamp (1..=500, default 100) to prevent
+	 *  unbounded result sets over IPC.
 	 * 
 	 *  # Errors
 	 *  Returns `Err(ContractError)` on database failure.
@@ -842,14 +862,14 @@ export const commands = {
 	offset?: number | null,
 } | null) => typedError<AuditListResponse_Serialize, ContractError_Serialize>(__TAURI_INVOKE("audit_list", { filters, pagination })),
 	/**
-	 *  `audit.export` — export the filtered audit entries as newline-delimited
-	 *  JSON (one `AuditEntry` per line, matching `audit.list`'s entry shape).
-	 *  Ignores pagination — export is always the full filtered set.
+	 *  `audit.export` — export filtered audit entries as newline-delimited JSON to
+	 *  a file (mirrors `log.export`). Streams backend-side; only the path and count
+	 *  cross IPC.
 	 * 
 	 *  # Errors
-	 *  Returns `Err(ContractError)` on database failure.
+	 *  Returns `Err(ContractError)` on database or filesystem failure.
 	 */
-	auditExport: (filters: {
+	auditExport: (filePath: string, filters: {
 	entityType?: string | null,
 	entityId?: string | null,
 	outcome?: AuditOutcome | null,
@@ -860,7 +880,22 @@ export const commands = {
 	from?: string | null,
 	/**  RFC 3339 upper bound on the entry timestamp (exclusive). */
 	to?: string | null,
-} | null) => typedError<string, ContractError_Serialize>(__TAURI_INVOKE("audit_export", { filters })),
+} | null) => typedError<AuditExportResponse, ContractError_Serialize>(__TAURI_INVOKE("audit_export", { filePath, filters })),
+	/**
+	 *  `entity.names` — batch display-name lookup for `(entityType, entityId)` refs.
+	 * 
+	 *  Resolves project, plan, and target refs in three IN-clause DB queries instead
+	 *  of one IPC round-trip per unseen ref.  Session names are not included —
+	 *  callers read those from the inventory-sources query that is already in the
+	 *  session store.
+	 * 
+	 *  Absent ids (not in the DB) are simply omitted from the response map; the
+	 *  frontend hook treats absence as "unresolved".
+	 * 
+	 *  # Errors
+	 *  Returns `Err(ContractError)` with code `internal.database` on query failure.
+	 */
+	entityNames: (refs: EntityNameRef[]) => typedError<EntityNamesResponse, ContractError_Serialize>(__TAURI_INVOKE("entity_names", { refs })),
 	/**
 	 *  `log.recent` — return the most-recent log entries (initial hydration window).
 	 * 
@@ -1557,7 +1592,7 @@ export const commands = {
 	 *  - `inbox.item.no_plan`   — item exists but has no linked plan.
 	 *  - `plan.not_found`       — link is present but plan row missing.
 	 */
-	inboxPlan: (inboxItemId: string) => typedError<InboxPlanView, string>(__TAURI_INVOKE("inbox_plan", { inboxItemId })),
+	inboxPlan: (inboxItemId: string) => typedError<InboxPlanView_Serialize, string>(__TAURI_INVOKE("inbox_plan", { inboxItemId })),
 	/**
 	 *  `inbox.plan.apply` — approve + apply the plan for a single inbox item.
 	 * 
@@ -1626,7 +1661,7 @@ export const commands = {
 	 *  # Errors
 	 *  Returns a string error only if the underlying list/plan queries fail.
 	 */
-	inboxPlanListOpen: () => typedError<InboxOpenPlansResponse, string>(__TAURI_INVOKE("inbox_plan_list_open")),
+	inboxPlanListOpen: () => typedError<InboxOpenPlansResponse_Serialize, string>(__TAURI_INVOKE("inbox_plan_list_open")),
 	/**
 	 *  `inbox.property_registry` — return the typed property registry.
 	 * 
@@ -2533,6 +2568,16 @@ export type AuditEntry_Serialize = {
 	detailParams?: { [key in string]: string } | null,
 };
 
+/**  Response for `audit.export` — mirrors `LogExportResponse`. */
+export type AuditExportResponse = {
+	/**  Absolute path of the written file. */
+	filePath: string,
+	/**  Number of entries written. */
+	count: number,
+	/**  Byte size of the written file. */
+	bytes: number,
+};
+
 /**
  *  Filter args for `audit.list` / `audit.export`.
  * 
@@ -3075,7 +3120,7 @@ export type Camera = {
 	passband: string[] | null,
 	/**
 	 *  Pixel pitch in micrometres; `None` = not recorded. Square pixels are
-	 *  assumed on both axes, matching [`sessions::fov_diagonal_deg`].
+	 *  assumed on both axes, matching `sessions::fov_diagonal_deg`.
 	 */
 	pixelSizeUm?: number | null,
 	/**  Unbinned sensor width in pixels (FITS `NAXIS1`); `None` = not recorded. */
@@ -3729,6 +3774,27 @@ export type DockPlacement = "side" | "bottom";
 /**  Entity kind for audit-log correlation on reveal operations. */
 export type EntityKind = "inbox_item" | "inventory_row" | "project_manifest" | "master_calibration" | "registered_source" | "other";
 
+/**  One entity reference for the `entity.names` batch lookup. */
+export type EntityNameRef = {
+	entityType: string,
+	entityId: string,
+};
+
+/**
+ *  Result of the `entity.names` batch lookup: a map from
+ *  `"<entityType>:<entityId>"` keys to display names.
+ * 
+ *  Keys with no matching DB row are omitted — the caller uses absence as
+ *  the "unknown / still loading" signal.
+ */
+export type EntityNamesResponse = {
+	/**
+	 *  Flat `{ "<type>:<id>": "<name>" }` map — camelCase key matches the
+	 *  frontend `entityNameKey(ref)` helper.
+	 */
+	names: { [key in string]: string },
+};
+
 /**  A piece of astrophotography equipment. */
 export type Equipment = {
 	id: string,
@@ -3820,7 +3886,7 @@ export type ErrorCode = "validation.request_envelope_invalid" | "dev_mode.disabl
  *  #886: `calibration.masters.get`/`.archive` target id has no matching
  *  `calibration_session` row.
  */
-"master.not_found" | "confirm.text.mismatch" | "no.items.to.retry" | "no_op" | "parent.not_found" | "parent.not_terminal" | "lifecycle.read_only" | "lifecycle.last_confirmed_source" | "project.not_found" | "project.read_only" | "framing.not_found" | "framing.project_mismatch" | "framing.merge.requires_two" | "framing.merge.duplicate_id" | "framing.split.empty_selection" | "framing.split.invalid_session" | "framing.split.would_empty_source" | "framing.reassign.empty_selection" | "attribution.not_light_frame" | "attribution.geometry_unavailable" | "view.mixed_kind" | "view.not_found" | "view.unsupported_kind" | "no_selection" | "no_link_kind" | "destination.collision" | "destination.exists" | "profile.not_found" | "canonical_target.not_found" | "name.duplicate" | "name.empty" | "name.too_long" | "source.already.linked" | "source.not_found" | "source.invalid_organization_state" | 
+"master.not_found" | "confirm.text.mismatch" | "no.items.to.retry" | "no_op" | "parent.not_found" | "parent.not_terminal" | "lifecycle.read_only" | "lifecycle.last_confirmed_source" | "project.not_found" | "project.read_only" | "project.session_already_pinned" | "project.session_not_pinned" | "project.lifecycle_disallows_session_add" | "project.reclassification_revision_invalid" | "project.membership_conflict" | "project.update_view_no_additions" | "project.update_view_plan_not_found" | "project.update_view_plan_not_open" | "project.update_view_plan_not_approved" | "project.update_view_plan_stale" | "project.update_view_path_conflict" | "project.update_view_source_unavailable" | "project.update_view_root_changed" | "project.update_view_plan_digest_mismatch" | "project.update_view_session_too_large" | "project.update_view_operation_not_cancellable" | "framing.not_found" | "framing.project_mismatch" | "framing.merge.requires_two" | "framing.merge.duplicate_id" | "framing.split.empty_selection" | "framing.split.invalid_session" | "framing.split.would_empty_source" | "framing.reassign.empty_selection" | "attribution.not_light_frame" | "attribution.geometry_unavailable" | "view.mixed_kind" | "view.not_found" | "view.unsupported_kind" | "no_selection" | "no_link_kind" | "destination.collision" | "destination.exists" | "profile.not_found" | "canonical_target.not_found" | "name.duplicate" | "name.empty" | "name.too_long" | "source.already.linked" | "source.not_found" | "source.invalid_organization_state" | 
 /**
  *  Returned by `roots.delete` (P6b, decision D8) when dependent records
  *  (inbox items, plan items, file records, sessions) still reference the
@@ -5180,19 +5246,43 @@ export type InboxListResponse_Serialize = {
 };
 
 /**  One open plan in the aggregate inbox plan surface (spec 041, US2). */
-export type InboxOpenPlan = {
+export type InboxOpenPlan = InboxOpenPlan_Serialize | InboxOpenPlan_Deserialize;
+
+/**  One open plan in the aggregate inbox plan surface (spec 041, US2). */
+export type InboxOpenPlan_Deserialize = {
 	inboxItemId: string,
 	/**  Display label for the ingestion group (the item's relative path / folder name). */
 	itemName: string,
 	planId: string,
 	state: string,
 	stale: boolean,
-	actions: InboxPlanAction[],
+	actions: InboxPlanAction_Deserialize[],
+};
+
+/**  One open plan in the aggregate inbox plan surface (spec 041, US2). */
+export type InboxOpenPlan_Serialize = {
+	inboxItemId: string,
+	/**  Display label for the ingestion group (the item's relative path / folder name). */
+	itemName: string,
+	planId: string,
+	state: string,
+	stale: boolean,
+	actions: InboxPlanAction_Serialize[],
 };
 
 /**  Response from `inbox.plan.list_open` — all open plans across roots (spec 041, US2). */
-export type InboxOpenPlansResponse = {
-	plans: InboxOpenPlan[],
+export type InboxOpenPlansResponse = InboxOpenPlansResponse_Serialize | InboxOpenPlansResponse_Deserialize;
+
+/**  Response from `inbox.plan.list_open` — all open plans across roots (spec 041, US2). */
+export type InboxOpenPlansResponse_Deserialize = {
+	plans: InboxOpenPlan_Deserialize[],
+	/**  Sum of actions across all plans (for the surface header count). */
+	totalActions: number,
+};
+
+/**  Response from `inbox.plan.list_open` — all open plans across roots (spec 041, US2). */
+export type InboxOpenPlansResponse_Serialize = {
+	plans: InboxOpenPlan_Serialize[],
 	/**  Sum of actions across all plans (for the surface header count). */
 	totalActions: number,
 };
@@ -5202,7 +5292,14 @@ export type InboxOpenPlansResponse = {
  * 
  *  `action` is `"move"` | `"catalogue"` | `"archive"` | `"trash"`.
  */
-export type InboxPlanAction = {
+export type InboxPlanAction = InboxPlanAction_Serialize | InboxPlanAction_Deserialize;
+
+/**
+ *  One plan action entry in the in-context plan panel.
+ * 
+ *  `action` is `"move"` | `"catalogue"` | `"archive"` | `"trash"`.
+ */
+export type InboxPlanAction_Deserialize = {
 	/**  1-based ordinal within the plan. */
 	index: number,
 	/**  `"move"` | `"catalogue"` | `"archive"` | `"trash"` */
@@ -5216,6 +5313,39 @@ export type InboxPlanAction = {
 	destinationPreview: string,
 	/**  True when this action requires explicit destructive confirmation before apply. */
 	requiresDestructiveConfirm: boolean,
+	/**
+	 *  Frame type of the file being acted on (e.g. `"light"`, `"dark"`, `"flat"`,
+	 *  `"bias"`, `"master_flat"`, etc.). `None` for legacy plans that pre-date this
+	 *  field or for catalogue / archive / trash actions without a classification.
+	 */
+	frameType: string | null,
+};
+
+/**
+ *  One plan action entry in the in-context plan panel.
+ * 
+ *  `action` is `"move"` | `"catalogue"` | `"archive"` | `"trash"`.
+ */
+export type InboxPlanAction_Serialize = {
+	/**  1-based ordinal within the plan. */
+	index: number,
+	/**  `"move"` | `"catalogue"` | `"archive"` | `"trash"` */
+	action: string,
+	fromPath: string,
+	toPath: string,
+	/**
+	 *  Human-readable resolved destination preview
+	 *  (equals `from_path` for catalogue actions).
+	 */
+	destinationPreview: string,
+	/**  True when this action requires explicit destructive confirmation before apply. */
+	requiresDestructiveConfirm: boolean,
+	/**
+	 *  Frame type of the file being acted on (e.g. `"light"`, `"dark"`, `"flat"`,
+	 *  `"bias"`, `"master_flat"`, etc.). `None` for legacy plans that pre-date this
+	 *  field or for catalogue / archive / trash actions without a classification.
+	 */
+	frameType?: string | null,
 };
 
 /**  Per-plan result from `inbox.plan.apply_all` (spec 041, FR-003a). */
@@ -5239,7 +5369,15 @@ export type InboxPlanCancelResponse = {
  *  Read via `inbox_plan_links` so the inbox surface can show plan detail
  *  without navigating to the Archive page (FR-004).
  */
-export type InboxPlanView = {
+export type InboxPlanView = InboxPlanView_Serialize | InboxPlanView_Deserialize;
+
+/**
+ *  Response from `inbox.plan` — plan(s) linked to an inbox item (spec 041).
+ * 
+ *  Read via `inbox_plan_links` so the inbox surface can show plan detail
+ *  without navigating to the Archive page (FR-004).
+ */
+export type InboxPlanView_Deserialize = {
 	planId: string,
 	state: string,
 	/**
@@ -5249,7 +5387,26 @@ export type InboxPlanView = {
 	 *  to re-classify and re-confirm.
 	 */
 	stale: boolean,
-	actions: InboxPlanAction[],
+	actions: InboxPlanAction_Deserialize[],
+};
+
+/**
+ *  Response from `inbox.plan` — plan(s) linked to an inbox item (spec 041).
+ * 
+ *  Read via `inbox_plan_links` so the inbox surface can show plan detail
+ *  without navigating to the Archive page (FR-004).
+ */
+export type InboxPlanView_Serialize = {
+	planId: string,
+	state: string,
+	/**
+	 *  True when the executor's CAS detected that one or more source files
+	 *  changed since the plan was created (FR-007 / T011).
+	 *  When `stale` is true the UI should disable Apply and prompt the user
+	 *  to re-classify and re-confirm.
+	 */
+	stale: boolean,
+	actions: InboxPlanAction_Serialize[],
 };
 
 /**  The sky pointing a recommendation set was computed from (decimal degrees). */
@@ -7120,7 +7277,7 @@ export type PathPatternPreviewResponse = {
  * 
  *  Re-exported from `crates/contracts/core` so the Tauri command layer can
  *  reference it without importing `crates/patterns` directly. The shape matches
- *  [`patterns::PatternPart`] exactly.
+ *  `patterns::PatternPart` exactly.
  */
 export type PatternPartDto = {
 	/**  Stable client-side identifier. */
@@ -7517,12 +7674,16 @@ export type PlanRetryResponse = {
 };
 
 /**
- *  Ten-state plan lifecycle (spec 017 data-model.md `PlanState`).
- *  `paused` is surfaced here so the list/detail contracts can filter on it (R-Pause-1).
+ *  Lifecycle state for a `FilesystemPlan`.
+ * 
+ *  10 variants per spec 002 data-model.md §FilesystemPlan (inc. `paused` R-Pause-1
+ *  and `discarded` spec 017 retry-chain terminal).
  */
 export type PlanState = "draft" | "ready_for_review" | "approved" | "applying" | 
-/**  Mid-apply suspension (R-Pause-1). Written only by spec 025's executor. */
-"paused" | "applied" | "partially_applied" | "failed" | "cancelled" | "discarded";
+/**  Mid-apply suspension on `volume.unavailable`, `disk.full`, or `item.stale` (R-Pause-1). */
+"paused" | "applied" | "partially_applied" | "failed" | "cancelled" | 
+/**  Soft-delete terminal — paired with spec 017 retry-chain semantics. */
+"discarded";
 
 /**  Plan summary row — returned by `plans.list`. */
 export type PlanSummary = PlanSummary_Serialize | PlanSummary_Deserialize;
@@ -7605,7 +7766,7 @@ export type PlanType = "split" | "restructure" | "cleanup" | "archive" | "source
 "source_view_generation";
 
 /**
- *  Coordinate-source quality for a derived [`Pointing`] (FR-012).
+ *  Coordinate-source quality for a derived pointing (FR-012).
  * 
  *  `Wcs` (plate-solved `CRVAL1/2`) is high confidence; `Mount` (`OBJCTRA`/
  *  `OBJCTDEC` or decimal `RA`/`DEC`) is medium; `None` means no reliable
@@ -8127,7 +8288,14 @@ export type ProjectSourceRemoveResult_Serialize = {
 	newLifecycle?: string | null,
 };
 
-export type ProjectState = "setup_incomplete" | "ready" | "prepared" | "processing" | "completed" | "archived" | "blocked";
+/**
+ *  Lifecycle state for a `Project`.
+ * 
+ *  7 variants from spec 002 §Project and research.md §2.1.
+ */
+export type ProjectState = "setup_incomplete" | "ready" | "prepared" | "processing" | "completed" | "archived" | 
+/**  Carries a `block_reason` on the entity row. */
+"blocked";
 
 /**  A project summary for list views (spec 008 read surface). */
 export type ProjectSummaryDto = ProjectSummaryDto_Serialize | ProjectSummaryDto_Deserialize;
@@ -8726,6 +8894,19 @@ export type RecoveryAction_Serialize = {
 	code: string,
 	label: string,
 	description?: string | null,
+};
+
+/**
+ *  Response for `recovery.status` — the unclean-shutdown recovery prompt input.
+ * 
+ *  `unclean_shutdown` is true when the clean-shutdown marker was absent at
+ *  boot (the previous process did not exit gracefully). `interrupted_plan_ids`
+ *  lists plans left mid-apply by the crash (still `applying`, or `paused` with
+ *  a `crash` reason) — the recovery prompt offers these for review/resume.
+ */
+export type RecoveryStatus = {
+	uncleanShutdown: boolean,
+	interruptedPlanIds: string[],
 };
 
 /**  Request payload for `roots.register.batch`. */
@@ -9697,9 +9878,9 @@ export type TargetGetRequest = {
  *  `constellation` and `magnitude` are optional because those columns were not
  *  in the original schema; they are populated from `canonical_target.constellation`
  *  and `canonical_target.magnitude` when present (migration 0046).
- *  `aliases` carries all alias display forms (designations, common names, and
- *  user-added) so client-side alias search (e.g. "Andromeda" → M31) works
- *  without a separate round-trip. Empty when no aliases are stored.
+ *  Alias search is now backend-side via the `search` parameter on `target.list`
+ *  (GF-11 / DS-16); `aliases` is no longer serialized to the IPC response to
+ *  avoid cloning all alias strings for every list call (13k× entries).
  */
 export type TargetListItem = TargetListItem_Serialize | TargetListItem_Deserialize;
 
@@ -9710,9 +9891,9 @@ export type TargetListItem = TargetListItem_Serialize | TargetListItem_Deseriali
  *  `constellation` and `magnitude` are optional because those columns were not
  *  in the original schema; they are populated from `canonical_target.constellation`
  *  and `canonical_target.magnitude` when present (migration 0046).
- *  `aliases` carries all alias display forms (designations, common names, and
- *  user-added) so client-side alias search (e.g. "Andromeda" → M31) works
- *  without a separate round-trip. Empty when no aliases are stored.
+ *  Alias search is now backend-side via the `search` parameter on `target.list`
+ *  (GF-11 / DS-16); `aliases` is no longer serialized to the IPC response to
+ *  avoid cloning all alias strings for every list call (13k× entries).
  */
 export type TargetListItem_Deserialize = {
 	id: string,
@@ -9731,12 +9912,6 @@ export type TargetListItem_Deserialize = {
 	/**  Visual magnitude; `null` when not stored or not applicable. */
 	magnitude: number | null,
 	/**
-	 *  All alias display forms for this target (designations, common names,
-	 *  user-added). Empty when none are stored. Additive field — older clients
-	 *  that ignore unknown keys are unaffected.
-	 */
-	aliases?: string[],
-	/**
 	 *  Count of `acquisition_session` rows linked to this target (#877, planner
 	 *  Sessions column). `0` when no session has resolved to this target yet —
 	 *  additive field, older clients ignoring unknown keys are unaffected.
@@ -9751,9 +9926,9 @@ export type TargetListItem_Deserialize = {
  *  `constellation` and `magnitude` are optional because those columns were not
  *  in the original schema; they are populated from `canonical_target.constellation`
  *  and `canonical_target.magnitude` when present (migration 0046).
- *  `aliases` carries all alias display forms (designations, common names, and
- *  user-added) so client-side alias search (e.g. "Andromeda" → M31) works
- *  without a separate round-trip. Empty when no aliases are stored.
+ *  Alias search is now backend-side via the `search` parameter on `target.list`
+ *  (GF-11 / DS-16); `aliases` is no longer serialized to the IPC response to
+ *  avoid cloning all alias strings for every list call (13k× entries).
  */
 export type TargetListItem_Serialize = {
 	id: string,
@@ -9771,12 +9946,6 @@ export type TargetListItem_Serialize = {
 	constellation?: string | null,
 	/**  Visual magnitude; `null` when not stored or not applicable. */
 	magnitude?: number | null,
-	/**
-	 *  All alias display forms for this target (designations, common names,
-	 *  user-added). Empty when none are stored. Additive field — older clients
-	 *  that ignore unknown keys are unaffected.
-	 */
-	aliases: string[],
 	/**
 	 *  Count of `acquisition_session` rows linked to this target (#877, planner
 	 *  Sessions column). `0` when no session has resolved to this target yet —

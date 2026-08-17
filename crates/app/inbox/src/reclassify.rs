@@ -149,18 +149,7 @@ pub async fn reclassify(
         .await
         .map_err(|e| db_internal_ctx(e, "list inbox evidence"))?;
 
-    let mut frame_types: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut remaining_unclassified = 0usize;
-
-    for ev in &updated_evidence {
-        let effective = ev.manual_override.as_deref().or(ev.frame_type.as_deref());
-
-        if let Some(ft) = effective {
-            frame_types.insert(ft.to_owned());
-        } else if ev.unclassified != 0 {
-            remaining_unclassified += 1;
-        }
-    }
+    let (frame_types, remaining_unclassified) = aggregate_frame_types(&updated_evidence);
 
     // DB values (migration 0049 CHECK): 'classified' / 'unclassified'.
     // API values (stable frontend vocabulary): 'single_type' / 'unclassified'.
@@ -264,35 +253,7 @@ pub async fn reclassify(
 
     // 7. Rebuild breakdown rows so the next classify cache hit returns fresh
     //    counts and samples (fixes stale/empty breakdown after override apply).
-    //    Group evidence by effective frame type, then upsert one row per type.
-    //    destination_preview is left None — computed on the next force-classify.
-    {
-        let mut groups: HashMap<String, Vec<String>> = HashMap::new();
-        for ev in &updated_evidence {
-            let effective = ev.manual_override.as_deref().or(ev.frame_type.as_deref());
-            if let Some(ft) = effective {
-                groups.entry(ft.to_owned()).or_default().push(ev.relative_file_path.clone());
-            }
-        }
-
-        for (kind, paths) in &groups {
-            let count = i64::try_from(paths.len()).unwrap_or(i64::MAX);
-            let samples: Vec<&str> = paths.iter().take(10).map(String::as_str).collect();
-            let sample_json = serde_json::to_string(&samples).unwrap_or_else(|_| "[]".to_owned());
-            let row_id = Uuid::new_v4().to_string();
-            inbox_repo::upsert_breakdown_row(
-                pool,
-                &row_id,
-                &req.inbox_item_id,
-                kind,
-                count,
-                None,
-                &sample_json,
-            )
-            .await
-            .map_err(|e| db_internal_ctx(e, "upsert inbox breakdown row"))?;
-        }
-    }
+    rebuild_breakdown_rows(pool, &req.inbox_item_id, &updated_evidence).await?;
 
     Ok(ReclassifyResponse {
         inbox_item_id: req.inbox_item_id,
@@ -301,6 +262,63 @@ pub async fn reclassify(
         remaining_unclassified,
         applied_count,
     })
+}
+
+// ── reclassify helpers ────────────────────────────────────────────────────────
+
+/// Aggregate effective frame types and unclassified count from evidence rows.
+///
+/// Returns `(frame_types, remaining_unclassified)`.
+fn aggregate_frame_types(
+    evidence: &[persistence_inbox::repositories::inbox::InboxEvidenceRow],
+) -> (std::collections::HashSet<String>, usize) {
+    let mut frame_types: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut remaining_unclassified = 0usize;
+    for ev in evidence {
+        let effective = ev.manual_override.as_deref().or(ev.frame_type.as_deref());
+        if let Some(ft) = effective {
+            frame_types.insert(ft.to_owned());
+        } else if ev.unclassified != 0 {
+            remaining_unclassified += 1;
+        }
+    }
+    (frame_types, remaining_unclassified)
+}
+
+/// Rebuild `inbox_classification_breakdown` rows from effective frame types in
+/// evidence. Groups evidence by effective frame type and upserts one row per
+/// type; destination_preview is left `None` (computed on the next
+/// force-classify).
+async fn rebuild_breakdown_rows(
+    pool: &SqlitePool,
+    inbox_item_id: &str,
+    evidence: &[persistence_inbox::repositories::inbox::InboxEvidenceRow],
+) -> Result<(), ContractError> {
+    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    for ev in evidence {
+        let effective = ev.manual_override.as_deref().or(ev.frame_type.as_deref());
+        if let Some(ft) = effective {
+            groups.entry(ft.to_owned()).or_default().push(ev.relative_file_path.clone());
+        }
+    }
+    for (kind, paths) in &groups {
+        let count = i64::try_from(paths.len()).unwrap_or(i64::MAX);
+        let samples: Vec<&str> = paths.iter().take(10).map(String::as_str).collect();
+        let sample_json = serde_json::to_string(&samples).unwrap_or_else(|_| "[]".to_owned());
+        let row_id = Uuid::new_v4().to_string();
+        inbox_repo::upsert_breakdown_row(
+            pool,
+            &row_id,
+            inbox_item_id,
+            kind,
+            count,
+            None,
+            &sample_json,
+        )
+        .await
+        .map_err(|e| db_internal_ctx(e, "upsert inbox breakdown row"))?;
+    }
+    Ok(())
 }
 
 // ── reclassify_v2 (T068 — field-agnostic + bulk + re-split) ──────────────────
@@ -338,63 +356,14 @@ pub async fn reclassify_v2(
     pool: &SqlitePool,
     req: contracts_core::inbox::InboxReclassifyV2Request,
 ) -> Result<contracts_core::inbox::InboxReclassifyV2Response, ContractError> {
-    use contracts_core::inbox::{InboxReclassifyV2Response, InboxSubItemSummary};
-
     // ── 1. Resolve source group ───────────────────────────────────────────────
 
-    let source_group_id = match (req.source_group_id, req.inbox_item_id) {
-        (Some(sg), _) => {
-            // Verify the source group exists.
-            let exists = q_inbox::get_source_group_by_id(pool, &sg)
-                .await
-                .map_err(|e| db_internal_ctx(e, "look up source group"))?;
-            if exists.is_none() {
-                return Err(ContractError::new(
-                    ErrorCode::InboxItemNotFound,
-                    format!("Source group not found: {sg}"),
-                    ErrorSeverity::Blocking,
-                    false,
-                ));
-            }
-            sg
-        }
-        (None, Some(item_id)) => inbox_repo::get_source_group_id_for_item(pool, &item_id)
-            .await
-            .map_err(|e| db_internal_ctx(e, "look up source_group_id for item"))?
-            .ok_or_else(|| {
-                ContractError::new(
-                    ErrorCode::InboxItemNotFound,
-                    format!("InboxItem not found or has no source group: {item_id}"),
-                    ErrorSeverity::Blocking,
-                    false,
-                )
-            })?,
-        (None, None) => {
-            return Err(ContractError::new(
-                ErrorCode::InboxItemNotFound,
-                "Either sourceGroupId or inboxItemId must be provided",
-                ErrorSeverity::Blocking,
-                false,
-            ));
-        }
-    };
+    let source_group_id =
+        resolve_source_group_id(pool, req.source_group_id, req.inbox_item_id).await?;
 
     // ── 2. Block if any sub-item in the group has an open plan ────────────────
 
-    let sub_item_ids = inbox_repo::list_item_ids_for_source_group(pool, &source_group_id)
-        .await
-        .map_err(|e| db_internal_ctx(e, "list sub-items for source group"))?;
-
-    for item_id in &sub_item_ids {
-        if inbox_repo::get_plan_link(pool, item_id).await.unwrap_or(None).is_some() {
-            return Err(ContractError::new(
-                ErrorCode::InboxHasOpenPlan,
-                "Reclassification is not permitted while a plan is open for any sub-item in this group.",
-                ErrorSeverity::Blocking,
-                false,
-            ));
-        }
-    }
+    let sub_item_ids = guard_no_open_plans(pool, &source_group_id).await?;
 
     // Evidence now lives on whichever items are CURRENTLY authoritative for
     // this group's files. Once classify has split the group, each
@@ -415,109 +384,19 @@ pub async fn reclassify_v2(
         materialized_sub_items.into_iter().map(|row| row.id).collect()
     };
 
-    // ── 3. Build the property registry lookup map ─────────────────────────────
+    // ── 3. Validate all property keys against the registry ───────────────────
 
-    let registry = super::property_registry::property_registry();
-    // key → overridable
-    let registry_map: HashMap<&str, bool> =
-        registry.iter().map(|e| (e.key.as_str(), e.overridable)).collect();
-
-    // Helper: validate a single property key.
-    let validate_key = |key: &str| -> Result<(), ContractError> {
-        match registry_map.get(key) {
-            None => Err(ContractError::new(
-                ErrorCode::ValidationRequestEnvelopeInvalid,
-                format!("Unknown property key: '{key}' — not in property registry"),
-                ErrorSeverity::Blocking,
-                false,
-            )),
-            Some(false) => Err(ContractError::new(
-                ErrorCode::ValidationRequestEnvelopeInvalid,
-                format!(
-                    "Property '{key}' is informational/derived and cannot be overridden (overridable=false)"
-                ),
-                ErrorSeverity::Blocking,
-                false,
-            )),
-            Some(true) => Ok(()),
-        }
-    };
-
-    // Validate all keys upfront so we reject the whole request before writing.
-    for file_override in &req.overrides {
-        for key in file_override.properties.keys() {
-            validate_key(key)?;
-        }
-    }
-    for bulk in &req.bulk {
-        validate_key(&bulk.property)?;
-    }
+    validate_registry_keys(&req.overrides, &req.bulk)?;
 
     // ── 4. Gather all evidence paths for the group ────────────────────────────
-    //
-    // Evidence rows are keyed by inbox_item_id, so we need to iterate over the
-    // group's CURRENT authoritative items (`evidence_item_ids`, see above) to
-    // get their file paths without double-counting a superseded placeholder.
 
-    // Build a flat map: relative_file_path → inbox_item_id
-    let mut path_to_item: HashMap<String, String> = HashMap::new();
-    // File identity (size/mtime) most recently recorded by classify's own
-    // `stat` (spec 041 FR-046) — reclassify has no root path to stat files
-    // itself, but `inbox_file_metadata` already carries the identity from the
-    // classify run that produced this evidence. Threading it through here is
-    // what lets `set_file_override` (step 7) persist a real identity instead
-    // of `None, None`, which is required for staleness detection to have
-    // anything to compare against at the next classify.
-    let mut file_identity: HashMap<String, (Option<i64>, Option<String>)> = HashMap::new();
-    for item_id in &evidence_item_ids {
-        let evidence = inbox_repo::list_evidence(pool, item_id)
-            .await
-            .map_err(|e| db_internal_ctx(e, "list evidence for sub-item"))?;
-        for ev in evidence {
-            path_to_item.insert(ev.relative_file_path, item_id.clone());
-        }
-
-        let metadata_rows = inbox_repo::list_inbox_file_metadata(pool, item_id)
-            .await
-            .map_err(|e| db_internal_ctx(e, "list file metadata for sub-item"))?;
-        for m in metadata_rows {
-            file_identity.insert(m.relative_file_path, (m.file_size_bytes, m.file_mtime));
-        }
-    }
+    let (path_to_item, file_identity) = gather_evidence_paths(pool, &evidence_item_ids).await?;
     let all_paths: std::collections::HashSet<&str> =
         path_to_item.keys().map(String::as_str).collect();
 
     // ── 5. Validate that all requested file paths exist in the group ──────────
 
-    for file_override in &req.overrides {
-        if !all_paths.contains(file_override.file_path.as_str()) {
-            return Err(ContractError::new(
-                ErrorCode::FileNotFound,
-                format!(
-                    "File path '{}' not found in evidence for source group '{source_group_id}'",
-                    file_override.file_path
-                ),
-                ErrorSeverity::Blocking,
-                false,
-            ));
-        }
-    }
-    for bulk in &req.bulk {
-        if let Some(paths) = &bulk.file_paths {
-            for p in paths {
-                if !all_paths.contains(p.as_str()) {
-                    return Err(ContractError::new(
-                        ErrorCode::FileNotFound,
-                        format!(
-                            "Bulk file path '{p}' not found in evidence for source group '{source_group_id}'"
-                        ),
-                        ErrorSeverity::Blocking,
-                        false,
-                    ));
-                }
-            }
-        }
-    }
+    validate_v2_file_paths(&source_group_id, &all_paths, &req.overrides, &req.bulk)?;
 
     // ── 6. Expand bulk entries into per-file overrides ────────────────────────
     //
@@ -525,31 +404,7 @@ pub async fn reclassify_v2(
     // overwrite earlier ones for the same (file, key) pair. We collect into a
     // Vec<(file_path, property_key, json_value)> and process in order.
 
-    let mut effective_overrides: Vec<(String, String, serde_json::Value)> = Vec::new();
-
-    // Per-file overrides first. `properties`/`value` are `JsonAny` on the wire
-    // (T072 — specta cannot inline raw `serde_json::Value`); unwrap to the
-    // plain `serde_json::Value` the rest of this pipeline operates on.
-    for file_override in &req.overrides {
-        for (key, val) in &file_override.properties {
-            effective_overrides.push((
-                file_override.file_path.clone(),
-                key.clone(),
-                val.clone().into(),
-            ));
-        }
-    }
-
-    // Bulk entries second (may overwrite per-file values for the same key).
-    for bulk in &req.bulk {
-        let target_paths: Vec<String> = match &bulk.file_paths {
-            None => path_to_item.keys().cloned().collect(),
-            Some(fps) => fps.clone(),
-        };
-        for p in target_paths {
-            effective_overrides.push((p, bulk.property.clone(), bulk.value.clone().into()));
-        }
-    }
+    let effective_overrides = expand_effective_overrides(&req.overrides, &req.bulk, &path_to_item);
 
     // ── 7. Persist overrides ──────────────────────────────────────────────────
     //
@@ -563,77 +418,8 @@ pub async fn reclassify_v2(
     // MISSING/unreadable properties — values present in the header are read-only"
     // (R-13 editing semantics). Index-only — never writes to user files.
 
-    for (file_path, property_key, json_val) in &effective_overrides {
-        let inbox_item_id = path_to_item.get(file_path.as_str()).ok_or_else(|| {
-            ContractError::new(
-                ErrorCode::FileNotFound,
-                format!("File path '{file_path}' not found in group during write phase"),
-                ErrorSeverity::Blocking,
-                false,
-            )
-        })?;
-
-        // Identity recorded at the last classify for this file, if any (spec
-        // 041 FR-046) — `None` for files never classified yet, which leaves
-        // the override with no comparison baseline until the next classify.
-        let (id_size, id_mtime) =
-            file_identity.get(file_path.as_str()).cloned().unwrap_or((None, None));
-
-        if property_key == "frameType" {
-            // Frame-type correction: write manual_override on the evidence row.
-            let frame_type_str = match json_val {
-                serde_json::Value::String(s) if !s.is_empty() => s.as_str(),
-                _ => {
-                    // Non-string or empty — skip (treat as "no change").
-                    continue;
-                }
-            };
-            q_inbox::set_manual_override_reset_stale(
-                pool,
-                inbox_item_id,
-                file_path,
-                frame_type_str,
-            )
-            .await
-            .map_err(|e| db_internal_ctx(e, "write frameType manual_override"))?;
-            // ALSO persist to the group-keyed overrides table: the evidence
-            // row above is wiped and re-inserted by every classify run, and a
-            // classify racing this write loses the manual_override entirely
-            // (observed as the #854 CI red — the group-keyed exposureS
-            // survived while frameType vanished). The group-keyed row
-            // survives every evidence rebuild; classify/materialize layer it
-            // back on (priority: manual_override → frameType override →
-            // extracted header).
-            inbox_repo::set_file_override(
-                pool,
-                &source_group_id,
-                file_path,
-                "frameType",
-                frame_type_str,
-                id_size,
-                id_mtime.as_deref(),
-            )
-            .await
-            .map_err(|e| db_internal_ctx(e, "write durable frameType override"))?;
-        } else {
-            // Generic property: write to inbox_file_overrides (index-only).
-            let value_str = match json_val {
-                serde_json::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            };
-            inbox_repo::set_file_override(
-                pool,
-                &source_group_id,
-                file_path,
-                property_key,
-                &value_str,
-                id_size,
-                id_mtime.as_deref(),
-            )
-            .await
-            .map_err(|e| db_internal_ctx(e, "write generic file override"))?;
-        }
-    }
+    persist_overrides(pool, &source_group_id, &effective_overrides, &path_to_item, &file_identity)
+        .await?;
 
     // ── 8. Re-run classification + grouping via materialize_sub_items ─────────
     //
@@ -646,33 +432,8 @@ pub async fn reclassify_v2(
     // file_records Vec that materialize_sub_items expects.
 
     // Fetch source group row for root_id / relative_path / lane.
-    let sg_row = q_inbox::get_source_group_by_id(pool, &source_group_id)
-        .await
-        .map_err(|e| db_internal_ctx(e, "fetch source group for re-split"))?;
-
-    let sg_row = sg_row.ok_or_else(|| {
-        ContractError::new(
-            ErrorCode::InboxItemNotFound,
-            format!("Source group row missing during re-split: {source_group_id}"),
-            ErrorSeverity::Blocking,
-            false,
-        )
-    })?;
-    let (root_id, relative_path) = (sg_row.root_id, sg_row.relative_path);
-    // `inbox_source_groups.lane` is the move-vs-catalogue lane
-    // ('move'/'catalogue', set from the root's organization_state at scan
-    // time), NOT the fits/video lane that `inbox_items` requires
-    // (CHECK(lane IN ('fits','video'))). Deriving the item lane from the
-    // group's format mirrors scan's own assignment (video-only folders →
-    // 'video', everything else → 'fits'). Passing `sg_row.lane` here made
-    // every re-split of an unorganized ('move') group fail the CHECK inside
-    // `upsert_inbox_sub_item`, silently dropping the resolved sub-item so
-    // Confirm never re-enabled after a bulk reclassify (issue #854).
-    let lane = match sg_row.format.as_deref() {
-        Some("video") => "video",
-        _ => "fits",
-    }
-    .to_owned();
+    let (root_id, relative_path, lane) =
+        fetch_source_group_for_resplit(pool, &source_group_id).await?;
 
     // Build file_records from persisted metadata (inbox_file_metadata), then
     // reconstruct the matching absolute paths from the request's root so
@@ -713,144 +474,11 @@ pub async fn reclassify_v2(
     let mut file_records: Vec<(
         String,
         Option<metadata_core::FrameType>,
-        Option<metadata_core::RawFileMetadata>,
+        Option<std::sync::Arc<metadata_core::RawFileMetadata>>,
     )> = Vec::new();
 
     for item_id in &evidence_item_ids {
-        let evidence = inbox_repo::list_evidence(pool, item_id)
-            .await
-            .map_err(|e| db_internal_ctx(e, "list evidence for re-split"))?;
-
-        let metadata_rows = inbox_repo::list_inbox_file_metadata(pool, item_id)
-            .await
-            .map_err(|e| db_internal_ctx(e, "list metadata for re-split"))?;
-
-        // Build a map from relative_file_path → metadata row.
-        let meta_map: HashMap<&str, &persistence_inbox::repositories::inbox::InboxFileMetadataRow> =
-            metadata_rows.iter().map(|m| (m.relative_file_path.as_str(), m)).collect();
-
-        for ev in &evidence {
-            let fp = ev.relative_file_path.as_str();
-
-            // Effective frame type:
-            //   priority 1 — manual_override on the evidence row (set by set_overrides)
-            //   priority 2 — generic override table (property_key = 'frameType')
-            //   priority 3 — frame_type extracted from the file header
-            let eff_ft_str = ev
-                .manual_override
-                .as_deref()
-                .or_else(|| overrides_index.get(&(fp, "frameType")).copied())
-                .or(ev.frame_type.as_deref());
-            let eff_ft = eff_ft_str.and_then(metadata_core::FrameType::from_str_ci);
-
-            // Build RawFileMetadata for EVERY file, even those with no
-            // inbox_file_metadata row. Start from the metadata row when present
-            // (gives us header-extracted values), otherwise start from Default.
-            // Then layer ALL persisted overrides on top so that mandatory
-            // attributes (exposureS, gain, filter, …) that were set via
-            // reclassify_v2 reach the grouping engine and T070 mandatory gate.
-            //
-            // Precedence per field:
-            //   generic override table > evidence-JOIN override columns > metadata row
-            //
-            // The evidence-JOIN columns (override_filter, override_exposure_s,
-            // override_binning) are sourced from inbox_file_overrides via a
-            // LEFT JOIN in list_evidence — they are consistent with the overrides
-            // index for those three keys, so using either path is equivalent.
-            // We use the overrides_index uniformly for all keys to keep the
-            // logic simple.
-
-            // Base values from the metadata row (may be None if row absent).
-            let base_filter: Option<String> = meta_map.get(fp).and_then(|m| m.filter.clone());
-            let base_exposure: Option<String> =
-                meta_map.get(fp).and_then(|m| m.exposure_s.map(|v| v.to_string()));
-            let base_gain: Option<String> = meta_map.get(fp).and_then(|m| m.gain.clone());
-            let base_binning_x: Option<i64> = meta_map.get(fp).and_then(|m| m.binning_x);
-            let base_binning_y: Option<i64> = meta_map.get(fp).and_then(|m| m.binning_y);
-            let base_object: Option<String> = meta_map.get(fp).and_then(|m| m.object.clone());
-            let base_date_obs: Option<String> = meta_map.get(fp).and_then(|m| m.date_obs.clone());
-            let base_instrume: Option<String> = meta_map.get(fp).and_then(|m| m.instrume.clone());
-            let base_telescop: Option<String> = meta_map.get(fp).and_then(|m| m.telescop.clone());
-            let base_naxis1: Option<String> =
-                meta_map.get(fp).and_then(|m| m.naxis1.map(|v| v.to_string()));
-            let base_naxis2: Option<String> =
-                meta_map.get(fp).and_then(|m| m.naxis2.map(|v| v.to_string()));
-            let base_stack_count: Option<u32> =
-                meta_map.get(fp).and_then(|m| m.stack_count.and_then(|v| u32::try_from(v).ok()));
-            // SET-TEMP is the only temperature persisted to inbox_file_metadata
-            // (R-18 default dark-grouping source); CCD-TEMP has no base column.
-            let base_set_temp_c: Option<f64> = meta_map.get(fp).and_then(|m| m.temperature_c);
-
-            // Apply overrides on top: generic override table wins.
-            // image_typ: manual_override > 'frameType' override > header frame_type.
-            let effective_image_typ = ev
-                .manual_override
-                .clone()
-                .or_else(|| overrides_index.get(&(fp, "frameType")).copied().map(str::to_owned))
-                .or_else(|| ev.frame_type.clone());
-            // filter: 'filter' override > metadata row
-            let effective_filter =
-                overrides_index.get(&(fp, "filter")).copied().map(str::to_owned).or(base_filter);
-            // exposure: 'exposureS' override (bare f64 string) > metadata row
-            let effective_exposure = overrides_index
-                .get(&(fp, "exposureS"))
-                .copied()
-                .map(str::to_owned)
-                .or(base_exposure);
-            // gain: 'gain' override > metadata row
-            let effective_gain =
-                overrides_index.get(&(fp, "gain")).copied().map(str::to_owned).or(base_gain);
-            // binning: 'binning' override (e.g. "2x2") > metadata row
-            let effective_binning_x = overrides_index
-                .get(&(fp, "binning"))
-                .copied()
-                .and_then(parse_binning_x)
-                .or(base_binning_x);
-            let effective_binning_y = overrides_index
-                .get(&(fp, "binning"))
-                .copied()
-                .and_then(parse_binning_y)
-                .or(base_binning_y);
-            // object (target): 'target' override > metadata row
-            let effective_object =
-                overrides_index.get(&(fp, "target")).copied().map(str::to_owned).or(base_object);
-            // offset (T081/R-13): 'offset' override; no base column exists yet
-            // (inbox_file_metadata does not persist OFFSET), so an override is
-            // the only way this reaches the grouping engine via reclassify.
-            let effective_offset: Option<i64> =
-                overrides_index.get(&(fp, "offset")).and_then(|v| v.trim().parse::<i64>().ok());
-            // temperatureC (T081/R-13/R-18): 'temperatureC' override > metadata
-            // row (SET-TEMP). Governs the dark-grouping temperature dimension
-            // (grouping::TempSource::SetTemp is the default source).
-            let effective_set_temp_c: Option<f64> = overrides_index
-                .get(&(fp, "temperatureC"))
-                .and_then(|v| v.trim().parse::<f64>().ok())
-                .or(base_set_temp_c);
-
-            let raw_meta = metadata_core::RawFileMetadata {
-                image_typ: effective_image_typ,
-                filter: effective_filter,
-                exposure: effective_exposure,
-                gain: effective_gain,
-                x_binning: effective_binning_x.map(|v| v.to_string()),
-                y_binning: effective_binning_y.map(|v| v.to_string()),
-                object: effective_object,
-                date_obs: base_date_obs,
-                instrume: base_instrume,
-                telescop: base_telescop,
-                naxis1: base_naxis1,
-                naxis2: base_naxis2,
-                stack_count: base_stack_count,
-                offset: effective_offset,
-                set_temp_c: effective_set_temp_c,
-                ..Default::default()
-            };
-
-            // Always pass Some(raw_meta) — even when the metadata row is absent
-            // the struct carries the user's overrides and the mandatory-attr gate
-            // can evaluate them correctly.
-            file_records.push((ev.relative_file_path.clone(), eff_ft, Some(raw_meta)));
-        }
+        collect_file_records_for_item(pool, item_id, &overrides_index, &mut file_records).await?;
     }
 
     // Absolute paths positionally aligned with `file_records`, so each group's
@@ -880,16 +508,126 @@ pub async fn reclassify_v2(
         .await
         .map_err(|e| db_internal_ctx(e, "list re-materialized sub-items"))?;
 
-    // Union of the mandatory attributes still absent across the files the
-    // re-split just routed to the sentinel bucket (#1114). Recomputed from the
-    // same `file_records` `materialize_sub_items` partitioned on, so the
-    // response names what is actually missing: a file whose frame type the user
-    // has now supplied but whose EXPTIME is still absent reports
-    // `["exposureS"]`, not the frame type it no longer lacks. BTreeSet for a
-    // deduplicated, deterministically ordered list.
+    let response = build_v2_response(source_group_id, &sub_item_rows, &file_records);
+    Ok(response)
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Validate all property keys in `overrides` and `bulk` against the registry
+/// (spec 041 T068, section 3). Rejects unknown or non-overridable keys.
+fn validate_registry_keys(
+    overrides: &[contracts_core::inbox::InboxReclassifyFileOverride],
+    bulk: &[contracts_core::inbox::InboxReclassifyBulk],
+) -> Result<(), ContractError> {
+    let registry = super::property_registry::property_registry();
+    let registry_map: HashMap<&str, bool> =
+        registry.iter().map(|e| (e.key.as_str(), e.overridable)).collect();
+
+    let validate_key = |key: &str| -> Result<(), ContractError> {
+        match registry_map.get(key) {
+            None => Err(ContractError::new(
+                ErrorCode::ValidationRequestEnvelopeInvalid,
+                format!("Unknown property key: '{key}' — not in property registry"),
+                ErrorSeverity::Blocking,
+                false,
+            )),
+            Some(false) => Err(ContractError::new(
+                ErrorCode::ValidationRequestEnvelopeInvalid,
+                format!(
+                    "Property '{key}' is informational/derived and cannot be overridden \
+                     (overridable=false)"
+                ),
+                ErrorSeverity::Blocking,
+                false,
+            )),
+            Some(true) => Ok(()),
+        }
+    };
+
+    for file_override in overrides {
+        for key in file_override.properties.keys() {
+            validate_key(key)?;
+        }
+    }
+    for b in bulk {
+        validate_key(&b.property)?;
+    }
+    Ok(())
+}
+
+/// Build flat maps `(path → item_id, path → (size, mtime))` across all
+/// current authoritative items for the group (spec 041 T068, section 4).
+async fn gather_evidence_paths(
+    pool: &SqlitePool,
+    evidence_item_ids: &[String],
+) -> Result<(HashMap<String, String>, HashMap<String, (Option<i64>, Option<String>)>), ContractError>
+{
+    let mut path_to_item: HashMap<String, String> = HashMap::new();
+    let mut file_identity: HashMap<String, (Option<i64>, Option<String>)> = HashMap::new();
+    for item_id in evidence_item_ids {
+        let evidence = inbox_repo::list_evidence(pool, item_id)
+            .await
+            .map_err(|e| db_internal_ctx(e, "list evidence for sub-item"))?;
+        for ev in evidence {
+            path_to_item.insert(ev.relative_file_path, item_id.clone());
+        }
+        let metadata_rows = inbox_repo::list_inbox_file_metadata(pool, item_id)
+            .await
+            .map_err(|e| db_internal_ctx(e, "list file metadata for sub-item"))?;
+        for m in metadata_rows {
+            file_identity.insert(m.relative_file_path, (m.file_size_bytes, m.file_mtime));
+        }
+    }
+    Ok((path_to_item, file_identity))
+}
+
+/// Load the source group row and derive `(root_id, relative_path, item_lane)`
+/// for the re-split call (spec 041 T068, section 8).
+///
+/// `inbox_source_groups.lane` is the move-vs-catalogue lane, NOT the
+/// fits/video lane `inbox_items` requires. The item lane is derived from the
+/// group's format instead (issue #854).
+async fn fetch_source_group_for_resplit(
+    pool: &SqlitePool,
+    source_group_id: &str,
+) -> Result<(String, String, String), ContractError> {
+    let sg_row = q_inbox::get_source_group_by_id(pool, source_group_id)
+        .await
+        .map_err(|e| db_internal_ctx(e, "fetch source group for re-split"))?
+        .ok_or_else(|| {
+            ContractError::new(
+                ErrorCode::InboxItemNotFound,
+                format!("Source group row missing during re-split: {source_group_id}"),
+                ErrorSeverity::Blocking,
+                false,
+            )
+        })?;
+    let lane = match sg_row.format.as_deref() {
+        Some("video") => "video",
+        _ => "fits",
+    }
+    .to_owned();
+    Ok((sg_row.root_id, sg_row.relative_path, lane))
+}
+
+/// Assemble the `InboxReclassifyV2Response` from re-materialized sub-item rows
+/// and the file_records that drove the re-split (spec 041 T068, section 9).
+fn build_v2_response(
+    source_group_id: String,
+    sub_item_rows: &[persistence_inbox::repositories::inbox::InboxItemRow],
+    file_records: &[(
+        String,
+        Option<metadata_core::FrameType>,
+        Option<std::sync::Arc<metadata_core::RawFileMetadata>>,
+    )],
+) -> contracts_core::inbox::InboxReclassifyV2Response {
+    use contracts_core::inbox::{InboxReclassifyV2Response, InboxSubItemSummary};
+
+    // Union of mandatory attributes still absent across needs-review files (#1114).
     let needs_review_missing: Vec<String> = file_records
         .iter()
-        .flat_map(|(_, ft, raw)| super::classify::missing_mandatory_for_file(*ft, raw.as_ref()))
+        .flat_map(|(_, ft, raw)| super::classify::missing_mandatory_for_file(*ft, raw.as_deref()))
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -897,7 +635,7 @@ pub async fn reclassify_v2(
     let mut needs_review_count = 0u32;
     let mut sub_items: Vec<InboxSubItemSummary> = Vec::new();
 
-    for row in &sub_item_rows {
+    for row in sub_item_rows {
         let is_needs_review = row.needs_review != 0;
         if is_needs_review {
             needs_review_count = needs_review_count
@@ -909,17 +647,202 @@ pub async fn reclassify_v2(
             group_label: row.group_label.clone().unwrap_or_default(),
             frame_type: row.frame_type.clone(),
             file_count: u32::try_from(row.file_count).unwrap_or(u32::MAX),
-            // #1126: the real missing set, deduplicated and deterministically
-            // ordered, rather than a hardcoded `["frameType"]` that asked the
-            // user for the one thing they had just supplied.
+            // Real missing set (#1126), not a hardcoded `["frameType"]`.
             missing_mandatory: if is_needs_review { needs_review_missing.clone() } else { vec![] },
         });
     }
 
-    Ok(InboxReclassifyV2Response { source_group_id, sub_items, needs_review_count })
+    InboxReclassifyV2Response { source_group_id, sub_items, needs_review_count }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+/// Validate that every file path in `overrides` and `bulk.file_paths` is
+/// present in `all_paths` (spec 041 T068, section 5).
+fn validate_v2_file_paths(
+    source_group_id: &str,
+    all_paths: &std::collections::HashSet<&str>,
+    overrides: &[contracts_core::inbox::InboxReclassifyFileOverride],
+    bulk: &[contracts_core::inbox::InboxReclassifyBulk],
+) -> Result<(), ContractError> {
+    for file_override in overrides {
+        if !all_paths.contains(file_override.file_path.as_str()) {
+            return Err(ContractError::new(
+                ErrorCode::FileNotFound,
+                format!(
+                    "File path '{}' not found in evidence for source group '{source_group_id}'",
+                    file_override.file_path
+                ),
+                ErrorSeverity::Blocking,
+                false,
+            ));
+        }
+    }
+    for b in bulk {
+        if let Some(paths) = &b.file_paths {
+            for p in paths {
+                if !all_paths.contains(p.as_str()) {
+                    return Err(ContractError::new(
+                        ErrorCode::FileNotFound,
+                        format!(
+                            "Bulk file path '{p}' not found in evidence for source group \
+                             '{source_group_id}'"
+                        ),
+                        ErrorSeverity::Blocking,
+                        false,
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Expand per-file and bulk override entries into a flat
+/// `(file_path, property_key, json_value)` list (spec 041 T068, section 6).
+///
+/// Per-file entries come first; bulk entries follow and overwrite per-file
+/// values for the same `(file, key)` pair (last-write wins within one call).
+fn expand_effective_overrides(
+    overrides: &[contracts_core::inbox::InboxReclassifyFileOverride],
+    bulk: &[contracts_core::inbox::InboxReclassifyBulk],
+    path_to_item: &HashMap<String, String>,
+) -> Vec<(String, String, serde_json::Value)> {
+    let mut effective: Vec<(String, String, serde_json::Value)> = Vec::new();
+    // Per-file overrides first.
+    for file_override in overrides {
+        for (key, val) in &file_override.properties {
+            effective.push((file_override.file_path.clone(), key.clone(), val.clone().into()));
+        }
+    }
+    // Bulk entries second (may overwrite per-file values for the same key).
+    for b in bulk {
+        let target_paths: Vec<String> = match &b.file_paths {
+            None => path_to_item.keys().cloned().collect(),
+            Some(fps) => fps.clone(),
+        };
+        for p in target_paths {
+            effective.push((p, b.property.clone(), b.value.clone().into()));
+        }
+    }
+    effective
+}
+
+/// Collect `(rel_path, eff_frame_type, raw_meta)` file-record triples for one
+/// sub-item, appending them to `out` (spec 041 T068, step 8 build phase).
+///
+/// Layers persisted overrides on top of extracted metadata so the grouping
+/// engine and T070 mandatory gate see the user's override values.
+async fn collect_file_records_for_item(
+    pool: &SqlitePool,
+    item_id: &str,
+    overrides_index: &HashMap<(&str, &str), &str>,
+    out: &mut Vec<(
+        String,
+        Option<metadata_core::FrameType>,
+        Option<std::sync::Arc<metadata_core::RawFileMetadata>>,
+    )>,
+) -> Result<(), ContractError> {
+    let evidence = inbox_repo::list_evidence(pool, item_id)
+        .await
+        .map_err(|e| db_internal_ctx(e, "list evidence for re-split"))?;
+
+    let metadata_rows = inbox_repo::list_inbox_file_metadata(pool, item_id)
+        .await
+        .map_err(|e| db_internal_ctx(e, "list metadata for re-split"))?;
+
+    let meta_map: HashMap<&str, &persistence_inbox::repositories::inbox::InboxFileMetadataRow> =
+        metadata_rows.iter().map(|m| (m.relative_file_path.as_str(), m)).collect();
+
+    for ev in &evidence {
+        let fp = ev.relative_file_path.as_str();
+        // Effective frame type: manual_override > 'frameType' override > header.
+        let eff_ft_str = ev
+            .manual_override
+            .as_deref()
+            .or_else(|| overrides_index.get(&(fp, "frameType")).copied())
+            .or(ev.frame_type.as_deref());
+        let eff_ft = eff_ft_str.and_then(metadata_core::FrameType::from_str_ci);
+
+        let raw_meta = build_raw_file_metadata(ev, fp, overrides_index, meta_map.get(fp).copied());
+        out.push((ev.relative_file_path.clone(), eff_ft, Some(std::sync::Arc::new(raw_meta))));
+    }
+    Ok(())
+}
+
+/// Build a [`metadata_core::RawFileMetadata`] for one evidence row by layering
+/// persisted overrides on top of the extracted `inbox_file_metadata` values.
+///
+/// Precedence per field: generic override table > evidence-JOIN override
+/// columns > metadata row (header-extracted). All fields fall through to
+/// `Default` when no source supplies a value.
+#[allow(clippy::too_many_arguments)]
+fn build_raw_file_metadata(
+    ev: &persistence_inbox::repositories::inbox::InboxEvidenceRow,
+    fp: &str,
+    overrides_index: &HashMap<(&str, &str), &str>,
+    base_meta: Option<&persistence_inbox::repositories::inbox::InboxFileMetadataRow>,
+) -> metadata_core::RawFileMetadata {
+    let base_filter = base_meta.and_then(|m| m.filter.clone());
+    let base_exposure = base_meta.and_then(|m| m.exposure_s.map(|v| v.to_string()));
+    let base_gain = base_meta.and_then(|m| m.gain.clone());
+    let base_binning_x = base_meta.and_then(|m| m.binning_x);
+    let base_binning_y = base_meta.and_then(|m| m.binning_y);
+    let base_object = base_meta.and_then(|m| m.object.clone());
+    let base_date_obs = base_meta.and_then(|m| m.date_obs.clone());
+    let base_instrume = base_meta.and_then(|m| m.instrume.clone());
+    let base_telescop = base_meta.and_then(|m| m.telescop.clone());
+    let base_naxis1 = base_meta.and_then(|m| m.naxis1.map(|v| v.to_string()));
+    let base_naxis2 = base_meta.and_then(|m| m.naxis2.map(|v| v.to_string()));
+    let base_stack_count =
+        base_meta.and_then(|m| m.stack_count.and_then(|v| u32::try_from(v).ok()));
+    // SET-TEMP is the only temperature persisted to inbox_file_metadata (R-18).
+    let base_set_temp_c = base_meta.and_then(|m| m.temperature_c);
+
+    // image_typ: manual_override > 'frameType' override > header frame_type.
+    let effective_image_typ = ev
+        .manual_override
+        .clone()
+        .or_else(|| overrides_index.get(&(fp, "frameType")).copied().map(str::to_owned))
+        .or_else(|| ev.frame_type.clone());
+    let effective_filter =
+        overrides_index.get(&(fp, "filter")).copied().map(str::to_owned).or(base_filter);
+    let effective_exposure =
+        overrides_index.get(&(fp, "exposureS")).copied().map(str::to_owned).or(base_exposure);
+    let effective_gain =
+        overrides_index.get(&(fp, "gain")).copied().map(str::to_owned).or(base_gain);
+    let effective_binning_x =
+        overrides_index.get(&(fp, "binning")).copied().and_then(parse_binning_x).or(base_binning_x);
+    let effective_binning_y =
+        overrides_index.get(&(fp, "binning")).copied().and_then(parse_binning_y).or(base_binning_y);
+    let effective_object =
+        overrides_index.get(&(fp, "target")).copied().map(str::to_owned).or(base_object);
+    // offset: no base column in inbox_file_metadata; override is the only source.
+    let effective_offset =
+        overrides_index.get(&(fp, "offset")).and_then(|v| v.trim().parse::<i64>().ok());
+    // temperatureC: override > metadata SET-TEMP (R-18 dark-grouping source).
+    let effective_set_temp_c = overrides_index
+        .get(&(fp, "temperatureC"))
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .or(base_set_temp_c);
+
+    metadata_core::RawFileMetadata {
+        image_typ: effective_image_typ,
+        filter: effective_filter,
+        exposure: effective_exposure,
+        gain: effective_gain,
+        x_binning: effective_binning_x.map(|v| v.to_string()),
+        y_binning: effective_binning_y.map(|v| v.to_string()),
+        object: effective_object,
+        date_obs: base_date_obs,
+        instrume: base_instrume,
+        telescop: base_telescop,
+        naxis1: base_naxis1,
+        naxis2: base_naxis2,
+        stack_count: base_stack_count,
+        offset: effective_offset,
+        set_temp_c: effective_set_temp_c,
+        ..Default::default()
+    }
+}
 
 /// `true` when every evidence row's effective filter/exposure/gain/object
 /// (override, else the extracted `inbox_file_metadata` value) satisfies the
@@ -980,6 +903,143 @@ fn parse_binning_y(s: &str) -> Option<i64> {
     s.split('x').nth(1).and_then(|p| p.trim().parse::<i64>().ok())
 }
 
+/// Resolve a `source_group_id` from either the direct field or an
+/// `inbox_item_id` (spec 041 T068 / R-13, section 1).
+async fn resolve_source_group_id(
+    pool: &SqlitePool,
+    source_group_id: Option<String>,
+    inbox_item_id: Option<String>,
+) -> Result<String, ContractError> {
+    match (source_group_id, inbox_item_id) {
+        (Some(sg), _) => {
+            let exists = q_inbox::get_source_group_by_id(pool, &sg)
+                .await
+                .map_err(|e| db_internal_ctx(e, "look up source group"))?;
+            if exists.is_none() {
+                return Err(ContractError::new(
+                    ErrorCode::InboxItemNotFound,
+                    format!("Source group not found: {sg}"),
+                    ErrorSeverity::Blocking,
+                    false,
+                ));
+            }
+            Ok(sg)
+        }
+        (None, Some(item_id)) => inbox_repo::get_source_group_id_for_item(pool, &item_id)
+            .await
+            .map_err(|e| db_internal_ctx(e, "look up source_group_id for item"))?
+            .ok_or_else(|| {
+                ContractError::new(
+                    ErrorCode::InboxItemNotFound,
+                    format!("InboxItem not found or has no source group: {item_id}"),
+                    ErrorSeverity::Blocking,
+                    false,
+                )
+            }),
+        (None, None) => Err(ContractError::new(
+            ErrorCode::InboxItemNotFound,
+            "Either sourceGroupId or inboxItemId must be provided",
+            ErrorSeverity::Blocking,
+            false,
+        )),
+    }
+}
+
+/// List sub-item ids for a source group and return `InboxHasOpenPlan` if any
+/// has an open plan (spec 041 T068 / R-13, section 2).
+async fn guard_no_open_plans(
+    pool: &SqlitePool,
+    source_group_id: &str,
+) -> Result<Vec<String>, ContractError> {
+    let sub_item_ids = inbox_repo::list_item_ids_for_source_group(pool, source_group_id)
+        .await
+        .map_err(|e| db_internal_ctx(e, "list sub-items for source group"))?;
+
+    for item_id in &sub_item_ids {
+        if inbox_repo::get_plan_link(pool, item_id).await.unwrap_or(None).is_some() {
+            return Err(ContractError::new(
+                ErrorCode::InboxHasOpenPlan,
+                "Reclassification is not permitted while a plan is open for any sub-item in this group.",
+                ErrorSeverity::Blocking,
+                false,
+            ));
+        }
+    }
+    Ok(sub_item_ids)
+}
+
+/// Persist a flat list of `(file_path, property_key, json_value)` overrides
+/// for a source group (spec 041 T068, section 7).
+///
+/// `frameType` writes through the evidence row (`set_manual_override_reset_stale`)
+/// AND the durable group-keyed table (`set_file_override`) so it survives
+/// evidence rebuilds (#854).  All other keys write only to `inbox_file_overrides`
+/// (index-only, fill-missing semantics, R-13).
+async fn persist_overrides(
+    pool: &SqlitePool,
+    source_group_id: &str,
+    effective_overrides: &[(String, String, serde_json::Value)],
+    path_to_item: &HashMap<String, String>,
+    file_identity: &HashMap<String, (Option<i64>, Option<String>)>,
+) -> Result<(), ContractError> {
+    for (file_path, property_key, json_val) in effective_overrides {
+        let inbox_item_id = path_to_item.get(file_path.as_str()).ok_or_else(|| {
+            ContractError::new(
+                ErrorCode::FileNotFound,
+                format!("File path '{file_path}' not found in group during write phase"),
+                ErrorSeverity::Blocking,
+                false,
+            )
+        })?;
+
+        let (id_size, id_mtime) =
+            file_identity.get(file_path.as_str()).cloned().unwrap_or((None, None));
+
+        if property_key == "frameType" {
+            let frame_type_str = match json_val {
+                serde_json::Value::String(s) if !s.is_empty() => s.as_str(),
+                _ => continue,
+            };
+            q_inbox::set_manual_override_reset_stale(
+                pool,
+                inbox_item_id,
+                file_path,
+                frame_type_str,
+            )
+            .await
+            .map_err(|e| db_internal_ctx(e, "write frameType manual_override"))?;
+            inbox_repo::set_file_override(
+                pool,
+                source_group_id,
+                file_path,
+                "frameType",
+                frame_type_str,
+                id_size,
+                id_mtime.as_deref(),
+            )
+            .await
+            .map_err(|e| db_internal_ctx(e, "write durable frameType override"))?;
+        } else {
+            let value_str = match json_val {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            inbox_repo::set_file_override(
+                pool,
+                source_group_id,
+                file_path,
+                property_key,
+                &value_str,
+                id_size,
+                id_mtime.as_deref(),
+            )
+            .await
+            .map_err(|e| db_internal_ctx(e, "write generic file override"))?;
+        }
+    }
+    Ok(())
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -990,10 +1050,8 @@ mod tests {
         InsertEvidence, InsertInboxItem, UpsertClassification,
     };
 
-    async fn test_db() -> Database {
-        let db = Database::in_memory().await.unwrap();
-        db.migrate().await.unwrap();
-        db
+    async fn test_db() -> persistence_core::Database {
+        persistence_core::test_support::setup_db().await
     }
 
     /// Attach `item_id` to a real source group and flag it needs-review.

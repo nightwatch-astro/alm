@@ -22,10 +22,10 @@ pub struct InboxPlanLinkRow {
 
 /// Insert a plan link, establishing the "open plan" invariant.
 ///
-/// Fails with [`DbError::Database`] if a link already exists (PK conflict).
+/// Fails with `persistence_core::DbError::Database` if a link already exists (PK conflict).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on constraint or connection failure.
+/// Returns `persistence_core::DbError::Database` on constraint or connection failure.
 pub async fn insert_plan_link(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -47,7 +47,7 @@ pub async fn insert_plan_link(
 /// Fetch the plan link for an item, if any.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn get_plan_link(
     pool: &SqlitePool,
     inbox_item_id: &str,
@@ -63,7 +63,7 @@ pub async fn get_plan_link(
 /// Delete the plan link for an item (called when a plan closes).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn delete_plan_link(pool: &SqlitePool, inbox_item_id: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM inbox_plan_links WHERE inbox_item_id = ?")
         .bind(inbox_item_id)
@@ -75,7 +75,7 @@ pub async fn delete_plan_link(pool: &SqlitePool, inbox_item_id: &str) -> DbResul
 /// Fetch the plan link row by plan ID (used by the plan listener).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn get_plan_link_by_plan_id(
     pool: &SqlitePool,
     plan_id: &str,
@@ -91,7 +91,7 @@ pub async fn get_plan_link_by_plan_id(
 /// Used by the background repair query. (Ref: R-PlanOpen)
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on connection failure.
+/// Returns `persistence_core::DbError::Database` on connection failure.
 pub async fn find_orphaned_plan_links(
     pool: &SqlitePool,
 ) -> DbResult<Vec<(String, String, String)>> {

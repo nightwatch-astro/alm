@@ -1,0 +1,14 @@
+[package]
+name = "fits_fixtures"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

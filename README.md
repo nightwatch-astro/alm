@@ -76,6 +76,25 @@ signed with an OS-level code-signing certificate yet, so:
   developer" — right-click the app → "Open", or clear the quarantine
   attribute (`xattr -d com.apple.quarantine PlateVault.app`).
 
+### Verifying a download
+
+Every published bundle carries a GitHub build provenance attestation — a signed
+statement of which workflow run, at which commit, produced those exact bytes. Check
+one with the [GitHub CLI](https://cli.github.com/):
+
+```bash
+gh attestation verify PlateVault_x64-setup.exe -R platevault/platevault
+gh attestation verify PlateVault_amd64.AppImage -R platevault/platevault
+```
+
+Verification contacts GitHub, since the attestation is stored with the repository
+rather than alongside the download. Add `--format json` for the full predicate.
+
+This is independent of the minisign signatures above: those are what the built-in
+auto-updater checks against the app's embedded public key, and they work offline. The
+attestation records where a build came from; the `.sig` establishes that an update is
+genuine. Neither replaces the other.
+
 ## Build from source
 
 Requires [pnpm](https://pnpm.io) and a [Rust](https://www.rust-lang.org)

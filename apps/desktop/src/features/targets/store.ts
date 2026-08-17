@@ -7,11 +7,16 @@
  * Mirrors `features/sessions/store.ts`: local `unwrap(await commands.X(req))`
  * helpers + `useQuery`/`useMutation` hooks keyed via `queryKeys.targets`.
  * Mutations invalidate the affected key(s) instead of the old manual `load()`
- * refetch calls that `TargetDetailV2`/`TargetsPage` used to thread through
+ * refetch calls that `TargetDetail`/`TargetsPage` used to thread through
  * props (`onMutated`).
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import { queryKeys } from '@/data/queryKeys';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
@@ -68,25 +73,50 @@ export interface QueryState<T> {
 /** `useTargets()`'s state plus a manual refetch (e.g. after "Add target"). */
 export interface TargetsListState extends QueryState<TargetListItem[]> {
   refetch: () => void;
+  /**
+   * `true` whenever a fetch is in flight, INCLUDING background refetches that
+   * keep the previous data visible (unlike `loading`, which mirrors `isLoading`
+   * and is false during those refetches). The stale-`?selected=` cleanup gate
+   * in `TargetsPage` needs this: after "Add target" the list refetches with the
+   * old rows still shown, and the just-added id is legitimately absent until
+   * the refetch lands — clearing the selection during that window drops the
+   * navigation the add flow just performed.
+   */
+  fetching: boolean;
 }
 
 // ── Query hooks ───────────────────────────────────────────────────────────────
 
 /**
- * Subscribe to the full targets (Planner catalogue) list.
+ * Subscribe to the targets (Planner catalogue) list.
+ *
+ * `search` is forwarded to the backend `target.list` endpoint (GF-11 / DS-16)
+ * so alias-aware filtering happens server-side rather than over the full
+ * ~13k-alias serialized payload. The query key includes the normalized search
+ * so each distinct query is cached independently. Pass `undefined` or `null`
+ * for the unfiltered catalog.
  *
  * `refetch` replaces the old manual `load()` re-fetch — `TargetsPage` calls it
- * after "Add target" and passes it as `TargetDetailV2`'s `onMutated` so an
+ * after "Add target" and passes it as `TargetDetail`'s `onMutated` so an
  * alias/display-alias edit refreshes the list's search/label data too.
  */
-export function useTargets(): TargetsListState {
-  const { data, isFetching, error, refetch } = useQuery({
-    queryKey: queryKeys.targets.list(),
-    queryFn: async () => unwrap(await commands.targetList()),
+export function useTargets(search?: string): TargetsListState {
+  const normalizedSearch = search?.trim() || null;
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
+    // Include normalizedSearch in the key so each query is cached independently;
+    // keepPreviousData prevents the table from flashing a skeleton while a
+    // new search key resolves — the previous page stays visible.
+    queryKey: [...queryKeys.targets.list(), normalizedSearch],
+    queryFn: async () => unwrap(await commands.targetList(normalizedSearch)),
+    placeholderData: keepPreviousData,
   });
   return {
     data,
-    loading: isFetching,
+    // isLoading is true only on the very first load (no data yet); isFetching
+    // would be true on every background refetch including search key changes,
+    // which would flash a skeleton during type-ahead with keepPreviousData.
+    loading: isLoading,
+    fetching: isFetching,
     error: error ?? undefined,
     refetch: () => void refetch(),
   };
@@ -166,7 +196,7 @@ export function useTargetAstroFormat(
 
 // ── Mutation hooks ────────────────────────────────────────────────────────────
 //
-// Every mutation below invalidates its target's `detail` key so `TargetDetailV2`
+// Every mutation below invalidates its target's `detail` key so `TargetDetail`
 // refetches without a manual `load()` (spec `tiny/targets-tanstack-query-migration`).
 // The LIST payload also carries alias/display-label search terms, but is
 // refreshed via the `onMutated` callback prop (TargetsPage's `useTargets()`

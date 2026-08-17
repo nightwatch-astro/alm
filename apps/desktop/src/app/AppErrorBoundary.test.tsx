@@ -13,9 +13,17 @@
  *  5. Non-throwing children render normally.
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// Convention: use userEvent for user-driven interactions; fireEvent for synthetic/edge cases.
+// See src/test/userEvent.ts for the project setup helper.
+import { setupUser } from '../test/userEvent';
 import { AppErrorBoundary } from './AppErrorBoundary';
+import { logError } from '@/lib/diagnosticLog';
+
+vi.mock('@/lib/diagnosticLog', () => ({
+  logError: vi.fn(),
+}));
 
 // Suppress console.error for expected errors in these tests.
 let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -64,7 +72,8 @@ describe('AppErrorBoundary', () => {
     expect(screen.getByText('Boom!')).toBeInTheDocument();
   });
 
-  it('3. "Try again" button resets the boundary', () => {
+  it('3. "Try again" button resets the boundary', async () => {
+    const user = setupUser();
     let shouldThrow = true;
 
     function MaybeThrow() {
@@ -87,7 +96,7 @@ describe('AppErrorBoundary', () => {
     shouldThrow = false;
 
     // Click reset
-    fireEvent.click(screen.getByTestId('app-error-boundary-reset'));
+    await user.click(screen.getByTestId('app-error-boundary-reset'));
 
     // Re-render to trigger the non-throwing path
     rerender(
@@ -123,6 +132,15 @@ describe('AppErrorBoundary', () => {
     expect(
       screen.queryByTestId('app-error-boundary-fallback'),
     ).not.toBeInTheDocument();
+  });
+
+  it('6. forwards render errors to the diagnostics log', () => {
+    render(
+      <AppErrorBoundary>
+        <ThrowingChild message="log-me" />
+      </AppErrorBoundary>,
+    );
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining('log-me'));
   });
 
   it('5. non-throwing children render normally', () => {

@@ -231,7 +231,7 @@ pub async fn classify(
         .map(|w| {
             build_file_metadata_upsert(
                 &req.inbox_item_id,
-                w.fc.raw_meta.as_ref(),
+                w.fc.raw_meta.as_deref(),
                 &w.fc.relative_path,
                 w.file_size_bytes,
                 w.file_mtime.as_deref(),
@@ -240,11 +240,14 @@ pub async fn classify(
         .collect();
 
     // ── T066: per-file records for sub-item grouping ──────────────────────────
-    let mut file_records: Vec<(String, Option<FrameType>, Option<metadata_core::RawFileMetadata>)> =
-        file_work
-            .iter()
-            .map(|w| (w.fc.relative_path.clone(), w.fc.frame_type, w.fc.raw_meta.clone()))
-            .collect();
+    let mut file_records: Vec<(
+        String,
+        Option<FrameType>,
+        Option<std::sync::Arc<metadata_core::RawFileMetadata>>,
+    )> = file_work
+        .iter()
+        .map(|w| (w.fc.relative_path.clone(), w.fc.frame_type, w.fc.raw_meta.clone()))
+        .collect();
 
     // ── Open a single write transaction for all load-bearing inserts ──────────
     let mut tx =
@@ -285,36 +288,7 @@ pub async fn classify(
 
     // spec 041 R-4 / T025: re-apply snapshotted overrides to freshly-inserted
     // evidence rows, then mark stale the subset whose file identity changed.
-    for entry in &override_snapshot {
-        if let Err(e) = repo::set_overrides(
-            pool,
-            &req.inbox_item_id,
-            &entry.relative_file_path,
-            entry.manual_override.as_deref(),
-            entry.override_filter.as_deref(),
-            entry.override_exposure_s,
-            entry.override_binning.as_deref(),
-        )
-        .await
-        {
-            tracing::warn!(
-                item = %req.inbox_item_id,
-                file = %entry.relative_file_path,
-                "classify: restoring overrides failed, file reverts to its raw header state: {e}"
-            );
-        }
-        if entry.stale {
-            repo::mark_override_stale(pool, &req.inbox_item_id, &entry.relative_file_path)
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::warn!(
-                        item = %req.inbox_item_id,
-                        file = %entry.relative_file_path,
-                        "classify: marking override stale failed, file shows as fresh: {e}"
-                    );
-                });
-        }
-    }
+    restore_overrides_after_wipe(pool, &req.inbox_item_id, &override_snapshot).await;
 
     // Layer the user's overrides onto the extraction-only records BEFORE the
     // folder tallies and the T066 split consume them (#854 CI race + the
@@ -360,7 +334,11 @@ pub async fn classify(
             || overrides_index.contains_key(&(fp, "temperatureC"))
             || overrides_index.contains_key(&(fp, "offset"))
         {
-            let raw = raw_opt.get_or_insert_with(Default::default);
+            // Arc::make_mut clones only when the refcount > 1 (cache still holds
+            // a handle); otherwise it is a no-op pointer cast.
+            let raw = std::sync::Arc::make_mut(raw_opt.get_or_insert_with(|| {
+                std::sync::Arc::new(metadata_core::RawFileMetadata::default())
+            }));
             if let Some(v) = overrides_index.get(&(fp, "exposureS")) {
                 raw.exposure = Some((*v).to_owned());
             }
@@ -390,50 +368,20 @@ pub async fn classify(
 
     // spec 041 FR-046 / R-4: detect `inbox_file_overrides` staleness — the
     // generic-property counterpart to the `mark_override_stale` snapshot pass
-    // above (which only covers the fixed evidence columns). Each override row
-    // carries the file identity recorded when it was set; compare it against
-    // the file's current on-disk stat and flag drift. One stat per file
-    // (property rows share identity), so dedupe by path first.
+    // above (which only covers the fixed evidence columns).
     if let Some(sg_id) = item.source_group_id.as_deref() {
-        let mut checked_paths: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        for ov in &group_overrides {
-            let (Some(stored_size), Some(stored_mtime)) =
-                (ov.file_size_bytes, ov.file_mtime.as_deref())
-            else {
-                continue; // no recorded identity yet — nothing to compare against
-            };
-            if !checked_paths.insert(ov.relative_file_path.as_str()) {
-                continue;
-            }
-            let abs = req.root_absolute_path.join(&ov.relative_file_path);
-            if let Ok(md) = std::fs::metadata(&abs) {
-                let cur_size = i64::try_from(md.len()).ok();
-                let cur_mtime = md
-                    .modified()
-                    .ok()
-                    .and_then(|t| time::OffsetDateTime::from(t).format(&Rfc3339).ok());
-                if cur_size != Some(stored_size) || cur_mtime.as_deref() != Some(stored_mtime) {
-                    repo::mark_file_override_stale(pool, sg_id, &ov.relative_file_path)
-                        .await
-                        .unwrap_or_else(|e| {
-                            tracing::warn!(
-                                source_group = %sg_id,
-                                file = %ov.relative_file_path,
-                                "classify: marking file override stale failed, changed file shows as fresh: {e}"
-                            );
-                        });
-                }
-            }
-        }
+        check_generic_override_staleness(pool, sg_id, &group_overrides, &req.root_absolute_path)
+            .await;
     }
 
-    // Folder tallies from the layered (effective) records.
-    let mut frame_type_files: HashMap<String, Vec<String>> = HashMap::new();
+    // Folder tallies keyed by FrameType (Copy enum) to avoid one String alloc
+    // per file.
+    let mut frame_type_files: HashMap<FrameType, Vec<String>> = HashMap::new();
     let mut unclassified_files: Vec<String> = Vec::new();
     for (rel, ft_opt, _) in &file_records {
         match ft_opt {
             Some(ft) => {
-                frame_type_files.entry(ft.as_str().to_owned()).or_default().push(rel.clone());
+                frame_type_files.entry(*ft).or_default().push(rel.clone());
             }
             None => unclassified_files.push(rel.clone()),
         }
@@ -460,7 +408,7 @@ pub async fn classify(
     // reports 'unclassified' — the value its DB result already carried — rather
     // than becoming `unreachable!()`, because a panic is a poor way to discover
     // that an assumption was wrong in a release build.
-    let distinct_types: Vec<&str> = frame_type_files.keys().map(String::as_str).collect();
+    let distinct_types: Vec<&str> = frame_type_files.keys().map(|ft| ft.as_str()).collect();
     let (db_result, api_result, single_frame_type) = match distinct_types.len() {
         1 => ("classified", "single_type", Some(distinct_types[0].to_owned())),
         // Zero readable frame types and two-or-more both mean "not one thing",
@@ -689,6 +637,111 @@ pub async fn classify_source_group(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+fn parse_f64(s: Option<&String>) -> Option<f64> {
+    s.and_then(|v| v.trim().parse::<f64>().ok())
+}
+fn parse_i64(s: Option<&String>) -> Option<i64> {
+    s.and_then(|v| {
+        let t = v.trim();
+        t.parse::<i64>().ok().or_else(|| t.strip_suffix(".0").and_then(|i| i.parse::<i64>().ok()))
+    })
+}
+fn parse_i32(s: Option<&String>) -> Option<i32> {
+    s.and_then(|v| {
+        let t = v.trim();
+        t.parse::<i32>().ok().or_else(|| t.strip_suffix(".0").and_then(|i| i.parse::<i32>().ok()))
+    })
+}
+
+/// Re-apply snapshotted overrides to freshly-inserted evidence rows, then mark
+/// stale the subset whose file identity changed (spec 041 R-4 / T025).
+///
+/// Called after the first write transaction (evidence wipe + re-insert) commits,
+/// because `set_overrides` and `mark_override_stale` read the committed rows via
+/// the pool.  Failures are best-effort: logged but not propagated.
+async fn restore_overrides_after_wipe(
+    pool: &SqlitePool,
+    inbox_item_id: &str,
+    override_snapshot: &[OverrideSnapshot],
+) {
+    for entry in override_snapshot {
+        if let Err(e) = repo::set_overrides(
+            pool,
+            inbox_item_id,
+            &entry.relative_file_path,
+            entry.manual_override.as_deref(),
+            entry.override_filter.as_deref(),
+            entry.override_exposure_s,
+            entry.override_binning.as_deref(),
+        )
+        .await
+        {
+            tracing::warn!(
+                item = %inbox_item_id,
+                file = %entry.relative_file_path,
+                "classify: restoring overrides failed, file reverts to its raw header state: {e}"
+            );
+        }
+        if entry.stale {
+            repo::mark_override_stale(pool, inbox_item_id, &entry.relative_file_path)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(
+                        item = %inbox_item_id,
+                        file = %entry.relative_file_path,
+                        "classify: marking override stale failed, file shows as fresh: {e}"
+                    );
+                });
+        }
+    }
+}
+
+/// Check `inbox_file_overrides` staleness for a source group (spec 041 FR-046
+/// / R-4) — the generic-property counterpart to the `mark_override_stale`
+/// snapshot pass.
+///
+/// Each override row carries the file identity recorded when it was set.
+/// Compares it against the current on-disk stat; if they differ, marks the
+/// override stale.  Deduplicates by path (property rows share identity).
+/// Failures are best-effort.
+async fn check_generic_override_staleness(
+    pool: &SqlitePool,
+    source_group_id: &str,
+    group_overrides: &[persistence_inbox::repositories::inbox::FileOverrideRow],
+    root_absolute_path: &std::path::Path,
+) {
+    let mut checked_paths: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for ov in group_overrides {
+        let (Some(stored_size), Some(stored_mtime)) =
+            (ov.file_size_bytes, ov.file_mtime.as_deref())
+        else {
+            continue; // no recorded identity yet — nothing to compare against
+        };
+        if !checked_paths.insert(ov.relative_file_path.as_str()) {
+            continue;
+        }
+        let abs = root_absolute_path.join(&ov.relative_file_path);
+        if let Ok(md) = std::fs::metadata(&abs) {
+            let cur_size = i64::try_from(md.len()).ok();
+            let cur_mtime = md
+                .modified()
+                .ok()
+                .and_then(|t| time::OffsetDateTime::from(t).format(&Rfc3339).ok());
+            if cur_size != Some(stored_size) || cur_mtime.as_deref() != Some(stored_mtime) {
+                repo::mark_file_override_stale(pool, source_group_id, &ov.relative_file_path)
+                    .await
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(
+                            source_group = %source_group_id,
+                            file = %ov.relative_file_path,
+                            "classify: marking file override stale failed, changed file shows as fresh: {e}"
+                        );
+                    });
+            }
+        }
+    }
+}
+
 /// Per-file classification outcome, shared by `classify()`'s item-keyed
 /// evidence-persist loop and `build_file_records` (spec 058 T012's
 /// `classify_source_group`, which has no `inbox_item_id` to persist evidence
@@ -697,7 +750,7 @@ pub async fn classify_source_group(
 pub(crate) struct FileClassification {
     pub relative_path: String,
     pub frame_type: Option<FrameType>,
-    pub raw_meta: Option<metadata_core::RawFileMetadata>,
+    pub raw_meta: Option<std::sync::Arc<metadata_core::RawFileMetadata>>,
     pub evidence_source: EvidenceSource,
     pub raw_value: Option<String>,
     pub is_unclassified: bool,
@@ -719,10 +772,7 @@ pub(crate) fn classify_one_file(
     // succeeds; the `to_string_lossy` arms are defensive fallbacks only and
     // replace the previous always-lossy conversions.
     let rel = match abs_path.strip_prefix(root_absolute_path) {
-        Ok(p) => Utf8Path::from_path(p).map_or_else(
-            || p.to_string_lossy().replace('\\', "/"),
-            |u| u.as_str().replace('\\', "/"),
-        ),
+        Ok(p) => fs_pathsafe::wire_path(p),
         Err(_) => Utf8Path::from_path(abs_path)
             .map_or_else(|| abs_path.display().to_string(), |u| u.as_str().to_owned()),
     };
@@ -795,7 +845,7 @@ pub(crate) fn classify_one_file(
 pub(crate) fn build_file_records(
     file_paths: &[PathBuf],
     root_absolute_path: &Path,
-) -> Vec<(String, Option<FrameType>, Option<metadata_core::RawFileMetadata>)> {
+) -> Vec<(String, Option<FrameType>, Option<std::sync::Arc<metadata_core::RawFileMetadata>>)> {
     let norm_table = v1_normalization_table();
     file_paths
         .iter()
@@ -826,18 +876,6 @@ fn build_file_metadata_upsert<'a>(
     file_size_bytes: Option<i64>,
     file_mtime: Option<&'a str>,
 ) -> UpsertFileMetadata<'a> {
-    fn parse_f64(s: Option<&String>) -> Option<f64> {
-        s.and_then(|v| v.trim().parse::<f64>().ok())
-    }
-    fn parse_i64(s: Option<&String>) -> Option<i64> {
-        s.and_then(|v| {
-            let t = v.trim();
-            t.parse::<i64>()
-                .ok()
-                .or_else(|| t.strip_suffix(".0").and_then(|i| i.parse::<i64>().ok()))
-        })
-    }
-
     if let Some(meta) = raw_meta {
         UpsertFileMetadata {
             inbox_item_id,
@@ -957,7 +995,7 @@ async fn snapshot_overrides(
         // Only re-apply for files that appear in the current scan.
         let in_scan = file_paths.iter().any(|p| {
             p.strip_prefix(root_absolute_path)
-                .is_ok_and(|r| r.to_string_lossy().replace('\\', "/") == ev.relative_file_path)
+                .is_ok_and(|r| fs_pathsafe::wire_path(r) == ev.relative_file_path)
         });
         if !in_scan {
             continue;
@@ -1050,7 +1088,7 @@ pub fn mandatory_set_for(ft: FrameType) -> Vec<&'static str> {
 ///
 /// Single shared formula for the `target` arm of both mandatory-attribute
 /// gates — [`check_mandatory_missing`] here and
-/// [`crate::metadata::compute_missing_mandatory`] — so the two consumers
+/// `crate::metadata::compute_missing_mandatory` — so the two consumers
 /// agree on "target missing" **by construction**, not because every caller
 /// happens to pass the same `target_resolved` constant (issue #1132).
 ///
@@ -1137,17 +1175,6 @@ pub(crate) fn build_frame_metadata(
     frame_type: FrameType,
     raw: &metadata_core::RawFileMetadata,
 ) -> FrameMetadata {
-    fn parse_f64(s: Option<&String>) -> Option<f64> {
-        s.and_then(|v| v.trim().parse::<f64>().ok())
-    }
-    fn parse_i32(s: Option<&String>) -> Option<i32> {
-        s.and_then(|v| {
-            let t = v.trim();
-            t.parse::<i32>()
-                .ok()
-                .or_else(|| t.strip_suffix(".0").and_then(|i| i.parse::<i32>().ok()))
-        })
-    }
     FrameMetadata {
         frame_type,
         filter: raw.filter.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned),
@@ -1221,7 +1248,11 @@ pub(crate) async fn materialize_sub_items(
     relative_path: &str,
     lane: &str,
     file_paths: &[PathBuf],
-    file_records: &[(String, Option<FrameType>, Option<metadata_core::RawFileMetadata>)],
+    file_records: &[(
+        String,
+        Option<FrameType>,
+        Option<std::sync::Arc<metadata_core::RawFileMetadata>>,
+    )],
 ) {
     let Ok(mut conn) = pool.acquire().await else { return };
     materialize_sub_items_tx(
@@ -1252,6 +1283,11 @@ struct SubItemSeed {
 /// Used by `classify()` so the sub-item seed writes are included in the same
 /// transaction as the classification and item-state writes.
 /// `materialize_sub_items` (pool-only) is kept for `reclassify.rs`.
+// CCN justified: 6 sequential pipeline stages (partition → upsert → delete-stale →
+// evidence → metadata → breakdown+classification) each contribute ~2-3 branches.
+// No branching alternatives exist — each stage is mandatory and order-dependent.
+// Splitting across functions would require threading conn + source_group_id + seeds
+// through every call, replacing structural clarity with parameter noise.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) async fn materialize_sub_items_tx(
     conn: &mut SqliteConnection,
@@ -1260,18 +1296,26 @@ pub(crate) async fn materialize_sub_items_tx(
     relative_path: &str,
     lane: &str,
     file_paths: &[PathBuf],
-    file_records: &[(String, Option<FrameType>, Option<metadata_core::RawFileMetadata>)],
+    file_records: &[(
+        String,
+        Option<FrameType>,
+        Option<std::sync::Arc<metadata_core::RawFileMetadata>>,
+    )],
 ) {
     // Step 1 + 2 + T070 gate: partition files by group_key.
     #[allow(clippy::type_complexity)]
     let mut groups: std::collections::HashMap<
         String,
-        (String, bool, Vec<(String, Option<PathBuf>, Option<metadata_core::RawFileMetadata>)>),
+        (
+            String,
+            bool,
+            Vec<(String, Option<PathBuf>, Option<std::sync::Arc<metadata_core::RawFileMetadata>>)>,
+        ),
     > = std::collections::HashMap::new();
 
     for (i, (rel, frame_type_opt, raw_meta_opt)) in file_records.iter().enumerate() {
         let abs_path = file_paths.get(i).cloned();
-        let missing = missing_mandatory_for_file(*frame_type_opt, raw_meta_opt.as_ref());
+        let missing = missing_mandatory_for_file(*frame_type_opt, raw_meta_opt.as_deref());
         let needs_review = !missing.is_empty();
         let (group_key, group_label) = if let Some(ft) = *frame_type_opt {
             let meta = raw_meta_opt.as_ref().map_or_else(
@@ -1300,8 +1344,11 @@ pub(crate) async fn materialize_sub_items_tx(
     // Collect all files into a flat Vec so we can build batch payloads with
     // contiguous index ranges.
     #[allow(clippy::type_complexity)]
-    let mut all_files: Vec<(String, Option<PathBuf>, Option<metadata_core::RawFileMetadata>)> =
-        Vec::new();
+    let mut all_files: Vec<(
+        String,
+        Option<PathBuf>,
+        Option<std::sync::Arc<metadata_core::RawFileMetadata>>,
+    )> = Vec::new();
     // Produce the sub-item seeds in deterministic key order.
     let mut sorted_groups: Vec<(&String, &(String, bool, Vec<_>))> = groups.iter().collect();
     sorted_groups.sort_by_key(|(k, _)| k.as_str());
@@ -1453,7 +1500,7 @@ pub(crate) async fn materialize_sub_items_tx(
             slice.iter().zip(stat_slice.iter()).map(|((rel, _, raw_meta_opt), (sz, mt))| {
                 build_file_metadata_upsert(
                     s.persisted_id.as_str(),
-                    raw_meta_opt.as_ref(),
+                    raw_meta_opt.as_deref(),
                     rel.as_str(),
                     *sz,
                     mt.as_deref(),
@@ -1590,7 +1637,7 @@ fn enumerate_fits_files(folder: &Path) -> Vec<PathBuf> {
 async fn build_breakdown(
     pool: &SqlitePool,
     inbox_item_id: &str,
-    frame_type_files: &HashMap<String, Vec<String>>,
+    frame_type_files: &HashMap<FrameType, Vec<String>>,
     root_absolute_path: &Path,
 ) -> Vec<BreakdownEntry> {
     // Load the active pattern once; if it is unset/invalid every preview is None.
@@ -1602,7 +1649,8 @@ async fn build_breakdown(
 
     let mut entries = Vec::new();
 
-    for (kind, files) in frame_type_files {
+    for (ft, files) in frame_type_files {
+        let kind = ft.as_str();
         let count = files.len();
         let sample: Vec<String> = files.iter().take(10).cloned().collect();
         let sample_json = serde_json::to_string(&sample).unwrap_or_else(|_| "[]".to_owned());
@@ -1639,7 +1687,7 @@ async fn build_breakdown(
         });
 
         entries.push(BreakdownEntry {
-            kind: kind.clone(),
+            kind: kind.to_owned(),
             count,
             destination_preview,
             sample_files: sample,
@@ -1733,10 +1781,8 @@ mod tests {
     use persistence_inbox::repositories::inbox::InsertInboxItem;
     use std::io::Write;
 
-    async fn test_db() -> Database {
-        let db = Database::in_memory().await.unwrap();
-        db.migrate().await.unwrap();
-        db
+    async fn test_db() -> persistence_core::Database {
+        persistence_core::test_support::setup_db().await
     }
 
     fn write_fits_with_imagetyp(dir: &Path, name: &str, imagetyp: &str) {

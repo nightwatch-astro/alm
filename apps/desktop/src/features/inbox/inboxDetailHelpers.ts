@@ -9,26 +9,14 @@
  */
 
 import type { PillVariant } from '@/ui';
-
-/**
- * Resolve an inbox item's reveal target: the source root joined with the
- * item's `relativePath`. Mirrors `features/sessions/revealInventory.ts`'s
- * `resolveRevealPath` (same tested contract: backend `relativePath` is always
- * forward-slash-normalized — `crates/app/inbox/src/scan.rs` — while the root
- * is native, so every separator is rewritten to the root's own). Duplicated
- * rather than imported to keep this feature's scope self-contained; the two
- * helpers must stay behaviorally identical if either changes.
- */
-export function resolveInboxRevealPath(
-  rootPath: string,
-  relativePath: string,
-): string {
-  if (!relativePath) return rootPath;
-  const sep = rootPath.includes('\\') ? '\\' : '/';
-  const root = rootPath.replace(/[/\\]+$/, '');
-  const rel = relativePath.replace(/^[/\\]+/, '').replace(/[/\\]+/g, sep);
-  return `${root}${sep}${rel}`;
-}
+// Canonical path/format utilities used locally and re-exported so existing
+// callers of this module keep working without changes. resolveRevealPath
+// replaces the former resolveInboxRevealPath; basename, parentSegment, and
+// formatExposureSeconds move to lib/ as the single source of truth.
+import { resolveRevealPath, basename, parentSegment } from '@/lib/path';
+import { formatExposureSeconds } from '@/lib/format';
+export { resolveRevealPath as resolveInboxRevealPath, basename, parentSegment };
+export { formatExposureSeconds };
 
 /** "exposureS" → "exposure S" (best-effort label for a registry key with no i18n entry). */
 export function humanizeKey(key: string): string {
@@ -76,18 +64,6 @@ export function applicableRootCategory(
   return null;
 }
 
-/** Last path segment of a relative file path (forward- or back-slash separated). */
-export function basename(path: string): string {
-  const parts = path.replace(/\\/g, '/').split('/');
-  return parts[parts.length - 1] || path;
-}
-
-/** Second-to-last path segment (the basename's parent directory name). */
-export function parentSegment(path: string): string {
-  const parts = path.replace(/\\/g, '/').split('/').filter(Boolean);
-  return parts.length >= 2 ? parts[parts.length - 2] : '';
-}
-
 /**
  * Build destination-root option labels, disambiguating roots that share a
  * basename (issue #866): two registered roots at different locations but the
@@ -113,15 +89,4 @@ export function buildRootLabels(
     labels.set(r.id, `${disambiguated} · ${r.category}`);
   }
   return labels;
-}
-
-/**
- * Format an exposure length in seconds for display (issue #789): raw FITS
- * EXPTIME floats carry IEEE-754 noise (e.g. `6.92447668013071`) that reads as
- * fabricated/slop rather than a real capture value. Whole-second exposures
- * show no decimal; fractional exposures round to 2 decimal places.
- */
-export function formatExposureSeconds(s: number): string {
-  const rounded = Math.round(s * 100) / 100;
-  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded} s`;
 }

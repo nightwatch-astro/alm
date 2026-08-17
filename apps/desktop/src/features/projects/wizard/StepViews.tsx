@@ -48,7 +48,7 @@ export function StepViews({
 
   const { data: sessions } = useQuery({
     queryKey: queryKeys.sessions.all(),
-    queryFn: async () => unwrap(await commands.sessionsList()),
+    queryFn: async () => unwrap(await commands.sessionsList(null, null)),
   });
 
   const selected = (sessions ?? []).filter((s) =>

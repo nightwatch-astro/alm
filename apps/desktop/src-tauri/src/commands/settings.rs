@@ -47,7 +47,6 @@
 //! - `settings.restore-defaults`
 //! - `settings.source-override.set`
 
-use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use contracts_core::settings::{
@@ -163,24 +162,18 @@ pub async fn settings_get(
             persistence_lifecycle::repositories::settings::get_all_by_prefix(pool, "uiState.")
                 .await
                 .map_err(app_core::errors::db_to_contract)?;
-        let values: HashMap<String, Value> = rows.into_iter().collect();
-        return Ok(SettingsData {
-            scope,
-            values: contracts_core::JsonAny::from(serde_json::to_value(values).unwrap_or_default()),
-        });
+        let map: serde_json::Map<String, Value> = rows.into_iter().collect();
+        return Ok(SettingsData { scope, values: contracts_core::JsonAny(Value::Object(map)) });
     }
 
     let keys = scope_keys(&scope);
-    let mut values: HashMap<String, Value> = HashMap::with_capacity(keys.len());
+    let mut map = serde_json::Map::with_capacity(keys.len());
     for key in keys {
         let val = app_core::settings::resolve_setting(pool, key, None).await?;
-        values.insert((*key).to_owned(), val);
+        map.insert((*key).to_owned(), val);
     }
 
-    Ok(SettingsData {
-        scope,
-        values: contracts_core::JsonAny::from(serde_json::to_value(values).unwrap_or_default()),
-    })
+    Ok(SettingsData { scope, values: contracts_core::JsonAny(Value::Object(map)) })
 }
 
 /// `settings.update` — persists settings values for a given scope.

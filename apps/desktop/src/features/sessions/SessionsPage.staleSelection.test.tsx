@@ -36,6 +36,23 @@ vi.mock('./SessionDetail', () => ({
   SessionDetail: () => <div data-testid="session-detail-stub" />,
 }));
 
+// Spec 062: RelationProposalList, ManualRelationDialog, PanelGroupView, and
+// MatchingSettingsPanel use TanStack Query; stub them so this test doesn't
+// need a QueryClientProvider (the gate under test is the stale-selection
+// wiring, not the groups surface).
+vi.mock('./RelationProposalList', () => ({
+  RelationProposalList: () => <div data-testid="proposal-list-stub" />,
+}));
+vi.mock('./ManualRelationDialog', () => ({
+  ManualRelationDialog: () => null,
+}));
+vi.mock('./PanelGroupView', () => ({
+  PanelGroupView: () => null,
+}));
+vi.mock('./MatchingSettingsPanel', () => ({
+  MatchingSettingsPanel: () => null,
+}));
+
 const mockNavigate = vi.fn();
 const mockSelectedId = { current: undefined as string | undefined };
 

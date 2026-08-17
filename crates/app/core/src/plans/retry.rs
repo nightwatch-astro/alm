@@ -13,7 +13,7 @@ use sqlx::SqlitePool;
 
 use crate::errors::bus_err;
 
-use super::{db_err, is_terminal, parse_plan_state};
+use super::{db_err, parse_plan_state};
 
 // ── retry_plan ────────────────────────────────────────────────────────────────
 
@@ -51,7 +51,7 @@ pub async fn retry_plan(
     let parent_state = parse_plan_state(&parent.state)?;
 
     // Must be terminal.
-    if !is_terminal(parent_state) {
+    if !parent_state.is_terminal() {
         return Err(ContractError::new(
             ErrorCode::ParentNotTerminal,
             format!("parent plan state {:?} is not terminal", parent.state),

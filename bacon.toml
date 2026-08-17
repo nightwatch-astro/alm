@@ -1,0 +1,36 @@
+# bacon.toml — background Rust checker for interactive development.
+#
+# Run via: just watch
+#
+# bacon watches source files and re-runs the configured job on every save.
+# Install: cargo install bacon
+# Docs: https://dystroy.org/bacon
+
+[jobs.check]
+command = ["cargo", "check", "--workspace", "--all-targets"]
+need_stdout = false
+
+[jobs.clippy]
+command = [
+    "cargo", "clippy",
+    "--workspace",
+    "--all-targets",
+    "--",
+    "-D", "warnings",
+]
+need_stdout = false
+
+[jobs.test]
+command = [
+    "cargo", "nextest", "run",
+    "--workspace",
+    "--no-fail-fast",
+]
+need_stdout = true
+
+[jobs.doc]
+command = ["cargo", "doc", "--workspace", "--no-deps"]
+need_stdout = false
+
+# Default job on `just watch` / bare `bacon`.
+default_job = "clippy"

@@ -34,7 +34,7 @@ pub struct SourceAvailabilityRollupRow {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn upsert_source_availability(
     conn: &mut SqliteConnection,
     session_row_id: i64,
@@ -75,7 +75,7 @@ pub async fn upsert_source_availability(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_source_availability(
     pool: &SqlitePool,
     session_row_id: i64,
@@ -100,7 +100,7 @@ pub async fn get_source_availability(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn list_source_availability_for_sessions(
     pool: &SqlitePool,
     session_row_ids: &[i64],

@@ -4,11 +4,11 @@
 //! Inbox plan use-cases (spec 041, US1).
 //!
 //! Entry points:
-//! - [`get_inbox_plan`]       — fetch the plan linked to an inbox item as `InboxPlanView`.
-//! - [`apply_inbox_plan`]     — auto-approve then apply the linked plan; on
+//! - `get_inbox_plan`       — fetch the plan linked to an inbox item as `InboxPlanView`.
+//! - `apply_inbox_plan`     — auto-approve then apply the linked plan; on
 //!   success marks the inbox item `resolved`.
-//! - [`apply_all_inbox_plans`]— apply every `plan_open` item's plan; per-plan results.
-//! - [`cancel_inbox_plan`]    — discard the linked plan; item returns to `classified`.
+//! - `apply_all_inbox_plans`— apply every `plan_open` item's plan; per-plan results.
+//! - `cancel_inbox_plan`    — discard the linked plan; item returns to `classified`.
 //!
 //! FR-003 / FR-003a / FR-005 / FR-006 / FR-007.
 //!
@@ -73,6 +73,9 @@ fn map_plan_actions(item_rows: Vec<plans_repo::PlanItemRow>) -> Vec<InboxPlanAct
                 to_path: r.to_relative_path,
                 destination_preview: dest_preview,
                 requires_destructive_confirm: r.requires_destructive_confirm.unwrap_or(0) != 0,
+                // `category` carries the per-file frame type for inbox confirm plans
+                // (stored at plan creation; `None` for legacy rows and other plan types).
+                frame_type: r.category,
             }
         })
         .collect()
@@ -435,10 +438,8 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::tempdir;
 
-    async fn test_db() -> Database {
-        let db = Database::in_memory().await.unwrap();
-        db.migrate().await.unwrap();
-        db
+    async fn test_db() -> persistence_core::Database {
+        persistence_core::test_support::setup_db().await
     }
 
     fn make_bus(pool: &SqlitePool) -> EventBus {

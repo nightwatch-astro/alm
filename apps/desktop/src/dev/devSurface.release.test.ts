@@ -21,7 +21,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // default testTimeout. Under CI's concurrent worker load that tips over into
 // a false failure (issue #737; same timeout-flake class as #1082's Windows-CI
 // fix). Raise it file-wide rather than per-test so no sibling is left behind.
-vi.setConfig({ testTimeout: 15_000 });
+// Bumped 15_000→30_000: the heavier spec-062 message bundle adds import
+// time; measured ~12s locally in the full suite under concurrent load.
+vi.setConfig({ testTimeout: 30_000 });
 
 describe('T072: release build dev surface gate', () => {
   let originalEnv: string;
@@ -66,7 +68,7 @@ describe('T072: release build dev surface gate', () => {
     // While an override is installed, a generated command dispatches through it
     // — the bindings route via the IPC switcher, not @tauri-apps/api/core.
     setInvokeOverride(overrideCall);
-    await commands.sessionsList();
+    await commands.sessionsList(null, null);
     expect(seen).toContain('sessions_list');
 
     // Clearing it (release-build state) must stop dispatching through the
@@ -74,7 +76,7 @@ describe('T072: release build dev surface gate', () => {
     // rejects here — the assertion is that it did NOT go through the override.
     setInvokeOverride(null);
     overrideCall.mockClear();
-    await commands.sessionsList().catch(() => {});
+    await commands.sessionsList(null, null).catch(() => {});
     expect(overrideCall).not.toHaveBeenCalled();
   });
 

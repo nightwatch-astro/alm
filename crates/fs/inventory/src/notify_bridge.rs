@@ -107,7 +107,7 @@ pub fn register_watch_paths(
                     return Err(format!("failed to watch {}: {e}", dir.display()));
                 }
                 Err(e) => {
-                    tracing::warn!("skipping unwatchable subdirectory {}: {e}", dir.display());
+                    tracing::warn!(dir = %dir.display(), error = %e, "skipping unwatchable subdirectory");
                     report.skipped.push((dir, e.to_string()));
                 }
             }

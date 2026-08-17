@@ -19,7 +19,10 @@ use sha2::{Digest, Sha256};
 use sqlx::{FromRow, SqlitePool};
 use thiserror::Error;
 use time::{format_description::well_known::Rfc3339, Duration as TimeDuration, OffsetDateTime};
-use uuid::Uuid;
+
+mod finish;
+mod recovery;
+mod validate;
 
 const DEFAULT_LEASE_TTL: Duration = Duration::from_secs(30);
 /// Prevents an accidentally unbounded command response from becoming a row.
@@ -31,7 +34,7 @@ pub const MAX_OUTBOX_EVENTS: usize = 100;
 const MAX_SAFE_STRING_BYTES: usize = 1024;
 
 /// Errors returned by command-ledger operations.  Semantic errors are kept
-/// separate from [`crate::DbError`] so callers can project safe contract codes
+/// separate from `persistence_core::DbError` so callers can project safe contract codes
 /// without parsing SQLite's diagnostic text.
 #[derive(Debug, Error)]
 pub enum CommandLedgerError {
@@ -505,7 +508,7 @@ impl CommandLedger {
         self.finish_at(lease, input, &Timestamp::now_iso()).await
     }
 
-    #[allow(clippy::too_many_lines)]
+    // CCN 11 tolerated: transaction orchestrator with preparation + commit/rollback.
     pub async fn finish_at(
         &self,
         lease: &CommandLease,
@@ -525,171 +528,27 @@ impl CommandLedger {
             input.audit.outcome.unwrap_or_else(|| default_audit_outcome(input.state));
         let mut connection = self.pool.acquire().await?;
         begin_immediate(&mut connection).await?;
-        let Some(row) = load_command(&mut connection, &lease.fence.command_id).await? else {
-            return rollback_error(&mut connection, CommandLedgerError::NotFound).await;
-        };
-        if let Some(terminal) = row.terminal() {
-            sqlx::query("COMMIT").execute(&mut *connection).await?;
-            return Ok(terminal);
-        }
-        if row.lease_owner.as_deref() != Some(&lease.fence.lease_owner)
-            || row.lease_generation != lease.fence.lease_generation
-            || row.state != "executing"
-        {
-            return rollback_error(&mut connection, CommandLedgerError::StaleFence).await;
-        }
-        if row.lease_expires_at.as_deref().is_none_or(|expiry| expiry <= now) {
-            return rollback_error(&mut connection, CommandLedgerError::LeaseExpired).await;
-        }
 
-        // A live execution may only create its terminal evidence once.  Any
-        // pre-existing audit/outbox row indicates a discovered partial commit;
-        // recovery, not a worker retry, must reconcile it fail-closed.
-        let audit_count: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM audit_event WHERE command_row_id = ?")
-                .bind(row.row_id)
-                .fetch_one(&mut *connection)
-                .await?;
-        let outbox_count: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM outbox_event WHERE command_row_id = ?")
-                .bind(row.row_id)
-                .fetch_one(&mut *connection)
-                .await?;
-        if audit_count.0 != 0 || outbox_count.0 != 0 {
-            return rollback_error(&mut connection, CommandLedgerError::AmbiguousRecovery).await;
-        }
-
-        let evidence = sqlx::query(
-            "UPDATE command_execution
-             SET recovery_terminal_outcome = ?, recovery_response_json = ?,
-                 recovery_error_code = ?, recovery_expected_outbox_count = ?,
-                 recovery_expected_outbox_digest = ?
-             WHERE row_id = ? AND state = 'executing' AND lease_owner = ?
-               AND lease_generation = ? AND lease_expires_at > ?",
+        let result = finish_transaction(
+            &mut connection,
+            lease,
+            input,
+            audit_outcome,
+            response_json.as_deref(),
+            audit_payload,
+            outbox_payloads,
+            &outbox_digest,
+            now,
         )
-        .bind(audit_outcome.as_str())
-        .bind(&response_json)
-        .bind(&input.error_code)
-        .bind(i64::try_from(input.outbox.len()).map_err(|_| {
-            CommandLedgerError::InvalidInput("outbox sequence exceeds SQLite bounds".to_owned())
-        })?)
-        .bind(&outbox_digest)
-        .bind(row.row_id)
-        .bind(&lease.fence.lease_owner)
-        .bind(lease.fence.lease_generation)
-        .bind(now)
-        .execute(&mut *connection)
-        .await?;
-        if evidence.rows_affected() != 1 {
-            return rollback_error(&mut connection, CommandLedgerError::StaleFence).await;
-        }
+        .await;
 
-        let change_sequence = append_repository_change(&mut connection, row.row_id, now).await?;
-        let audit_public_id = Uuid::new_v4().to_string();
-        let values = input.audit.aggregate.values();
-        sqlx::query(
-            "INSERT INTO audit_event
-             (public_id, command_row_id, operation_row_id, proposal_row_id, session_row_id,
-              panel_group_row_id, mosaic_row_id, project_row_id, handoff_row_id, actor_row_id,
-              action, outcome, reason_code, payload_json, created_sequence, occurred_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&audit_public_id)
-        .bind(row.row_id)
-        .bind(values[0])
-        .bind(values[1])
-        .bind(values[2])
-        .bind(values[3])
-        .bind(values[4])
-        .bind(values[5])
-        .bind(values[6])
-        .bind(row.actor_row_id)
-        .bind(&input.audit.action)
-        .bind(audit_outcome.as_str())
-        .bind(&input.audit.reason_code)
-        .bind(audit_payload)
-        .bind(change_sequence)
-        .bind(now)
-        .execute(&mut *connection)
-        .await?;
-
-        for (ordinal, (event, payload)) in input.outbox.iter().zip(outbox_payloads).enumerate() {
-            let values = event.aggregate.values();
-            sqlx::query(
-                "INSERT INTO outbox_event
-                 (public_id, command_row_id, event_ordinal, operation_row_id, proposal_row_id,
-                  session_row_id, panel_group_row_id, mosaic_row_id, project_row_id, handoff_row_id,
-                  event_type, payload_json, created_sequence, occurred_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            )
-            .bind(Uuid::new_v4().to_string())
-            .bind(row.row_id)
-            .bind(i64::try_from(ordinal).map_err(|_| {
-                CommandLedgerError::InvalidInput("event ordinal overflow".to_owned())
-            })?)
-            .bind(values[0])
-            .bind(values[1])
-            .bind(values[2])
-            .bind(values[3])
-            .bind(values[4])
-            .bind(values[5])
-            .bind(values[6])
-            .bind(&event.event_type)
-            .bind(payload)
-            .bind(change_sequence)
-            .bind(now)
-            .execute(&mut *connection)
-            .await?;
+        match result {
+            Ok(terminal) => {
+                sqlx::query("COMMIT").execute(&mut *connection).await?;
+                Ok(terminal)
+            }
+            Err(e) => rollback_error(&mut connection, e).await,
         }
-
-        let written_audit_count: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM audit_event WHERE command_row_id = ?")
-                .bind(row.row_id)
-                .fetch_one(&mut *connection)
-                .await?;
-        let written_outbox_count: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM outbox_event WHERE command_row_id = ?")
-                .bind(row.row_id)
-                .fetch_one(&mut *connection)
-                .await?;
-        if written_audit_count.0 != 1
-            || written_outbox_count.0 != i64::try_from(input.outbox.len()).unwrap_or(i64::MAX)
-        {
-            return rollback_error(&mut connection, CommandLedgerError::AmbiguousRecovery).await;
-        }
-
-        let finished = TerminalState::as_str(input.state);
-        let update = sqlx::query(
-            "UPDATE command_execution
-             SET state = ?, state_version = state_version + 1, lease_owner = NULL,
-                 lease_expires_at = NULL, heartbeat_at = NULL, response_json = ?,
-                 error_code = ?, finished_at = ?, recovery_terminal_outcome = NULL,
-                 recovery_response_json = NULL, recovery_error_code = NULL,
-                 recovery_expected_outbox_count = NULL, recovery_expected_outbox_digest = NULL
-             WHERE row_id = ? AND state = 'executing' AND lease_owner = ?
-               AND lease_generation = ? AND lease_expires_at > ?",
-        )
-        .bind(finished)
-        .bind(&response_json)
-        .bind(&input.error_code)
-        .bind(now)
-        .bind(row.row_id)
-        .bind(&lease.fence.lease_owner)
-        .bind(lease.fence.lease_generation)
-        .bind(now)
-        .execute(&mut *connection)
-        .await?;
-        if update.rows_affected() != 1 {
-            return rollback_error(&mut connection, CommandLedgerError::StaleFence).await;
-        }
-        sqlx::query("COMMIT").execute(&mut *connection).await?;
-        Ok(CommandTerminal {
-            command_id: lease.fence.command_id.clone(),
-            state: input.state,
-            response_json,
-            error_code: input.error_code.clone(),
-            finished_at: now.to_owned(),
-        })
     }
 
     /// Poll unpublished events in deterministic `(occurred_at, row_id)` order.
@@ -867,7 +726,86 @@ async fn load_command(
     .await?)
 }
 
-#[allow(clippy::too_many_lines)]
+/// Execute all finish steps within the open transaction. Returns the terminal
+/// on success or an error that the caller should rollback.
+#[allow(clippy::too_many_arguments)]
+async fn finish_transaction(
+    connection: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
+    lease: &CommandLease,
+    input: &TerminalInput,
+    audit_outcome: AuditOutcome,
+    response_json: Option<&str>,
+    audit_payload: Option<String>,
+    outbox_payloads: Vec<String>,
+    outbox_digest: &str,
+    now: &str,
+) -> Result<CommandTerminal> {
+    let Some(row) = load_command(connection, &lease.fence.command_id).await? else {
+        return Err(CommandLedgerError::NotFound);
+    };
+    if let Some(terminal) = row.terminal() {
+        return Ok(terminal);
+    }
+    validate_lease_preconditions(&row, lease, now)?;
+    finish::guard_no_prior_evidence(connection, row.row_id).await?;
+    finish::write_evidence_marker(
+        connection,
+        &row,
+        audit_outcome,
+        response_json,
+        input.error_code.as_deref(),
+        input.outbox.len(),
+        outbox_digest,
+        &lease.fence.lease_owner,
+        lease.fence.lease_generation,
+        now,
+    )
+    .await?;
+    finish::write_audit_and_outbox(
+        connection,
+        &row,
+        input,
+        audit_outcome,
+        audit_payload,
+        outbox_payloads,
+        now,
+    )
+    .await?;
+    finish::verify_written_counts(connection, row.row_id, input.outbox.len()).await?;
+    finish::commit_terminal_state(
+        connection,
+        row.row_id,
+        input.state,
+        response_json,
+        input.error_code.as_deref(),
+        &lease.fence.lease_owner,
+        lease.fence.lease_generation,
+        now,
+    )
+    .await?;
+    Ok(CommandTerminal {
+        command_id: lease.fence.command_id.clone(),
+        state: input.state,
+        response_json: response_json.map(str::to_owned),
+        error_code: input.error_code.clone(),
+        finished_at: now.to_owned(),
+    })
+}
+
+/// Validate that the loaded row matches the presented lease.
+fn validate_lease_preconditions(row: &CommandRow, lease: &CommandLease, now: &str) -> Result<()> {
+    if row.lease_owner.as_deref() != Some(&lease.fence.lease_owner)
+        || row.lease_generation != lease.fence.lease_generation
+        || row.state != "executing"
+    {
+        return Err(CommandLedgerError::StaleFence);
+    }
+    if row.lease_expires_at.as_deref().is_none_or(|expiry| expiry <= now) {
+        return Err(CommandLedgerError::LeaseExpired);
+    }
+    Ok(())
+}
+
 async fn recover_expired_row(
     connection: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
     row: &CommandRow,
@@ -875,211 +813,32 @@ async fn recover_expired_row(
     expiry: &str,
     now: &str,
 ) -> Result<ClaimOutcome> {
-    let audit_rows: Vec<(String,)> =
-        sqlx::query_as("SELECT outcome FROM audit_event WHERE command_row_id = ? ORDER BY row_id")
-            .bind(row.row_id)
-            .fetch_all(&mut **connection)
-            .await?;
-    let outbox_rows: Vec<RecoveryOutboxRow> = sqlx::query_as(
-        "SELECT event_ordinal, event_type, payload_json, operation_row_id, proposal_row_id,
-                session_row_id, panel_group_row_id, mosaic_row_id, project_row_id, handoff_row_id
-         FROM outbox_event WHERE command_row_id = ? ORDER BY event_ordinal",
-    )
-    .bind(row.row_id)
-    .fetch_all(&mut **connection)
-    .await?;
+    let evidence = recovery::load_recovery_evidence(connection, row.row_id).await?;
+    recovery::validate_evidence_shape(&evidence)?;
 
-    // The only recoverable shapes are an untouched execution (no evidence) or
-    // one complete audit row plus the exact event sequence recorded before the
-    // terminal write. Any other shape is a discovered partial commit and must
-    // not be guessed at.
-    if audit_rows.is_empty() && outbox_rows.is_empty() {
-        if row.response_json.is_some()
-            || row.error_code.is_some()
-            || row.recovery_terminal_outcome.is_some()
-            || row.recovery_response_json.is_some()
-            || row.recovery_error_code.is_some()
-            || row.recovery_expected_outbox_count.is_some()
-            || row.recovery_expected_outbox_digest.is_some()
-        {
-            return Err(CommandLedgerError::AmbiguousRecovery);
-        }
-    } else if audit_rows.len() != 1
-        || outbox_rows.len() > MAX_OUTBOX_EVENTS
-        || outbox_rows.iter().enumerate().any(|(ordinal, event)| {
-            event.event_ordinal != i64::try_from(ordinal).unwrap_or(i64::MAX)
-        })
-    {
-        return Err(CommandLedgerError::AmbiguousRecovery);
+    if evidence.audit_rows.is_empty() && evidence.outbox_rows.is_empty() {
+        recovery::validate_clean_execution(row)?;
     }
 
-    if !audit_rows.is_empty() {
-        let expected_count = row
-            .recovery_expected_outbox_count
-            .filter(|count| *count >= 0)
-            .and_then(|count| usize::try_from(count).ok())
-            .ok_or(CommandLedgerError::AmbiguousRecovery)?;
-        if expected_count != outbox_rows.len() {
-            return Err(CommandLedgerError::AmbiguousRecovery);
-        }
-        let expected_digest = row
-            .recovery_expected_outbox_digest
-            .as_deref()
-            .ok_or(CommandLedgerError::AmbiguousRecovery)?;
-        if recovery_outbox_digest(&outbox_rows)? != expected_digest {
-            return Err(CommandLedgerError::AmbiguousRecovery);
-        }
-        let recorded_outcome = &audit_rows[0].0;
-        let audit_outcome =
-            AuditOutcome::parse(recorded_outcome).ok_or(CommandLedgerError::AmbiguousRecovery)?;
-        let pending_outcome = row
-            .recovery_terminal_outcome
-            .as_deref()
-            .and_then(AuditOutcome::parse)
-            .ok_or(CommandLedgerError::AmbiguousRecovery)?;
-        if pending_outcome != audit_outcome {
-            return Err(CommandLedgerError::AmbiguousRecovery);
-        }
-        let state = audit_outcome.command_state();
-        let response_json = row.recovery_response_json.clone();
-        let error_code = row.recovery_error_code.clone();
-        if let Some(response) = response_json.as_deref() {
-            let parsed = serde_json::from_str::<Value>(response)
-                .map_err(|_| CommandLedgerError::AmbiguousRecovery)?;
-            if canonical_json(&parsed).map_err(|_| CommandLedgerError::AmbiguousRecovery)?
-                != response
-            {
-                return Err(CommandLedgerError::AmbiguousRecovery);
-            }
-            if response.len() > MAX_RESPONSE_BYTES {
-                return Err(CommandLedgerError::AmbiguousRecovery);
-            }
-        }
-        if let Some(error) = error_code.as_deref() {
-            bounded_safe_string(error).map_err(|_| CommandLedgerError::AmbiguousRecovery)?;
-        }
-        if (matches!(state, TerminalState::Applied) && error_code.is_some())
-            || (!matches!(state, TerminalState::Applied) && error_code.is_none())
-        {
-            return Err(CommandLedgerError::AmbiguousRecovery);
-        }
-        let update = sqlx::query(
-            "UPDATE command_execution
-             SET state = ?, state_version = state_version + 1, lease_owner = NULL,
-                 lease_expires_at = NULL, heartbeat_at = NULL, response_json = ?,
-                 error_code = ?, finished_at = ?, recovery_terminal_outcome = NULL,
-                 recovery_response_json = NULL, recovery_error_code = NULL,
-                 recovery_expected_outbox_count = NULL, recovery_expected_outbox_digest = NULL
-             WHERE row_id = ? AND state_version = ? AND lease_generation = ?",
-        )
-        .bind(state.as_str())
-        .bind(&response_json)
-        .bind(&error_code)
-        .bind(now)
-        .bind(row.row_id)
-        .bind(row.state_version)
-        .bind(row.lease_generation)
-        .execute(&mut **connection)
-        .await?;
-        if update.rows_affected() != 1 {
-            return Err(CommandLedgerError::AmbiguousRecovery);
-        }
-        return Ok(ClaimOutcome::Replayed(CommandTerminal {
-            command_id: row.public_id.clone(),
+    if !evidence.audit_rows.is_empty() {
+        let (state, response_json, error_code) =
+            recovery::reconcile_discovered_evidence(row, &evidence)?;
+        return recovery::commit_reconciled_terminal(
+            connection,
+            row,
             state,
-            response_json,
-            error_code,
-            finished_at: now.to_owned(),
-        }));
+            response_json.as_deref(),
+            error_code.as_deref(),
+            now,
+        )
+        .await;
     }
 
-    let update = sqlx::query(
-        "UPDATE command_execution
-         SET state = 'executing', state_version = state_version + 1,
-             lease_generation = lease_generation + 1, lease_owner = ?,
-             lease_expires_at = ?, heartbeat_at = ?, started_at = COALESCE(started_at, ?)
-         WHERE row_id = ? AND state IN ('received','executing')
-           AND state_version = ? AND lease_generation = ?
-           AND (lease_expires_at IS NULL OR lease_expires_at <= ?)",
-    )
-    .bind(worker_id)
-    .bind(expiry)
-    .bind(now)
-    .bind(now)
-    .bind(row.row_id)
-    .bind(row.state_version)
-    .bind(row.lease_generation)
-    .bind(now)
-    .execute(&mut **connection)
-    .await?;
-    if update.rows_affected() != 1 {
-        return Err(CommandLedgerError::InProgress);
-    }
-    Ok(ClaimOutcome::Claimed(CommandLease {
-        fence: CommandFence {
-            command_id: row.public_id.clone(),
-            lease_owner: worker_id.to_owned(),
-            lease_generation: row.lease_generation + 1,
-        },
-        state_version: row.state_version + 1,
-        lease_expires_at: expiry.to_owned(),
-        heartbeat_at: now.to_owned(),
-    }))
+    recovery::reclaim_expired_lease(connection, row, worker_id, expiry, now).await
 }
 
 fn validate_terminal(input: &TerminalInput) -> Result<()> {
-    if input.outbox.len() > MAX_OUTBOX_EVENTS {
-        return Err(CommandLedgerError::InvalidInput(format!(
-            "outbox sequence exceeds {MAX_OUTBOX_EVENTS} events"
-        )));
-    }
-    if matches!(input.state, TerminalState::Applied) && input.error_code.is_some() {
-        return Err(CommandLedgerError::InvalidInput(
-            "applied command cannot carry an error code".to_owned(),
-        ));
-    }
-    if !matches!(input.state, TerminalState::Applied) && input.error_code.is_none() {
-        return Err(CommandLedgerError::InvalidInput(
-            "refused and failed commands require an error code".to_owned(),
-        ));
-    }
-    if input.audit.action.is_empty() || input.audit.reason_code.is_empty() {
-        return Err(CommandLedgerError::InvalidInput(
-            "audit action and reason are required".to_owned(),
-        ));
-    }
-    let audit_outcome = input.audit.outcome.unwrap_or_else(|| default_audit_outcome(input.state));
-    let expected_outcome = default_audit_outcome(input.state);
-    if !audit_outcome_matches_state(audit_outcome, input.state)
-        || (matches!(input.state, TerminalState::Applied | TerminalState::Failed)
-            && audit_outcome != expected_outcome)
-    {
-        return Err(CommandLedgerError::InvalidInput(
-            "audit outcome does not match terminal command state".to_owned(),
-        ));
-    }
-    input.audit.aggregate.validate()?;
-    for event in &input.outbox {
-        if event.event_type.is_empty() {
-            return Err(CommandLedgerError::InvalidInput(
-                "outbox event type is required".to_owned(),
-            ));
-        }
-        bounded_safe_string(&event.event_type)?;
-        event.aggregate.validate()?;
-    }
-    if let Some(response) = &input.response {
-        let serialized = canonical_json(response)?;
-        if serialized.len() > MAX_RESPONSE_BYTES {
-            return Err(CommandLedgerError::InvalidInput(
-                "command response is too large".to_owned(),
-            ));
-        }
-    }
-    if let Some(payload) = &input.audit.payload {
-        let _ = safe_payload_json(payload)?;
-    }
-    Ok(())
+    validate::validate_terminal(input)
 }
 
 fn default_audit_outcome(state: TerminalState) -> AuditOutcome {
@@ -1172,49 +931,6 @@ fn aggregate_json(aggregate: AggregateRef) -> Value {
             .map(|value| value.map_or(Value::Null, Value::from))
             .collect(),
     )
-}
-
-#[derive(Debug, FromRow)]
-struct RecoveryOutboxRow {
-    event_ordinal: i64,
-    event_type: String,
-    payload_json: String,
-    operation_row_id: Option<i64>,
-    proposal_row_id: Option<i64>,
-    session_row_id: Option<i64>,
-    panel_group_row_id: Option<i64>,
-    mosaic_row_id: Option<i64>,
-    project_row_id: Option<i64>,
-    handoff_row_id: Option<i64>,
-}
-
-fn recovery_outbox_digest(rows: &[RecoveryOutboxRow]) -> Result<String> {
-    let mut manifest = Vec::with_capacity(rows.len());
-    for row in rows {
-        let payload = serde_json::from_str::<Value>(&row.payload_json)
-            .map_err(|_| CommandLedgerError::AmbiguousRecovery)?;
-        let aggregate = Value::Array(
-            [
-                row.operation_row_id,
-                row.proposal_row_id,
-                row.session_row_id,
-                row.panel_group_row_id,
-                row.mosaic_row_id,
-                row.project_row_id,
-                row.handoff_row_id,
-            ]
-            .into_iter()
-            .map(|value| value.map_or(Value::Null, Value::from))
-            .collect(),
-        );
-        manifest.push(json!({
-            "ordinal": row.event_ordinal,
-            "aggregate": aggregate,
-            "eventType": row.event_type,
-            "payload": payload,
-        }));
-    }
-    digest_manifest(&Value::Array(manifest))
 }
 
 fn safe_payload_json(value: &Value) -> Result<String> {
@@ -1398,6 +1114,7 @@ mod tests {
     use persistence_core::Database;
     use serde_json::json;
     use tokio::sync::Barrier;
+    use uuid::Uuid;
 
     async fn database() -> Database {
         let db = Database::in_memory().await.unwrap();

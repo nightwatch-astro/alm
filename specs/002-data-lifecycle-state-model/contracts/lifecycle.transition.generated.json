@@ -182,7 +182,7 @@
       ]
     },
     "PlanState": {
-      "description": "Ten-state plan lifecycle (spec 017 data-model.md `PlanState`).\n`paused` is surfaced here so the list/detail contracts can filter on it (R-Pause-1).",
+      "description": "Lifecycle state for a `FilesystemPlan`.\n\n10 variants per spec 002 data-model.md §FilesystemPlan (inc. `paused` R-Pause-1\nand `discarded` spec 017 retry-chain terminal).",
       "oneOf": [
         {
           "type": "string",
@@ -194,14 +194,18 @@
             "applied",
             "partially_applied",
             "failed",
-            "cancelled",
-            "discarded"
+            "cancelled"
           ]
         },
         {
-          "description": "Mid-apply suspension (R-Pause-1). Written only by spec 025's executor.",
+          "description": "Mid-apply suspension on `volume.unavailable`, `disk.full`, or `item.stale` (R-Pause-1).",
           "type": "string",
           "const": "paused"
+        },
+        {
+          "description": "Soft-delete terminal — paired with spec 017 retry-chain semantics.",
+          "type": "string",
+          "const": "discarded"
         }
       ]
     },
@@ -294,15 +298,24 @@
       ]
     },
     "ProjectState": {
-      "type": "string",
-      "enum": [
-        "setup_incomplete",
-        "ready",
-        "prepared",
-        "processing",
-        "completed",
-        "archived",
-        "blocked"
+      "description": "Lifecycle state for a `Project`.\n\n7 variants from spec 002 §Project and research.md §2.1.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "setup_incomplete",
+            "ready",
+            "prepared",
+            "processing",
+            "completed",
+            "archived"
+          ]
+        },
+        {
+          "description": "Carries a `block_reason` on the entity row.",
+          "type": "string",
+          "const": "blocked"
+        }
       ]
     },
     "ProjectTransitionRequest": {

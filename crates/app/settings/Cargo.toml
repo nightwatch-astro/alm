@@ -15,7 +15,7 @@ audit = { path = "../../audit" }
 contracts_core = { path = "../../contracts/core" }
 domain_core = { path = "../../domain/core" }
 patterns = { path = "../../patterns" }
-persistence_core = { path = "../../persistence/core" }
+persistence_core = { path = "../../persistence/core", features = ["test-fixture"] }
 persistence_lifecycle = { path = "../../persistence/lifecycle" }
 persistence_plans = { path = "../../persistence/plans" }
 serde_json.workspace = true

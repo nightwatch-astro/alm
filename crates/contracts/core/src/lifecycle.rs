@@ -13,70 +13,15 @@ use uuid::Uuid;
 
 pub const CONTRACT_VERSION: &str = "2.0.0";
 
-// ── State enums — mirror the JSON $defs exactly ───────────────────────────────
+// ── State enums — single-sourced from domain_core ────────────────────────────
 //
-// NOTE: ProjectState and PlanState are semantically identical to
-// `domain_core::lifecycle::{ProjectState, PlanState}`. They are kept as
-// separate definitions here (rather than re-exports) because schemars
-// reflects doc-comments as JSON schema `description` fields, and the domain
-// enum's variant docs would change the generated contract schema. Collapsing
-// these into a single enum is tracked in kyo7.85 (SQL CHECK sync).
-
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Serialize,
-    Deserialize,
-    JsonSchema,
-    Type,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum ProjectState {
-    SetupIncomplete,
-    Ready,
-    Prepared,
-    Processing,
-    Completed,
-    Archived,
-    Blocked,
-}
-
-/// Ten-state plan lifecycle (spec 017 data-model.md `PlanState`).
-/// `paused` is surfaced here so the list/detail contracts can filter on it (R-Pause-1).
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Serialize,
-    Deserialize,
-    JsonSchema,
-    Type,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum PlanState {
-    Draft,
-    ReadyForReview,
-    Approved,
-    Applying,
-    /// Mid-apply suspension (R-Pause-1). Written only by spec 025's executor.
-    Paused,
-    Applied,
-    PartiallyApplied,
-    Failed,
-    Cancelled,
-    Discarded,
-}
+// `ProjectState` and `PlanState` now live in `domain_core::lifecycle` and are
+// re-exported here so every import of `contracts_core::lifecycle::PlanState`
+// continues to resolve. The generated JSON schema now includes domain variant
+// doc-comments (schemars reflects them as `description` fields); this is the
+// intended schema-delta noted in kyo7.85.
+pub use domain_core::lifecycle::plan::PlanState;
+pub use domain_core::lifecycle::project::ProjectState;
 
 #[derive(
     Clone,

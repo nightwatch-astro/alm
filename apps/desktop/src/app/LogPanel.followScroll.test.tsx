@@ -181,10 +181,9 @@ describe('LogPanel follow-tail scroll pause/resume (T011)', () => {
     });
     expect(getFollowButton().title).toBeFalsy();
 
-    const list = document.querySelector<HTMLUListElement>(
-      '.pv-logpanel__events',
-    );
-    expect(list).not.toBeNull();
+    // Use data-testid — class names are VE-generated hashes post-migration.
+    const list = screen.getByTestId<HTMLUListElement>('logpanel-events');
+    expect(list).toBeInTheDocument();
     if (!list) throw new Error('scroll list not found');
 
     // Simulate the user scrolling away from the top (newest entries are at
@@ -226,9 +225,8 @@ describe('LogPanel follow-tail scroll pause/resume (T011)', () => {
       );
     });
 
-    const list = document.querySelector<HTMLUListElement>(
-      '.pv-logpanel__events',
-    );
+    // Use data-testid — class names are VE-generated hashes post-migration.
+    const list = screen.getByTestId<HTMLUListElement>('logpanel-events');
     if (!list) throw new Error('scroll list not found');
 
     // handleScroll pauses only when scrollTop > 20; 10 stays "at top".
@@ -275,9 +273,8 @@ describe('LogPanel follow-tail scroll pause/resume (T011)', () => {
       expect(getFollowButton().textContent).toBe('— Follow');
     });
 
-    const list = document.querySelector<HTMLUListElement>(
-      '.pv-logpanel__events',
-    );
+    // Use data-testid — class names are VE-generated hashes post-migration.
+    const list = screen.getByTestId<HTMLUListElement>('logpanel-events');
     if (!list) throw new Error('scroll list not found');
 
     // Scroll away from the top while follow is off — `handleScroll` sets
@@ -421,9 +418,8 @@ describe('LogPanel follow-tail scroll pause/resume (T011)', () => {
       expect(screen.getByText('Second entry')).toBeInTheDocument();
     });
 
-    const list = document.querySelector<HTMLUListElement>(
-      '.pv-logpanel__events',
-    );
+    // Use data-testid — class names are VE-generated hashes post-migration.
+    const list = screen.getByTestId<HTMLUListElement>('logpanel-events');
     if (!list) throw new Error('scroll list not found');
     setScrollMetrics(list, { scrollTop: 120 });
     fireEvent.scroll(list);

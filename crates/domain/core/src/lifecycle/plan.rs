@@ -72,6 +72,21 @@ impl PlanState {
                 | Self::Discarded
         )
     }
+
+    /// All variants in declaration order — single source of truth for SQL CHECK
+    /// generation and schema-sync tests.
+    pub const ALL: &'static [Self] = &[
+        Self::Draft,
+        Self::ReadyForReview,
+        Self::Approved,
+        Self::Applying,
+        Self::Paused,
+        Self::Applied,
+        Self::PartiallyApplied,
+        Self::Failed,
+        Self::Cancelled,
+        Self::Discarded,
+    ];
 }
 
 /// Plan origin — who created this plan.

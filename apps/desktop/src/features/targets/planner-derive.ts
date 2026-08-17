@@ -36,7 +36,7 @@ import {
   type TimeWindow,
   computeNightObservability,
 } from './planner-astronomy';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import {
   BANDS,
   BROADBAND_BANDS,
@@ -44,7 +44,7 @@ import {
   minSeparationDeg,
   type Band,
   type MoonAvoidanceParams,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import { nextOpposition } from './astro/opposition';
 
 /** A separation figure, or the explicit "Moon not up" state at the reference time/window (FR-020). */
@@ -334,42 +334,44 @@ function deriveBestDate(
     : null;
 }
 
+// ── Phase helpers for deriveObservability ────────────────────────────────────
+
+interface AltitudeStats {
+  maxAltDeg: number;
+  usableSamples: number;
+  uptimeSamples: number;
+  visibleTonight: boolean;
+}
+
 /**
- * Derive the threshold-dependent scalars from cached positions. Pure and cheap —
- * safe to call on every threshold change (SC-003). Moon/best-date integration
- * (`options`) reads only already-computed `NightObservability` fields — no
- * fresh astronomy-engine calls happen here.
+ * Phase 1: scan all night samples to derive pure altitude stats
+ * (peak altitude, dark-gated imaging sample count, whole-night uptime count,
+ * and whether the target clears `usableAltitudeDeg` in the observable window).
+ *
+ * Observable window is the astronomical dark window when one exists, else the
+ * whole night (#579): at high latitude (e.g. lat 52 in summer) there is no
+ * astronomical darkness for months, but a high/circumpolar target is still
+ * observable in twilight and MUST NOT read identically to a target that never
+ * rises. Imaging time stays dark-gated (FR-017); only the visibility flag falls
+ * back. Uptime (FR-005/D1) counts the whole night's above-threshold samples.
  */
-export function deriveObservability(
+export function sampleAltitudeStats(
   night: NightObservability,
   usableAltitudeDeg: number,
-  options: DeriveOptions = {},
-): DerivedObservability {
+): AltitudeStats {
   let maxAltDeg = Number.NEGATIVE_INFINITY;
   for (const s of night.samples) {
     if (s.altDeg > maxAltDeg) maxAltDeg = s.altDeg;
   }
   if (!Number.isFinite(maxAltDeg)) maxAltDeg = 0;
 
-  // Imaging time counts only samples inside the dark window that clear the
-  // usable altitude. No dark window (high-lat summer) → zero imaging (FR-017).
-  // Uptime (D1) counts the WHOLE night's above-threshold samples — the two
-  // quantities must stay distinguishable (FR-005).
-  let usableSamples = 0;
-  let uptimeSamples = 0;
   const dark = night.darkWindow;
-  // Visibility (#579) discriminates by ALTITUDE over the observable window,
-  // which is the astronomical dark window when one exists, else the whole
-  // night. At high latitude there is no astronomical darkness for months
-  // (e.g. lat 52 in summer), but a high/circumpolar target is still observable
-  // in twilight and MUST NOT read identically to a target that never rises.
-  // Imaging time stays dark-gated (FR-017); only the visibility flag falls
-  // back. Uptime (FR-005/D1) counts the whole night's above-threshold samples
-  // either way.
   const observable = dark ?? {
     startMs: night.nightStartMs,
     endMs: night.nightEndMs,
   };
+  let usableSamples = 0;
+  let uptimeSamples = 0;
   let visibleTonight = false;
   for (const s of night.samples) {
     if (s.altDeg < usableAltitudeDeg) continue;
@@ -381,11 +383,19 @@ export function deriveObservability(
       visibleTonight = true;
     }
   }
+  return { maxAltDeg, usableSamples, uptimeSamples, visibleTonight };
+}
 
-  const minHorizonAltDeg = options.minHorizonAltDeg ?? 0;
-  const params = options.moonAvoidanceParams ?? DEFAULT_MOON_AVOIDANCE;
-
-  const separationScalars: SeparationScalars = {
+/**
+ * Phase 2: build the three target↔Moon separation reference figures (US5,
+ * FR-020) from already-computed `NightObservability` moon samples — no fresh
+ * astronomy-engine calls.
+ */
+export function separationScalarsFor(
+  night: NightObservability,
+  minHorizonAltDeg: number,
+): SeparationScalars {
+  return {
     atTransitDeg: night.transit
       ? separationAt(night.moonSamples, night.transit.tMs, minHorizonAltDeg)
       : 'moon-not-up',
@@ -402,6 +412,46 @@ export function deriveObservability(
         )
       : 'moon-not-up',
   };
+}
+
+/**
+ * Phase 3: derive the FR-029 reason-for-zero with precedence
+ * darkness > altitude > moon. Returns `null` when imaging time is non-zero
+ * and at least one band is moon-viable.
+ *
+ * `moonComputed` must be `night.moonSamples.length > 0` — "not computed"
+ * never reads as "moon-limited" (fabrication guard).
+ */
+export function zeroImagingReasonFor(
+  dark: TimeWindow | null,
+  totalImagingMinutes: number,
+  moonComputed: boolean,
+  moonFree: Record<Band, number>,
+): ZeroImagingReason | null {
+  if (!dark) return 'darkness';
+  if (totalImagingMinutes === 0) return 'altitude';
+  if (moonComputed && BANDS.every((b) => moonFree[b] === 0)) return 'moon';
+  return null;
+}
+
+/**
+ * Derive the threshold-dependent scalars from cached positions. Pure and cheap —
+ * safe to call on every threshold change (SC-003). Moon/best-date integration
+ * (`options`) reads only already-computed `NightObservability` fields — no
+ * fresh astronomy-engine calls happen here.
+ */
+export function deriveObservability(
+  night: NightObservability,
+  usableAltitudeDeg: number,
+  options: DeriveOptions = {},
+): DerivedObservability {
+  const { maxAltDeg, usableSamples, uptimeSamples, visibleTonight } =
+    sampleAltitudeStats(night, usableAltitudeDeg);
+
+  const minHorizonAltDeg = options.minHorizonAltDeg ?? 0;
+  const params = options.moonAvoidanceParams ?? DEFAULT_MOON_AVOIDANCE;
+
+  const separationScalars = separationScalarsFor(night, minHorizonAltDeg);
 
   const totalImagingMinutes = usableSamples * GRID_STEP_MINUTES;
   const moonFree = moonFreeMinutesByBand(
@@ -419,15 +469,12 @@ export function deriveObservability(
     ? BANDS.filter((b) => moonFree[b] < totalImagingMinutes)
     : [];
 
-  // FR-029 reason-for-zero, precedence darkness > altitude > moon.
-  let zeroImagingReason: ZeroImagingReason | null = null;
-  if (!dark) {
-    zeroImagingReason = 'darkness';
-  } else if (totalImagingMinutes === 0) {
-    zeroImagingReason = 'altitude';
-  } else if (moonComputed && BANDS.every((b) => moonFree[b] === 0)) {
-    zeroImagingReason = 'moon';
-  }
+  const zeroImagingReason = zeroImagingReasonFor(
+    night.darkWindow,
+    totalImagingMinutes,
+    moonComputed,
+    moonFree,
+  );
 
   const sensor = options.sensorConfig;
   const oscSinglePassMinutes =

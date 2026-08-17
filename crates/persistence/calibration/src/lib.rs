@@ -5,3 +5,4 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod repositories;
+pub mod test_support;

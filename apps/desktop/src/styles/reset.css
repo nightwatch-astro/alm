@@ -34,6 +34,19 @@ body {
    surfaces like the planner axis labels declare it explicitly. */
 
 /* Semantic element base layer: nothing falls through to a browser default. */
+/* Heading UA resets (spec 055 T011 invariant): browser UA stylesheets assign
+   em-based font-size (e.g. h3 = 1.17em, h4 = 1.33em) and font-weight: bold
+   to h1–h6. The em multipliers produce fractional px at every dial stop other
+   than 14px default (e.g. 12px × 1.17 = 14.04px), violating the whole-pixel
+   guarantee. All product heading elements carry explicit --pv-text-* overrides
+   via their component class, so `inherit` here is the correct no-op base —
+   any heading that reaches its component class is already correctly sized;
+   any that doesn't (e.g. from a third-party library or a component yet to
+   ship its CSS) inherits the body font rather than the UA em value. */
+h1, h2, h3, h4, h5, h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
 strong, b {
   /* Never 700/synthetic — the bundled Inter statics load 400/500/600 only. */
   font-weight: var(--pv-weight-semibold);

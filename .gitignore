@@ -390,3 +390,4 @@ apps/desktop/.ds-css/
 .beads-credential-key
 .beads/proxieddb/
 crates/app/core/projects/
+lcov.info

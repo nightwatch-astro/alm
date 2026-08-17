@@ -349,3 +349,151 @@ pub async fn insert_pending_proposal(
             .expect("insert_pending_proposal select failed");
     row_id
 }
+
+/// Insert a minimal `reclassification_plan_revision` in `applied` state for tests.
+///
+/// Inserts stub `session_equipment_resolution` and `session_metadata_resolution`
+/// rows to satisfy NOT NULL FKs. The `source_session_row_id` is the predecessor
+/// session. Returns `(row_id, public_id)`.
+///
+/// # Panics
+pub async fn insert_applied_reclassification_plan_revision(
+    pool: &SqlitePool,
+    source_session_row_id: i64,
+    actor_row_id: i64,
+    config_revision_row_id: i64,
+    command_row_id: i64,
+    created_sequence: i64,
+) -> (i64, String) {
+    let plan_pub_id = format!("reclass-plan-{source_session_row_id}-{created_sequence}");
+    let plan_rev_pub_id = format!("reclass-plan-rev-{source_session_row_id}-{created_sequence}");
+    let ts = "2026-07-22T00:00:00.000000Z";
+
+    // Stub equipment_resolution row.
+    let equip_pub_id = format!("equip-res-{source_session_row_id}-{created_sequence}");
+    sqlx::query(
+        "INSERT OR IGNORE INTO session_equipment_resolution
+             (public_id, session_row_id, revision_number, comparison_severity,
+              assignment_mode, config_revision_row_id, actor_row_id,
+              created_sequence, created_at)
+         VALUES (?, ?, 1, 'unknown', 'automatic', ?, ?, ?, ?)",
+    )
+    .bind(&equip_pub_id)
+    .bind(source_session_row_id)
+    .bind(config_revision_row_id)
+    .bind(actor_row_id)
+    .bind(created_sequence)
+    .bind(ts)
+    .execute(pool)
+    .await
+    .expect("insert_stub_equipment_resolution failed");
+
+    let (equip_row_id,): (i64,) =
+        sqlx::query_as("SELECT row_id FROM session_equipment_resolution WHERE public_id = ?")
+            .bind(&equip_pub_id)
+            .fetch_one(pool)
+            .await
+            .expect("select stub equipment_resolution failed");
+
+    // Stub metadata_resolution row.
+    let meta_pub_id = format!("meta-res-{source_session_row_id}-{created_sequence}");
+    sqlx::query(
+        "INSERT OR IGNORE INTO session_metadata_resolution
+             (public_id, session_row_id, revision_number, state,
+              actor_row_id, command_row_id, created_sequence, created_at)
+         VALUES (?, ?, 1, 'accepted', ?, ?, ?, ?)",
+    )
+    .bind(&meta_pub_id)
+    .bind(source_session_row_id)
+    .bind(actor_row_id)
+    .bind(command_row_id)
+    .bind(created_sequence)
+    .bind(ts)
+    .execute(pool)
+    .await
+    .expect("insert_stub_metadata_resolution failed");
+
+    let (meta_row_id,): (i64,) =
+        sqlx::query_as("SELECT row_id FROM session_metadata_resolution WHERE public_id = ?")
+            .bind(&meta_pub_id)
+            .fetch_one(pool)
+            .await
+            .expect("select stub metadata_resolution failed");
+
+    // reclassification_plan stable row.
+    sqlx::query(
+        "INSERT OR IGNORE INTO reclassification_plan (public_id, head_generation, created_at)
+         VALUES (?, 0, ?)",
+    )
+    .bind(&plan_pub_id)
+    .bind(ts)
+    .execute(pool)
+    .await
+    .expect("insert_reclassification_plan failed");
+
+    let (plan_row_id,): (i64,) =
+        sqlx::query_as("SELECT row_id FROM reclassification_plan WHERE public_id = ?")
+            .bind(&plan_pub_id)
+            .fetch_one(pool)
+            .await
+            .expect("select reclassification_plan failed");
+
+    // reclassification_plan_revision row.
+    let basis = format!("basis-{source_session_row_id}");
+    sqlx::query(
+        "INSERT OR IGNORE INTO reclassification_plan_revision
+             (public_id, plan_row_id, revision_number, state,
+              source_session_row_id, metadata_resolution_row_id,
+              equipment_resolution_row_id, basis_digest,
+              actor_row_id, command_row_id, created_sequence, created_at, decided_at)
+         VALUES (?, ?, 1, 'applied', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&plan_rev_pub_id)
+    .bind(plan_row_id)
+    .bind(source_session_row_id)
+    .bind(meta_row_id)
+    .bind(equip_row_id)
+    .bind(&basis)
+    .bind(actor_row_id)
+    .bind(command_row_id)
+    .bind(created_sequence)
+    .bind(ts)
+    .bind(ts)
+    .execute(pool)
+    .await
+    .expect("insert_reclassification_plan_revision failed");
+
+    let (row_id,): (i64,) =
+        sqlx::query_as("SELECT row_id FROM reclassification_plan_revision WHERE public_id = ?")
+            .bind(&plan_rev_pub_id)
+            .fetch_one(pool)
+            .await
+            .expect("select reclassification_plan_revision failed");
+    (row_id, plan_rev_pub_id)
+}
+
+/// Insert a minimal `spec062_project` row and return its `row_id`.
+///
+/// The project starts with no membership head (NULL).
+///
+/// # Panics
+pub async fn insert_spec062_project(pool: &SqlitePool, public_id: &str) -> i64 {
+    sqlx::query(
+        "INSERT OR IGNORE INTO spec062_project
+             (public_id, membership_head_generation, materialization_head_generation,
+              current_manifest_generation, created_at)
+         VALUES (?, 0, 0, 0, '2026-07-22T00:00:00.000000Z')",
+    )
+    .bind(public_id)
+    .execute(pool)
+    .await
+    .expect("insert_spec062_project failed");
+
+    let (row_id,): (i64,) =
+        sqlx::query_as("SELECT row_id FROM spec062_project WHERE public_id = ?")
+            .bind(public_id)
+            .fetch_one(pool)
+            .await
+            .expect("insert_spec062_project select failed");
+    row_id
+}

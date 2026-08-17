@@ -4,7 +4,7 @@
 /**
  * NotesSection — observing notes editor/viewer for a target (spec 023 US4).
  *
- * Extracted from TargetDetailV2.tsx.
+ * Extracted from TargetDetail.tsx.
  */
 
 import { Section, Banner } from '@/ui';

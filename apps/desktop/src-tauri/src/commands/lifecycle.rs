@@ -301,6 +301,9 @@ impl From<LedgerRow> for LedgerRowDto {
 
 /// `lifecycle.ledger.list` Tauri command.
 ///
+/// Applies a server-side default limit clamp (1..=500, default 100) to prevent
+/// unbounded result sets over IPC.
+///
 /// # Errors
 /// Returns a stringified persistence error when the repository query fails
 /// (e.g. transient DB unavailability). Successful empty results are `Ok(vec![])`.
@@ -310,7 +313,10 @@ pub async fn lifecycle_ledger_list(
     state: State<'_, AppState>,
     filter: LedgerFilterDto,
 ) -> Result<Vec<LedgerRowDto>, String> {
-    list_assets_ledger(state.repo.as_ref(), filter.into_filter())
+    let mut f = filter.into_filter();
+    // Default limit clamp — same pattern as plans/read.rs:47.
+    f.limit = Some(f.limit.unwrap_or(100).clamp(1, 500));
+    list_assets_ledger(state.repo.as_ref(), f)
         .await
         .map(|rows| rows.into_iter().map(LedgerRowDto::from).collect())
         .map_err(|err| err.to_string())

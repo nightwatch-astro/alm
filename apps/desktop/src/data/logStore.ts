@@ -13,6 +13,14 @@
  * - `useLog()` hook returns the current buffer snapshot.
  * - `dropped` counts total evicted entries since session start (diagnostics only).
  * - Ring buffer ordering is newest-first for render (reverse of wire order).
+ *
+ * Notification contract:
+ * `notify()` coalesces rapid `appendLog` calls via `requestAnimationFrame`.
+ * Listeners fire asynchronously (next paint frame), not synchronously on
+ * `appendLog`. `useSyncExternalStore` in LogPanel handles this correctly —
+ * React re-renders on the next frame rather than within the same microtask.
+ * Tests that assert listener call counts must advance fake timers to flush
+ * the pending rAF (see logStore.ringBuffer.test.ts).
  */
 
 type Listener = () => void;
@@ -71,20 +79,47 @@ const listeners = new Set<Listener>();
 // Fast dedup set on entry ids.
 const seenIds = new Set<string>();
 
+let notifyScheduled = false;
 function notify() {
-  for (const listener of listeners) {
-    listener();
-  }
+  if (notifyScheduled) return;
+  notifyScheduled = true;
+  requestAnimationFrame(() => {
+    notifyScheduled = false;
+    for (const listener of listeners) {
+      listener();
+    }
+  });
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
+ * Ordering key for newest-first render: `[time, tiebreak]`, compared
+ * lexicographically.
+ *
+ * `time` is whole-second ISO-8601, so same-second entries need the tiebreak.
+ * `aud:<n>` uses the backing `event_id`, which is monotonic. `dia:<seq>` rows
+ * are in-memory diagnostics emitted from the live path, so they sort after every
+ * `aud` row sharing their second.
+ */
+function orderKey(entry: LogEntry): [string, number] {
+  const seq = Number.parseInt(entry.id.slice(entry.id.indexOf(':') + 1), 10);
+  const rank = Number.isNaN(seq) ? 0 : seq;
+  return [
+    entry.time,
+    entry.id.startsWith('dia:') ? DIA_RANK_BASE + rank : rank,
+  ];
+}
+
+/** Above any plausible `event_id`, so diagnostics sort after audit rows. */
+const DIA_RANK_BASE = Number.MAX_SAFE_INTEGER / 2;
+
+/**
  * Append one or more log entries to the ring buffer.
  *
  * - Dedupes by `id` so reconnect replay does not produce duplicate rows.
- * - Entries arrive oldest-first from the backend; we prepend to keep the
- *   buffer newest-first for render.
+ * - Sorts the merged buffer newest-first rather than trusting arrival order: a
+ *   live `log:entry` can land before the `log.recent` hydration it postdates.
  * - Evicts oldest entries (from the tail of the array, i.e. the oldest)
  *   when `capacity` is exceeded.
  */
@@ -96,8 +131,12 @@ export function appendLog(newEntries: LogEntry[]): void {
 
   for (const e of toAdd) seenIds.add(e.id);
 
-  // Prepend new entries (newest-first render).
-  const combined = [...toAdd.reverse(), ...state.entries];
+  const combined = [...toAdd, ...state.entries].sort((a, b) => {
+    const [aTime, aRank] = orderKey(a);
+    const [bTime, bRank] = orderKey(b);
+    if (aTime !== bTime) return aTime < bTime ? 1 : -1;
+    return bRank - aRank;
+  });
 
   // Evict from tail (oldest) when over capacity.
   let dropped = state.dropped;
@@ -140,4 +179,5 @@ export function resetLogStore(): void {
   state = { entries: [], dropped: 0, truncated: false };
   seenIds.clear();
   listeners.clear();
+  notifyScheduled = false;
 }

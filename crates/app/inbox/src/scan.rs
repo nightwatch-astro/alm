@@ -146,7 +146,7 @@ impl ScannedInboxItem {
     /// score 0 so `list_unclassified_source_groups` does not surface it as a
     /// scanned-but-unclassified row *in addition to* its master rows. The
     /// subtraction is sound only because `masters` is built by filtering
-    /// `fits_files ∪ xisf_files` (see [`scan_dir`]); it is saturating so a
+    /// `fits_files ∪ xisf_files` (see `scan_dir`); it is saturating so a
     /// future violation of that subset relation degrades to 0 rather than
     /// panicking.
     #[must_use]
@@ -187,7 +187,7 @@ pub struct ScanOptions {
     /// (see `crates/tools/perf-bench`).
     ///
     /// `Some(N)` where N > 1 enables the parallel path capped at
-    /// [`MAX_SCAN_WORKERS`]. Intended for rotational HDD libraries where
+    /// `MAX_SCAN_WORKERS`. Intended for rotational HDD libraries where
     /// per-file seek latency amortises across threads.
     pub workers: Option<usize>,
 }
@@ -245,16 +245,10 @@ fn try_detect_master(abs_path: &Path, rel_path: &str, ext: &str) -> Option<Scann
 
 /// Compute the root-relative path as a forward-slash UTF-8 string for the wire.
 ///
-/// `path` is guaranteed UTF-8 here: every descendant of `root` passed the
-/// non-UTF-8 skip at the `read_dir` boundary, so `Utf8Path::from_path` succeeds.
-/// The previous implementation used `to_string_lossy`, which could silently
-/// mangle a path; camino makes the conversion lossless by construction. The
-/// `unwrap_or_else` fallback is defensive only and cannot fire for scanned
-/// descendants.
+/// Delegates to `fs_pathsafe::relative_wire_path` (canonical single home
+/// for the backslash→slash normalization, bd astro-plan-kyo7.88).
 fn relative_utf8(root: &Path, path: &Path) -> String {
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    Utf8Path::from_path(rel)
-        .map_or_else(|| rel.to_string_lossy().replace('\\', "/"), |u| u.as_str().replace('\\', "/"))
+    fs_pathsafe::relative_wire_path(root, path)
 }
 
 // ── scan_root ────────────────────────────────────────────────────────────────
@@ -333,7 +327,7 @@ struct LeafDir {
 /// # Panics
 ///
 /// Panics only if a scan worker thread panics due to an internal bug
-/// (e.g. a logic error in [`process_leaf`]). Per-file I/O failures
+/// (e.g. a logic error in `process_leaf`). Per-file I/O failures
 /// (unreadable files, parse errors) are silently skipped and do not panic.
 pub fn scan_root(root: &Path, options: &ScanOptions) -> Result<ScanOutput, String> {
     if !root.is_dir() {

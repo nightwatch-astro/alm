@@ -3,6 +3,7 @@
 
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { vanillaExtractPlugin } from "@vanilla-extract/vite-plugin";
 import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import { resolve } from "path";
 import { readFileSync } from "node:fs";
@@ -31,6 +32,7 @@ export default defineConfig(({ mode, command }) => {
 
   return {
     plugins: [
+      vanillaExtractPlugin(),
       // Compile the message catalog (messages/*.json → src/paraglide/) on dev
       // start + build, with HMR when a message changes. Strategy chain (spec
       // 061 research D1), evaluated in order: a user's saved choice

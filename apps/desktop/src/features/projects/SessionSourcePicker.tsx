@@ -50,7 +50,7 @@ export function SessionSourcePicker({
 }: SessionSourcePickerProps) {
   const { data: allSessions, isFetching: loading } = useQuery({
     queryKey: queryKeys.sessions.all(),
-    queryFn: async () => unwrap(await commands.sessionsList()),
+    queryFn: async () => unwrap(await commands.sessionsList(null, null)),
   });
   const [filterTarget, setFilterTarget] = useState('');
   const [filterFilter, setFilterFilter] = useState('');

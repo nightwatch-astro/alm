@@ -13,6 +13,7 @@
 #![allow(clippy::doc_markdown)]
 
 use audit::bus::EventBus;
+use contracts_core::lifecycle::PlanState;
 use persistence_inbox::repositories::inbox as inbox_repo;
 use sqlx::SqlitePool;
 use targeting_resolver::simbad::ResolveCache;
@@ -21,7 +22,7 @@ use targeting_resolver::simbad::ResolveCache;
 /// deleting the now-stale `inbox_plan_links` row.
 ///
 /// An `applied` plan runs the full applied path via
-/// [`crate::plan_listener::complete_applied_plan`] — calibration-master
+/// `crate::plan_listener::complete_applied_plan` — calibration-master
 /// registration and light-frame ingest included. Resolving without them would
 /// delete the link row, which is the only record that the work is outstanding,
 /// so the master would never be registered and the frames never ingested.
@@ -46,10 +47,23 @@ pub async fn run_repair(
 
     let mut repaired = 0;
     for (inbox_item_id, plan_id, plan_state) in orphans {
+        // Strict-parse: quarantine rows whose `plan_state` is not a recognised
+        // PlanState variant. A corrupt state string cannot be acted on safely —
+        // skip and log so the link row survives for manual inspection.
+        let Some(typed_state) = PlanState::parse_str(&plan_state) else {
+            tracing::error!(
+                %inbox_item_id,
+                %plan_id,
+                %plan_state,
+                "inbox repair: quarantining orphan — unrecognised plan state"
+            );
+            continue;
+        };
+
         // Same mapping as the listener: only `applied` resolves; every other
         // terminal state goes back to unconfirmed (derived from the row's own
         // frame_type, spec 058 SC-003).
-        let outcome = if plan_state == "applied" {
+        let outcome = if typed_state == PlanState::Applied {
             crate::plan_listener::complete_applied_plan(pool, bus, resolve_cache, &plan_id).await
         } else {
             crate::plan_listener::transition_via_plan_id(pool, &plan_id, None).await

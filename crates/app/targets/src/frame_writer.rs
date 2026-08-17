@@ -18,14 +18,11 @@ use sqlx::SqlitePool;
 use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
 
-use contracts_core::error_code::ErrorCode;
-use contracts_core::{ContractError, ErrorSeverity};
+use contracts_core::ContractError;
 
 use persistence_targets::repositories::q_targets_ingest as repo;
 
-fn db_err(e: impl std::fmt::Display) -> ContractError {
-    ContractError::new(ErrorCode::InternalDatabase, e.to_string(), ErrorSeverity::Fatal, true)
-}
+use app_core_errors::db_err;
 
 /// Stat `abs_path` for its real byte size and mtime (ISO-8601), used at apply
 /// time so a frame is never recorded with `size_bytes = 0` (spec 048 FR-001).
@@ -73,12 +70,9 @@ pub async fn upsert_frame_record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use persistence_core::Database;
 
-    async fn test_db() -> Database {
-        let db = Database::in_memory().await.unwrap();
-        db.migrate().await.unwrap();
-        db
+    async fn test_db() -> persistence_core::Database {
+        persistence_core::test_support::setup_db().await
     }
 
     async fn insert_root(pool: &SqlitePool, id: &str) {

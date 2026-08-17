@@ -28,6 +28,13 @@ apps/desktop/biome.json text eol=lf
 *.css text eol=lf
 apps/desktop/tokens/*.json text eol=lf
 
+# Generated contract JSON artifacts. `just check-generated` re-runs the
+# generator (which always emits LF) then diffs against the committed file
+# byte-for-byte. Without this a Windows checkout converts these to CRLF and
+# the gate fails there — and only there — with a spurious drift that is not
+# present in the actual source.
+specs/**/contracts/*.generated.json text eol=lf
+
 # Migration SQL and Rust test files must use LF so that the frozen baseline
 # checksum (SHA-384 of file bytes) is identical on all platforms.
 *.sql text eol=lf

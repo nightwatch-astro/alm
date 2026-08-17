@@ -38,6 +38,7 @@ use audit::bus::EventBus;
 use audit::event_bus::{
     PlanApplyingCompleted, PlanDiscarded, TOPIC_PLAN_APPLYING_COMPLETED, TOPIC_PLAN_DISCARDED,
 };
+use contracts_core::lifecycle::PlanState;
 use persistence_inbox::repositories::inbox as inbox_repo;
 use persistence_inbox::repositories::q_inbox::{
     self, InsertCalibrationFingerprint, InsertCalibrationSession,
@@ -83,7 +84,7 @@ fn plan_completion_lock(plan_id: &str) -> Arc<Mutex<()>> {
 /// (`handle_plan_completed` → `ingest_light_frames`) can emit `target.resolved`
 /// events for inline cache hits. `resolve_cache` (also cheap to clone — an
 /// `Arc` handle) is threaded through to
-/// [`ingest_light_frames_if_applicable`], which uses it to trigger an
+/// `ingest_light_frames_if_applicable`, which uses it to trigger an
 /// immediate ingest-resolution drain pass after a plan's light frames are
 /// ingested (issue #1256) instead of waiting on the periodic backstop.
 pub fn start_inbox_plan_listener(pool: SqlitePool, bus: &EventBus, resolve_cache: ResolveCache) {
@@ -116,7 +117,7 @@ fn spawn_repair_sweep(pool: SqlitePool, bus: EventBus, resolve_cache: ResolveCac
         loop {
             ticker.tick().await;
             if let Err(e) = crate::repair::run_repair(&pool, &bus, &resolve_cache).await {
-                tracing::warn!("inbox repair sweep: {e}");
+                tracing::warn!(error = %e, "inbox repair sweep failed");
             }
         }
     });
@@ -134,7 +135,7 @@ async fn run_listener_loop(
         match rx.recv().await {
             Ok(envelope) => {
                 if let Err(e) = handle_event(&pool, &bus, &resolve_cache, &envelope).await {
-                    tracing::warn!("inbox plan_listener: error handling event: {e}");
+                    tracing::warn!(error = %e, "inbox plan_listener: error handling event");
                 }
             }
             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -186,7 +187,7 @@ async fn handle_plan_completed(
     resolve_cache: &ResolveCache,
     payload: &PlanApplyingCompleted,
 ) -> Result<(), String> {
-    if payload.terminal_state == "applied" {
+    if payload.terminal_state == PlanState::Applied.as_str() {
         complete_applied_plan(pool, bus, resolve_cache, &payload.plan_id).await
     } else {
         // partially_applied, failed, cancelled → allow re-split, back to
@@ -208,7 +209,7 @@ async fn handle_plan_completed(
 /// `Ok` — a propagated registration error leaves both the link and the
 /// `plan_open` state in place so the next sweep retries.
 ///
-/// [`ingest_light_frames_if_applicable`] deliberately does not participate in
+/// `ingest_light_frames_if_applicable` deliberately does not participate in
 /// that guard: it logs and swallows its errors (spec 035 US4/T042, R12), so a
 /// per-frame metadata/IO problem never strands the inbox item.
 pub(crate) async fn complete_applied_plan(
@@ -543,10 +544,82 @@ pub(crate) mod tests {
         AliasKind, ObjectType, ResolvedAlias, ResolvedIdentity, TargetSource,
     };
 
-    pub async fn test_db() -> Database {
-        let db = Database::in_memory().await.unwrap();
-        db.migrate().await.unwrap();
-        db
+    pub async fn test_db() -> persistence_core::Database {
+        persistence_core::test_support::setup_db().await
+    }
+
+    /// Poll `check` every 25 ms until it returns `Some(T)`, or panic after 2 s.
+    ///
+    /// Mirrors `app_core/tests/support::poll_until` (PR #1470): replaces
+    /// fixed `tokio::time::sleep` barriers that fail on loaded Windows CI
+    /// runners where the scheduler may not wake within a short deadline.
+    async fn poll_until<F, Fut, T>(mut check: F, deadline_msg: &str) -> T
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Option<T>>,
+    {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if let Some(v) = check().await {
+                return v;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "poll_until timed out after 2 s: {deadline_msg}"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    }
+
+    /// Poll until `inbox_items.state` for `item_id` equals `expected`, panic
+    /// after 2 s. Replaces fixed-duration sleeps that are fragile on Windows.
+    async fn wait_item_state(pool: &sqlx::SqlitePool, item_id: &str, expected: &str) {
+        let owned_id = item_id.to_owned();
+        let owned_expected = expected.to_owned();
+        poll_until(
+            move || {
+                let id = owned_id.clone();
+                let exp = owned_expected.clone();
+                let pool = pool.clone();
+                async move {
+                    let row: Option<(String,)> =
+                        sqlx::query_as("SELECT state FROM inbox_items WHERE id = ?")
+                            .bind(&id)
+                            .fetch_optional(&pool)
+                            .await
+                            .expect("poll inbox_items state");
+                    match row {
+                        Some((s,)) if s == exp => Some(()),
+                        _ => None,
+                    }
+                }
+            },
+            &format!("inbox item {item_id} never reached state '{expected}'"),
+        )
+        .await;
+    }
+
+    /// Poll until the `inbox_plan_links` row for `item_id` is gone, panic after
+    /// 2 s.
+    ///
+    /// `transition_via_plan_id` updates the item state and deletes the link as
+    /// two separate writes, so observing the new state does NOT imply the link
+    /// is already gone — asserting on it directly after `wait_item_state` is a
+    /// race that fails intermittently under load.
+    async fn wait_plan_link_deleted(pool: &sqlx::SqlitePool, item_id: &str) {
+        let owned_id = item_id.to_owned();
+        poll_until(
+            move || {
+                let id = owned_id.clone();
+                let pool = pool.clone();
+                async move {
+                    let link = inbox_repo::get_plan_link(&pool, &id).await.expect("poll plan link");
+                    link.is_none().then_some(())
+                }
+            },
+            &format!("plan link for inbox item {item_id} was never deleted"),
+        )
+        .await;
     }
 
     fn make_bus(db: &Database) -> EventBus {
@@ -627,14 +700,12 @@ pub(crate) mod tests {
 
         bus.publish(TOPIC_PLAN_APPLYING_COMPLETED, Source::System, payload).await.unwrap();
 
-        // Give the background task time to process.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        wait_item_state(db.pool(), "item-t1", "resolved").await;
 
         let item = inbox_repo::get_inbox_item(db.pool(), "item-t1").await.unwrap();
         assert_eq!(item.state, "resolved");
 
-        let link = inbox_repo::get_plan_link(db.pool(), "item-t1").await.unwrap();
-        assert!(link.is_none(), "plan link should be deleted after resolution");
+        wait_plan_link_deleted(db.pool(), "item-t1").await;
     }
 
     /// issue #1256: a `plan.applying.completed`("applied") event must trigger
@@ -717,7 +788,30 @@ pub(crate) mod tests {
 
         // Well under the 30s periodic backstop interval — proves the event
         // path itself resolves promptly rather than depending on the timer.
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        // Uses poll_until (25 ms poll, 2 s cap) instead of a fixed sleep so
+        // Windows CI runners under load don't time out (PR #1470 pattern).
+        let owned_image_id = image_id.clone();
+        let pool_for_poll = db.pool().clone();
+        poll_until(
+            move || {
+                let id = owned_image_id.clone();
+                let pool = pool_for_poll.clone();
+                async move {
+                    let row: Option<(String,)> =
+                        sqlx::query_as("SELECT state FROM ingest_resolution WHERE image_id = ?")
+                            .bind(&id)
+                            .fetch_optional(&pool)
+                            .await
+                            .expect("poll ingest_resolution state");
+                    match row {
+                        Some((s,)) if s == "resolved" => Some(()),
+                        _ => None,
+                    }
+                }
+            },
+            &format!("ingest_resolution row for image {image_id} never reached 'resolved'"),
+        )
+        .await;
 
         let (state, target_id): (String, Option<String>) =
             sqlx::query_as("SELECT state, target_id FROM ingest_resolution WHERE image_id = ?")
@@ -753,7 +847,7 @@ pub(crate) mod tests {
 
         bus.publish(TOPIC_PLAN_APPLYING_COMPLETED, Source::System, payload).await.unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        wait_item_state(db.pool(), "item-t2", "classified").await;
 
         let item = inbox_repo::get_inbox_item(db.pool(), "item-t2").await.unwrap();
         assert_eq!(item.state, "classified");
@@ -775,7 +869,7 @@ pub(crate) mod tests {
 
         bus.publish(TOPIC_PLAN_DISCARDED, Source::User, payload).await.unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        wait_item_state(db.pool(), "item-t3", "classified").await;
 
         let item = inbox_repo::get_inbox_item(db.pool(), "item-t3").await.unwrap();
         assert_eq!(item.state, "classified");
@@ -802,7 +896,8 @@ pub(crate) mod tests {
             discarded_at: "2025-10-10T22:00:00Z".to_owned(),
         };
         bus.publish(TOPIC_PLAN_DISCARDED, Source::User, payload).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        wait_item_state(db.pool(), "item-sc003", "pending_classification").await;
 
         let item = inbox_repo::get_inbox_item(db.pool(), "item-sc003").await.unwrap();
         assert_eq!(
@@ -933,7 +1028,30 @@ pub(crate) mod tests {
             at: "2026-07-04T00:00:00Z".to_owned(),
         };
         bus.publish(TOPIC_PLAN_APPLYING_COMPLETED, Source::System, payload).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        // Poll for the calibration_session row rather than sleeping a fixed
+        // duration — same PR #1470 pattern applied to the master apply path.
+        let item_id_for_poll = item_id.to_owned();
+        let pool_for_poll = db.pool().clone();
+        poll_until(
+            move || {
+                let id = item_id_for_poll.clone();
+                let pool = pool_for_poll.clone();
+                async move {
+                    let row: Option<(String,)> = sqlx::query_as(
+                        "SELECT frame_ids FROM calibration_session \
+                         WHERE source_inbox_item_id = ?",
+                    )
+                    .bind(&id)
+                    .fetch_optional(&pool)
+                    .await
+                    .expect("poll calibration_session");
+                    row.map(|_| ())
+                }
+            },
+            &format!("calibration_session for item {item_id} never appeared"),
+        )
+        .await;
 
         let (frame_ids_json,): (String,) = sqlx::query_as(
             "SELECT frame_ids FROM calibration_session WHERE source_inbox_item_id = ?",

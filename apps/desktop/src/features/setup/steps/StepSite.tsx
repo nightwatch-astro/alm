@@ -16,13 +16,14 @@ import { m } from '@/lib/i18n';
 import {
   localTimezone,
   ianaTimezones,
-} from '@/features/targets/observing-sites/iana-timezones';
-import type { Twilight } from '@/features/targets/observing-sites/observer-site';
+} from '@/shared/observing-sites/iana-timezones';
+import type { Twilight } from '@/shared/observing-sites/observer-site';
+import { selectBase } from '@/styles/select.css';
 
 // Leaflet is ~240 KB raw. Lazy-load so it splits to its own chunk and does
 // not inflate the setup-wizard bundle parsed on first run.
 const SiteLocationPicker = lazy(() =>
-  import('@/features/targets/observing-sites/SiteLocationPicker').then((m) => ({
+  import('@/shared/observing-sites/SiteLocationPicker').then((m) => ({
     default: m.SiteLocationPicker,
   })),
 );
@@ -116,6 +117,12 @@ function parsedCoord(text: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Renders the observing site details step of the first-run wizard.
+ *
+ * @param state - The current site details and coordinate input values
+ * @param onChange - Updates the site details state
+ */
 export function StepSite({ state, onChange }: StepSiteProps) {
   const timezones = ianaTimezones();
   const errors = siteStepErrors(state);
@@ -251,7 +258,7 @@ export function StepSite({ state, onChange }: StepSiteProps) {
           </label>
           <select
             id="setup-site-tz"
-            className="pv-select"
+            className={selectBase}
             aria-label={m.settings_observing_sites_field_timezone()}
             value={state.timezone}
             onChange={(e) => onChange({ ...state, timezone: e.target.value })}

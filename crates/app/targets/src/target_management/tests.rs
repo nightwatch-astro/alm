@@ -91,7 +91,7 @@ async fn get_invalid_id_returns_error() {
 async fn list_returns_all_targets() {
     let db = setup().await;
     seed_m31(&db).await;
-    let items = list(db.pool()).await.unwrap();
+    let items = list(db.pool(), None).await.unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].primary_designation, "M 31");
     assert_eq!(items[0].object_type, "galaxy");
@@ -101,7 +101,7 @@ async fn list_returns_all_targets() {
 #[tokio::test]
 async fn list_empty_when_no_targets() {
     let db = setup().await;
-    let items = list(db.pool()).await.unwrap();
+    let items = list(db.pool(), None).await.unwrap();
     assert!(items.is_empty());
 }
 
@@ -111,7 +111,7 @@ async fn list_empty_when_no_targets() {
 async fn list_item_carries_ra_dec() {
     let db = setup().await;
     seed_m31(&db).await;
-    let items = list(db.pool()).await.unwrap();
+    let items = list(db.pool(), None).await.unwrap();
     assert_eq!(items.len(), 1);
     // M31 fixture values from m31() above (ra=10.684708, dec=41.26875).
     assert!((items[0].ra_deg - 10.684_708).abs() < 1e-6, "ra_deg mismatch: {}", items[0].ra_deg);
@@ -126,7 +126,7 @@ async fn list_item_carries_ra_dec() {
 async fn list_item_constellation_and_magnitude_none_when_not_stored() {
     let db = setup().await;
     seed_m31(&db).await;
-    let items = list(db.pool()).await.unwrap();
+    let items = list(db.pool(), None).await.unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(
         items[0].constellation.as_deref(),
@@ -146,7 +146,7 @@ async fn list_item_constellation_and_magnitude_none_when_not_stored() {
 async fn list_item_carries_aliases() {
     let db = setup().await;
     seed_m31(&db).await;
-    let items = list(db.pool()).await.unwrap();
+    let items = list(db.pool(), None).await.unwrap();
     assert_eq!(items.len(), 1);
     // M31 fixture aliases: "M 31", "NGC 224", "Andromeda Galaxy".
     assert_eq!(
@@ -181,7 +181,7 @@ async fn list_item_aliases_empty_when_no_aliases_stored() {
     .await
     .expect("direct insert failed");
 
-    let items = list(db.pool()).await.unwrap();
+    let items = list(db.pool(), None).await.unwrap();
     assert_eq!(items.len(), 1);
     assert!(items[0].aliases.is_empty(), "aliases must be empty vec, got {:?}", items[0].aliases);
 }
@@ -203,7 +203,7 @@ async fn list_item_returns_stored_constellation_and_magnitude() {
         .await
         .expect("direct constellation/magnitude update failed");
 
-    let items = list(db.pool()).await.unwrap();
+    let items = list(db.pool(), None).await.unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].constellation.as_deref(), Some("And"), "constellation mismatch");
     assert!(

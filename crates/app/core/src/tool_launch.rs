@@ -48,8 +48,6 @@ use persistence_plans::repositories::tool_launches as tl_repo;
 use persistence_targets::repositories::inventory as inv_repo;
 use project_structure::resolve_working_folder;
 use sqlx::SqlitePool;
-#[cfg(test)]
-use uuid::Uuid;
 use workflow_profiles::{
     args::{render, RenderContext},
     discover::discover_all,
@@ -679,7 +677,7 @@ mod tests {
 
     async fn make_project(db: &Database) -> String {
         let pool = db.pool();
-        let project_id = Uuid::new_v4().to_string();
+        let project_id = domain_core::ids::new_id();
         // Insert a minimal project row
         sqlx::query(
             "INSERT INTO projects (id, name, tool, lifecycle, path, notes, channel_drift, created_at, updated_at) \
@@ -693,7 +691,7 @@ mod tests {
     }
 
     async fn insert_root(db: &Database, path: &str) {
-        let root_id = Uuid::new_v4().to_string();
+        let root_id = domain_core::ids::new_id();
         sqlx::query(
             "INSERT INTO library_root (id, label, current_path, kind, state, created_at) \
              VALUES (?, 'Test Root', ?, 'local', 'active', '2026-01-01T00:00:00Z')",

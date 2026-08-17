@@ -20,7 +20,6 @@ use persistence_calibration::repositories::calibration_assignment::{
     self as assign_repo, UpsertParams,
 };
 use sqlx::SqlitePool;
-use uuid::Uuid;
 
 use super::loaders::{load_config, load_master_by_id, load_session};
 use super::responses::error_assign_response;
@@ -124,7 +123,7 @@ pub async fn assign(
             let calibration_type = kind_to_contract(master.kind)
                 .ok_or_else(|| "dark_flat type cannot be assigned in v1".to_owned())?;
 
-            let assignment_id = Uuid::new_v4().to_string();
+            let assignment_id = domain_core::ids::new_id();
             let assigned_at = Timestamp::now_iso();
             let mismatch_names = dimension_names(&decision.mismatched_dimensions);
 

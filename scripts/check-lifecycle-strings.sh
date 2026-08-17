@@ -13,10 +13,12 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
+# grep -rn output: "path/file.rs:42:  content" — the comment-exclusion regex
+# must match after the "path:line:" prefix, not at line start.
 hits=$(grep -rn '\.lifecycle\s*[!=]=\s*"' --include='*.rs' crates/ apps/ \
   | grep -v '/tests/' \
   | grep -v 'test_support' \
-  | grep -v '^\s*//' \
+  | grep -vE ':[0-9]+:\s*//' \
   || true)
 
 count=$(echo "$hits" | grep -c . || true)

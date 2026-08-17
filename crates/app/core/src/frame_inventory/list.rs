@@ -14,7 +14,7 @@ use sqlx::SqlitePool;
 use app_core_errors::db_err;
 
 use super::{
-    owning_session_frame_type, raw_frame_type_from_calibration_kind, rows_by_ids, rows_by_root,
+    build_frame_session_map, raw_frame_type_from_calibration_kind, rows_by_ids, rows_by_root,
 };
 
 fn presence_state(state: &str) -> FramePresenceState {
@@ -91,12 +91,16 @@ pub async fn list_frames(
             });
         }
     } else if let Some(root_id) = &req.scope.root_id {
+        // DSD-8: batch-build the reverse map once instead of a per-frame LIKE scan.
+        let frame_map = build_frame_session_map(pool).await?;
         for row in rows_by_root(pool, root_id).await? {
             let state = presence_state(&row.state);
             if !include_missing && state == FramePresenceState::Missing {
                 continue;
             }
-            let (session_id, frame_type) = owning_session_frame_type(pool, &row.id).await?;
+            let (session_id, frame_type) = frame_map
+                .get(&row.id)
+                .map_or((None, RawFrameType::Light), |(sid, ft)| (Some(sid.clone()), *ft));
             frames.push(InventoryFrame {
                 frame_id: row.id,
                 root_id: row.root_id,

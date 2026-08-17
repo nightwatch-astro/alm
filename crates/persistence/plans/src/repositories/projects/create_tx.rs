@@ -47,7 +47,7 @@ pub struct CreateProjectInput<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on constraint violation or query
+/// Returns `persistence_core::DbError::Database` on constraint violation or query
 /// failure. On error the transaction is rolled back and no rows from this
 /// call persist.
 pub async fn create_project_tx(pool: &SqlitePool, input: &CreateProjectInput<'_>) -> DbResult<()> {
