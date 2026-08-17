@@ -8,7 +8,7 @@
 
 :root {
   --pv-font-sans: 'Inter', system-ui, -apple-system, sans-serif; /** Fonts */
-  --pv-font-display: 'Space Grotesk Variable', 'Inter Variable', system-ui, sans-serif;
+  --pv-font-display: 'Space Grotesk Variable', 'Inter Variable', system-ui, sans-serif; /** Display/heading font stack. NOT an orphan despite having no in-app reference: platevault.github.io consumes it through the vendored foundation, so an orphan-token audit will flag it and deleting it would break the docs site. Keep it. */
   --pv-text-xs: 0.7857rem; /** Type scale — rem, derived from a 14px root. */
   --pv-text-sm: 0.8571rem; /** 11px @14 (floor) */
   --pv-text-base: 1rem; /** 12px @14 */

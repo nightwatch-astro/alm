@@ -14,63 +14,60 @@ import { TwoColDetailLayout, DetailLinkedGroup } from './TwoColDetailLayout';
 
 describe('TwoColDetailLayout', () => {
   it('renders colA/colB and omits the linked slot when absent', () => {
-    const { container } = render(
-      <TwoColDetailLayout colA={<span>A</span>} colB={<span>B</span>} />,
+    render(<TwoColDetailLayout colA={<span>A</span>} colB={<span>B</span>} />);
+    const wrapper = screen.getByTestId('two-col-detail');
+    expect(wrapper.querySelectorAll('[data-testid="detail-col"]')).toHaveLength(
+      2,
     );
-    const wrapper = container.querySelector('.pv-session-detail2');
-    expect(
-      wrapper?.querySelectorAll(':scope > .pv-session-detail2__col'),
-    ).toHaveLength(2);
-    expect(wrapper?.querySelector('.pv-session-detail2__linked')).toBeNull();
+    expect(wrapper.querySelector('[data-testid="detail-linked"]')).toBeNull();
   });
 
   it('omits the colB slot entirely when colB is null', () => {
-    // An empty `__col` still claims `min-width: 340px` in the flex row, so
+    // An empty col still claims min-width: 340px in the flex row, so
     // rendering one for absent content reads as a gap, not as nothing.
-    const { container } = render(
-      <TwoColDetailLayout colA={<span>A</span>} colB={null} />,
+    render(<TwoColDetailLayout colA={<span>A</span>} colB={null} />);
+    const wrapper = screen.getByTestId('two-col-detail');
+    expect(wrapper.querySelectorAll('[data-testid="detail-col"]')).toHaveLength(
+      1,
     );
-    const wrapper = container.querySelector('.pv-session-detail2');
-    expect(
-      wrapper?.querySelectorAll(':scope > .pv-session-detail2__col'),
-    ).toHaveLength(1);
   });
 
-  it('renders extraCols as full __col slots, skipping null entries', () => {
-    const { container } = render(
+  it('renders extraCols as full col slots, skipping null entries', () => {
+    render(
       <TwoColDetailLayout
         colA={<span>A</span>}
         colB={<span>B</span>}
         extraCols={[<span key="c">C</span>, null, <span key="d">D</span>]}
       />,
     );
-    const wrapper = container.querySelector('.pv-session-detail2');
+    const wrapper = screen.getByTestId('two-col-detail');
     // A, B, C, D — the null entry contributes nothing.
-    expect(
-      wrapper?.querySelectorAll(':scope > .pv-session-detail2__col'),
-    ).toHaveLength(4);
+    expect(wrapper.querySelectorAll('[data-testid="detail-col"]')).toHaveLength(
+      4,
+    );
     expect(screen.getByText('C')).toBeInTheDocument();
     expect(screen.getByText('D')).toBeInTheDocument();
   });
 
-  it('renders extraCols as __col, never as the narrow __linked slot', () => {
-    // Guards the regression this API exists to prevent: `__linked` is
-    // `flex: 0 0 auto; min-width: 160px` and squeezes table-shaped content.
-    const { container } = render(
+  it('renders extraCols as col slots, never as the narrow linked slot', () => {
+    // Guards the regression this API exists to prevent: linked is
+    // flex: 0 0 auto; min-width: 160px and squeezes table-shaped content.
+    render(
       <TwoColDetailLayout
         colA={<span>A</span>}
         colB={<span>B</span>}
         extraCols={[<span key="t">table</span>]}
       />,
     );
-    expect(container.querySelector('.pv-session-detail2__linked')).toBeNull();
-    expect(screen.getByText('table').closest('div')).toHaveClass(
-      'pv-session-detail2__col',
-    );
+    expect(screen.queryByTestId('detail-linked')).toBeNull();
+    // The table content sits inside a detail-col, not a detail-linked
+    expect(
+      screen.getByText('table').closest('[data-testid="detail-col"]'),
+    ).toBeTruthy();
   });
 
   it('renders the linked slot with an optional modifier class', () => {
-    const { container } = render(
+    render(
       <TwoColDetailLayout
         colA={<span>A</span>}
         colB={<span>B</span>}
@@ -78,11 +75,10 @@ describe('TwoColDetailLayout', () => {
         linkedClassName="pv-session-detail2__linked--stack"
       />,
     );
-    const linked = container.querySelector(
-      '.pv-session-detail2__linked.pv-session-detail2__linked--stack',
-    );
+    const linked = screen.getByTestId('detail-linked');
     expect(linked).toBeInTheDocument();
     expect(linked).toHaveTextContent('linked');
+    expect(linked).toHaveClass('pv-session-detail2__linked--stack');
   });
 });
 
@@ -93,7 +89,9 @@ describe('DetailLinkedGroup', () => {
         <span>content</span>
       </DetailLinkedGroup>,
     );
-    expect(screen.getByText('Used by')).toHaveClass('pv-session-detail2__head');
+    expect(screen.getByTestId('detail-group-head')).toHaveTextContent(
+      'Used by',
+    );
     expect(screen.getByText('content')).toBeInTheDocument();
   });
 
@@ -104,6 +102,6 @@ describe('DetailLinkedGroup', () => {
       </DetailLinkedGroup>,
     );
     expect(screen.queryByText('content')).not.toBeInTheDocument();
-    expect(screen.getByText('None')).toHaveClass('pv-session-detail2__muted');
+    expect(screen.getByText('None')).toBeInTheDocument();
   });
 });

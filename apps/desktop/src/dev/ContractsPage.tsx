@@ -23,19 +23,33 @@ import { CallList } from './CallList';
 import { SchemaViewer } from './SchemaViewer';
 import { pickDirectory } from '@/shared/native/picker';
 import { getCallSnapshot, subscribeRecorder } from './recorder';
+import {
+  stubBody as pageStubBody,
+  stubHeading as pageStubHeading,
+  stubText as pageStubText,
+  loading as pageLoading,
+  pageBody,
+  pageHeader,
+  pageTitle,
+  pageActions,
+  error as pageError,
+  exportResult as pageExportResult,
+  sectionHeading as pageSectionHeading,
+} from './contracts-page.css';
+import { pageScroll } from '@/ui/page-layout.css';
 
-// ── Disabled stub ─────────────────────────────────────────────────────────────
+/**
+ * Renders a message explaining how to enable developer mode and access developer diagnostics.
+ */
 
 function DevModeDisabledStub() {
   return (
     <div
-      className="pv-dev-stub pv-page__scroll pv-dev-contracts-page__stub-body"
+      className={`pv-dev-stub ${pageScroll} ${pageStubBody}`}
       data-testid="dev-disabled-stub"
     >
-      <h2 className="pv-dev-contracts-page__stub-heading">
-        Developer mode disabled
-      </h2>
-      <p className="pv-dev-contracts-page__stub-text">
+      <h2 className={pageStubHeading}>Developer mode disabled</h2>
+      <p className={pageStubText}>
         Enable <strong>devMode</strong> in Settings › Advanced, then restart the
         app to access developer diagnostics.
       </p>
@@ -43,7 +57,9 @@ function DevModeDisabledStub() {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+/**
+ * Displays developer contract diagnostics, including registered contracts, recent calls, schema views, replay controls, and export actions when developer mode is enabled.
+ */
 
 export function ContractsPage() {
   const [devMode, setDevMode] = useState<boolean | null>(null);
@@ -184,9 +200,7 @@ export function ContractsPage() {
   if (devMode === null) {
     return (
       <PageShell>
-        <div className="pv-page__scroll pv-dev-contracts-page__loading">
-          Loading…
-        </div>
+        <div className={`${pageScroll} ${pageLoading}`}>Loading…</div>
       </PageShell>
     );
   }
@@ -202,12 +216,10 @@ export function ContractsPage() {
 
   return (
     <PageShell>
-      <div className="pv-dev-contracts pv-page__scroll pv-dev-contracts-page__body">
-        <div className="pv-dev-contracts-page__header">
-          <h1 className="pv-dev-contracts-page__title">
-            Developer Contract Diagnostics
-          </h1>
-          <div className="pv-dev-contracts-page__actions">
+      <div className={`pv-dev-contracts ${pageScroll} ${pageBody}`}>
+        <div className={pageHeader}>
+          <h1 className={pageTitle}>Developer Contract Diagnostics</h1>
+          <div className={pageActions}>
             <button
               type="button"
               className="pv-btn pv-btn--sm"
@@ -229,28 +241,24 @@ export function ContractsPage() {
         </div>
 
         {error && (
-          <div role="alert" className="pv-dev-contracts-page__error">
+          <div role="alert" className={pageError}>
             Error: {error}
           </div>
         )}
 
         {exportResult && (
-          <div role="status" className="pv-dev-contracts-page__export-result">
+          <div role="status" className={pageExportResult}>
             {exportResult}
           </div>
         )}
 
         <section>
-          <h2 className="pv-dev-contracts-page__section-heading">
-            Contracts ({contracts.length})
-          </h2>
+          <h2 className={pageSectionHeading}>Contracts ({contracts.length})</h2>
           <ContractList contracts={contracts} onViewSchema={handleViewSchema} />
         </section>
 
         <section>
-          <h2 className="pv-dev-contracts-page__section-heading">
-            Recent Calls ({calls.length})
-          </h2>
+          <h2 className={pageSectionHeading}>Recent Calls ({calls.length})</h2>
           <CallList
             calls={calls}
             contracts={contracts}

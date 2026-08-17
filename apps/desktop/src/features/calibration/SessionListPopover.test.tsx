@@ -15,8 +15,10 @@ import { SessionListPopover } from './SessionListPopover';
 describe('SessionListPopover', () => {
   it('renders the muted "None" placeholder when there are no names', () => {
     render(<SessionListPopover label="Used by" names={[]} />);
-    expect(screen.getByText('Used by')).toHaveClass('pv-session-detail2__head');
-    expect(screen.getByText('None')).toHaveClass('pv-session-detail2__muted');
+    expect(screen.getByTestId('detail-group-head')).toHaveTextContent(
+      'Used by',
+    );
+    expect(screen.getByText('None')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
@@ -27,9 +29,7 @@ describe('SessionListPopover', () => {
         names={['a · b · c', 'd · e · f']}
       />,
     );
-    expect(screen.getByText('Compatible')).toHaveClass(
-      'pv-session-detail2__head',
-    );
+    expect(screen.getByText('Compatible')).toBeInTheDocument();
     expect(screen.getByText('2 ▾')).toBeInTheDocument();
     expect(screen.queryByText('None')).not.toBeInTheDocument();
   });

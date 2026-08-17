@@ -64,6 +64,9 @@ tempfile = { workspace = true }
 filetime = "0.2"
 rstest = { workspace = true }
 proptest = { workspace = true }
+# artifact_reconcile_batching.rs counts sqlx statement-execution tracing events
+# to assert each reconcile phase batches its writes.
+tracing-subscriber = { workspace = true }
 # spec 052 P1 (resolution_e2e.rs): computes the same deterministic UUIDv5 the
 # resolver crate and app_core_targets already derive, to assert target_id
 # stability across the redb cache / SQLite promotion boundary.

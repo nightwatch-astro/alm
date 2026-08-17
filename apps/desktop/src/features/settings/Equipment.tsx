@@ -41,6 +41,8 @@ import {
   type PassbandChoice,
 } from './equipment-helpers';
 import { useEquipment } from './useEquipment';
+import { selectBase } from '@/styles/select.css';
+import { message as modalMessage } from '@/components/modal.css';
 
 interface EquipmentProps {
   save: (scope: string, values: Record<string, unknown>) => void;
@@ -49,7 +51,11 @@ interface EquipmentProps {
 // The add/edit form shell (field grid + error line + cancel/save actions) now
 // lives in `SettingsKit.tsx` as `SettingsFormShell`, shared with other panes'
 // CRUD lists (e.g. observing-site management, spec 044 US3) — no per-pane
-// clone (shared-component mandate).
+/**
+ * Renders settings controls for managing optical trains, cameras, telescopes, and filters.
+ *
+ * @param save - Persistence handler supplied to the equipment state hook.
+ */
 
 export function Equipment({ save: _save }: EquipmentProps) {
   const {
@@ -236,7 +242,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
               </label>
               <select
                 id="equipment-train-camera"
-                className="pv-select"
+                className={selectBase}
                 value={trainForm.cameraId}
                 onChange={(e) =>
                   setTrainForm({ ...trainForm, cameraId: e.target.value })
@@ -259,7 +265,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
               </label>
               <select
                 id="equipment-train-telescope"
-                className="pv-select"
+                className={selectBase}
                 value={trainForm.telescopeId}
                 onChange={(e) =>
                   setTrainForm({ ...trainForm, telescopeId: e.target.value })
@@ -796,7 +802,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
               </label>
               <select
                 id="equipment-filter-category"
-                className="pv-select"
+                className={selectBase}
                 value={filterForm.category}
                 onChange={(e) =>
                   setFilterForm({
@@ -838,7 +844,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
           </>
         }
       >
-        <p className="pv-modal__message">
+        <p className={modalMessage}>
           {m.settings_equipment_delete_confirm_desc()}
         </p>
         {deleteError && <span className="pv-field-error">{deleteError}</span>}

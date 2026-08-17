@@ -52,8 +52,11 @@ import {
   events,
   empty,
 } from './logpanel.css';
+import { virtualInner, virtualScroll } from '@/ui/page-layout.css';
 
-// ── LogPanel component ────────────────────────────────────────────────────────
+/**
+ * Displays a filterable, virtualised log panel with tail following, navigation, and export controls.
+ */
 
 export function LogPanel() {
   const {
@@ -341,7 +344,7 @@ export function LogPanel() {
         )}
 
         <ul
-          className={`${events} pv-virtual-scroll`}
+          className={`${events} ${virtualScroll}`}
           ref={listRef}
           onScroll={handleScroll}
           data-virtual-scroll="true"
@@ -361,7 +364,7 @@ export function LogPanel() {
             </li>
           ) : (
             <div
-              className="pv-virtual-inner"
+              className={virtualInner}
               // eslint-disable-next-line no-restricted-syntax
               style={{
                 height: `${virtualizer.getTotalSize()}px`,

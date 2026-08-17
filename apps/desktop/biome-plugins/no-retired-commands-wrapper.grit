@@ -1,0 +1,22 @@
+// Replaces the SC-005 vitest guard from src/api/ipc-boundary.guard.test.ts:
+// a single-file literal scan for references to the retired hand-written
+// `@/api/commands` wrapper (static import, dynamic import, or vi.mock).
+// Every caller goes through the generated `commands.*` bindings instead.
+//
+// A static import's module source is not a `string()` node in Biome's Grit JS
+// dialect, so the quote-anchored regex branch is what catches that form. The
+// quote class includes a backtick because `import()` and `vi.mock()` accept a
+// template-literal specifier, which would otherwise slip through.
+language js
+
+or {
+  string() as $s,
+  r"['\"`]@/api/commands['\"`]" as $s
+} where {
+  $s <: r"['\"`]@/api/commands['\"`]",
+  register_diagnostic(
+    span = $s,
+    message = "The hand-written `@/api/commands` wrapper is retired (spec 037 SC-005). Import the generated `commands.*` bindings from `@/bindings` instead.",
+    severity = "error"
+  )
+}
