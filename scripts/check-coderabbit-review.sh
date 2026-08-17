@@ -81,7 +81,18 @@ OPEN_SCAN_LIMIT=1000
 
 if ((open_mode)); then
   ((${#prs[@]} == 0)) || { echo 'check-coderabbit-review: --open takes no PR numbers' >&2; usage; }
-  mapfile -t prs < <(gh pr list --state open --limit "$OPEN_SCAN_LIMIT" --json number --jq '.[].number')
+  # Capture separately from `mapfile` so a `gh` failure is reported as itself.
+  # Piping straight into `mapfile` swallows the exit status, leaves `prs` empty,
+  # and trips the generic `usage` path below -- so an auth, network, or API
+  # error surfaces as "wrong arguments", sending the reader after the wrong bug.
+  if ! open_prs=$(gh pr list --state open --limit "$OPEN_SCAN_LIMIT" --json number --jq '.[].number'); then
+    echo 'check-coderabbit-review: gh pr list failed; cannot enumerate open PRs' >&2
+    exit 2
+  fi
+  mapfile -t prs <<<"$open_prs"
+  # An empty repo is legitimately zero PRs, not an error, but `mapfile` on an
+  # empty string yields one empty element. Drop it so the count is honest.
+  ((${#prs[@]} == 1)) && [[ -z ${prs[0]} ]] && prs=()
   # A silent truncation is the failure this whole script exists to prevent: a
   # partial scan that still exits 0 reports the PRs it never looked at as fine.
   # Say so loudly rather than trusting the cap to stay above the real count.
