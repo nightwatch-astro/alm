@@ -154,8 +154,13 @@
   display: contents;
 }
 
-/* Scope the fix to the targets page so other list pages are unaffected. */
-.pv-targets-page .pv-listpage__main {
+/* Scope the fix to the targets page so other list pages are unaffected.
+   Keyed on the test id, not a class: ListPageLayout's main column is a
+   vanilla-extract style whose class name is hashed and unaddressable here.
+   This rule establishes the containing block for the absolutely-positioned
+   __wrap below — without it the table escapes to the viewport and overlays
+   the page top bar. */
+.pv-targets-page [data-testid='listpage-main'] {
   overflow: hidden;
   position: relative;
 }

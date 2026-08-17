@@ -237,7 +237,9 @@ export function ListPageLayout({
         >
           {/* Left column: main table + bottom strip stacked */}
           <div className={lpl.mainCol}>
-            <div className={lpl.main}>{children}</div>
+            <div className={lpl.main} data-testid="listpage-main">
+              {children}
+            </div>
 
             {/* Bottom strip constrained to the content column */}
             {hasBottom && (
@@ -269,6 +271,7 @@ export function ListPageLayout({
             <section
               className={lpl.sidePanel}
               data-testid="listpage-side"
+              data-dock="side"
               role="complementary"
               aria-label={detailLabel}
             >
@@ -315,7 +318,9 @@ export function ListPageLayout({
         data-testid="listpage-body"
         data-dock={isSide ? 'side' : 'bottom'}
       >
-        <div className={lpl.main}>{children}</div>
+        <div className={lpl.main} data-testid="listpage-main">
+          {children}
+        </div>
 
         {hasDetail && (
           <section

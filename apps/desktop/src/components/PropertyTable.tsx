@@ -23,8 +23,8 @@ import { Checkbox } from '@base-ui-components/react/checkbox';
 import { Select } from '@base-ui-components/react/select';
 import { Tooltip } from '@/ui';
 import { m } from '@/lib/i18n';
+import clsx from 'clsx';
 import * as pt from './PropertyTable.css';
-import { vars } from '@/styles/themes.css';
 import {
   renderValueOnly,
   SourceBadge,
@@ -189,14 +189,9 @@ export function PropertyTable({
             </span>
 
             <span
-              className={pt.cellValue}
-              // eslint-disable-next-line no-restricted-syntax -- dynamic: conditional mono override uses token values, no static equivalent
-              style={
-                prop.mono
-                  ? { fontFamily: vars.fontMono, fontSize: 'var(--pv-text-xs)' }
-                  : undefined
-              }
+              className={clsx(pt.cellValue, prop.mono && pt.cellValueMono)}
               data-testid="property-table-cell-value"
+              data-mono={prop.mono ? '' : undefined}
               role="cell"
             >
               {isEditing ? (

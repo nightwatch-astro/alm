@@ -47,6 +47,11 @@ export const cellValue = style({
   whiteSpace: 'pre-line',
 });
 
+// Monospace value cells (spec 055 FR-005, e.g. RA/Dec). Composed onto
+// cellValue rather than set inline so the rendered class is assertable;
+// typography_semantic_mono.spec.ts selects the cell by its mono class.
+export const cellValueMono = style({ fontFamily: vars.fontMono });
+
 export const cellSource = style({ justifySelf: 'start' });
 export const cellConfirm = style({ justifySelf: 'start' });
 

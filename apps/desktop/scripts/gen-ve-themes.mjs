@@ -140,20 +140,27 @@ for (const id of themeIds) {
 const foundationEntries = Object.entries(foundation).filter(([, d]) => d.$type !== 'color');
 
 // All theme-invariant tokens: foundation (non-color) + component dimension tokens.
-// Emitted via createGlobalTheme so .css.ts files get type-safe refs (uvars.*).
 const invariantEntries = [
   ...foundationEntries,
   ...componentEntries,
 ];
 
 if (invariantEntries.length > 0) {
-  lines.push("// Typed theme-invariant contract (spacing, type scale, radii, weights, layout dims).");
+  lines.push("// Typed theme-invariant token refs (spacing, type scale, radii, weights, layout dims).");
   lines.push("// Use uvars.* in .css.ts files instead of raw var(--pv-*) strings.");
-  lines.push("export const uvars = createGlobalTheme(':root', {");
+  lines.push("//");
+  lines.push("// These are `var(--pv-*)` references, NOT a createGlobalTheme contract: the");
+  lines.push("// font-size dial and density control rewrite `--pv-text-*`, `--pv-sp-*` and");
+  lines.push("// `--pv-row-height` as integer px on the root at runtime (applyFontSize /");
+  lines.push("// TEXT_SCALE_BASE_PX, src/data/theme.ts). createGlobalTheme mints its own");
+  lines.push("// hashed variables holding the rem literal, so those overrides would never");
+  lines.push("// reach VE-styled elements and every rem token would compute fractional at a");
+  lines.push("// non-14px root (spec 055 SC-003 requires integers).");
+  lines.push("export const uvars = {");
   for (const [key, def] of invariantEntries) {
-    lines.push(`  ${toJsKey(key)}: ${JSON.stringify(String(def.$value))},`);
+    lines.push(`  ${toJsKey(key)}: ${JSON.stringify(`var(--pv-${key}, ${String(def.$value)})`)},`);
   }
-  lines.push("});");
+  lines.push("} as const;");
   lines.push("");
 }
 
