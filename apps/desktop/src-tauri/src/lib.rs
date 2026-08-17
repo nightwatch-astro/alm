@@ -201,6 +201,15 @@ pub fn build_app() -> tauri::App {
         // triggered from this Rust process.
         .plugin(build_updater_plugin())
         .plugin(tauri_plugin_process::init())
+        // Spec 051 US8 (T045): OS notifications on long-running task
+        // completion. `notification:default` is granted in
+        // `capabilities/default.json`. The plugin's desktop backend needs no
+        // runtime permission request — `permission_state()` is
+        // unconditionally `Granted` there and delivery failures (denied at the
+        // OS level, no Linux notification daemon) surface as an `Err` from
+        // `show()`, which every call site in `bootstrap::notify` logs at
+        // `debug` and ignores (FR-025).
+        .plugin(tauri_plugin_notification::init())
         // Spec 051 US7 (T041): diagnostics log file. `skip_logger()` is
         // required here — this app already installs a global `tracing`
         // subscriber (in `main.rs`, right after `build_app()` returns, once
@@ -672,6 +681,9 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         pool.clone(),
     ));
     drop(spawn_stale_dependent_propagator(pool.clone(), &bus));
+    // spec 051 US8: OS notifications for plan-apply and workflow-run manifest
+    // completions, both of which already publish a terminal event here.
+    drop(crate::bootstrap::notify::spawn_completion_notifier(app.clone(), &bus));
     // spec 056 (R5): backend-authoritative onboarding tick subscriber →
     // persists auto-ticks from domain-completion topics and emits
     // `onboarding:state-changed`. Started here, before the webview can invoke,
@@ -871,7 +883,7 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
     // spec 035 US4/T043: background ingest-resolution drain + session target
     // back-fill on an interval. Non-blocking; transient/offline outcomes leave
     // rows pending for the next pass.
-    spawn_ingest_resolution_drain(pool.clone(), bus.clone(), resolve_cache.clone());
+    spawn_ingest_resolution_drain(app.clone(), pool.clone(), bus.clone(), resolve_cache.clone());
 
     // spec 051 US10: the startup update check moved to the frontend
     // (`updateSubscription.ts`'s `startUpdateSubscription()`, #888 staged
