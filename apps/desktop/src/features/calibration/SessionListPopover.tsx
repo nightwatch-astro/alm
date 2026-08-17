@@ -13,12 +13,27 @@ import { Popover } from '@base-ui-components/react/popover';
 import { useId, useRef, useState } from 'react';
 import { DetailLinkedGroup } from '@/components';
 import { m } from '@/lib/i18n';
+import {
+  trigger,
+  popup,
+  search,
+  list,
+  item,
+  empty,
+} from './session-list-popover.css';
 
 interface Props {
   label: string;
   names: string[];
 }
 
+/**
+ * Displays a searchable popover containing session names.
+ *
+ * @param label - The label displayed for the session group
+ * @param names - The session names shown in the popover
+ * @returns The session list popover
+ */
 export function SessionListPopover({ label, names }: Props) {
   const [query, setQuery] = useState('');
   const inputId = useId();
@@ -45,12 +60,10 @@ export function SessionListPopover({ label, names }: Props) {
           }
         }}
       >
-        <Popover.Trigger className="pv-session-popover__trigger">
-          {names.length} ▾
-        </Popover.Trigger>
+        <Popover.Trigger className={trigger}>{names.length} ▾</Popover.Trigger>
         <Popover.Portal>
           <Popover.Positioner side="bottom" align="start" sideOffset={4}>
-            <Popover.Popup className="pv-session-popover__popup">
+            <Popover.Popup className={popup}>
               {}
               <label htmlFor={inputId} className="pv-visually-hidden">
                 {m.calibration_session_popover_filter_label()}
@@ -58,20 +71,20 @@ export function SessionListPopover({ label, names }: Props) {
               <input
                 ref={inputRef}
                 id={inputId}
-                className="pv-session-popover__search"
+                className={search}
                 placeholder={m.calibration_session_popover_filter_placeholder()}
                 aria-label={m.calibration_session_popover_filter_label()}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
-              <ul className="pv-session-popover__list">
+              <ul className={list}>
                 {filtered.length === 0 ? (
-                  <li className="pv-session-popover__empty">
+                  <li className={empty}>
                     {m.calibration_session_popover_no_matches()}
                   </li>
                 ) : (
                   filtered.map((name) => (
-                    <li key={name} className="pv-session-popover__item">
+                    <li key={name} className={item}>
                       {name}
                     </li>
                   ))

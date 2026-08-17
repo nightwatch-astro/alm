@@ -9,8 +9,7 @@ dependencies:
   - srobroek/agentic-packages/packages/steering-pragmatic#main
   - srobroek/agentic-packages/packages/orchestrate#main
   - srobroek/agentic-packages/packages/release-please#main
-  - srobroek/agentic-packages/packages/speckit#main
-  - srobroek/agentic-packages/packages/steering-speckit#main
+  - srobroek/speckit-conductor#>=3.0.0 <4.0.0
   - srobroek/agentic-packages/packages/rust-quality#main
   - srobroek/agentic-packages/packages/language-steering-rust#main
   - wshobson/agents/plugins/systems-programming
@@ -27,7 +26,6 @@ dependencies:
   - srobroek/agentic-packages/packages/mcp-playwright#main
   - srobroek/agentic-packages/packages/mcp-context7#main
   - srobroek/agentic-packages/packages/mcp-package-version#main
-  - srobroek/agentic-packages/packages/mcp-repomix#main
   - srobroek/agentic-packages/packages/mcp-tauri#main
   - wshobson/agents/plugins/database-design
   - srobroek/agentic-packages/packages/user-journeys#main

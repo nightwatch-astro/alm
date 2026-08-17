@@ -31,24 +31,10 @@ mod common;
 use std::time::Duration;
 
 use anyhow::Context;
-use common::{write_minimal_fits_with_exposure, E2eApp};
+use common::{settle_first_run_redirect, write_minimal_fits_with_exposure, E2eApp};
 use serde_json::json;
 
 const UI_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Wait for the index route's async first-run redirect to land on `/setup`
-/// BEFORE navigating anywhere (mirrors `inbox_ui_journeys.rs`'s
-/// `settle_first_run_redirect`). A fresh DB (the harness resets it every
-/// launch) makes `checkFirstRunComplete` redirect `/` → `/setup` from an
-/// async `beforeLoad`; if a journey `goto_route`s while that redirect is
-/// still pending, the late-resolving redirect can yank the app off the
-/// target route.
-async fn settle_first_run_redirect(app: &E2eApp) -> anyhow::Result<()> {
-    app.wait_url_contains("/setup", Duration::from_secs(15))
-        .await
-        .map(drop)
-        .map_err(|e| anyhow::anyhow!("expected a fresh DB to redirect to /setup: {e}"))
-}
 
 /// Registers a disposable `light_frames` root and a disposable `project`
 /// root purely to satisfy `firstrun.complete`'s precondition (one of EACH,
@@ -78,7 +64,7 @@ async fn complete_first_run(app: &E2eApp) -> anyhow::Result<()> {
 /// Force a real reload of the CURRENTLY-loaded route rather than calling
 /// `E2eApp::goto_route` again with the identical URL.
 ///
-/// `goto_route` builds `{APP_URL}/#{path}` and calls `driver.goto(url)`; when
+/// `goto_route` builds `{app_url()}/#{path}` and calls `driver.goto(url)`; when
 /// the app is already sitting on that exact URL (no intervening navigation
 /// away from it), asking the browser to "navigate to" a byte-identical URL
 /// is a well-known no-op in several engines (no reload, no route remount, no

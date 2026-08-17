@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
-# Perf regression guard — enforces the SQL statement budget for the inbox hot paths.
+# Perf regression guard — enforces the SQL statement budget for the measured hot paths.
 #
 # Invariant: sqlx_stmts counts per scenario are deterministic (same fixture
 # size → same query plan every run). Wall time is noisy on CI runners and only
 # used as a WARN-only budget.
 #
+# Exception: a scenario whose write batching is time-bounded cannot honour that
+# invariant, because a slower runner flushes more often and issues more
+# statements for identical work. `plan_apply_progress` is the case in point —
+# `plan_apply::callbacks` flushes on 100 items OR 250 ms, whichever comes first
+# (a local run measured 40113 statements, CI 40116). Such a scenario carries
+# `"stmts_timing_dependent": true` in the baseline and its count is reported
+# WARN-only. Do NOT set that flag to silence an ordinary regression: it is for
+# counts that are genuinely not a function of the fixture alone.
+#
 # Two modes:
-#   (default)   enforce: HARD-fail on any sqlx_stmts increase; WARN-only if
+#   (default)   enforce: HARD-fail on any sqlx_stmts increase, except for
+#               scenarios flagged stmts_timing_dependent; WARN-only if
 #               wall_ms > 1.5× the baseline budget.
 #   --generate  run perf-bench and write a fresh scripts/perf-baseline.json;
 #               requires the binary to be compiled first (just perf-bench or
@@ -21,6 +31,15 @@
 #
 # CI gate: run only when ci-affected-crates.sh output contains
 # app_core_inbox, persistence_inbox, or fs-inventory (see .github/workflows/ci.yml).
+#
+# COVERAGE GAP (astro-plan-9l04): three scenarios added for spec 007 T033,
+# spec 025 T045, and spec 048 T043a measure crates the trigger list above does
+# NOT name — app_core (reconcile + plan-apply progress), app_core_calibration
+# (suggest), fs_executor, and persistence_plans. A change confined to any of
+# those skips this gate entirely, so their statement budgets are only enforced
+# when an inbox/fs_inventory crate happens to be co-affected. Widening the
+# trigger grep is a CI-policy change and was deliberately left out of that
+# bead; the full harness takes ~23s locally, so cost is not the blocker.
 
 set -euo pipefail
 
@@ -75,9 +94,19 @@ generate() {
       exit 1
     fi
 
+    # Preserve a scenario's stmts_timing_dependent opt-out across re-baselines;
+    # regenerating must not silently re-arm a gate that cannot hold.
+    prior_timing="false"
+    if [[ -f "$BASELINE_FILE" ]]; then
+      prior_timing="$(jq -r --arg s "$scenario" \
+        '(.[] | select(.scenario == $s) | .stmts_timing_dependent) // false' "$BASELINE_FILE")"
+    fi
+
     # Record full raw line plus the hard/warn fields for clarity.
     entry="$(printf '%s' "$line" | jq -c --arg stmts_budget "$stmts" --arg wall_budget "$wall" \
-      '. + {stmts_budget: ($stmts_budget | tonumber), wall_ms_budget: ($wall_budget | tonumber)}')"
+      --argjson timing "${prior_timing:-false}" \
+      '. + {stmts_budget: ($stmts_budget | tonumber), wall_ms_budget: ($wall_budget | tonumber)}
+         + (if $timing then {stmts_timing_dependent: true} else {} end)')"
     baseline="$(printf '%s' "$baseline" | jq -c --argjson e "$entry" '. + [$e]')"
   done <<< "$raw"
 
@@ -125,9 +154,17 @@ check() {
 
     stmts_budget="$(printf '%s' "$baseline_entry" | jq -r '.stmts_budget')"
     wall_budget="$(printf '%s' "$baseline_entry" | jq -r '.wall_ms_budget')"
+    stmts_timing_dependent="$(printf '%s' "$baseline_entry" | jq -r '.stmts_timing_dependent // false')"
 
-    # HARD: sqlx_stmts must not increase.
-    if [[ "$stmts" -gt "$stmts_budget" ]]; then
+    # HARD: sqlx_stmts must not increase — except where the count is genuinely
+    # timing-dependent and so cannot be a hard invariant (see the header note).
+    if [[ "$stmts_timing_dependent" == "true" ]]; then
+      if [[ "$stmts" -gt "$stmts_budget" ]]; then
+        echo "WARN: $scenario sqlx_stmts=$stmts > baseline=$stmts_budget (timing-dependent count; not gated)."
+      else
+        echo "OK:   $scenario sqlx_stmts=$stmts (baseline=$stmts_budget, timing-dependent)."
+      fi
+    elif [[ "$stmts" -gt "$stmts_budget" ]]; then
       echo "FAIL: $scenario sqlx_stmts=$stmts > baseline=$stmts_budget (regression — query count increased)." >&2
       fail=1
     else

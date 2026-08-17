@@ -60,7 +60,7 @@ function makeMaster(): CalibrationMaster {
 
 describe('MasterDetail — two-col layout (#813)', () => {
   it('renders the shared two-col-properties + stacked-linked structure', () => {
-    const { container } = render(
+    render(
       <MasterDetail
         master={makeMaster()}
         prefillSuggestion={false}
@@ -68,15 +68,13 @@ describe('MasterDetail — two-col layout (#813)', () => {
       />,
     );
 
-    const wrapper = container.querySelector('.pv-session-detail2');
+    const wrapper = screen.getByTestId('two-col-detail');
     expect(wrapper).toBeInTheDocument();
-    expect(
-      wrapper?.querySelectorAll(':scope > .pv-session-detail2__col'),
-    ).toHaveLength(2);
-
-    const linked = wrapper?.querySelector(
-      ':scope > .pv-session-detail2__linked.pv-session-detail2__linked--stack',
+    expect(wrapper.querySelectorAll('[data-testid="detail-col"]')).toHaveLength(
+      2,
     );
+
+    const linked = wrapper?.querySelector('[data-testid="detail-linked"]');
     expect(linked).toBeInTheDocument();
 
     // The two SessionListPopover instances (Used by / Compatible) stack

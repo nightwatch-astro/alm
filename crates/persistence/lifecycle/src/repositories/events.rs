@@ -67,6 +67,42 @@ pub async fn insert_event_conn(
     Ok(result.last_insert_rowid())
 }
 
+/// Rows per multi-row INSERT: SQLite's 32766-parameter limit over 4 columns.
+const EVENT_INSERT_BATCH_SIZE: usize = 32766 / 4;
+
+/// Append many durable event rows in as few statements as the parameter limit
+/// allows, on an existing connection (for use inside a transaction).
+///
+/// `rows` are `(topic, source, emitted_at, payload)`, matching
+/// [`insert_event_conn`]'s argument order. Assigned `event_id`s are not
+/// returned: a multi-row insert reports only the last rowid.
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn insert_events_conn(
+    conn: &mut SqliteConnection,
+    rows: &[(&str, &str, &str, &str)],
+) -> DbResult<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    for chunk in rows.chunks(EVENT_INSERT_BATCH_SIZE) {
+        let placeholders = std::iter::repeat_n("(?,?,?,?)", chunk.len()).collect::<Vec<_>>();
+        let sql = format!(
+            "INSERT INTO events (topic, source, emitted_at, payload) VALUES {}",
+            placeholders.join(",")
+        );
+        // AssertSqlSafe: only a generated placeholder list is interpolated;
+        // every value is bound.
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for (topic, source, emitted_at, payload) in chunk {
+            query = query.bind(*topic).bind(*source).bind(*emitted_at).bind(*payload);
+        }
+        query.execute(&mut *conn).await?;
+    }
+    Ok(())
+}
+
 /// List all events with `event_id > since_id`, oldest first.
 ///
 /// # Errors
