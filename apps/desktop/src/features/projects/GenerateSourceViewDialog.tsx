@@ -23,13 +23,14 @@
  * `SourceViewsSection`'s remove/regenerate toast convention.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Modal } from '@/components';
 import { Btn, Banner } from '@/ui';
 import { m } from '@/lib/i18n';
 import { addToast } from '@/shared/toast';
 import { generateSourceView } from './source-views';
-import { getSettings } from '@/features/settings/settingsIpc';
+import { settingsQueryOptions } from '@/features/settings/settingsQueries';
 import { errMessage } from '@/lib/errors';
 
 interface SourceViewLinkKindSettings {
@@ -54,25 +55,14 @@ export function GenerateSourceViewDialog({
   const [copyOptIn, setCopyOptIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [linkKinds, setLinkKinds] = useState<SourceViewLinkKindSettings | null>(
-    null,
-  );
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    void getSettings({ scope: 'sourceViews' })
-      .then((data) => {
-        if (!cancelled) setLinkKinds(data.values ?? {});
-      })
-      .catch(() => {
-        // Best-effort display only — generation still works without it.
-        if (!cancelled) setLinkKinds(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
+  // Best-effort display only — generation still works without it, so a failed
+  // read renders the same "unknown" state as a pending one.
+  const { data } = useQuery({
+    ...settingsQueryOptions('sourceViews'),
+    enabled: open,
+  });
+  const linkKinds: SourceViewLinkKindSettings | null =
+    (data?.values as SourceViewLinkKindSettings | undefined) ?? null;
 
   if (!open) return null;
 

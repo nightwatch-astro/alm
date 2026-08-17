@@ -16,7 +16,8 @@
  *    whether files were linked or copied without opening the plan.
  */
 
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { renderWithQuery as render } from '@/test/renderWithQuery';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockGenerate, mockGetSettings } = vi.hoisted(() => ({

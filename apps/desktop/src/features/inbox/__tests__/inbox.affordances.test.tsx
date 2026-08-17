@@ -20,7 +20,8 @@
  * coverage of the removal either.
  */
 
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
+import { renderWithQuery as render } from '@/test/renderWithQuery';
 import { describe, it, expect, vi } from 'vitest';
 import { InboxControls } from '../InboxControls';
 

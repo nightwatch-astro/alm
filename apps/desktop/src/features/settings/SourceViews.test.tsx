@@ -12,7 +12,8 @@
  *   3. Changing a select calls `save('sourceViews', { ... })` with the new value.
  *   4. The cross-drive select never offers `hardlink` (FR-004a).
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithQuery as render } from '@/test/renderWithQuery';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ZodType } from 'zod';
 
