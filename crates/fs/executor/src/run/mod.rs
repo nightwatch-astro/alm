@@ -318,23 +318,58 @@ impl SkipSet {
 ///
 /// Access is synchronous for the same reason as [`SkipSet`]: the critical
 /// section is a single `HashSet` operation, never held across an `.await`.
-#[derive(Clone, Debug, Default)]
+///
+/// The queue has a one-way `open -> closed` lifecycle. While open, an
+/// enqueued id is guaranteed to be observed by a later [`RetryQueue::drain_all`]
+/// or to be reported by [`RetryQueue::take_orphaned`]. Once closed,
+/// [`RetryQueue::push`] refuses. The transition is what makes retry acceptance
+/// and executor readiness a single atomic step (astro-plan-ts1z): an id is
+/// either queued to a run that will drain it, or refused outright. Without it,
+/// a retry accepted for a run that had already stopped draining was swept to
+/// `cancelled` without ever executing — indistinguishable from a cancellation
+/// the user asked for.
+#[derive(Clone, Debug)]
 pub struct RetryQueue {
-    inner: Arc<Mutex<HashSet<String>>>,
+    inner: Arc<Mutex<RetryQueueInner>>,
+}
+
+#[derive(Debug)]
+struct RetryQueueInner {
+    /// `None` once closed.
+    queue: Option<HashSet<String>>,
+    /// Ids that were accepted while open but closed before any drain reached
+    /// them. Their database row is already `applying` (flipped by the caller
+    /// before the enqueue), so whoever closed the queue owns restoring them.
+    orphaned: Vec<String>,
 }
 
 impl RetryQueue {
     #[must_use]
     pub fn new() -> Self {
-        Self { inner: Arc::new(Mutex::new(HashSet::new())) }
+        Self {
+            inner: Arc::new(Mutex::new(RetryQueueInner {
+                queue: Some(HashSet::new()),
+                orphaned: Vec::new(),
+            })),
+        }
     }
 
-    /// Enqueue an item for retry.
+    /// Enqueue an item for retry. Returns `false` when the queue is closed,
+    /// meaning no executor will ever drain the id and the caller must refuse
+    /// the retry rather than report it as accepted.
     ///
     /// # Panics
     /// Panics if the internal mutex is poisoned.
-    pub fn push(&self, item_id: &str) {
-        self.inner.lock().expect("retry-queue mutex poisoned").insert(item_id.to_owned());
+    #[must_use]
+    pub fn push(&self, item_id: &str) -> bool {
+        let mut guard = self.inner.lock().expect("retry-queue mutex poisoned");
+        match guard.queue.as_mut() {
+            Some(set) => {
+                set.insert(item_id.to_owned());
+                true
+            }
+            None => false,
+        }
     }
 
     /// Remove and return true if the item is queued for retry.
@@ -343,7 +378,12 @@ impl RetryQueue {
     /// Panics if the internal mutex is poisoned.
     #[must_use]
     pub fn take(&self, item_id: &str) -> bool {
-        self.inner.lock().expect("retry-queue mutex poisoned").remove(item_id)
+        self.inner
+            .lock()
+            .expect("retry-queue mutex poisoned")
+            .queue
+            .as_mut()
+            .is_some_and(|set| set.remove(item_id))
     }
 
     /// Remove and return every queued item id (order unspecified).
@@ -357,6 +397,80 @@ impl RetryQueue {
     /// Panics if the internal mutex is poisoned.
     #[must_use]
     pub fn drain_all(&self) -> Vec<String> {
-        self.inner.lock().expect("retry-queue mutex poisoned").drain().collect()
+        self.inner
+            .lock()
+            .expect("retry-queue mutex poisoned")
+            .queue
+            .as_mut()
+            .map(|set| set.drain().collect())
+            .unwrap_or_default()
+    }
+
+    /// Close the queue only if nothing is queued. Returns `true` when it is
+    /// now closed.
+    ///
+    /// Checked and closed under one lock acquisition, so a concurrent
+    /// [`RetryQueue::push`] either lands before the close — reported here as
+    /// `false`, obliging the caller to drain again — or is refused after it.
+    /// No ordering exists in which a push succeeds and is then dropped.
+    ///
+    /// # Panics
+    /// Panics if the internal mutex is poisoned.
+    #[must_use]
+    pub fn close_if_empty(&self) -> bool {
+        let mut guard = self.inner.lock().expect("retry-queue mutex poisoned");
+        match guard.queue.as_ref() {
+            Some(set) if !set.is_empty() => false,
+            _ => {
+                guard.queue = None;
+                true
+            }
+        }
+    }
+
+    /// Close the queue unconditionally, moving anything still queued to the
+    /// orphan list for [`RetryQueue::take_orphaned`]. Idempotent.
+    ///
+    /// Used on the run-halting paths (cancel, pause), where remaining retries
+    /// will not be executed but the queue must stop accepting new ones in the
+    /// same instant.
+    ///
+    /// # Panics
+    /// Panics if the internal mutex is poisoned.
+    pub fn close(&self) {
+        let mut guard = self.inner.lock().expect("retry-queue mutex poisoned");
+        if let Some(set) = guard.queue.take() {
+            guard.orphaned.extend(set);
+        }
+    }
+
+    /// Record ids that were drained but not executed, so they are reported by
+    /// [`RetryQueue::take_orphaned`] rather than lost.
+    ///
+    /// [`RetryQueue::drain_all`] removes ids from the queue before executing
+    /// them; a halt part-way through the drained batch would otherwise drop the
+    /// remainder with their database row left `applying` and no record of why.
+    ///
+    /// # Panics
+    /// Panics if the internal mutex is poisoned.
+    pub fn orphan<I: IntoIterator<Item = String>>(&self, item_ids: I) {
+        self.inner.lock().expect("retry-queue mutex poisoned").orphaned.extend(item_ids);
+    }
+
+    /// Take the ids accepted but never executed, so their `applying` database
+    /// row can be restored. Draining, so two callers cannot both act on the
+    /// same id.
+    ///
+    /// # Panics
+    /// Panics if the internal mutex is poisoned.
+    #[must_use]
+    pub fn take_orphaned(&self) -> Vec<String> {
+        std::mem::take(&mut self.inner.lock().expect("retry-queue mutex poisoned").orphaned)
+    }
+}
+
+impl Default for RetryQueue {
+    fn default() -> Self {
+        Self::new()
     }
 }

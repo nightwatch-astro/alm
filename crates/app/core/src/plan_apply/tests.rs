@@ -851,6 +851,88 @@ async fn losing_the_retry_race_restores_the_item_to_failed_and_retryable() {
     );
 }
 
+/// astro-plan-ts1z window (c): a retry the run accepted but never executed
+/// must not be recorded as `cancelled`.
+///
+/// The completion sweep (`cancel_orphaned_applying_items`) turns any item left
+/// `applying` into `cancelled`, which reads identically to a cancellation the
+/// user asked for — the UI has nothing to distinguish them by and presents the
+/// item as done. `restore_unexecuted_retries` runs first and puts the item back
+/// to `failed` with a `retry.not_executed` audit event, so the item stays
+/// retryable and the reason is on the record.
+#[tokio::test]
+async fn an_accepted_but_unexecuted_retry_is_restored_to_failed_not_cancelled() {
+    let (db, _bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-orphan", 1).await;
+    // A real run row: the audit event's `run_id` is a foreign key, so a fake id
+    // would make the append silently fail and the reason never be recorded.
+    plans_repo::update_plan_state(db.pool(), "p-orphan", "approved").await.unwrap();
+    apply_repo::cas_approved_to_applying(db.pool(), "p-orphan", "run-orphan", "tok", 1, 1)
+        .await
+        .unwrap();
+    {
+        let mut conn = db.pool().acquire().await.unwrap();
+        apply_repo::batch_flush_item_states(
+            &mut conn,
+            "p-orphan",
+            &[apply_repo::BatchItemState {
+                item_id: "p-orphan-item-0",
+                new_state: "failed",
+                failure_reason: Some("permission.denied"),
+                is_stale: false,
+            }],
+            0,
+            1,
+            0,
+        )
+        .await
+        .unwrap();
+    }
+
+    // The state `execute_plan` leaves behind when it halts over an accepted
+    // retry: the item's row is `applying` and the queue reports it as an orphan.
+    let retry_queue = RetryQueue::new();
+    assert!(retry_queue.push("p-orphan-item-0"));
+    retry_queue.close();
+    apply_repo::item_retry_applying(db.pool(), "p-orphan-item-0", "p-orphan").await.unwrap();
+
+    super::apply::restore_unexecuted_retries(db.pool(), "p-orphan", "run-orphan", &retry_queue)
+        .await;
+
+    let items = plans_repo::list_plan_items(db.pool(), "p-orphan").await.unwrap();
+    let item = items.iter().find(|i| i.id == "p-orphan-item-0").unwrap();
+    assert_eq!(
+        item.item_state, "failed",
+        "an accepted retry that never ran must be FAILED — retryable — not left `applying` for \
+         the completion sweep to record as `cancelled`"
+    );
+
+    let reason: Option<String> = sqlx::query_scalar(
+        "SELECT failure_code FROM plan_apply_events \
+         WHERE plan_id = ? AND item_id = ? AND new_state = 'failed' \
+         ORDER BY rowid DESC LIMIT 1",
+    )
+    .bind("p-orphan")
+    .bind("p-orphan-item-0")
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        reason.as_deref(),
+        Some(super::apply::RETRY_NOT_EXECUTED_REASON),
+        "the audit record must name WHY the retry did not run, so a surface can offer it again \
+         instead of presenting a cancellation the user never asked for"
+    );
+
+    // Now the sweep the terminal handlers run: it must find nothing, because
+    // the restore already happened.
+    let swept = apply_repo::cancel_orphaned_applying_items(db.pool(), "p-orphan").await.unwrap();
+    assert!(
+        swept.is_empty(),
+        "the restore runs before the sweep, so the sweep has no `applying` item to cancel"
+    );
+}
+
 #[tokio::test]
 async fn retry_plan_item_rejects_non_failed_item() {
     let (db, _bus) = setup().await;
