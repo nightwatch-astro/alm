@@ -6,20 +6,20 @@
 # rule's own `// eslint-disable-next-line alm/no-user-string -- <reason>`
 # for a genuinely non-user-facing string).
 # Regenerate with: node scripts/check-eslint-baseline.mjs --generate
-src/app/CommandPalette.tsx	215	alm/require-root-testid
+src/app/CommandPalette.tsx	216	alm/require-root-testid
 src/app/OperationStatusContext.tsx	46	alm/require-root-testid
 src/app/PageStatusContext.tsx	52	alm/require-root-testid
 src/components/DetailPanel.tsx	134	alm/require-root-testid
 src/components/DetailPanel.tsx	72	alm/require-root-testid
-src/components/FilterToolbar.tsx	286	alm/require-root-testid
-src/components/ListPageLayout.tsx	230	alm/require-root-testid
+src/components/FilterToolbar.tsx	283	alm/require-root-testid
+src/components/ListPageLayout.tsx	231	alm/require-root-testid
 src/components/ListSidebar.tsx	54	alm/require-root-testid
 src/components/MetricLine.tsx	23	alm/require-root-testid
 src/components/Modal.tsx	142	alm/require-root-testid
 src/components/PageShell.tsx	17	alm/require-root-testid
-src/components/RenderValue.tsx	68	alm/require-root-testid
-src/components/SortHeader.tsx	68	alm/require-root-testid
-src/components/StatusTag.tsx	26	alm/require-root-testid
+src/components/RenderValue.tsx	69	alm/require-root-testid
+src/components/SortHeader.tsx	69	alm/require-root-testid
+src/components/StatusTag.tsx	27	alm/require-root-testid
 src/components/TwoColDetailLayout.tsx	111	alm/require-root-testid
 src/features/archive/ArchiveDetail.tsx	63	alm/require-root-testid
 src/features/calibration/CalibrationDetail.tsx	9	alm/require-root-testid
@@ -31,7 +31,7 @@ src/features/inbox/ConeSearchSuggestions.tsx	111	alm/require-root-testid
 src/features/inbox/InboxControls.tsx	160	alm/require-root-testid
 src/features/inbox/InboxDetail.tsx	366	alm/require-root-testid
 src/features/inbox/InboxNeedsReview.tsx	113	alm/require-root-testid
-src/features/inbox/PlanDestructiveControl.tsx	32	alm/require-root-testid
+src/features/inbox/PlanDestructiveControl.tsx	33	alm/require-root-testid
 src/features/onboarding/ChecklistPopover.tsx	110	alm/require-root-testid
 src/features/onboarding/FindSpotlight.tsx	173	alm/require-root-testid
 src/features/onboarding/OrientationWalk.tsx	161	alm/require-root-testid
@@ -93,4 +93,4 @@ src/features/targets/TargetList.tsx	80	alm/require-root-testid
 src/features/targets/TargetsTableColumns.tsx	134	alm/require-root-testid
 src/features/targets/TonightPanel.tsx	167	alm/require-root-testid
 src/ui/NumberField.tsx	40	alm/require-root-testid
-src/ui/Tooltip.tsx	51	alm/require-root-testid
+src/ui/Tooltip.tsx	52	alm/require-root-testid

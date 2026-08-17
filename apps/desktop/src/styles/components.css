@@ -23,7 +23,7 @@
 /* wizard-base.css migrated to VE: src/styles/select.css.ts, src/components/lifecycle.css.ts, src/ui/wizard-shell.css.ts */
 @import './components/target-search.css';
 @import './components/detail-panes.css';
-@import './components/plan-panel.css';
+/* plan-panel.css migrated to VE: src/features/inbox/plan-panel.css.ts */
 @import './components/wizard-steps.css';
 @import './components/settings-detail.css';
 @import './components/feature-lists.css';

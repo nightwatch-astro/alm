@@ -251,7 +251,7 @@ describe('PlanApprovalOverlay', () => {
     expect(source).toHaveTextContent('/root/lights/img001.fits');
     expect(dest).toHaveTextContent('/dest/lights/img001.fits');
     // Both sides belong to one action's row, not merely somewhere in the panel.
-    const row = source.closest('.pv-plan-panel__file-row');
+    const row = source.closest('[data-testid^="plan-file-row-"]');
     expect(row).not.toBeNull();
     expect(row).toContainElement(dest);
   });

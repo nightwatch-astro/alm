@@ -15,6 +15,7 @@
  */
 
 import type { PillVariant } from '@/ui';
+import { variantStyles, dotVariants } from './StatusTag.css';
 
 export interface StatusTagProps {
   variant: PillVariant;
@@ -23,8 +24,16 @@ export interface StatusTagProps {
 
 export function StatusTag({ variant, children }: StatusTagProps) {
   return (
-    <span className={`pv-status-tag pv-status-tag--${variant}`}>
-      <span className="pv-status-tag__dot" aria-hidden="true" />
+    <span
+      className={variantStyles[variant]}
+      data-component="status-tag"
+      data-variant={variant}
+    >
+      <span
+        className={dotVariants[variant]}
+        data-component="status-tag-dot"
+        aria-hidden="true"
+      />
       {children}
     </span>
   );

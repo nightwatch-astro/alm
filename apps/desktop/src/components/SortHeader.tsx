@@ -25,6 +25,7 @@
  */
 
 import type { ReactNode } from 'react';
+import * as sh from './SortHeader.css';
 
 /**
  * The single shared `aria-sort` mapping for sortable column headers: the
@@ -67,14 +68,14 @@ export function SortHeader({
   return (
     <button
       type="button"
-      className={`pv-sorth${active ? ' pv-sorth--active' : ''}`}
+      className={active ? `${sh.root} ${sh.active}` : sh.root}
       onClick={onClick}
       aria-label={ariaLabel}
       title={title}
     >
       {label}
       {active && (
-        <span className="pv-sorth__arrow" aria-hidden="true">
+        <span className={sh.arrow} aria-hidden="true">
           {dir === 'asc' ? '▲' : '▼'}
         </span>
       )}

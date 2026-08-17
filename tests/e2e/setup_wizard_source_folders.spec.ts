@@ -130,13 +130,13 @@ test.describe('setup wizard · source-folder primitives at 320 CSS px', () => {
       });
       await expect(
         lightFrames.getByTestId('requirement-status-light_frames'),
-      ).toHaveClass(/pv-pill--ok/);
+      ).toHaveAttribute('data-variant', 'ok');
       await expect(
         lightFrames.getByTestId('requirement-status-light_frames'),
       ).toHaveText(labels.requiredStatus);
       await expect(
         calibration.getByTestId('requirement-status-calibration'),
-      ).toHaveClass(/pv-pill--ghost/);
+      ).toHaveAttribute('data-variant', 'ghost');
       await expect(
         calibration.getByTestId('requirement-status-calibration'),
       ).toHaveText(labels.optionalStatus);

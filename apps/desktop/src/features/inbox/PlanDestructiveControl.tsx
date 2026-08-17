@@ -10,6 +10,7 @@
 import { Banner } from '@/ui';
 import { m } from '@/lib/i18n';
 import type { DestructiveDestination } from './PlanPanel';
+import * as pp from './plan-panel.css';
 
 export interface PlanDestructiveControlProps {
   destructiveDestination: DestructiveDestination;
@@ -29,13 +30,13 @@ export function PlanDestructiveControl({
   onConfirmDestructive,
 }: PlanDestructiveControlProps) {
   return (
-    <div className="pv-plan-panel__destructive">
-      <div className="pv-plan-panel__destructive-title">
+    <div className={pp.destructive}>
+      <div className={pp.destructiveTitle}>
         {m.inbox_where_source_files_go()}
       </div>
-      <div className="pv-plan-panel__dest-options">
+      <div className={pp.destOptions}>
         {}
-        <label className="pv-plan-panel__dest-label">
+        <label className={pp.destLabel}>
           <input
             type="radio"
             name="destructive-destination"
@@ -47,13 +48,11 @@ export function PlanDestructiveControl({
           />
           <span>
             <strong>{m.inbox_archive_folder()}</strong>
-            <span className="pv-plan-panel__dest-label-hint">
-              {m.inbox_archive_hint()}
-            </span>
+            <span className={pp.destLabelHint}>{m.inbox_archive_hint()}</span>
           </span>
         </label>
         {}
-        <label className="pv-plan-panel__dest-label">
+        <label className={pp.destLabel}>
           <input
             type="radio"
             name="destructive-destination"
@@ -71,7 +70,7 @@ export function PlanDestructiveControl({
           items (trash/delete) were previously refused permanently at
           apply time — `destructive_confirmed` had no writer. Plan-level
           (not per-item — `InboxPlanAction` carries no item id). */}
-      <label className="pv-plan-panel__dest-label">
+      <label className={pp.destLabel}>
         <input
           type="checkbox"
           checked={allDestructiveConfirmed}

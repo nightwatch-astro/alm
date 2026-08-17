@@ -18,6 +18,7 @@
 import type { ReactNode } from 'react';
 import { Btn } from '@/ui';
 import { m } from '@/lib/i18n';
+import * as ft from './FilterToolbar.css';
 
 export interface FilterOption {
   value: string;
@@ -123,7 +124,7 @@ export interface FilterToolbarProps {
 function GroupingSelects({ grouping }: { grouping: GroupingControl }) {
   const { dimensions, dims, setSlot, maxLevels = 3 } = grouping;
   return (
-    <div className="pv-filterbar__group">
+    <div className={ft.group}>
       {Array.from({ length: maxLevels }).map((_, slot) => {
         const value = dims[slot] ?? '';
         const disabled = slot > 0 && !dims[slot - 1];
@@ -131,7 +132,7 @@ function GroupingSelects({ grouping }: { grouping: GroupingControl }) {
         return (
           <select
             key={slot}
-            className="pv-filterbar__select"
+            className={ft.select}
             value={value}
             disabled={disabled}
             onChange={(e) => setSlot(slot, e.target.value)}
@@ -178,10 +179,10 @@ function LabeledSelect({
   leadingOption?: string;
 }) {
   return (
-    <label className="pv-filterbar__field" htmlFor={id}>
-      <span className="pv-filterbar__field-label">{label}</span>
+    <label className={ft.field} htmlFor={id}>
+      <span className={ft.fieldLabel}>{label}</span>
       <select
-        className="pv-filterbar__select"
+        className={ft.select}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
@@ -236,30 +237,26 @@ function MultiSelect({
   return (
     // A `<details>` is not a labelable control, so this field is a labelled
     // group (heading + aria-label) rather than a `<label>` wrapper.
-    <div className="pv-filterbar__field">
-      <span className="pv-filterbar__field-label">{label}</span>
-      <details className="pv-filterbar__multi" id={id}>
+    <div className={ft.field}>
+      <span className={ft.fieldLabel}>{label}</span>
+      <details className={ft.multi} id={id}>
         <summary
-          className="pv-filterbar__multi-summary"
+          className={ft.multiSummary}
           aria-label={`${label}: ${summary}`}
         >
           {summary}
         </summary>
-        <div
-          className="pv-filterbar__multi-menu"
-          role="group"
-          aria-label={label}
-        >
+        <div className={ft.multiMenu} role="group" aria-label={label}>
           {options.map((o) => (
             <label
               key={o.value}
-              className="pv-filterbar__multi-option"
+              className={ft.multiOption}
               htmlFor={`${id}-${o.value}`}
             >
               <input
                 type="checkbox"
                 id={`${id}-${o.value}`}
-                className="pv-filterbar__multi-check"
+                className={ft.multiCheck}
                 checked={selected.has(o.value)}
                 onChange={() => toggle(o.value)}
                 aria-label={o.label}
@@ -283,11 +280,11 @@ export function FilterToolbar({
   actions,
 }: FilterToolbarProps) {
   return (
-    <div className="pv-filterbar">
+    <div className={ft.root}>
       {search && (
         <input
           type="search"
-          className="pv-filterbar__search"
+          className={ft.search}
           placeholder={search.placeholder ?? m.common_search_placeholder()}
           value={search.value}
           onChange={(e) => search.onChange(e.target.value)}
@@ -331,7 +328,7 @@ export function FilterToolbar({
       )}
 
       {sort && (
-        <div className="pv-filterbar__sort">
+        <div className={ft.sort}>
           <LabeledSelect
             id="filterbar-sort"
             label={sort.label ?? m.filter_sort_label()}
@@ -342,7 +339,7 @@ export function FilterToolbar({
           <Btn
             size="sm"
             variant="ghost"
-            className="pv-filterbar__sort-dir"
+            className={ft.sortDir}
             onClick={sort.onDirToggle}
             aria-label={m.filter_sort_dir_aria({
               dir:
@@ -361,9 +358,7 @@ export function FilterToolbar({
         </div>
       )}
 
-      {actions != null && (
-        <div className="pv-filterbar__actions">{actions}</div>
-      )}
+      {actions != null && <div className={ft.actions}>{actions}</div>}
     </div>
   );
 }

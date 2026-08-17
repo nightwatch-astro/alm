@@ -44,13 +44,13 @@ test.describe('adaptive detail-panel dock (spec 054 / #936)', () => {
     await darkRow.click();
     const detail = page.locator('[data-testid="listpage-detail"]');
     await expect(detail).toBeVisible({ timeout: 5_000 });
-    await expect(detail).toHaveClass(/pv-listpage__detail--side/);
+    await expect(detail).toHaveAttribute('data-dock', 'side');
     await expect(page.getByTestId('dock-resize-handle')).toBeVisible();
 
     // Shrink to the shell's enforced minimum — bottom is the universal
     // narrow fallback (decision #8); the resize handle disappears with it.
     await page.setViewportSize({ width: 1100, height: 720 });
-    await expect(detail).not.toHaveClass(/pv-listpage__detail--side/);
+    await expect(detail).toHaveAttribute('data-dock', 'bottom');
     await expect(page.getByTestId('dock-resize-handle')).not.toBeVisible();
     // The panel itself, and its content, remain intact through the switch.
     await expect(detail).toContainText('Poseidon-C PRO');
@@ -73,10 +73,10 @@ test.describe('adaptive detail-panel dock (spec 054 / #936)', () => {
       .click();
     const detail = page.locator('[data-testid="listpage-detail"]');
     await expect(detail).toBeVisible({ timeout: 5_000 });
-    await expect(detail).not.toHaveClass(/pv-listpage__detail--side/);
+    await expect(detail).toHaveAttribute('data-dock', 'bottom');
 
     await page.getByRole('radio', { name: 'Right' }).click();
-    await expect(detail).toHaveClass(/pv-listpage__detail--side/);
+    await expect(detail).toHaveAttribute('data-dock', 'side');
 
     await page.reload();
     await disableOnboarding(page);
@@ -87,6 +87,6 @@ test.describe('adaptive detail-panel dock (spec 054 / #936)', () => {
     const detailAfterReload = page.locator('[data-testid="listpage-detail"]');
     await expect(detailAfterReload).toBeVisible({ timeout: 5_000 });
     // The pin survives the reload even though 1024 is below the auto threshold.
-    await expect(detailAfterReload).toHaveClass(/pv-listpage__detail--side/);
+    await expect(detailAfterReload).toHaveAttribute('data-dock', 'side');
   });
 });

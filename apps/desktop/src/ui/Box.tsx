@@ -3,6 +3,7 @@
 
 import { forwardRef } from 'react';
 import type { ReactNode, HTMLAttributes } from 'react';
+import * as box from './Box.css';
 
 export interface BoxProps extends HTMLAttributes<HTMLDivElement> {
   title?: string;
@@ -13,11 +14,11 @@ export const Box = forwardRef<HTMLDivElement, BoxProps>(function Box(
   { title, className, children, ...rest },
   ref,
 ) {
-  const cls = ['pv-box', className].filter(Boolean).join(' ');
+  const cls = [box.root, className].filter(Boolean).join(' ');
   return (
     <div ref={ref} className={cls} {...rest}>
-      {title && <div className="pv-box__header">{title}</div>}
-      <div className="pv-box__body">{children}</div>
+      {title && <div className={box.header}>{title}</div>}
+      <div className={box.body}>{children}</div>
     </div>
   );
 });

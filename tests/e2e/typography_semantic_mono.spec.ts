@@ -158,7 +158,7 @@ test.describe('Spec 055 · semantic base layer + mono restoration (Phase 3)', ()
     await m31.click();
 
     const radecValue = page.locator(
-      '[data-testid="property-table-cell-value"].pv-mono',
+      '[data-testid="property-table-cell-value"][data-mono]',
     );
     await expect(radecValue.first()).toBeVisible({ timeout: 8_000 });
 

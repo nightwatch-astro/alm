@@ -70,26 +70,6 @@ def words(s: str) -> int:
     return len(s.split())
 
 
-def _blank_code_spans(text: str) -> str:
-    """Replace fenced blocks and inline code with spaces, preserving offsets.
-
-    Content inside code is being shown, not asserted, so checks that judge intent
-    must not read it. Offsets are preserved so reported positions stay accurate.
-    """
-    out = list(text)
-
-    def blank(start: int, end: int) -> None:
-        for i in range(start, min(end, len(out))):
-            if out[i] != "\n":
-                out[i] = " "
-
-    for m in re.finditer(r"^[ \t]*(```+|~~~+)[^\n]*\n.*?^[ \t]*\1[^\n]*$", text, re.S | re.M):
-        blank(*m.span())
-    for m in re.finditer(r"(`+)(?:(?!\1).)*?\1", "".join(out), re.S):
-        blank(*m.span())
-    return "".join(out)
-
-
 def detect_kind(path: Path) -> str:
     n = path.name
     if n.startswith("template-"):
@@ -174,38 +154,6 @@ def parse_xlint(text: str) -> tuple[set[str], str]:
     return codes, reason
 
 
-def _has_rules_contract(path: Path, fm: dict) -> bool:
-    """True if this agent has a companion rules file that declares a
-    completion contract, i.e. .apm/rules/<name>.rules.json with a non-empty
-    `completion` list. The agent file lives at .apm/agents/<name>.agent.md, so
-    the rules dir is a sibling: ../rules/. Name comes from frontmatter, falling
-    back to the filename stem. Any read/parse error → False (no contract)."""
-    name = (fm.get("name") or "").strip() or path.name.split(".")[0]
-    rules_dir = path.parent.parent / "rules"
-    # Effort-tier variants (coder-low/-medium/-high/-xhigh) share the base's
-    # rules file (same contract, different effort). Try the exact name, then
-    # the name with a trailing -<tier> suffix stripped.
-    candidates = [name]
-    m = re.match(r"^(.*)-(low|medium|high|xhigh)$", name)
-    if m:
-        candidates.append(m.group(1))
-    data = None
-    for cand in candidates:
-        try:
-            import json as _json
-            data = _json.loads((rules_dir / f"{cand}.rules.json").read_text(encoding="utf-8"))
-            break
-        except Exception:
-            continue
-    if data is None:
-        return False
-    completion = data.get("completion")
-    # A completion checklist OR an authority matrix both constitute a
-    # machine-enforced output/behaviour contract (T2 actors like the shepherd
-    # carry authority-only contracts with no per-node completion checklist).
-    return bool(completion) or bool(data.get("authority"))
-
-
 def lint(path: Path) -> list[tuple[str, str, str]]:
     """Return [(severity, code, message)]."""
     raw: list[tuple[str, str, str]] = []
@@ -256,25 +204,17 @@ def lint(path: Path) -> list[tuple[str, str, str]]:
             if m:
                 err("E3", f"line {i}: model name '{m.group(0)}' in prose — route via steering-subagent-routing")
 
-    # E5 agent output contract.
-    # A bead-as-brief agent's output contract is its companion rules file
-    # (.apm/rules/<name>.rules.json with a `completion` checklist) — the
-    # machine-enforced spec of what it must produce (REPORTED comment, push,
-    # handoff label, ...). That is strictly stronger than a prose section and
-    # avoids duplicating the contract in two places, so a rules-backed agent
-    # satisfies E5 without a prose "Output contract" heading.
+    # E5 agent output contract
     if kind == "agent":
-        if _has_rules_contract(path, fm):
-            pass  # rules file IS the output contract
-        elif not re.search(r"^#+\s*Output|^OUTPUT", body, re.M):
-            err("E5", "agent has no Output contract section (and no .apm/rules/<name>.rules.json)")
+        if not re.search(r"^#+\s*Output|^OUTPUT", body, re.M):
+            err("E5", "agent has no Output contract section")
         else:
             if not CAPS_ENUM.search(body):
                 warn("W5", "no CAPS verdict enum (PASS|FAIL style) found in output contract")
             if not re.search(r"\bCAP\b|\b\d+\s*w(ords)?\b|≤\s*\d+", body):
                 err("E5", "output contract has no word cap")
-            if not re.search(r"never reprint|paths? only|path:line", body, re.I):
-                warn("W5", "no no-reprint rule in output contract")
+        if not re.search(r"never reprint|paths? only|path:line", body, re.I):
+            warn("W5", "no no-reprint rule in output contract")
 
     # E6 size caps
     n_lines = len([l for l in lines if l.strip()])
@@ -288,11 +228,8 @@ def lint(path: Path) -> list[tuple[str, str, str]]:
         if not re.search(r"\]\(\.\./context/.*\.context\.md\)", body):
             err("E7", "pointer does not link a ../context/*.context.md file")
 
-    # E8 relative links resolve. Scans with code spans blanked: a doc that
-    # DEMONSTRATES a link (`[x](../x.md)` as an example of good or bad practice)
-    # is not making that link, and flagging it makes any doc about linking
-    # unlintable.
-    for m in re.finditer(r"\]\((?!https?://)([^)#]+)\)", _blank_code_spans(body)):
+    # E8 relative links resolve
+    for m in re.finditer(r"\]\((?!https?://)([^)#]+)\)", body):
         target = (path.parent / m.group(1)).resolve()
         if not target.exists():
             err("E8", f"broken link: {m.group(1)}")

@@ -25,6 +25,7 @@
 import type { ReactNode } from 'react';
 import { Pill } from '@/ui';
 import { m } from '@/lib/i18n';
+import * as pt from './PropertyTable.css';
 
 export type FieldApplicability = 'applicable' | 'not_applicable';
 export type ValueSource = 'fits' | 'user' | 'inferred' | 'default';
@@ -66,7 +67,17 @@ const SOURCE_LABELS: Record<ValueSource, () => string> = {
 export function SourceBadge({ source }: { source: ValueSource }) {
   return (
     <span
-      className={`pv-property-table__source-badge pv-property-table__source-badge--${source}`}
+      className={
+        source === 'fits'
+          ? pt.sourceBadgeFits
+          : source === 'user'
+            ? pt.sourceBadgeUser
+            : source === 'inferred'
+              ? pt.sourceBadgeInferred
+              : source === 'default'
+                ? pt.sourceBadgeDefault
+                : pt.sourceBadge
+      }
     >
       {SOURCE_LABELS[source]()}
     </span>

@@ -56,8 +56,8 @@ describe('RotationWarningNotice', () => {
   it('is non-blocking (warn-variant banner)', () => {
     render(<RotationWarningNotice warning={{ kind: 'deviation', deg: 2 }} />);
     const banner = screen.getByTestId('rotation-warning-deviation');
-    expect(banner).toHaveClass('pv-banner--warn');
-    expect(banner).not.toHaveClass('pv-banner--danger');
+    // Banner renders with warn variant — verify via role (status for warn).
+    expect(banner).toHaveAttribute('role', 'status');
   });
 
   it('exposes an accessible label on the warning icon', () => {

@@ -43,31 +43,31 @@ function resizeWindowTo(width: number) {
 }
 
 describe('ListPageLayout', () => {
-  it('defaults to the bottom dock (no side variant classes)', () => {
-    const { container } = render(
+  it('defaults to the bottom dock', () => {
+    render(
       <ListPageLayout topBar={<div>bar</div>} detail={<div>detail</div>}>
         <div>main</div>
       </ListPageLayout>,
     );
-    const body = container.querySelector('.pv-listpage__body');
+    const body = screen.getByTestId('listpage-body');
     expect(body).toBeInTheDocument();
-    expect(body).not.toHaveClass('pv-listpage__body--side');
-    const detail = container.querySelector('.pv-listpage__detail');
+    expect(body).toHaveAttribute('data-dock', 'bottom');
+    const detail = screen.queryByTestId('listpage-detail');
     expect(detail).toBeInTheDocument();
-    expect(detail).not.toHaveClass('pv-listpage__detail--side');
+    expect(detail).toHaveAttribute('data-dock', 'bottom');
   });
 
   it('does not render the detail panel when detail is null', () => {
-    const { container } = render(
+    render(
       <ListPageLayout topBar={<div>bar</div>}>
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__detail')).toBeNull();
+    expect(screen.queryByTestId('listpage-detail')).toBeNull();
   });
 
   it('applies the side variant classes when detailPlacement="side"', () => {
-    const { container } = render(
+    render(
       <ListPageLayout
         topBar={<div>bar</div>}
         detail={<div>detail</div>}
@@ -77,11 +77,13 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__body')).toHaveClass(
-      'pv-listpage__body--side',
+    expect(screen.getByTestId('listpage-body')).toHaveAttribute(
+      'data-dock',
+      'side',
     );
-    expect(container.querySelector('.pv-listpage__detail')).toHaveClass(
-      'pv-listpage__detail--side',
+    expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+      'data-dock',
+      'side',
     );
   });
 
@@ -110,7 +112,7 @@ describe('ListPageLayout', () => {
   // ── Task #104: side-and-bottom dual layout ───────────────────────────────
 
   it('(#104) dual: renders side panel from detail and bottom strip from bottomDetail', () => {
-    const { container } = render(
+    render(
       <ListPageLayout
         topBar={<div>bar</div>}
         detail={<div>side content</div>}
@@ -130,18 +132,16 @@ describe('ListPageLayout', () => {
       screen.getByRole('complementary', { name: 'Selected item details' }),
     ).toBeInTheDocument();
     // Body carries the dual modifier class.
-    expect(
-      container.querySelector('.pv-listpage__body--dual'),
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-body-dual')).toBeInTheDocument();
     // Side panel and bottom strip use their own classes (not the old detail classes).
-    expect(container.querySelector('.pv-listpage__side')).toBeInTheDocument();
-    expect(container.querySelector('.pv-listpage__bottom')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-side')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-bottom')).toBeInTheDocument();
     expect(screen.getByText('side content')).toBeInTheDocument();
     expect(screen.getByText('bottom content')).toBeInTheDocument();
   });
 
   it('(#104) dual: does not render side panel when detail is null', () => {
-    const { container } = render(
+    render(
       <ListPageLayout
         topBar={<div>bar</div>}
         bottomDetail={<div>bottom content</div>}
@@ -150,12 +150,12 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__side')).toBeNull();
-    expect(container.querySelector('.pv-listpage__bottom')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-side')).toBeNull();
+    expect(screen.queryByTestId('listpage-bottom')).toBeInTheDocument();
   });
 
   it('(#104) dual: does not render bottom strip when bottomDetail is null', () => {
-    const { container } = render(
+    render(
       <ListPageLayout
         topBar={<div>bar</div>}
         detail={<div>side content</div>}
@@ -165,8 +165,8 @@ describe('ListPageLayout', () => {
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__side')).toBeInTheDocument();
-    expect(container.querySelector('.pv-listpage__bottom')).toBeNull();
+    expect(screen.queryByTestId('listpage-side')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-bottom')).toBeNull();
   });
 
   it('(#104) dual: close affordances call their respective callbacks', () => {
@@ -197,16 +197,16 @@ describe('ListPageLayout', () => {
   it('(#104) dual: backward-compatible — existing bottom/side paths unaffected', () => {
     // Sessions/Calibration/Targets use detailPlacement="bottom" (default) —
     // ensure they still get the original class names with no dual classes.
-    const { container } = render(
+    render(
       <ListPageLayout topBar={<div>bar</div>} detail={<div>detail</div>}>
         <div>main</div>
       </ListPageLayout>,
     );
-    expect(container.querySelector('.pv-listpage__body--dual')).toBeNull();
-    expect(container.querySelector('.pv-listpage__side')).toBeNull();
-    expect(container.querySelector('.pv-listpage__bottom')).toBeNull();
+    expect(screen.queryByTestId('listpage-body-dual')).toBeNull();
+    expect(screen.queryByTestId('listpage-side')).toBeNull();
+    expect(screen.queryByTestId('listpage-bottom')).toBeNull();
     // Original detail class still present.
-    expect(container.querySelector('.pv-listpage__detail')).toBeInTheDocument();
+    expect(screen.queryByTestId('listpage-detail')).toBeInTheDocument();
   });
 
   // ── Escape-to-close (#771) ────────────────────────────────────────────────
@@ -379,7 +379,7 @@ describe('ListPageLayout', () => {
 
     it('docks to the bottom under the threshold and to the side at/above it', () => {
       resizeWindowTo(1024);
-      const { container, rerender } = render(
+      const { rerender } = render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -388,8 +388,10 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      expect(container.querySelector('.pv-listpage__detail')).not.toHaveClass(
-        'pv-listpage__detail--side',
+      // narrow: bottom dock (no side testid).
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'bottom',
       );
 
       resizeWindowTo(1600);
@@ -402,14 +404,15 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      expect(container.querySelector('.pv-listpage__detail')).toHaveClass(
-        'pv-listpage__detail--side',
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
       );
     });
 
     it('honors adaptiveThreshold overrides per page', () => {
       resizeWindowTo(1450);
-      const { container } = render(
+      render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -420,14 +423,15 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       // 1450 < 1500 → still bottom, even though it clears the generic default.
-      expect(container.querySelector('.pv-listpage__detail')).not.toHaveClass(
-        'pv-listpage__detail--side',
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'bottom',
       );
     });
 
     it('pinning to side persists across remount (dockId-scoped preference)', () => {
       resizeWindowTo(1024);
-      const { container, unmount } = render(
+      const { unmount } = render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -437,12 +441,13 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       fireEvent.click(screen.getByRole('radio', { name: 'Right' }));
-      expect(container.querySelector('.pv-listpage__detail')).toHaveClass(
-        'pv-listpage__detail--side',
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
       );
       unmount();
 
-      const { container: container2 } = render(
+      render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -452,8 +457,9 @@ describe('ListPageLayout', () => {
         </ListPageLayout>,
       );
       // Narrow window (1024), but the pin from the previous mount survives.
-      expect(container2.querySelector('.pv-listpage__detail')).toHaveClass(
-        'pv-listpage__detail--side',
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
       );
     });
 
@@ -463,7 +469,7 @@ describe('ListPageLayout', () => {
     // width rule was permanently dead for that dockId.
     it('returning to Auto clears the pin and resumes the width rule', () => {
       resizeWindowTo(1024);
-      const { container, unmount } = render(
+      const { unmount } = render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -472,21 +478,25 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      const detailEl = () => container.querySelector('.pv-listpage__detail');
-
       // Pin to Right on a narrow window — placement defies the width rule.
       fireEvent.click(screen.getByRole('radio', { name: 'Right' }));
-      expect(detailEl()).toHaveClass('pv-listpage__detail--side');
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
+      );
 
       // Back to Auto: 1024 is below the threshold, so it must fall to bottom.
       fireEvent.click(screen.getByRole('radio', { name: 'Auto' }));
-      expect(detailEl()).not.toHaveClass('pv-listpage__detail--side');
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'bottom',
+      );
       expect(screen.getByRole('radio', { name: 'Auto' })).toBeChecked();
 
       // And Auto must survive a remount — i.e. the persisted pin was actually
       // cleared, not just overridden in component state.
       unmount();
-      const { container: container2 } = render(
+      render(
         <ListPageLayout
           topBar={<div>bar</div>}
           detail={<div>detail</div>}
@@ -495,14 +505,16 @@ describe('ListPageLayout', () => {
           <div>main</div>
         </ListPageLayout>,
       );
-      expect(container2.querySelector('.pv-listpage__detail')).not.toHaveClass(
-        'pv-listpage__detail--side',
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'bottom',
       );
 
       // Auto still follows the width rule upward, not just downward.
       resizeWindowTo(1600);
-      expect(container2.querySelector('.pv-listpage__detail')).toHaveClass(
-        'pv-listpage__detail--side',
+      expect(screen.getByTestId('listpage-detail')).toHaveAttribute(
+        'data-dock',
+        'side',
       );
     });
 

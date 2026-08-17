@@ -2,7 +2,7 @@
 
 A run's DAG, node state, and audit trail live in the project's beads database
 (the `bd` CLI). One database is shared by every worktree automatically, so
-agents in isolated worktrees read/write live state with plain `bd` commands --
+agents in isolated worktrees read/write live state with plain `bd` commands —
 no shared-path bookkeeping. Artifacts (full briefs/reports) are files under
 `<primary>/.orchestration/run-<id>/artifacts/`; bead comments reference them
 by absolute path.
@@ -85,71 +85,6 @@ attach an already-running/closed affected bead. Ordering work still uses a
 separate task dependency. An accepted, rejected, duplicate, or superseded
 decision is closed with a disposition-specific reason; closed means resolved,
 not erased.
-
-## How an edge type renders
-
-`bd show` has a heading for four types only:
-
-| Type | Near end | Far end | Gates `bd ready` |
-|---|---|---|---|
-| `blocks` | `DEPENDS ON` | `BLOCKS` | yes |
-| `parent-child` | `PARENT` | `CHILDREN` | no |
-| `discovered-from` | `DISCOVERED FROM` | `DISCOVERED` | no |
-| `relates-to` | `RELATED` | `RELATED` | no |
-
-`caused-by`, `validates`, `supersedes`, `duplicates`, `tracks`, and `until` store
-correctly and print their type in `bd dep tree`, but `bd show` renders each as
-`DEPENDS ON` near-side and `BLOCKS` far-side. A reader of `bd show` therefore sees
-ordering that does not exist. Where the precise type carries policy meaning, as
-`validates` and `supersedes` do for decision beads above, keep it and rely on
-`bd dep tree`. Anywhere a reader is the audience, prefer a rendering type and put
-the distinction in `notes`.
-
-`blocks` is the only type that gates `bd ready`. Every other type documents a
-relationship rather than enforcing one, `until` included.
-
-`--type` is NOT validated. Every string is accepted and stored verbatim, including a
-typo, which creates a real edge: `bd dep tree` traverses it and `bd show` renders it
-under DEPENDS ON. A typo reads as a dependency that does not exist. Copy the type
-rather than typing it.
-
-`replies-to` threads wisp messages and dies with them, so it cannot carry a durable
-finding. `related` stores as a distinct string from `relates-to` with no documented
-meaning; leave it alone.
-
-## Duplicates
-
-Two beads that are the same work get `bd duplicate <id> --of <canonical>`, never a
-hand-built edge. The command closes the duplicate and leaves the canonical open,
-which is the outcome a reader needs; a `relates-to` edge would leave both open and
-still competing for a claim.
-
-```text
-bd duplicate <duplicate-id> --of <canonical-id>
-bd update <canonical-id> --append-notes "DUPLICATE <duplicate-id>: <what matched>"
-```
-
-The stored edge type is `duplicates`, and `bd show` renders it as `DEPENDS ON` on
-the duplicate and `BLOCKS` on the canonical, so the closed status carries the
-meaning rather than the heading. Note on the canonical, because that is the bead
-that survives. Search first: `bd search` or `bd duplicates` surfaces candidates, and
-closing the wrong side loses the bead a reader will look for.
-
-An edge carries no annotation. `bd dep add` has no note field, and `note`,
-`reason`, and `metadata` keys in the `--file` JSONL are accepted and then dropped,
-so an annotated bulk write reports success while storing nothing. Each edge's
-reasoning therefore goes in the ORIGINATING bead's `notes`, naming the other bead
-by id:
-
-```text
-bd dep relate <finding> <root-cause>
-bd update <finding> --append-notes "ROOT CAUSE <root-cause-id>: <evidence>"
-```
-
-`--append-notes` preserves earlier lines, so multiple edges accumulate. `bd show`
-renders `notes` directly above the edge list, which puts the reasoning next to the
-relationship it explains. One line per edge, on the originating side only: the edge
-already renders from both ends.
 
 Before creation, after restart, and before action, list every decision under the
 epic with `bd list --type decision --parent <epic> --all --json`. Decisions
@@ -238,14 +173,13 @@ bd info >/dev/null 2>&1 || bd init --stealth --prefix orc
 | Run | one **epic** bead; metadata `run_id`, `primary_branch`, `base_sha`, `artifacts` (abs dir), optional `swarm` handle |
 | DAG node | **task** bead, `--parent <epic>`, label `orc-node`, metadata `node` (short id), `scope` (JSON array of globs) |
 | Node dep | `bd dep add <dependent> <dependency>` (`blocks` type), one per edge |
-| Runtime and Git anchors | activation-resource metadata, stamped per the contract below |
+| Git anchors | node metadata, stamped per the contract below |
 
 ```
 EPIC=$(bd create "orchestrate run-<id>" --type epic --silent \
   --metadata '{"run_id":"run-<id>","primary_branch":"main","base_sha":"<sha>","artifacts":"<abs>/.orchestration/run-<id>/artifacts"}')
-# `bd swarm validate "$EPIC" --json` gates the structure and needs no marker.
-# Only create a marker (`bd swarm create "$EPIC"`, handle -> metadata key `swarm`)
-# when coordinator discovery or an external scheduler needs a durable handle.
+# For multi-node runs, persist the returned handle from `bd swarm create "$EPIC"`
+# as metadata key `swarm`; later status/validation reads that handle.
 T1=$(bd create "t1: <desc>" --parent "$EPIC" --labels orc-node --silent \
   --metadata '{"node":"t1","scope":["src/auth/**"]}')
 bd dep add "$T3" "$T1"        # t3 depends on t1
@@ -254,9 +188,9 @@ bd dep cycles                 # must stay clean
 
 The label MUST be `orc-node` (hyphen, plain label). `bd set-state` owns the
 `state:` label dimension: each transition deletes the previous `state:<value>`
-label, adds the new one, and emits an event bead -- the transition record.
+label, adds the new one, and emits an event bead — the transition record.
 
-## State mapping -- 11-state enum → bead status + `state:` label
+## State mapping — 11-state enum → bead status + `state:` label
 
 Beads statuses are coarse and drive `bd ready`; the `state:` label carries the
 review-round sub-state. Both are set in one place per transition:
@@ -269,13 +203,13 @@ bd update <bead> --status <status>                    # only where status change
 | Enum state | Bead status | `state:` label | Set by / how |
 |---|---|---|---|
 | `pending` | `open` | `state:pending` | orchestrator at `bd create` |
-| `ready` | `open` | -- (derived, never stored) | `bd ready --label orc-node --parent <epic>` + clean `scope-check.py` |
-| `working` | `in_progress` | `state:working` | domain-specialist: `bd update <bead> --claim` (atomic, first-wins, sets assignee) then `set-state` |
-| `reported` | `in_progress` | `state:reported` | domain-specialist, after push |
+| `ready` | `open` | — (derived, never stored) | `bd ready --label orc-node --parent <epic>` + clean `scope-check.py` |
+| `working` | `in_progress` | `state:working` | coder: `bd update <bead> --claim` (atomic, first-wins, sets assignee) then `set-state` |
+| `reported` | `in_progress` | `state:reported` | coder, after push |
 | `in_review` | `in_progress` | `state:in_review` | orchestrator at reviewer spawn |
 | `changes_requested` | `in_progress` | `state:changes_requested` | orchestrator on `REVIEW verdict=changes` |
 | `approved` | `in_progress` | `state:approved` | orchestrator on `REVIEW verdict=approve` |
-| `merged` | `closed` | `state:merged` | shepherd: `set-state` then `bd close <bead> --reason merged` |
+| `merged` | `closed` | `state:merged` | gatekeeper: `set-state` then `bd close <bead> --reason merged` |
 | `dismissed` | `closed` | `state:dismissed` | orchestrator: `set-state` then `bd close <bead> --reason dismissed` |
 | `failed` | `blocked` | `state:failed` | orchestrator: `set-state` then `bd update <bead> --status blocked` |
 | `waiting_human` | `in_progress` | `state:waiting_human` | orchestrator on `ASK`; add `bd gate create --type=human --blocks <bead>` when the node has not started yet |
@@ -283,7 +217,7 @@ bd update <bead> --status <status>                    # only where status change
 Semantics that fall out of the status column:
 
 - **Deps clear on `closed`.** A dependent becomes ready only once its
-  upstreams are `merged`/`dismissed` -- it always starts from a base containing
+  upstreams are `merged`/`dismissed` — it always starts from a base containing
   the upstream's merged code.
 - **`failed` = `blocked` status** → never satisfies a dependency, never
   reappears in `bd ready`. Stranded downstream = `bd dep tree <bead>`.
@@ -292,28 +226,20 @@ Semantics that fall out of the status column:
 
 ## Git-anchor metadata contract
 
-Every node bead carries Worktrunk anchors in metadata so any session can find
-where the work physically lives. The orchestrator creates the checkout with
-`wt switch --create <branch> --base <base> --no-cd --format=json` and stores
-the returned branch/path before spawning. Never infer the path from the user
-template.
+Every node bead carries git anchors in metadata so any session can find where
+the work physically lives. Two stamping points, no exceptions:
 
 | When | Who | Stamp |
 |---|---|---|
-| Writer checkout prepared | orchestrator | stamp node `branch`, canonical `worktree`, `base_sha`, stable `actor`, and `lease_token` |
-| Tool-using reviewer prepared | orchestrator | stamp the review wisp with its own `branch`, canonical `worktree`, `actor`, and `lease_token` |
-| Tool-using advisor/researcher prepared | orchestrator | stamp the escalation wisp or research node with its own `branch`, canonical `worktree`, `actor`, and `lease_token` |
-| Runtime bound | orchestrator | bind acknowledged `runtime_context` to the lease; stamp it with parent-visible `runtime_handle`, read both back, then send only `CLAIM {resource-id}` to the handle |
-| Claim | claim-holder | set `BEADS_ACTOR` and `BD_ACTOR` to `metadata.actor` in the claim process; validate branch/worktree/lease anchors |
-| Report (after push) | domain-specialist | stamp `push=<pushed commit SHA>` (+ refresh `branch` if renamed) |
-| Merge | shepherd | `bd update <bead> --metadata '{"pr":<n>,"merge_sha":"<sha>"}'` |
+| Claim (immediately after `--claim`) | coder | `bd update <bead> --metadata '{"branch":"<branch>","worktree":"<abs path>","base_sha":"<sha>"}'` |
+| Report (after push) | coder | `--set-metadata pushed=origin/<branch>` (+ refresh `branch` if renamed) |
+| Merge | gatekeeper | `bd update <bead> --metadata '{"pr":<n>,"merge_sha":"<sha>"}'` |
 
-Add a `repo` key when work lands in a different repository than the run epic.
-`--metadata` merges with existing keys, so stamps never clobber `node` or
-`scope`. Every claim-holder resource owns its own canonical `worktree`; do not
-store reviewer or advisor paths on the work node. Branch, push, PR, and merge
-anchors survive checkout teardown. Runtime context and worktree pointers are
-cleared only after the actor is released and the checkout is reclaimed.
+Add a `repo` key when the node's work lands in a different repository than the
+run epic's. `--metadata` merges with existing keys (verified on bd 1.1.0), so
+stamps never clobber `node`/`scope`. `worktree` is an ephemeral pointer, valid
+while the node is in flight; `branch`/`pushed`/`pr`/`merge_sha` are the durable
+anchors that survive worktree teardown.
 
 ## Ready front + scope disjointness
 
@@ -332,7 +258,7 @@ means: leave the node unclaimed, pick another.
 
 ## Events: audit records + comments
 
-Every material protocol verb (`blocked advice reported review fix conflict
+Every protocol verb (`assign blocked advice reported review fix conflict
 approve merged dismiss ask` + `failed`/`note`) is recorded by the acting agent
 (identity via `BEADS_ACTOR=<actor>`) as two writes:
 
@@ -343,7 +269,7 @@ bd comment <bead> "<VERB> <node> field=… output_ref=<abs artifact path>"
 ```
 
 - **Audit record** = machine-parsable, append-only trail; `--tool-name
-  orc.{verb}` carries the verb; `--exit-code 1` + `--error` for failures.
+  orc.<verb>` carries the verb; `--exit-code 1` + `--error` for failures.
 - **Comment** = human-readable payload (the message fields), citing artifact
   paths instead of inlining long text.
 - **Artifacts**: full briefs/reports go to
@@ -351,10 +277,10 @@ bd comment <bead> "<VERB> <node> field=… output_ref=<abs artifact path>"
 - State-carrying verbs additionally flip status/label per the mapping table;
   `bd set-state` emits its own event bead, so transitions are double-anchored.
 
-## Shepherd primitives
+## Gatekeeper primitives
 
 - **Mutual exclusion:** `bd merge-slot create` once per run (idempotent), with
-  a stable holder such as `run-<id>-shepherd`. Acquire without `--wait`;
+  a stable holder such as `run-<id>-gatekeeper`. Acquire without `--wait`;
   contention is advisory, so report the current holder and retry after release.
   Always release on success, conflict, CI wait, and failure. On restart,
   `bd merge-slot check` and verify remote state before releasing a slot held by
@@ -381,6 +307,6 @@ bd comment <bead> "<VERB> <node> field=… output_ref=<abs artifact path>"
 
 A beads-managed SpecKit molecule (`bd swarm create <epic>`, `bd ready --mol`)
 already IS a dependency-aware run DAG. When such a molecule drives the work,
-use its step beads as the run's node beads -- do not build a second graph on
+use its step beads as the run's node beads — do not build a second graph on
 top. Add the `orc-node` label + `scope` metadata to the step beads so
 `scope-check.py`, the state mapping, and the anchor contract apply unchanged.

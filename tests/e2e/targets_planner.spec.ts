@@ -693,6 +693,6 @@ test.describe('Design-review follow-ups (2026-07-11): #614 dead CTA, #618 header
     // "Add target" is the pinned bar's one primary CTA.
     const addTarget = topBar.getByRole('button', { name: 'Add target' });
     await expect(addTarget).toBeVisible();
-    await expect(addTarget).toHaveClass(/pv-btn--primary/);
+    await expect(addTarget).toHaveAttribute('data-variant', 'primary');
   });
 });

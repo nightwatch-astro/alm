@@ -1,162 +1,22 @@
-/* === TOOLTIP ===
- * Popup for the shared base-ui Tooltip (Tooltip.tsx). Caps width so hover
- * help can't span the viewport; overflow-wrap guards a long unbroken token
- * (e.g. a path) from overflowing the cap. */
-.pv-tooltip {
-  max-width: 280px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-
-  /* The popup renders in a PORTAL, so it inherits nothing from the surface it
-     floats over. Without its own background/border it drew as bare text on top
-     of whatever was underneath — unreadable over tables and panels. It carries
-     a full surface of its own, all token-driven so the four themes track it. */
-  background: var(--pv-surface-raised);
-  color: var(--pv-text);
-  border: 1px solid var(--pv-rule);
-  border-radius: var(--pv-radius-md);
-  padding: var(--pv-sp-2) var(--pv-sp-3);
-  font-size: var(--pv-text-xs);
-  line-height: 1.5;
-  box-shadow: var(--pv-shadow-sm);
-  z-index: 60;
-}
-
-/* === PILL === */
-.pv-pill {
-  display: inline-flex; align-items: center;
-  padding: 1px var(--pv-sp-2); border-radius: 99px;
-  font-size: var(--pv-text-xs); font-weight: var(--pv-weight-medium);
-  line-height: 1.6; white-space: nowrap;
-  border: 1px solid transparent;
-  /* Pills are labels/placeholders, never data values: stay sans even when
-     rendered inside a mono value cell (e.g. UnresolvedChip in PropertyTable
-     or calibration list columns). */
-  font-family: var(--pv-font-sans);
-}
-.pv-pill--neutral { background: var(--pv-chip); color: var(--pv-text-secondary); border-color: var(--pv-rule); }
-.pv-pill--ghost { background: transparent; color: var(--pv-text-muted); border-color: var(--pv-rule); }
-.pv-pill--ok { background: var(--pv-ok-bg); color: var(--pv-ok); border-color: var(--pv-ok-border); }
-.pv-pill--warn { background: var(--pv-warn-bg); color: var(--pv-warn); border-color: var(--pv-warn-border); }
-.pv-pill--danger { background: var(--pv-danger-bg); color: var(--pv-danger); border-color: var(--pv-danger-border); }
-.pv-pill--info { background: var(--pv-info-bg); color: var(--pv-info); border-color: var(--pv-info-border); }
-.pv-pill--accent { background: var(--pv-accent-bg); color: var(--pv-accent-text); border-color: var(--pv-info-border); }
-
-/* === BUTTON === */
-.pv-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  gap: var(--pv-sp-1); height: var(--pv-control-h);
-  padding: 0 var(--pv-sp-3);
-  font-size: var(--pv-text-xs); font-weight: var(--pv-weight-medium);
-
-  border: 1px solid var(--pv-border);
-  border-radius: var(--pv-radius-sm);
-  background: var(--pv-bg); color: var(--pv-text-secondary);
-  cursor: pointer; white-space: nowrap;
-  transition: all var(--pv-transition-fast);
-}
-.pv-btn:hover { border-color: var(--pv-ink3); color: var(--pv-text); }
-/* #628: disabled must read as unambiguously inert — lower opacity than
-   hover/active states use anywhere else, and strip the primary/danger fill so
-   a disabled CTA never still reads as "the" accent-colored action. */
-.pv-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.pv-btn:disabled:hover { border-color: var(--pv-border); color: var(--pv-text-secondary); }
-/* Primary = theme accent. Was var(--pv-ink), which inverts to a light button
-   in dark themes (ink is the light text color there). Accent stays correct in
-   every theme; the former separate `accent` variant was byte-identical to
-   `primary` (#627) and was removed rather than kept as a same-looking alias. */
-.pv-btn--primary { background: var(--pv-accent); color: var(--pv-on-accent); border-color: var(--pv-accent); }
-.pv-btn--primary:hover { background: var(--pv-accent-hover); border-color: var(--pv-accent-hover); }
-.pv-btn--danger { background: var(--pv-danger-bg); color: var(--pv-danger); border-color: var(--pv-danger-border); }
-.pv-btn--danger:hover { background: var(--pv-danger-bg-hover); }
-.pv-btn--primary:disabled,
-.pv-btn--danger:disabled {
-  background: var(--pv-bg);
-  color: var(--pv-text-secondary);
-  border-color: var(--pv-border);
-}
-
-/* Destructive — the one red used for actions that actually remove/overwrite
-   data (delete, trash, archive-apply, permanent removal), distinct from the
-   softer `--pv-danger` reserved for status/validation. Deliberately louder
-   than `.pv-btn--danger` (thicker border + glow) so it reads as unmistakably
-   different from the amber/teal primary action next to it (handoff 06).
-   Geometry (height, base font-size, gap, radius) stays the shared `.pv-btn`
-   scale so it still lines up with sibling buttons in the same row — only the
-   color identity, border weight, and glow are spec-exact. */
-.pv-btn--destructive {
-  color: var(--pv-destructive);
-  background: var(--pv-destructive-bg);
-  border-color: var(--pv-destructive);
-  border-width: 1.5px;
-  box-shadow: 0 2px 10px -3px color-mix(in oklab, var(--pv-destructive) 42%, transparent);
-}
-.pv-btn--destructive:hover {
-  background: var(--pv-destructive-bg-hover);
-  border-color: var(--pv-destructive);
-  color: var(--pv-destructive);
-  box-shadow: 0 3px 13px -3px color-mix(in oklab, var(--pv-destructive) 55%, transparent);
-}
-.pv-btn--destructive:active {
-  background: var(--pv-destructive-bg-hover);
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.22);
-}
-.pv-btn--destructive:disabled {
-  background: var(--pv-destructive-bg);
-  color: var(--pv-destructive);
-  border-color: var(--pv-destructive);
-  opacity: 0.4;
-  box-shadow: none;
-}
-/* Leading 13x13 alert glyph. The app has no icon library/sprite (grepped:
-   only plain Unicode glyphs like Lock's padlock); a mask-image keeps the
-   glyph a single flat shape tinted via `currentColor`, so it tracks
-   `--pv-destructive` in every theme without an emoji-rendering risk. */
-.pv-btn--destructive::before {
-  content: '';
-  flex: none;
-  width: 13px;
-  height: 13px;
-  background-color: currentColor;
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1L15 14H1L8 1Z'/%3E%3Crect x='7.25' y='6' width='1.5' height='4' rx='0.5'/%3E%3Crect x='7.25' y='11' width='1.5' height='1.5' rx='0.5'/%3E%3C/svg%3E");
-  mask-repeat: no-repeat;
-  mask-size: contain;
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1L15 14H1L8 1Z'/%3E%3Crect x='7.25' y='6' width='1.5' height='4' rx='0.5'/%3E%3Crect x='7.25' y='11' width='1.5' height='1.5' rx='0.5'/%3E%3C/svg%3E");
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size: contain;
-}
-.pv-btn--sm { height: var(--pv-control-h-sm); padding: 0 var(--pv-sp-2); font-size: var(--pv-text-xs); }
-/* --xs / --ghost were used in markup (log panel chips, dev call list,
-   ProcessingTools) but had no rule anywhere, so those controls silently fell
-   back to full-size bordered buttons (#734). Defined once here rather than
-   per-feature. */
-.pv-btn--xs { height: var(--pv-control-h-xs); padding: 0 var(--pv-sp-2); font-size: var(--pv-text-xs); }
-.pv-btn--ghost {
-  background: transparent;
-  border-color: transparent;
-  color: var(--pv-text-muted);
-}
-.pv-btn--ghost:hover { background: var(--pv-hover-bg); border-color: transparent; color: var(--pv-text); }
-
-/* === SECTION === */
-.pv-section { margin-bottom: var(--pv-sp-4); }
-.pv-section__header {
-  display: flex; align-items: center; gap: var(--pv-sp-2);
-  padding-bottom: var(--pv-sp-2);
-  border-bottom: 1px solid var(--pv-border-subtle);
-  margin-bottom: var(--pv-sp-3);
-  cursor: pointer; user-select: none;
-}
-.pv-section__toggle {
-  font-size: var(--pv-text-xs); color: var(--pv-text-faint);
-  width: 14px; text-align: center; flex-shrink: 0;
-}
-.pv-section__title {
-  font-size: var(--pv-text-sm); font-weight: var(--pv-weight-semibold);
-  color: var(--pv-text);
-}
-.pv-section__count { font-size: var(--pv-text-xs); color: var(--pv-text-muted); }
-.pv-section__right { margin-left: auto; }
+/* primitives.css — global utilities and shared layout helpers.
+ *
+ * Per-widget rules have been migrated to VE:
+ *   .pv-tooltip     → src/ui/Tooltip.css.ts
+ *   .pv-pill        → src/ui/Pill.css.ts
+ *   .pv-btn         → src/ui/Btn.css.ts
+ *   .pv-section     → src/ui/Section.css.ts
+ *   .pv-box         → src/ui/Box.css.ts
+ *   .pv-table       → src/ui/Table.css.ts
+ *   .pv-kv          → src/ui/KV.css.ts
+ *   .pv-coverage    → src/ui/CoverageBar.css.ts
+ *   .pv-banner      → src/ui/Banner.css.ts
+ *   .pv-info-tip    → src/ui/InfoTip.css.ts
+ *   .pv-lock        → src/ui/Lock.css.ts
+ *
+ * Remaining: global utilities (multi-consumer; Phase 3 ratchet will migrate
+ * or enforce removal), detail-layout (MetricLine/DetailPane/SourceViewsSection),
+ * and property-table (PropertyTable component).
+ */
 
 /* === DETAIL v4: METRIC LINE + DASHBOARD GRID + UNIFIED RAIL === */
 /* Quiet summary-stat row (not hero numbers): value and label share the same
@@ -435,78 +295,29 @@
 
 /* === GLOBAL UTILITIES ===
  * Shared presentational classes extracted from duplicated component rules.
- * Reuse these instead of adding another per-feature clone (css-dup-sniff:
- * the flex-column/gap-1 group alone had 11 identical members).
+ * Reuse these instead of adding another per-feature clone.
+ * Phase 3 ratchet will enforce no raw pv-* in .css.ts files.
  */
 
-/* Vertical stack with the tightest standard gap (label-above-control fields,
-   short lists). Canonical form of the duplicated
-   `display:flex; flex-direction:column; gap:var(--pv-sp-1)` rule. */
 .pv-stack-1 {
   display: flex;
   flex-direction: column;
   gap: var(--pv-sp-1);
 }
 
-/* Atomic text utilities — replace the removed Tailwind `text-sm` / `text-xs` /
-   `text-muted` no-ops with token-only classes. Compose (e.g.
-   `pv-text-sm pv-text-muted`) instead of cloning per-feature muted-text
-   rules. */
 .pv-text-sm { font-size: var(--pv-text-sm); }
 .pv-text-xs { font-size: var(--pv-text-xs); }
 .pv-text-muted { color: var(--pv-text-muted); }
 
-/* Shared monospace surface (spec 055 T022): filesystem paths, source-view
- * IDs, manifest paths, dev-tools contract names, RA/Dec coordinate values.
- * Referenced by ~40 call sites across features/*; was a no-op while the
- * blanket `* { font-family !important }` reset overrode it (reset.css). */
 .pv-mono { font-family: var(--pv-font-mono); }
 
 /* === TOOLTIP TRIGGER GLYPHS (InfoTip ⓘ, Lock 🔒) ============================
- * Both render a focusable span (role="note" + tabIndex=0) whose tooltip states
- * something shown nowhere else on screen, so both are keyboard destinations and
- * both need a visible focus indicator (WCAG 2.4.7, 2.4.11).
- *
- * The indicator is the `--pv-focus-ring` box-shadow and NOTHING ELSE may use it
- * here: hover is signalled by the accent recolour alone. Conveying focus with
- * that same recolour — as `.pv-info-tip` did while it shared one declaration
- * block with `:hover` — leaves keyboard focus visually identical to pointer
- * hover, which is the defect this section exists to prevent. Keep the two
- * states' declarations disjoint; `primitives.focus-vs-hover.test.ts` asserts it.
- *
- * The ring is a 2px perimeter drawn outside the border box, which is exactly
- * 2.4.11's minimum indicator area, and `--pv-accent` clears 3:1 against every
- * theme's backgrounds (worst case 3.63:1, warm-clay on `--pv-bg3`). */
-.pv-info-tip,
-.pv-lock {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  flex: none;
-  position: relative;
-  cursor: help;
-  user-select: none;
-}
-
-.pv-info-tip {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid var(--pv-text-faint);
-  color: var(--pv-text-muted);
-  font-size: var(--pv-text-xs);
-  font-weight: var(--pv-weight-semibold);
-  font-style: normal;
-}
-
-/* The padlock is an emoji, so it paints in the colour font's own palette and
-   cannot carry the accent recolour the ⓘ uses; a radius is still needed so the
-   focus ring hugs the glyph instead of boxing it. */
-.pv-lock {
-  border-radius: var(--pv-radius-sm);
-  font-size: var(--pv-text-xs);
-}
+ * The .pv-info-tip and .pv-lock base layout rules are now in VE
+ * (src/ui/InfoTip.css.ts, src/ui/Lock.css.ts). The hover/focus-visible rules
+ * below MUST remain here so primitives.focus-vs-hover.test.ts can assert the
+ * WCAG 2.4.7/2.4.11 invariant that keyboard focus is distinguishable from hover
+ * (that test reads raw .css sources; see its module docstring). Phase 3 will
+ * update the test to read .css.ts sources and retire these. */
 
 .pv-info-tip:hover {
   border-color: var(--pv-accent);
@@ -519,8 +330,7 @@
   box-shadow: var(--pv-focus-ring);
 }
 
-/* Screen-reader-only utility — visually hides content while keeping it in
- * the a11y tree (live regions, labels, legend elements). */
+/* Screen-reader-only utility */
 .pv-visually-hidden {
   position: absolute;
   width: 1px;

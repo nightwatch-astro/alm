@@ -64,6 +64,7 @@ import { PageTopBar, type PageTopBarProps } from './PageTopBar';
 import { DetailDockPlacementControl } from './DetailDockPlacementControl';
 import { m } from '@/lib/i18n';
 import { useAdaptiveDock, ResizeHandle } from '@/ui';
+import * as lpl from './ListPageLayout.css';
 import { page } from '@/ui/page-layout.css';
 
 export interface ListPageLayoutProps {
@@ -230,23 +231,29 @@ export function ListPageLayout({
       <div className={page}>
         {topBar ?? (topBarProps && <PageTopBar {...topBarProps} />)}
 
-        <div className="pv-listpage__body pv-listpage__body--dual">
+        <div
+          className={`${lpl.body} ${lpl.bodyDual}`}
+          data-testid="listpage-body-dual"
+        >
           {/* Left column: main table + bottom strip stacked */}
-          <div className="pv-listpage__main-col">
-            <div className="pv-listpage__main">{children}</div>
+          <div className={lpl.mainCol}>
+            <div className={lpl.main} data-testid="listpage-main">
+              {children}
+            </div>
 
             {/* Bottom strip constrained to the content column */}
             {hasBottom && (
               <section
-                className="pv-listpage__bottom"
+                className={lpl.bottomPanel}
+                data-testid="listpage-bottom"
                 role="complementary"
                 aria-label={bottomDetailLabel}
               >
                 {onCloseBottomDetail && (
-                  <div className="pv-listpage__panel-bar">
+                  <div className={lpl.panelBar}>
                     <button
                       type="button"
-                      className="pv-listpage__panel-close"
+                      className={lpl.panelClose}
                       onClick={onCloseBottomDetail}
                       aria-label={m.cmp_listpage_close_session_details_aria()}
                     >
@@ -254,7 +261,7 @@ export function ListPageLayout({
                     </button>
                   </div>
                 )}
-                <div className="pv-listpage__panel-body">{bottomDetail}</div>
+                <div className={lpl.panelBody}>{bottomDetail}</div>
               </section>
             )}
           </div>
@@ -262,15 +269,17 @@ export function ListPageLayout({
           {/* Right: side detail panel, full height of the body */}
           {hasDetail && (
             <section
-              className="pv-listpage__side"
+              className={lpl.sidePanel}
+              data-testid="listpage-side"
+              data-dock="side"
               role="complementary"
               aria-label={detailLabel}
             >
               {onCloseDetail && (
-                <div className="pv-listpage__panel-bar">
+                <div className={lpl.panelBar}>
                   <button
                     type="button"
-                    className="pv-listpage__panel-close"
+                    className={lpl.panelClose}
                     onClick={onCloseDetail}
                     aria-label={m.inbox_close_details_aria()}
                   >
@@ -278,7 +287,7 @@ export function ListPageLayout({
                   </button>
                 </div>
               )}
-              <div className="pv-listpage__panel-body">{detail}</div>
+              <div className={lpl.panelBody}>{detail}</div>
             </section>
           )}
         </div>
@@ -289,12 +298,10 @@ export function ListPageLayout({
   // ── Bottom / side / adaptive layouts ─────────────────────────────────────
   const isAdaptive = detailPlacement === 'adaptive';
   const isSide = resolvedPlacement === 'side';
-  const bodyClass = isSide
-    ? 'pv-listpage__body pv-listpage__body--side'
-    : 'pv-listpage__body';
+  const bodyClass = isSide ? `${lpl.body} ${lpl.bodySide}` : lpl.body;
   const detailClass = isSide
-    ? 'pv-listpage__detail pv-listpage__detail--side'
-    : 'pv-listpage__detail';
+    ? `${lpl.detail} ${lpl.detailSide} ${lpl.detailSidePanel}`
+    : lpl.detail;
   // Adaptive side width is drag-resized (useAdaptiveDock); static 'side'
   // keeps the fixed --pv-side-detail-w CSS default (undefined = no override).
   const detailStyle =
@@ -306,13 +313,20 @@ export function ListPageLayout({
     <div className={page}>
       {topBar ?? (topBarProps && <PageTopBar {...topBarProps} />)}
 
-      <div className={bodyClass}>
-        <div className="pv-listpage__main">{children}</div>
+      <div
+        className={bodyClass}
+        data-testid="listpage-body"
+        data-dock={isSide ? 'side' : 'bottom'}
+      >
+        <div className={lpl.main} data-testid="listpage-main">
+          {children}
+        </div>
 
         {hasDetail && (
           <section
             className={detailClass}
             data-testid="listpage-detail"
+            data-dock={isSide ? 'side' : 'bottom'}
             // eslint-disable-next-line no-restricted-syntax -- dynamic: user-resizable side-panel width persisted per dockId, not a static design token
             style={detailStyle}
             role="complementary"
@@ -325,7 +339,7 @@ export function ListPageLayout({
               />
             )}
             {(onCloseDetail || isAdaptive) && (
-              <div className="pv-listpage__detail-bar">
+              <div className={lpl.detailBar}>
                 {isAdaptive && (
                   // #1066: a three-state Auto/Bottom/Right control, not the
                   // old two-state pin button — `override === null` ("Auto") is
@@ -339,7 +353,7 @@ export function ListPageLayout({
                 {onCloseDetail && (
                   <button
                     type="button"
-                    className="pv-listpage__detail-close"
+                    className={lpl.detailClose}
                     onClick={onCloseDetail}
                     aria-label={m.inbox_close_details_aria()}
                   >
@@ -348,7 +362,7 @@ export function ListPageLayout({
                 )}
               </div>
             )}
-            <div className="pv-listpage__detail-body">{detail}</div>
+            <div className={lpl.detailBody}>{detail}</div>
           </section>
         )}
       </div>

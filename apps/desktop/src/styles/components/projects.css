@@ -220,139 +220,41 @@
 }
 
 /* ── ListPageLayout side-only variant (task #94) ─────────────────────────── */
-.pv-listpage__body--side {
-  --pv-side-detail-w: 420px;
-  flex-direction: row;
-}
-.pv-listpage__detail--side {
-  flex: 0 0 var(--pv-side-detail-w);
-  width: var(--pv-side-detail-w);
-  height: auto;
-  max-height: none;
-  align-self: stretch;
-  border-top: none;
-  border-left: 1px solid var(--pv-border);
-}
 
 /* Structural tweaks for the narrow side column (#1068). */
-.pv-listpage__detail--side .pv-project-detail__sections {
+[data-dock="side"] .pv-project-detail__sections {
   display: flex;
   flex-direction: column;
   gap: var(--pv-sp-2);
   min-width: 0;
 }
 /* Tables with no h-scroll wrapper: overflow-x:auto + zeroes the flex min-size. */
-.pv-listpage__detail--side .pv-section {
+[data-dock="side"] .pv-section {
   min-width: 0;
   overflow-x: auto;
 }
 /* Calibration match table row-flex min-width (#1068) moved onto the `match`
    style in components/two-col-detail-layout.css.ts. */
 /* ProjectBottomDetail grid collapse in the side column (#1068). */
-.pv-listpage__detail--side .pv-project-bottom__grid {
+[data-dock="side"] .pv-project-bottom__grid {
   grid-template-columns: 1fr;
 }
-.pv-listpage__detail--side .pv-project-bottom__cell--notes {
+[data-dock="side"] .pv-project-bottom__cell--notes {
   grid-column: span 1;
 }
 /* Compact stepper, metricline, and action cluster in the narrow column. */
-.pv-listpage__detail--side .pv-stepper {
+[data-dock="side"] .pv-stepper {
   padding-top: var(--pv-sp-1);
   padding-bottom: var(--pv-sp-1);
 }
-.pv-listpage__detail--side .pv-metricline {
+[data-dock="side"] .pv-metricline {
   margin-bottom: var(--pv-sp-1);
 }
-.pv-listpage__detail--side .pv-project-detail__bar-actions {
+[data-dock="side"] .pv-project-detail__bar-actions {
   flex-wrap: wrap;
   gap: var(--pv-sp-1);
 }
-.pv-listpage__detail--side .pv-project-detail__bar-path {
-  overflow-wrap: anywhere;
-  word-break: break-all;
-}
-
-/* ── ListPageLayout dual side+bottom variant (task 104) ──────────────────── */
-.pv-listpage__body--dual {
-  flex-direction: row;
-}
-/* Left column: main content + bottom strip. */
-.pv-listpage__main-col {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-/* Side detail panel (same width token as side-only). */
-.pv-listpage__side {
-  flex: 0 0 var(--pv-side-detail-w);
-  width: var(--pv-side-detail-w);
-  height: auto;
-  max-height: none;
-  align-self: stretch;
-  border-left: 1px solid var(--pv-border);
-  background: var(--pv-surface-raised);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-/* Bottom detail strip. */
-.pv-listpage__bottom {
-  flex: 0 0 auto;
-  height: fit-content;
-  max-height: 40vh;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  border-top: 1px solid var(--pv-border);
-  background: var(--pv-surface-raised);
-}
-/* Close bar for both new panels. */
-.pv-listpage__panel-bar {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--pv-sp-1) var(--pv-sp-2);
-  border-bottom: 1px solid var(--pv-border-subtle);
-}
-.pv-listpage__panel-close {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--pv-text-muted);
-  font-size: var(--pv-text-sm);
-  line-height: 1;
-  padding: var(--pv-sp-1);
-  border-radius: var(--pv-radius-sm);
-}
-.pv-listpage__panel-close:hover { color: var(--pv-text); }
-.pv-listpage__panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-/* Apply same project-detail structural tweaks to the dual side panel. */
-.pv-listpage__side .pv-project-detail__sections {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pv-sp-2);
-}
-.pv-listpage__side .pv-stepper {
-  padding-top: var(--pv-sp-1);
-  padding-bottom: var(--pv-sp-1);
-}
-.pv-listpage__side .pv-metricline {
-  margin-bottom: var(--pv-sp-1);
-}
-.pv-listpage__side .pv-project-detail__bar-actions {
-  flex-wrap: wrap;
-  gap: var(--pv-sp-1);
-}
-.pv-listpage__side .pv-project-detail__bar-path {
+[data-dock="side"] .pv-project-detail__bar-path {
   overflow-wrap: anywhere;
   word-break: break-all;
 }
