@@ -422,9 +422,17 @@ pub fn spawn_workflow_run_subscriber(
 
     let mut rx = bus.subscribe();
     tokio::spawn(async move {
-        // Cursor starts at 0: replay from the beginning on first lag.
-        // write() is idempotent (produces a new file per call), so replaying
-        // historical workflow.run_completed events is safe.
+        // Cursor starts at 0, so the first lag replays from the beginning; every
+        // lag thereafter resumes from the high-water mark the replay leaves
+        // behind, and the pruner bounds how far back that can reach.
+        //
+        // Replay is SAFE but not free, and `write()` is not idempotent: it
+        // inserts a `manifests` row with a fresh id per call, so a replayed
+        // event adds a row the user can see in the manifest list. Same-second
+        // replays collapse on disk (the path is second-granular and
+        // `write_manifest_file` refuses to overwrite), but the DB rows do not.
+        // Duplicate rows beat a silently missing manifest, which is what
+        // advancing this cursor on the live path used to cause.
         let mut cursor: i64 = 0;
 
         loop {

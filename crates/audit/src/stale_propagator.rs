@@ -65,9 +65,14 @@ impl StalePropagator {
         let mut rx = bus.subscribe();
         let bus = bus.clone();
         tokio::spawn(async move {
-            // Cursor starts at 0: replay from the beginning on first lag.
-            // Hooks are idempotent (research.md §6.1) so replaying historical
-            // events is safe; the events table is authoritative for recovery.
+            // Cursor starts at 0, so the FIRST lag replays from the beginning.
+            // Every lag after that resumes from the high-water mark the previous
+            // replay left behind, so only one replay can ever walk history, and
+            // the pruner bounds how far back even that reaches.
+            //
+            // Hooks are idempotent (research.md §6.1) so re-dispatching
+            // historical events is safe; the events table is authoritative for
+            // recovery.
             let mut cursor: i64 = 0;
 
             loop {
@@ -578,6 +583,86 @@ mod tests {
             total, 3,
             "the lag replay must deliver the durable event the live path never saw \
              (1 live + 2 replayed); got {total}"
+        );
+    }
+
+    /// The cursor is a high-water mark that ratchets: a SECOND lag must replay
+    /// only what arrived since the first one, not the whole table again.
+    ///
+    /// This is the property that makes dropping the live-path advance
+    /// affordable — only the first lag can ever walk history. Without this test
+    /// the evidence sits entirely on one side of the invariant: the test above
+    /// proves the cursor never runs ahead of what was delivered, and this one
+    /// proves it does not stay behind either.
+    /// Insert `n` durable lifecycle rows with no broadcast, so only a replay
+    /// can ever deliver them.
+    async fn seed_durable_rows(pool: &sqlx::SqlitePool, n: usize) {
+        for _ in 0..n {
+            persistence_lifecycle::repositories::events::insert_event(
+                pool,
+                TOPIC_LIFECYCLE_TRANSITION_APPLIED,
+                "system",
+                "2026-01-01T00:00:00Z",
+                "{}",
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    /// Yield until the dispatch counter reaches `want`, or the deadline passes.
+    /// Returning on timeout rather than panicking keeps the failure attributable
+    /// to the caller's own assertion.
+    async fn wait_for_dispatches(counter: &AtomicUsize, want: usize) {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        while counter.load(Ordering::SeqCst) < want && tokio::time::Instant::now() < deadline {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_second_lag_replays_only_what_arrived_since_the_first() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let propagator = StalePropagator::new().with_hook(Arc::new(move |_env| {
+            counter_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS events (\
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,\
+             topic TEXT NOT NULL, source TEXT NOT NULL,\
+             emitted_at TEXT NOT NULL, payload TEXT NOT NULL)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let bus = EventBus::new(pool.clone(), 1);
+        let handle = propagator.spawn(&bus);
+
+        // First lag: 2 rows waiting, so the replay walks both.
+        seed_durable_rows(&pool, 2).await;
+        let _ = bus.broadcast_only("tick.heartbeat");
+        let _ = bus.broadcast_only("tick.heartbeat");
+        wait_for_dispatches(&counter, 2).await;
+        assert_eq!(counter.load(Ordering::SeqCst), 2, "first lag must replay both seeded rows");
+
+        // Second lag: 1 new row. Had the cursor not ratcheted, this replay would
+        // walk all 3 rows and the total would reach 5 rather than 3.
+        seed_durable_rows(&pool, 1).await;
+        let _ = bus.broadcast_only("tick.heartbeat");
+        let _ = bus.broadcast_only("tick.heartbeat");
+        wait_for_dispatches(&counter, 3).await;
+        handle.abort();
+
+        let total = counter.load(Ordering::SeqCst);
+        assert_eq!(
+            total, 3,
+            "the second lag must replay only the row added since the first (2 + 1), \
+             not the whole table again; got {total}"
         );
     }
 
