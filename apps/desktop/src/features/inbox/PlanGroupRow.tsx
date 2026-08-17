@@ -47,6 +47,7 @@ export interface PlanGroupRowProps {
   >;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: plan row render with per-plan-state badge and action branches
 export function PlanGroupRow({
   plan,
   rowOffset,

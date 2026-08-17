@@ -108,6 +108,10 @@ struct FileWork {
 /// # Errors
 /// Returns a `ContractError` with appropriate error codes.
 #[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "spec-transcribed classification rules over lane, kind, and evidence inputs"
+)]
 pub async fn classify(
     pool: &SqlitePool,
     req: ClassifyRequest,
@@ -1289,6 +1293,10 @@ struct SubItemSeed {
 // Splitting across functions would require threading conn + source_group_id + seeds
 // through every call, replacing structural clarity with parameter noise.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "per-file sub-item materialization loop inside one transaction"
+)]
 pub(crate) async fn materialize_sub_items_tx(
     conn: &mut SqliteConnection,
     source_group_id: &str,

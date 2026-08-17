@@ -125,6 +125,10 @@ fn spawn_repair_sweep(pool: SqlitePool, bus: EventBus, resolve_cache: ResolveCac
 
 // ── Listener loop ─────────────────────────────────────────────────────────────
 
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "event-loop dispatch over broadcast topics with per-topic recv error handling"
+)]
 async fn run_listener_loop(
     pool: SqlitePool,
     bus: EventBus,
@@ -293,6 +297,10 @@ async fn ingest_light_frames_if_applicable(
 /// reaches `applied` exactly once and the link is deleted on transition.
 ///
 /// Non-master items and plans with no linked inbox item are a no-op.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "master-registration precondition chain, each link stage returning early"
+)]
 async fn register_master_if_applicable(pool: &SqlitePool, plan_id: &str) -> Result<(), String> {
     let link = inbox_repo::get_plan_link_by_plan_id(pool, plan_id)
         .await

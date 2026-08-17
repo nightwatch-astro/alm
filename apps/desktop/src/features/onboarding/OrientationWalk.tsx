@@ -120,6 +120,7 @@ export function OrientationWalk() {
   }, []);
 
   const handleEvent = useCallback(
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: walk event dispatch over event type, action, and status combinations
     (data: WalkEvent) => {
       if (finishedRef.current) return;
       const { type, action, index, status } = data;

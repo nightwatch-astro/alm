@@ -22,3 +22,9 @@ disallowed-methods = [
   { path = "sqlx::query_as", reason = "route typed SQL through a crates/persistence/db repository" },
   { path = "sqlx::query_scalar", reason = "route scalar SQL through a crates/persistence/db repository" },
 ]
+
+# Cognitive-complexity gate. 20 is the hard ceiling; functions between the
+# team norm (10) and 20 are not flagged here. Existing sites above 20 carry
+# `#[expect(clippy::cognitive_complexity, reason = ...)]`, which errors once the
+# function drops below the threshold, so the exception list drains itself.
+cognitive-complexity-threshold = 20

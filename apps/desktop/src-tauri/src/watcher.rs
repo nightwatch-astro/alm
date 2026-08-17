@@ -254,6 +254,10 @@ fn record_raw_event(
 /// with their real observed size (fixing the previously-hardcoded
 /// `size_bytes: 0`), drop any that disappeared, and re-arm the debounce
 /// window for any still being written.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "per-pending-path sweep loop with stability and classification branches"
+)]
 async fn sweep_pending_artifacts(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -314,6 +318,10 @@ async fn sweep_pending_artifacts(
 /// Split out of [`attach_project_watcher`] to keep that function's line count
 /// within the workspace lint budget; it has no independent lifecycle of its
 /// own (always called immediately before the live watcher starts).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "reconciliation sweep over on-disk artifacts against recorded rows"
+)]
 async fn run_attach_reconciliation(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -498,6 +506,10 @@ fn spawn_artifact_forward_task(
 /// cannot be started. An unavailable output folder (e.g. a removed external
 /// drive) is NOT an error — it logs and returns `Ok(())` so the caller can
 /// retry later (spec 012 edge case).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "watcher attach sequence: idempotency check, root resolution, and debounce wiring"
+)]
 pub async fn attach_project_watcher(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -598,6 +610,10 @@ pub async fn attach_project_watcher(
 /// volume-availability sweep and the manual `artifact.watcher.refresh` command.
 ///
 /// Returns the list of project IDs that were successfully (re-)attached.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "per-project reattach loop, each failure class logged and skipped independently"
+)]
 pub async fn reattach_unavailable_projects(
     pool: &SqlitePool,
     bus: &EventBus,

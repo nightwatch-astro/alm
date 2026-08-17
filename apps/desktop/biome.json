@@ -21,7 +21,13 @@
       "preset": "recommended",
       "a11y": "off",
       "complexity": {
-        "useLiteralKeys": "off"
+        "useLiteralKeys": "off",
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": {
+            "maxAllowedComplexity": 20
+          }
+        }
       },
       "correctness": {
         "noUnusedVariables": "error",

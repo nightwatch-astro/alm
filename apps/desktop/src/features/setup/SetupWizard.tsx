@@ -251,6 +251,7 @@ export function SetupWizard() {
  * Renders the main setup wizard, including step navigation, source configuration,
  * scan progress, and first-run completion.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: wizard body render dispatching over step and locale-dependent thunks
 function SetupWizardBody() {
   // The language control consumes locale context itself, but the wizard body
   // must also subscribe so its message thunks are re-evaluated after a change.

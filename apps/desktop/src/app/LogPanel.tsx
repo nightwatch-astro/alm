@@ -51,6 +51,7 @@ import { virtualInner, virtualScroll } from '@/ui/page-layout.css';
  * Displays a filterable, virtualised log panel with tail following, navigation, and export controls.
  */
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: log panel render with per-filter and per-level conditional branches
 export function LogPanel() {
   const {
     expanded,

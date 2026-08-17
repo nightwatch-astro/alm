@@ -187,6 +187,10 @@ pub async fn settings_get(
 /// Returns `Err(String)` on database or audit failure.
 #[tauri::command]
 #[specta::specta]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "per-scope settings validation transcribed from the settings contract"
+)]
 pub async fn settings_update(
     state: State<'_, AppState>,
     scope: String,

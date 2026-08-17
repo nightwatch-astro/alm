@@ -133,6 +133,7 @@ export interface InboxDetailProps {
  * @returns The rendered Inbox detail panel.
  */
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: detail render branching over lane, classification, and plan state
 export function InboxDetail({
   item,
   rootAbsolutePath,

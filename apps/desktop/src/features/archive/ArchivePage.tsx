@@ -69,6 +69,7 @@ function filterEntries(entries: ArchiveEntry[], query: string): ArchiveEntry[] {
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: page render branching over selection, loading, and empty states
 export function ArchivePage() {
   const { selected } = useSearch({ from: '/shell/archive' });
   const navigate = useNavigate({ from: '/archive' });

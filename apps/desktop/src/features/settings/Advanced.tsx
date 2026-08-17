@@ -54,6 +54,7 @@ const RESET_FEEDBACK_MS = 3000;
  *
  * @param save - Persists updated advanced settings
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: settings form render with per-control state and validation branches
 export function Advanced({ save }: AdvancedProps) {
   const navigate = useNavigate();
   const [logLevel, setLogLevel] = useState<LogLevel>('info');

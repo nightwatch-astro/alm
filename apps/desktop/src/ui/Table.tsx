@@ -221,7 +221,8 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
         onClick={onClick}
         onKeyDown={
           clickable
-            ? (e: KeyboardEvent<HTMLTableRowElement>) => {
+            ? // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: keyboard activation handler over Enter, Space, and arrow keys
+              (e: KeyboardEvent<HTMLTableRowElement>) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   onClick(e as unknown as MouseEvent);
@@ -321,6 +322,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(function Table(
   const handleVirtNav = (
     currentIdx: number,
     dir: 1 | -1 | 'first' | 'last',
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: scroll-to-index handler over row position relative to viewport edges
   ) => {
     if (!scrollEl) return;
     let targetIdx: number;

@@ -56,6 +56,7 @@ interface EquipmentProps {
  * @param save - Persistence handler supplied to the equipment state hook.
  */
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: equipment panel render over camera, telescope, and filter lists
 export function Equipment({ save: _save }: EquipmentProps) {
   const {
     cameras,

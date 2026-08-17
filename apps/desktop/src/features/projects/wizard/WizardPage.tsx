@@ -224,6 +224,7 @@ function deriveProjectPath(trimmedName: string): string {
  * validates navigation between steps, and reports project creation errors on
  * the relevant step.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: wizard render dispatching over step index and per-step validity
 export function WizardPage() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
