@@ -142,6 +142,11 @@ function badgeFor(id: string, status: StatusSummary): number {
   }
 }
 
+/**
+ * Renders the application's sidebar navigation and root health summary.
+ *
+ * @returns The sidebar navigation element
+ */
 export function Sidebar() {
   const [collapsed, setCollapsed] = usePreference('sidebarCollapsed');
   const location = useRouterState({ select: (s) => s.location });

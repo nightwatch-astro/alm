@@ -7,8 +7,7 @@
  *   .pv-theme-picker*, swatch  → src/components/ThemePicker.css.ts
  *   .pv-property-table*        → src/components/PropertyTable.css.ts
  *
- * Remaining: global scrollbar (no VE equivalent) + swatch bg/surface/accent
- * bars that reference data-theme tokens (addressed in Phase 3).
+ * Remaining: global scrollbar (no VE equivalent).
  */
 
 /* === SCROLLBAR === */
@@ -16,11 +15,3 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--pv-rule); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--pv-ink4); }
-
-/* === THEME SWATCH PREVIEW BARS ===
- * Each bar re-scopes to its theme via data-theme and shows that theme's colors.
- * Addressed fully in Phase 3 alongside token.css retirement. */
-.pv-theme-swatch__prev i { flex: 1; display: block; }
-.pv-theme-swatch__bg { background: var(--pv-bg); }
-.pv-theme-swatch__surface { background: var(--pv-surface); }
-.pv-theme-swatch__accent { background: var(--pv-accent); }

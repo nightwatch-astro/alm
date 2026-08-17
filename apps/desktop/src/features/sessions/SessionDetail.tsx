@@ -27,9 +27,9 @@ import type {
   SessionCalibrationMatch,
 } from '@/bindings/index';
 import {
+  ConfirmModal,
   DetailPane,
   DetailPanel,
-  Modal,
   PropertyTable,
   type PropertyDef,
 } from '@/components';
@@ -55,7 +55,7 @@ import {
   head,
   link,
   muted as mutedCls,
-} from '@/ui/two-col-detail-layout.css';
+} from '@/components/two-col-detail-layout.css';
 
 /** `SessionCalibrationMatch.kind` is the wider `CalibrationKind` (adds
  * `dark_flat`/`bad_pixel_map`, neither assignable per FR-001), while
@@ -66,13 +66,12 @@ function toUnassignType(kind: string): CalibrationType | null {
   return kind === 'dark' || kind === 'flat' || kind === 'bias' ? kind : null;
 }
 
-/** Calibration-linkage list (#772) with an explicit un-assign action per row
- * (#875): removes the session's assignment for that calibration type,
- * returning it to "no master assigned" — previously only a same-type
- * *replacement* assignment (S6) could clear a wrong match, never a plain
- * removal. Renders an explicit "no calibration match" state when a light
- * session has no assignment yet (and for calibration sessions, which never
- * carry assignments). */
+/**
+ * Displays calibration matches for a session and allows supported assignments to be unassigned.
+ *
+ * @param sessionId - The session whose calibration assignment is being managed
+ * @param matches - Calibration matches currently associated with the session
+ */
 function CalibrationLinkage({
   sessionId,
   matches,
@@ -152,30 +151,18 @@ function CalibrationLinkage({
 
       {/* Confirm gate (#875, journey J11 "first-class action"): mirrors the
           calibration Archive in-use-confirm modal (MasterDetail.tsx). */}
-      <Modal
+      <ConfirmModal
         open={pendingUnassign !== null}
         onClose={() => setPendingUnassign(null)}
         title={m.sessions_calib_unassign_confirm_title()}
-        size="sm"
-        ariaLabel={m.sessions_calib_unassign_confirm_title()}
-        footer={
-          <>
-            <Btn variant="ghost" onClick={() => setPendingUnassign(null)}>
-              {m.common_cancel()}
-            </Btn>
-            <Btn
-              variant="destructive"
-              disabled={unassigning}
-              onClick={() => void handleConfirmUnassign()}
-              data-testid="session-calib-unassign-confirm-btn"
-            >
-              {m.sessions_calib_unassign_btn()}
-            </Btn>
-          </>
-        }
-      >
-        <p>{m.sessions_calib_unassign_confirm_desc()}</p>
-      </Modal>
+        message={m.sessions_calib_unassign_confirm_desc()}
+        actionLabel={m.sessions_calib_unassign_btn()}
+        busy={unassigning}
+        onConfirm={() => void handleConfirmUnassign()}
+        // This dialog had a close button before it adopted ConfirmModal.
+        hideClose={false}
+        data-testid="session-calib-unassign-confirm"
+      />
     </>
   );
 }
@@ -206,7 +193,12 @@ function equipmentSubtitle(session: InventorySession): string {
   return parts.join(' · ');
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+/**
+ * Displays detailed session information, linked projects, calibration assignments, notes, and frame actions.
+ *
+ * @param session - The session to display, or `null` when no session is selected.
+ * @returns The session detail view or an empty selection state.
+ */
 
 export function SessionDetail({
   session,

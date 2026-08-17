@@ -58,10 +58,9 @@ describe('ThemePicker', () => {
 
       const system = screen.getByRole('button', { name: accessibleName });
       expect(system).toHaveAttribute('aria-pressed', 'true');
-      expect(system.querySelector('.pv-theme-swatch__prev')).toHaveAttribute(
-        'data-theme',
-        resolved,
-      );
+      expect(
+        system.querySelector('[data-testid="theme-swatch-preview"]'),
+      ).toHaveAttribute('data-theme', resolved);
       expect(getThemeChoice()).toBe('system');
       expect(localStorage.getItem('pv.theme')).toBeNull();
     });

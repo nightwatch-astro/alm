@@ -5,7 +5,7 @@
  * useTargetTonight — derives tonight planner data (altitude curve, imaging
  * time, moon separation, best-date) for a single target.
  *
- * Extracted from TargetDetailV2.tsx to isolate the computation from rendering.
+ * Extracted from TargetDetail.tsx to isolate the computation from rendering.
  */
 
 import type { TargetListItem } from '@/bindings/index';
@@ -15,13 +15,13 @@ import {
   rowAltitudeFor,
   USABLE_ALT_DEG,
 } from './planner-altitude';
-import { BANDS } from './astro/moon-avoidance';
+import { BANDS } from '@/shared/planner/moon-avoidance';
 import type { SensorConfig } from './planner-derive';
-import { useActiveSite } from './observing-sites/site-store';
+import { useActiveSite } from '@/shared/observing-sites/site-store';
 import { usePlannerDateMs } from './planner-date-store';
 import { deriveRowMoonPlanning } from './astro/row-planning';
 import type { ObservingNight } from './astro/moon-state';
-import { useGuidanceParams } from './guidance-settings';
+import { useGuidanceParams } from '@/shared/planner/guidance-settings';
 import { bestMoonDate } from './astro/best-moon-date';
 import type { AltPoint } from './AltitudeGraph';
 

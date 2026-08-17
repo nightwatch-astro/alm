@@ -1,17 +1,7 @@
 // Copyright (C) 2024-2026 Sjors Robroek
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type {
-  AuditEntry,
-  SearchResult,
-  LibraryRoot,
-  Equipment,
-  SettingsData,
-  AppPreferences,
-  CalendarData,
-  MasterDetail,
-  MatchCandidate,
-} from '@/bindings/types';
+import type { LibraryRoot, Equipment, SettingsData } from '@/bindings/types';
 import type {
   CalibrationTolerances,
   CleanupPolicy,
@@ -20,13 +10,11 @@ import type {
   InboxClassifySourceGroupResponse,
   InboxScanFolderResponse_Serialize,
   InboxClassifyResponse_Serialize,
-  IngestionAttributionCandidateDto_Serialize,
   InboxConfirmResponse_Serialize,
   InboxConfirmActionsSummary,
   InboxConfirmDestination,
   InboxOpenPlansResponse,
   InboxOpenPlan,
-  InboxPlanAction,
   InboxPlanView,
   InboxApplyAllResponse,
   InboxPlanCancelResponse,
@@ -79,7 +67,6 @@ import type {
   UpdateFilter,
   CalibrationMatchSuggestResponse,
   CalibrationMatchBatchResponse,
-  CalibrationMatchDto_Serialize,
   IngestionSettings,
   UpdateIngestionSettings,
   AuditFilterDto,
@@ -96,160 +83,34 @@ import type {
   // does not create an import cycle with `ipc.ts` (which the bindings import).
   commands,
 } from '@/bindings/index';
+import {
+  PATH_PREVIEW_TOKEN_FIELDS,
+  PATH_PREVIEW_TOKEN_FALLBACKS,
+} from './mocks/path-preview';
+import { filterMockAuditEntries } from './mocks/audit';
+import { mockSettingsData, mockPreferences } from './mocks/settings';
+import { mockSearchResults } from './mocks/targets';
+import {
+  mockCalendarData,
+  mockMasterDetail,
+  mockMatchCandidates,
+  mockCalibrationMatches,
+} from './mocks/calibration';
+import {
+  seedInboxOpenPlans,
+  MOCK_ORGANIZED_ITEM_IDS,
+  MOCK_ATTRIBUTION_CANDIDATES,
+  MOCK_PLAN_REQUIRED_EDGES,
+} from './mocks/inbox';
+import {
+  isE2EFlagSet,
+  E2E_EMPTY_INVENTORY_STORE_ID,
+  freshMockOnboardingItems,
+  E2E_ONBOARDING_STORE_ID,
+  type OnboardingSeed,
+} from './mocks/onboarding';
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-// ── pattern.path_preview token bridge (spec 041 P11) ──────────────────────────
-//
-// Maps a v1 registry `{token}` name (snake_case, as it appears in a per-type
-// destination pattern string) to the camelCase `MetadataBundleDto` field name
-// carried in `sampleMetadata`. Fallbacks mirror `crates/patterns/src/registry.rs`
-// (data-model.md §Errors) so the mock preview matches the real resolver's
-// "missing token" substitution.
-const PATH_PREVIEW_TOKEN_FIELDS: Record<string, string> = {
-  target: 'target',
-  filter: 'filter',
-  date: 'date',
-  frame_type: 'frameType',
-  camera: 'camera',
-  exposure: 'exposure',
-  gain: 'gain',
-  binning: 'binning',
-  set_temp: 'setTemp',
-};
-
-const PATH_PREVIEW_TOKEN_FALLBACKS: Record<string, string> = {
-  target: 'unclassified',
-  filter: 'nofilter',
-  date: 'undated',
-  frame_type: 'unknown',
-  camera: 'unknown-camera',
-  exposure: 'unknown-exposure',
-  gain: 'unknown-gain',
-  binning: '1x1',
-  set_temp: 'untempered',
-};
-
-// --- Inline fixtures for modules not yet created by T015 ---
-//
-// Each fixture is pinned to its generated binding type (either via a typed
-// `const` annotation or a `satisfies` clause).  This makes any drift between a
-// mock fixture and the generated `@/bindings` contract a *compile* error rather
-// than a silent mock-mode lie (spec 042 US7 T190/T192).
-
-const mockAuditEntries: AuditEntry[] = [
-  {
-    id: 'audit-001',
-    timestamp: '2026-05-20T22:15:00Z',
-    eventType: 'session.confirmed',
-    entityType: 'session',
-    entityId: 'ses-001',
-    fromState: 'needs_review',
-    toState: 'confirmed',
-    actor: 'user',
-    outcome: 'applied',
-    detail: 'User confirmed session',
-  },
-  {
-    id: 'audit-002',
-    timestamp: '2026-05-20T22:10:00Z',
-    eventType: 'plan.approved',
-    entityType: 'plan',
-    entityId: 'plan-001',
-    fromState: 'ready_for_review',
-    toState: 'approved',
-    actor: 'user',
-    outcome: 'applied',
-    detail: 'Plan approved',
-  },
-  {
-    id: 'audit-003',
-    timestamp: '2026-05-20T21:45:00Z',
-    eventType: 'plan.applied',
-    entityType: 'plan',
-    entityId: 'plan-001',
-    fromState: 'approved',
-    toState: 'applied',
-    actor: 'system',
-    outcome: 'applied',
-    detail: 'All 12 items applied',
-  },
-  {
-    id: 'audit-004',
-    timestamp: '2026-05-19T23:30:00Z',
-    eventType: 'scan.completed',
-    entityType: 'root',
-    entityId: 'root-001',
-    actor: 'system',
-    outcome: 'ok',
-    detail: 'Discovered 1,247 files in 4.2s',
-  },
-  {
-    id: 'audit-005',
-    timestamp: '2026-05-19T23:25:00Z',
-    eventType: 'scan.started',
-    entityType: 'root',
-    entityId: 'root-001',
-    actor: 'user',
-    outcome: 'ok',
-    detail: 'Manual scan triggered',
-  },
-];
-
-/**
- * Mirrors the real `audit_list`/`audit_export` filter semantics
- * (`apps/desktop/src-tauri/src/commands/audit.rs`) over the mock fixture, so
- * mock mode exercises the same search/entity/outcome/date-range filtering the
- * real `audit_log_entry` query applies. `severity` has no equivalent on the
- * `AuditEntry` fixture (the real DTO doesn't carry it either — only the
- * filter does) and is ignored here, same as it plays no role in what the UI
- * renders.
- */
-function filterMockAuditEntries(
-  filters: AuditFilterDto | null | undefined,
-): AuditEntry[] {
-  let result = mockAuditEntries;
-  if (filters?.entityType) {
-    result = result.filter((e) => e.entityType === filters.entityType);
-  }
-  if (filters?.entityId) {
-    result = result.filter((e) => e.entityId === filters.entityId);
-  }
-  if (filters?.outcome) {
-    result = result.filter((e) => e.outcome === filters.outcome);
-  }
-  if (filters?.search) {
-    const q = filters.search.toLowerCase();
-    result = result.filter(
-      (e) =>
-        e.eventType.toLowerCase().includes(q) ||
-        e.entityType.toLowerCase().includes(q) ||
-        e.entityId.toLowerCase().includes(q) ||
-        e.actor.toLowerCase().includes(q),
-    );
-  }
-  if (filters?.from) {
-    const from = new Date(filters.from).getTime();
-    result = result.filter((e) => new Date(e.timestamp).getTime() >= from);
-  }
-  if (filters?.to) {
-    const to = new Date(filters.to).getTime();
-    result = result.filter((e) => new Date(e.timestamp).getTime() < to);
-  }
-  return [...result].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-  );
-}
-
-const mockSettingsData: SettingsData = {
-  scope: 'general',
-  values: {
-    naming_pattern:
-      '{target}/{date}/{filter}/{target}_{filter}_{sequence}.fits',
-    default_source_view_strategy: 'symlink',
-    calibration_age_warning_days: 90,
-  },
-};
 
 // ── `observing`-scope settings (spec 044 Track B + spec 047) — scope-aware ─────
 //
@@ -354,120 +215,9 @@ let mockCalibrationTolerances: CalibrationTolerances = {
 
 // ── Onboarding (spec 056) ─────────────────────────────────────────────────
 //
-// Static mock state mirroring the Rust ITEM_REGISTRY's shape (11 items, five
-// FR-006 pages). The backend-authoritative auto-tick event path (research R5)
-// is a documented no-op in mock mode (VC-002 limit): mock mode can never fake
-// an `auto_checked` item — only the real bus subscriber produces them. Manual
-// actions (`set_item_state`, `section_set`, `restore`) round-trip through this
-// in-memory cache so mock-mode checklist specs can exercise check-off, dismiss,
-// remove, and restore without a backend.
-type MockOnboardingItemSeed = [
-  itemId: string,
-  page: OnboardingItemDto['page'],
-  hasAutoTick: boolean,
-  /** Upstream registry item id, mirroring the Rust `PrerequisiteDef`. */
-  upstreamItemId?: string,
-  /** Page that satisfies the prerequisite (defaults to the upstream's page). */
-  jumpPage?: OnboardingItemDto['page'],
-];
-
-const MOCK_ONBOARDING_ITEMS: MockOnboardingItemSeed[] = [
-  ['inbox.confirm_first', 'inbox', true],
-  ['inbox.apply_first_plan', 'inbox', true, 'inbox.confirm_first', 'inbox'],
-  ['sessions.review_first', 'sessions', false, 'inbox.confirm_first', 'inbox'],
-  ['sessions.add_note', 'sessions', false, 'inbox.confirm_first', 'inbox'],
-  [
-    'calibration.match_master',
-    'calibration',
-    false,
-    'inbox.confirm_first',
-    'inbox',
-  ],
-  ['calibration.review_masters', 'calibration', false],
-  ['targets.resolve_first', 'targets', true],
-  [
-    'targets.add_favourite',
-    'targets',
-    false,
-    'targets.resolve_first',
-    'targets',
-  ],
-  ['projects.create_first', 'projects', true, 'inbox.confirm_first', 'inbox'],
-  [
-    'projects.launch_tool',
-    'projects',
-    true,
-    'projects.create_first',
-    'projects',
-  ],
-  [
-    'projects.review_artifacts',
-    'projects',
-    false,
-    'projects.launch_tool',
-    'projects',
-  ],
-];
-
-/**
- * Item ids seeded as BLOCKED (`met: false`).
- *
- * The real backend computes `met` from library milestones, not from checklist
- * state, and the mock library ships populated (confirmed inventory, resolved
- * targets, a project) — so the faithful default is "satisfied", which is also
- * what every pre-existing mock spec assumes. This escape hatch lets a spec seed
- * a genuinely blocked row (`localStorage`, before boot) to exercise the
- * prerequisite paths; `prerequisite` used to be flatly `null`, which made the
- * blocked branch untestable in mock mode at all.
- */
-const E2E_ONBOARDING_UNMET_STORE_ID = 'alm-e2e-onboarding-unmet';
-
-/** Boolean e2e toggle read from `localStorage`; false when unset/unavailable. */
-function isE2EFlagSet(key: string): boolean {
-  try {
-    return (
-      typeof localStorage !== 'undefined' &&
-      localStorage.getItem(key) === 'true'
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** Makes `inventory.list` report an empty library (see the handler below). */
-const E2E_EMPTY_INVENTORY_STORE_ID = 'alm-e2e-empty-inventory';
-
-function unmetPrerequisiteIds(): Set<string> {
-  try {
-    if (typeof localStorage === 'undefined') return new Set();
-    const raw = localStorage.getItem(E2E_ONBOARDING_UNMET_STORE_ID);
-    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function freshMockOnboardingItems(): OnboardingItemDto[] {
-  const unmet = unmetPrerequisiteIds();
-  return MOCK_ONBOARDING_ITEMS.map(
-    ([itemId, page, hasAutoTick, upstreamItemId, jumpPage]) => ({
-      itemId,
-      page,
-      state: 'unchecked',
-      at: new Date().toISOString(),
-      source: 'seed',
-      prerequisite: upstreamItemId
-        ? {
-            upstreamItemId,
-            met: !unmet.has(itemId),
-            reasonKey: `onboarding.prerequisite.${upstreamItemId}`,
-            jumpPage: jumpPage ?? page,
-          }
-        : null,
-      hasAutoTick,
-    }),
-  );
-}
+// Mutable in-memory state for onboarding items and flags. Seed data and pure
+// helpers live in ./mocks/onboarding.ts; the mutable variables and functions
+// that mutate them stay here so handler closures can reassign them directly.
 
 let mockOnboardingItems: OnboardingItemDto[] = freshMockOnboardingItems();
 let mockOnboardingFlags: OnboardingFlagsDto = {
@@ -475,23 +225,6 @@ let mockOnboardingFlags: OnboardingFlagsDto = {
   sectionHidden: false,
   sidebarCollapsed: false,
 };
-
-// Persist the onboarding flags + settled item states across a `page.reload()`
-// (module state alone re-initialises on reload). Mirrors the
-// `E2E_OBSERVING_SEED_STORE_ID` single-JSON-blob round-trip above: hydrate once
-// on first read, persist after every mutation. This is what makes the mock
-// faithful to the real backend's durable persistence, so the cross-restart
-// walk / collapse / removal specs (FR-004/FR-012/FR-013) are exercisable, and
-// lets a test seed a pre-settled state via `localStorage` before boot.
-const E2E_ONBOARDING_STORE_ID = 'alm-e2e-onboarding';
-
-interface OnboardingSeed {
-  flags?: Partial<OnboardingFlagsDto>;
-  items?: Record<
-    string,
-    { state: OnboardingItemDto['state']; source?: OnboardingItemDto['source'] }
-  >;
-}
 
 let onboardingHydrated = false;
 
@@ -712,296 +445,18 @@ function mockContractError(code: string, message: string): never {
   throw { code, message, severity: 'blocking', retryable: false };
 }
 
-const mockPreferences: AppPreferences = {
-  sidebarCollapsed: false,
-  density: 'comfortable',
-  projectViewModes: {},
-  defaultProjectView: 'combined',
-  sessionsGroupBy: 'none',
-  sessionsView: 'list',
-  setupCompleted: false,
-  detailDock: {},
-};
-
 // Review items are loaded from the wireframe-aligned fixture file (review.queue case below).
-
-const mockSearchResults: SearchResult[] = [
-  {
-    id: 'ses-001',
-    kind: 'session',
-    label: 'M31 L 2026-05-18',
-    sublabel: '120 frames',
-    route: '/sessions/ses-001',
-    score: 0.95,
-  },
-  {
-    id: 'target-001',
-    kind: 'target',
-    label: 'M31 - Andromeda Galaxy',
-    sublabel: '5 sessions',
-    route: '/targets/target-001',
-    score: 0.9,
-  },
-  {
-    id: 'proj-001',
-    kind: 'project',
-    label: 'M31 LRGB',
-    sublabel: 'Processing',
-    route: '/projects/proj-001',
-    score: 0.85,
-  },
-  {
-    id: 'nav-sessions',
-    kind: 'page',
-    label: 'Sessions',
-    sublabel: 'Browse all sessions',
-    route: '/sessions',
-    score: 0.5,
-  },
-];
-
-const mockCalendarData: CalendarData = {
-  months: [
-    {
-      year: 2026,
-      month: 5,
-      days: [
-        { day: 18, sessions: [{ id: 'ses-001', target: 'M31', filter: 'L' }] },
-        {
-          day: 19,
-          sessions: [
-            { id: 'ses-003', target: 'M31', filter: 'R' },
-            { id: 'ses-004', target: 'M31', filter: 'G' },
-          ],
-        },
-        {
-          day: 20,
-          sessions: [{ id: 'ses-005', target: 'NGC 7000', filter: 'Ha' }],
-        },
-      ],
-    },
-  ],
-};
-
-const mockMasterDetail: MasterDetail = {
-  id: 'master-001',
-  kind: 'dark',
-  fingerprint: {
-    camera: 'ASI2600MM',
-    sensorMode: 'normal',
-    exposureS: 300,
-    tempC: -10,
-    gain: 100,
-    binning: '1x1',
-  },
-  sourceSessionId: 'cal-ses-001',
-  createdAt: '2026-05-15T20:00:00Z',
-  ageDays: 9,
-  sizeBytes: 52_428_800,
-  usedBySessionIds: ['ses-001', 'ses-003'],
-  usedByProjectIds: ['proj-001'],
-  compatibleSessions: [
-    { sessionId: 'ses-001', score: 0.97, softMismatches: [] },
-  ],
-  usageStats: { sessionCount: 2, projectCount: 1 },
-};
-
-const mockMatchCandidates: MatchCandidate[] = [
-  { masterId: 'master-001', kind: 'dark', score: 0.97, softMismatches: [] },
-  {
-    masterId: 'master-002',
-    kind: 'flat',
-    score: 0.92,
-    filter: 'L',
-    softMismatches: ['age > 60 days'],
-  },
-  { masterId: 'master-003', kind: 'bias', score: 0.99, softMismatches: [] },
-];
-
-/**
- * `calibration.match.suggest` / `.suggest.batch` fixtures (spec P9).
- *
- * The second candidate deliberately omits every session-context field to
- * exercise the real-app "—" fallback (no canonical target link / no
- * fingerprint row) alongside the first candidate's fully-resolved context.
- */
-function mockCalibrationMatches(
-  sessionId: string,
-): CalibrationMatchDto_Serialize[] {
-  return [
-    {
-      sessionId,
-      masterId: 'master-001',
-      calibrationType: 'dark',
-      confidence: 0.97,
-      dimensionsMatched: [
-        {
-          dimension: 'gain',
-          observed: { value: 100 },
-          reference: { value: 100 },
-        },
-        {
-          dimension: 'offset',
-          observed: { value: 10 },
-          reference: { value: 10 },
-        },
-      ],
-      dimensionsMismatched: [],
-      selectionReason: 'same_night',
-      targetName: 'M 31',
-      filter: 'Ha',
-      acquisitionNight: '2026-05-18',
-      frameCount: 42,
-    },
-    {
-      sessionId,
-      masterId: 'master-002',
-      calibrationType: 'dark',
-      confidence: 0.81,
-      dimensionsMatched: [
-        {
-          dimension: 'gain',
-          observed: { value: 100 },
-          reference: { value: 100 },
-        },
-      ],
-      dimensionsMismatched: [
-        { dimension: 'temperature', reason: 'out_of_tolerance', delta: 3.5 },
-      ],
-      selectionReason: 'compatible_fallback',
-      // Unresolved session context — every P9 field stays absent.
-    },
-  ];
-}
 
 // ── Inbox plan surface (spec 041) — stateful mock ─────────────────────────────
 //
-// `inbox_plan_list_open` previously had no case, so `useOpenInboxPlans` always
-// resolved to `[]` and the top-bar "Review plans" overlay was unreachable in
-// mock mode. These seed plans make the overlay reachable AND make the
-// move-vs-catalogue-in-place distinction observable at the plan-review layer
-// (spec 041 FR-017/FR-018/SC-007):
-//   plan-move-002     → every action is a `move` (unorganized source relocates
-//                       into the library) → PlanPanel renders "→ <dest>".
-//   plan-inplace-org  → every action is a `catalogue` (toPath == fromPath;
-//                       already-organized source, no file moves) → PlanPanel
-//                       renders the "In place · <folder>" label.
 // Apply/cancel MUTATE this array (removing the applied/cancelled plan) so the
 // aggregate surface refresh + auto-close behaviour round-trips like the backend.
-//
-// Shapes are pinned to the generated bindings (`InboxOpenPlan`/`InboxPlanAction`)
-// so a contract change the mock fails to mirror is a compile error.
-
-/** A `move` action: source relocates to a distinct destination path. */
-function mockMoveAction(index: number, file: string): InboxPlanAction {
-  return {
-    index,
-    action: 'move',
-    fromPath: `/astro/raw/2025-10-10/darks/${file}`,
-    toPath: `/astro/library/darks/2025-10-10/${file}`,
-    destinationPreview: 'library/darks/2025-10-10/',
-    requiresDestructiveConfirm: false,
-  };
-}
-
-/** A `catalogue` action: file stays put (toPath == fromPath), no move. */
-function mockCatalogueAction(index: number, file: string): InboxPlanAction {
-  const path = `/astro/library/NGC7000/${file}`;
-  return {
-    index,
-    action: 'catalogue',
-    fromPath: path,
-    toPath: path,
-    destinationPreview: 'library/NGC7000/',
-    requiresDestructiveConfirm: false,
-  };
-}
-
-function seedInboxOpenPlans(): InboxOpenPlan[] {
-  return [
-    {
-      inboxItemId: 'item-002',
-      itemName: '2025-10-10/darks',
-      planId: 'plan-move-002',
-      state: 'plan_open',
-      stale: false,
-      actions: [
-        mockMoveAction(1, 'dark_001.fits'),
-        mockMoveAction(2, 'dark_002.fits'),
-      ],
-    },
-    {
-      inboxItemId: 'item-organized-inplace',
-      itemName: 'Library/NGC7000',
-      planId: 'plan-inplace-org',
-      state: 'plan_open',
-      stale: false,
-      actions: [
-        mockCatalogueAction(1, 'NGC7000_Ha_001.fits'),
-        mockCatalogueAction(2, 'NGC7000_Ha_002.fits'),
-      ],
-    },
-  ];
-}
+// Seed data helpers (mockMoveAction, mockCatalogueAction, seedInboxOpenPlans)
+// live in ./mocks/inbox.ts and are imported above.
 
 let mockInboxOpenPlans: InboxOpenPlan[] = seedInboxOpenPlans();
 
 /**
- * Inbox item ids whose source is already ORGANIZED — `inbox_confirm` produces a
- * catalogue-in-place result (zero moves) for these, and a move plan otherwise
- * (spec 041 US4 FR-017/FR-018). Mirrors the backend's per-source
- * `organization_state` branch. `item-organized-inplace` is the seed plan's item;
- * confirming it (or any id here) yields the catalogue-in-place shape.
- */
-const MOCK_ORGANIZED_ITEM_IDS = new Set<string>(['item-organized-inplace']);
-
-/**
- * Ranked attribution suggestions (spec 008 US7/FR-019). Ordered by descending
- * `matchScore`, ending in the always-present zero-score `new_project`
- * fallback, so the picker can be exercised without a real library: an
- * in-tolerance framing match, a completed-project match that offers reopen,
- * an optic-train mismatch, and the fallback.
- */
-const MOCK_ATTRIBUTION_CANDIDATES: IngestionAttributionCandidateDto_Serialize[] =
-  [
-    {
-      kind: 'add_to_framing',
-      projectId: 'proj-001',
-      framingId: 'framing-001',
-      targetId: 'target-ngc7000',
-      matchScore: 0.94,
-      reopen: false,
-      opticMismatch: false,
-    },
-    {
-      kind: 'new_framing',
-      projectId: 'proj-002',
-      framingId: null,
-      targetId: 'target-ngc7000',
-      matchScore: 0.61,
-      reopen: true,
-      opticMismatch: false,
-    },
-    {
-      kind: 'flag_optic_difference',
-      projectId: 'proj-003',
-      framingId: null,
-      targetId: 'target-ngc7000',
-      matchScore: 0.33,
-      reopen: false,
-      opticMismatch: true,
-    },
-    {
-      kind: 'new_project',
-      projectId: null,
-      framingId: null,
-      targetId: null,
-      matchScore: 0,
-      reopen: false,
-      opticMismatch: false,
-    },
-  ];
-
 /**
  * Inbox items the mock has classified as LIGHT frames.
  *
@@ -1016,16 +471,6 @@ const MOCK_ATTRIBUTION_CANDIDATES: IngestionAttributionCandidateDto_Serialize[] 
  * it — which is what makes the picker reachable in mock mode.
  */
 const mockLightInboxItemIds = new Set<string>();
-
-/** Plan-required lifecycle edges (mirrors `lifecycle-actions.ts` `requiresPlan`). */
-const MOCK_PLAN_REQUIRED_EDGES = new Set<string>([
-  'ready→prepared',
-  'prepared→ready',
-  'completed→archived',
-  'blocked→archived',
-  'archived→ready',
-  'archived→processing',
-]);
 
 /**
  * snake_case Tauri wire name for a camelCase generated-binding key.
@@ -1202,7 +647,7 @@ const mockHandlers = {
   target_moon_opposition_batch: async (_args) => {
     // #634: mock mode reuses the SAME TS ephemeris (`astro/moon-state.ts` +
     // `astro/lunar-separation.ts` + `astro/opposition.ts`) the detail panel
-    // (`TargetDetailV2`'s Best-date tooltip, still TS per ADR-0001's
+    // (`TargetDetail`'s Best-date tooltip, still TS per ADR-0001's
     // interactive-ephemeris boundary) computes independently — a
     // hand-rolled placeholder here would diverge from the detail panel's
     // value and break the "list Opposition == detail Best date" mock-mode
@@ -1789,6 +1234,10 @@ const mockHandlers = {
     const planId =
       (_args as { planId?: string } | undefined)?.planId ?? 'mock-plan';
     return { planId, itemsConfirmed: 1 };
+  },
+  recovery_status: async () => {
+    // Mock mode never has a crashed prior process.
+    return { uncleanShutdown: false, interruptedPlanIds: [] };
   },
   cleanup_policy_get: async () => {
     return mockCleanupPolicy;

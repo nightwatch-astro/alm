@@ -14,12 +14,24 @@
 #                         or an upstream dependency breaks.
 #   reviews: null         Solo repo; a required-review rule would just block.
 #
-# Required contexts are the PARENT jobs, never the individual shards: the
-# `Real-UI journeys (L3) — <os>` gates already depend on their shards, so
-# requiring shards as well would add nothing and would break whenever the shard
-# count changes.
+# Required contexts are the GATE jobs, never the workers they depend on: a gate
+# already depends on its shards, so requiring the shards as well would add
+# nothing and would break whenever the shard count changes. A required name must
+# also be published by exactly ONE job — branch protection matches contexts by
+# exact name, and an evaluator that settles on the wrong same-named check run
+# (a merge queue entry that reads the worker's `skipped`) deadlocks. Worker names
+# therefore differ from their gate's: "Real-UI smoke (L3) subset — ubuntu-latest"
+# vs the required "Real-UI smoke (L3) — ubuntu-latest".
 #
 # Excluded on purpose:
+#   Real-UI journeys (L3) — <os>           the full matrix runs on main pushes
+#                                          and dispatch, never on pull_request,
+#                                          so it publishes nothing to require on
+#                                          a PR. PRs are gated by the smoke
+#                                          context instead (two-tier strategy in
+#                                          e2e.yml's header).
+#   Real-UI smoke (L3) — windows-latest    no windows smoke job exists; windows
+#                                          L3 is main-push only.
 #   Real-UI journeys (L3) — macos-latest   blocked upstream, see issue #489
 #                                          (tauri-plugin-webdriver)
 #   Unit + integration (L1+L2) — macos-latest

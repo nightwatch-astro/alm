@@ -6,7 +6,7 @@
  * Single consumer: src/ui/Btn.tsx.
  */
 
-import { style, styleVariants } from '@vanilla-extract/css';
+import { globalStyle, style, styleVariants } from '@vanilla-extract/css';
 import { uvars, vars } from '@/styles/themes.css';
 
 const base = style({
@@ -140,4 +140,81 @@ export const variantStyles = styleVariants({
       },
     },
   },
+});
+
+// Backward-compat global aliases. LogPanel, InboxNeedsReview, ProcessingTools,
+// StepTheme and the /dev pages still apply `className="pv-btn pv-btn--*"` to bare
+// <button> elements instead of using Btn, and `targets_planner.spec.ts` asserts
+// `pv-btn--primary` by name. The `.pv-btn*` rules left with primitives.css, so
+// each class name selects the style above; `composes` is unavailable on
+// globalStyle, hence the explicit selector list.
+globalStyle('.pv-btn', {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: uvars.sp1,
+  height: uvars.controlH,
+  padding: `0 ${uvars.sp3}`,
+  fontSize: uvars.textXs,
+  fontWeight: uvars.weightMedium,
+  border: `1px solid ${vars.border}`,
+  borderRadius: uvars.radiusSm,
+  background: vars.bg,
+  color: vars.textSecondary,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  transition: `all ${uvars.transitionFast}`,
+});
+globalStyle('.pv-btn:hover', { borderColor: vars.ink3, color: vars.text });
+globalStyle('.pv-btn:disabled', { opacity: 0.35, cursor: 'not-allowed' });
+globalStyle('.pv-btn:disabled:hover', {
+  borderColor: vars.border,
+  color: vars.textSecondary,
+});
+
+globalStyle('.pv-btn--sm', {
+  height: uvars.controlHSm,
+  padding: `0 ${uvars.sp2}`,
+});
+globalStyle('.pv-btn--xs', {
+  height: uvars.controlHXs,
+  padding: `0 ${uvars.sp2}`,
+});
+
+globalStyle('.pv-btn--primary', {
+  background: vars.accent,
+  color: vars.onAccent,
+  borderColor: vars.accent,
+});
+globalStyle('.pv-btn--primary:hover', {
+  background: vars.accentHover,
+  borderColor: vars.accentHover,
+});
+globalStyle('.pv-btn--primary:disabled', {
+  background: vars.bg,
+  color: vars.textSecondary,
+  borderColor: vars.border,
+});
+
+globalStyle('.pv-btn--danger', {
+  background: vars.dangerBg,
+  color: vars.danger,
+  borderColor: vars.dangerBorder,
+});
+globalStyle('.pv-btn--danger:hover', { background: vars.dangerBgHover });
+globalStyle('.pv-btn--danger:disabled', {
+  background: vars.bg,
+  color: vars.textSecondary,
+  borderColor: vars.border,
+});
+
+globalStyle('.pv-btn--ghost', {
+  background: 'transparent',
+  borderColor: 'transparent',
+  color: vars.textMuted,
+});
+globalStyle('.pv-btn--ghost:hover', {
+  background: vars.hoverBg,
+  borderColor: 'transparent',
+  color: vars.text,
 });

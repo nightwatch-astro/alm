@@ -30,6 +30,13 @@ interface ContractListProps {
   onViewSchema: (contract: ContractMeta) => void;
 }
 
+/**
+ * Displays the available contracts and provides controls to view each schema.
+ *
+ * @param contracts - The contracts to display
+ * @param onViewSchema - Callback invoked when a contract's schema is requested
+ * @returns The contract registry table, or an empty-state message when no contracts are available
+ */
 export function ContractList({ contracts, onViewSchema }: ContractListProps) {
   if (contracts.length === 0) {
     return <p className={contractsListEmpty}>No contracts loaded.</p>;

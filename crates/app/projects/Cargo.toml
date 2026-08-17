@@ -17,6 +17,7 @@ app_core_errors = { path = "../errors" }
 app_core_targets = { path = "../targets" }
 audit = { path = "../../audit" }
 camino = { workspace = true }
+fs_executor = { path = "../../fs/executor" }
 contracts_core = { path = "../../contracts/core" }
 domain_core = { path = "../../domain/core" }
 fs_inventory = { path = "../../fs/inventory" }
@@ -32,6 +33,7 @@ persistence_targets = { path = "../../persistence/targets" }
 project_structure = { path = "../../project/structure" }
 # #1218: source snapshots read the session key, whose format this crate owns.
 sessions = { path = "../../sessions" }
+hex.workspace = true
 sha2.workspace = true
 simbad-resolver = "0.5.0"
 workflow_profiles = { path = "../../workflow/profiles" }

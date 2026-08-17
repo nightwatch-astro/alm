@@ -76,7 +76,7 @@ import type { TargetCatalogId, TargetObjectType } from '@/bindings/index';
 import { Pill } from '@/ui';
 import { m } from '@/lib/i18n';
 import * as ts from './target-search.css';
-import { input as fieldInput } from '@/ui/field.css';
+import { input as fieldInput, label as fieldLabel } from '@/ui/field.css';
 import {
   objectTypeLabel,
   catalogLabel,
@@ -132,7 +132,23 @@ export interface TargetSearchProps {
   onOverride?: (suggestion: TargetSuggestion) => void;
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+/**
+ * Provides an accessible search interface for selecting catalogue targets.
+ *
+ * @param onSelect - Called when a suggestion is selected.
+ * @param catalogFilter - Optional catalogue restriction.
+ * @param typeFilter - Optional object-type restriction.
+ * @param limit - Maximum number of suggestions to request.
+ * @param label - Label for the search input.
+ * @param placeholder - Placeholder text for the search input.
+ * @param hideLabel - Whether to visually hide the label.
+ * @param inputId - Optional id for the search input.
+ * @param autoFocus - Whether the search input receives focus automatically.
+ * @param inputRef - Ref forwarded to the search input.
+ * @param showFilters - Whether to display catalogue and object-type filters.
+ * @param enableOverride - Whether to display controls for correcting a suggestion.
+ * @param onOverride - Called when a suggestion is corrected.
+ */
 
 export function TargetSearch({
   onSelect,
@@ -218,12 +234,7 @@ export function TargetSearch({
         onItemHighlighted={handleItemHighlighted}
       >
         {}
-        <label
-          className={
-            hideLabel ? 'pv-target-search__label--sr' : 'pv-field-label'
-          }
-          htmlFor={id}
-        >
+        <label className={hideLabel ? ts.labelSr : fieldLabel} htmlFor={id}>
           {label}
         </label>
         <Combobox.Input
@@ -273,7 +284,7 @@ export function TargetSearch({
               {m.cmp_target_search_type_label()}
               <select
                 id={typeFilterId}
-                className={`${selectBase} pv-target-search__filter-select`}
+                className={`${selectBase} ${ts.filterSelect}`}
                 value={typeSel}
                 onChange={(e) =>
                   setTypeSel(e.target.value as TargetObjectType | '')
@@ -291,7 +302,7 @@ export function TargetSearch({
               {m.cmp_target_search_catalogue_label()}
               <select
                 id={catalogFilterId}
-                className={`${selectBase} pv-target-search__filter-select`}
+                className={`${selectBase} ${ts.filterSelect}`}
                 value={catalogSel}
                 onChange={(e) =>
                   setCatalogSel(e.target.value as TargetCatalogId | '')
@@ -352,7 +363,7 @@ export function TargetSearch({
             <Combobox.Popup className={ts.popup}>
               <Combobox.List
                 ref={scrollRef}
-                className={`pv-target-search__list ${virtualScroll}`}
+                className={`${ts.list} ${virtualScroll}`}
                 data-virtual-scroll="true"
                 aria-label={m.cmp_target_search_suggestions_aria()}
               >
@@ -391,7 +402,7 @@ export function TargetSearch({
                  * click or the Enter accelerator below invokes it.
                  */}
                 {harderOffered && (
-                  <div className="pv-target-search__status pv-target-search__no-match">
+                  <div className={`${ts.status} ${ts.noMatch}`}>
                     <Combobox.Status>
                       {m.cmp_target_search_no_results_hint()}
                     </Combobox.Status>
@@ -429,7 +440,7 @@ export function TargetSearch({
                 )}
                 {harderState === 'searching' && (
                   <Combobox.Status
-                    className="pv-target-search__status pv-target-search__status--resolving"
+                    className={`${ts.status} ${ts.statusResolving}`}
                     data-testid="target-search-status-resolving"
                   >
                     {m.cmp_target_search_search_harder_searching()}
@@ -528,7 +539,7 @@ export function TargetSearch({
                 )}
                 {resolving && (
                   <Combobox.Status
-                    className="pv-target-search__status pv-target-search__status--resolving"
+                    className={`${ts.status} ${ts.statusResolving}`}
                     data-testid="target-search-status-resolving"
                   >
                     {m.cmp_target_search_searching_simbad()}

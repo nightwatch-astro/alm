@@ -293,6 +293,7 @@ function SourceGroup({
             <SourceRow
               key={`${entry.path}-${index}`}
               entry={entry}
+              index={index}
               error={errors[index]}
               isLast={i === rows.length - 1}
               onRemove={() => onRemove(index)}
@@ -310,12 +311,16 @@ function SourceGroup({
 /** A single, single-line source row: path + org-state toggle + remove. */
 function SourceRow({
   entry,
+  index,
   error,
   isLast: _isLast,
   onRemove,
   onOrganizationStateChange,
 }: {
   entry: SourceEntry;
+  /** Position in the full entry list; keeps per-row test ids unique when two
+   * folders share a kind. */
+  index: number;
   error?: string;
   isLast: boolean;
   onRemove: () => void;
@@ -335,7 +340,7 @@ function SourceRow({
           <>
             <select
               className={`${selectBase} pv-step-sources__org-select`}
-              data-testid={`org-select-${entry.kind}`}
+              data-testid={`org-select-${entry.kind}-${index}`}
               value={entry.organizationState}
               onChange={(e) =>
                 onOrganizationStateChange(e.target.value as OrganizationState)

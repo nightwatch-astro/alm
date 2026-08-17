@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { deriveRowMoonPlanning, UNKNOWN_ROW_PLANNING } from './row-planning';
 import type { ObservingNight } from './moon-state';
-import { DEFAULT_MOON_AVOIDANCE } from './moon-avoidance';
+import { DEFAULT_MOON_AVOIDANCE } from '@/shared/planner/moon-avoidance';
 
 /** A controllable observing night with the Moon at RA 0h / Dec 0° and given age. */
 function nightAt(moonAgeFromFullDays: number): ObservingNight {

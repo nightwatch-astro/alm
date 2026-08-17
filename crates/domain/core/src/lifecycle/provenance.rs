@@ -1,7 +1,7 @@
 // Copyright (C) 2024-2026 Sjors Robroek
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! ProvenancedValue<T> — append-only value wrapper carrying observed/inferred/reviewed history.
+//! `ProvenancedValue<T>` — append-only value wrapper carrying observed/inferred/reviewed history.
 //!
 //! Priority rule: reviewed > inferred > observed > generated > planned > applied
 //! (spec 002 data-model.md §ProvenancedValue).

@@ -7,6 +7,7 @@
 //! surface declared in [`commands::lifecycle`]. Type-safe TypeScript bindings
 //! are emitted at test time by `tests/bindings.rs` via tauri-specta.
 
+pub mod clean_shutdown;
 pub mod commands;
 pub mod data_dir;
 pub mod resolve_cache;
@@ -43,7 +44,7 @@ pub const MAIN_WINDOW_LABEL: &str = "main";
 // scope. `tests/bindings.rs` depends on `desktop_shell::specta_builder`.
 include!("bootstrap/specta.rs");
 
-/// Build the Tauri [`App`] **without** starting the event loop.
+/// Build the Tauri `App` **without** starting the event loop.
 ///
 /// The returned handle exposes the platform path resolver (needed to locate
 /// the default `SQLite` database path) while the caller retains full control
@@ -239,7 +240,7 @@ pub fn build_app() -> tauri::App {
 }
 
 /// Builds the compiled-in Tauri context and defers the main window's
-/// creation (see [`defer_main_window`]).
+/// creation (see `defer_main_window`).
 ///
 /// Per-instance webview isolation for the E2E harness (#1204) does **not**
 /// go through this context any more: it used to point each config-declared
@@ -296,13 +297,47 @@ fn instance_context() -> tauri::Context {
     // needed here any more (`crates/e2e-tests/tests/common/mod.rs`, refs
     // #1204).
 
+    #[cfg(feature = "e2e")]
+    apply_dev_url_override(&mut context);
+
     context
+}
+
+/// Environment variable that redirects the `devUrl` this instance loads its
+/// frontend from.
+///
+/// Read by the E2E harness (`crates/e2e-tests/tests/common/mod.rs`) and by
+/// `.github/workflows/e2e.yml`, which serve the built `dist` on the same port.
+pub const DEV_URL_ENV: &str = "PV_DEV_URL";
+
+/// Redirect `devUrl` at run time when [`DEV_URL_ENV`] is set.
+///
+/// `tauri.conf.json`'s `devUrl` is compiled into the binary by
+/// `generate_context!`, so without this override the served port is fixed at
+/// build time while the port a lane can actually claim is only known at run
+/// time. Two concurrent E2E lanes then resolve the same `localhost` port and
+/// each silently loads whichever lane's `vite preview` bound it first.
+///
+/// Compiled only under the `e2e` feature, so a release binary cannot have its
+/// frontend origin redirected by an environment variable (Constitution
+/// Principle V, mirrors `bootstrap::single_instance_guard_enabled`).
+///
+/// A malformed value aborts startup: a silently ignored override would load
+/// the baked port and reintroduce exactly that cross-lane contamination.
+#[cfg(feature = "e2e")]
+fn apply_dev_url_override(context: &mut tauri::Context) {
+    let Some(raw) = std::env::var_os(DEV_URL_ENV) else {
+        return;
+    };
+    let raw = raw.to_string_lossy();
+    let url = raw.parse().unwrap_or_else(|e| panic!("{DEV_URL_ENV}={raw} is not a valid URL: {e}"));
+    context.config_mut().build.dev_url = Some(url);
 }
 
 /// Start the event loop first, then finish database startup behind the splash.
 ///
 /// The splash is the only window Tauri creates for itself (see
-/// [`defer_main_window`]), so it paints as soon as `app.run()` begins pumping.
+/// `defer_main_window`), so it paints as soon as `app.run()` begins pumping.
 /// Connecting, migrating, and wiring shared state all happen on a background
 /// task from there, and the main window is built only once that task has
 /// finished — so a long migration is visible instead of being a windowless
@@ -326,9 +361,19 @@ pub fn run_app(app: tauri::App, db_url: String, data_dir: std::path::PathBuf) {
     // FK-disabled migration chain.
     let runtime = tokio::runtime::Handle::current();
     let handle = app.handle().clone();
+    // astro-plan-kyo7.48: the exit hook writes the clean-shutdown marker, so it
+    // needs its own copy of the data root before `data_dir` moves into boot.
+    let exit_data_dir = data_dir.clone();
     std::thread::spawn(move || runtime.block_on(boot(handle, db_url, data_dir)));
 
-    app.run(|_handle, _event| {});
+    app.run(move |_handle, event| {
+        // `RunEvent::Exit` is the final, non-cancellable event-loop hook — it
+        // fires on graceful shutdown but never on SIGKILL/crash/power loss, so
+        // a present marker at next boot reliably means "exited cleanly".
+        if let tauri::RunEvent::Exit = event {
+            clean_shutdown::write(&exit_data_dir);
+        }
+    });
 }
 
 /// Report an unrecoverable startup failure and terminate.
@@ -501,6 +546,12 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
     }
     let pool = db.pool().clone();
 
+    // Unclean-shutdown detection (astro-plan-kyo7.48): consume the clean-shutdown
+    // marker written on the previous graceful exit. Absent marker => the process
+    // was killed or crashed. Captured here, before the async sweep, and exposed
+    // to the recovery prompt via the managed `UncleanShutdown` flag.
+    let unclean_shutdown = !clean_shutdown::take_was_clean(&data_dir);
+
     // Startup sweep + boot reconciliation (constitution v1.1.0 §V). Any plan
     // left in 'applying' with no live executor (e.g. after a hard crash) is
     // unreachable by `resume_plan` (which requires `paused` state). Flip them to
@@ -567,12 +618,12 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         &bus,
         resolve_cache.clone(),
     );
-    crate::commands::log::start_log_forwarder(
+    drop(crate::commands::log::start_log_forwarder(
         app.clone(),
         &bus,
         contracts_core::log::LogLevel::Debug,
         pool.clone(),
-    );
+    ));
     drop(spawn_stale_dependent_propagator(pool.clone(), &bus));
     // spec 056 (R5): backend-authoritative onboarding tick subscriber →
     // persists auto-ticks from domain-completion topics and emits
@@ -780,6 +831,10 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
     // fail at runtime with "state not managed for field `pool`" — which is why
     // the Inbox scan/classify pipeline only ever worked under mock mode.
     app.manage(pool.clone());
+
+    // astro-plan-kyo7.48: the boot-time unclean-shutdown verdict, read by the
+    // `recovery_status` command that drives the recovery prompt.
+    app.manage(clean_shutdown::UncleanShutdown(unclean_shutdown));
 
     let repo = Arc::new(SqliteLifecycleRepository::new(pool, bus.clone()));
     let state = AppState::new(repo, bus, caches, resolve_cache, resolve_cache_path, cache_warming);

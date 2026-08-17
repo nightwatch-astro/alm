@@ -136,6 +136,24 @@ function hasOpenOverlay(): boolean {
   return false;
 }
 
+/**
+ * Renders a list page with an optional top bar and detail panel.
+ *
+ * Supports bottom, side, adaptive, and combined side-and-bottom detail layouts.
+ * Pressing Escape closes open detail panels when no overlay is active.
+ *
+ * @param topBar - Custom top bar content.
+ * @param topBarProps - Props used to create a default page top bar when `topBar` is not provided.
+ * @param detail - Content for the detail panel.
+ * @param onCloseDetail - Callback invoked when the main detail panel is closed.
+ * @param detailLabel - Accessible label for the main detail panel.
+ * @param detailPlacement - Placement mode for the detail panel.
+ * @param dockId - Identifier used to persist adaptive dock settings.
+ * @param adaptiveThreshold - Threshold used to determine adaptive dock placement.
+ * @param bottomDetail - Content for the bottom detail panel in side-and-bottom mode.
+ * @param onCloseBottomDetail - Callback invoked when the bottom detail panel is closed.
+ * @param bottomDetailLabel - Accessible label for the bottom detail panel.
+ */
 export function ListPageLayout({
   topBar,
   topBarProps,

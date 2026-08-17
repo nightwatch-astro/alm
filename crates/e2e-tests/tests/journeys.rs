@@ -30,7 +30,8 @@
 //! Run (CI): `cargo nextest run -p e2e_tests --profile e2e
 //! --run-ignored all` (serial,
 //! `.config/nextest.toml`). Locally: build `desktop_shell --features e2e`,
-//! `cargo install tauri-webdriver --locked`, serve the frontend on :5173 with
+//! `cargo install tauri-webdriver --locked`, serve the frontend on the
+//! `tauri.conf.json` `devUrl` port (or a `PV_DEV_URL` of your own) with
 //! `VITE_E2E=1`, then run the same command — see `README.md`.
 
 mod common;

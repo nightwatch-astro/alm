@@ -3,6 +3,10 @@
 
 import { clsx } from 'clsx';
 import { m } from '@/lib/i18n';
+// RENDERING CHANGE: canonical formatBytes uses 1dp for all sizes (B, KB, MB,
+// GB), whereas the former local copy used 0dp for KB. Aligns with MasterDetail
+// and the lib/format docstring (PR #1546 fmtBytes→formatBytes note).
+import { formatBytes } from '@/lib/format';
 import { useLogPanel } from './LogPanelContext';
 import { useOperationStatus } from './OperationStatusContext';
 import { usePageStatus } from './PageStatusContext';
@@ -20,29 +24,12 @@ import {
   logToggle as statusBarLogToggle,
 } from './statusbar.css';
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
 function formatCount(n: number): string {
   return n.toLocaleString();
 }
 
 /**
- * Status bar (design v4): three zones. LEFT = the current operation (transient),
- * CENTER = GLOBAL library inventory totals (task #87 — stable across routes,
- * NOT per-page counts), RIGHT = persistent storage/cleanup health + log toggle.
- *
- * The global totals come from `useStatusSummary()` → `commands.statusSummary()`
- * (the real `LibraryStats` DTO: sessions / projects / calibration sets /
- * targets). There is no library-wide image/file count in the contract yet (the
- * Advanced settings "Records" line is hardcoded); rather than show a fabricated
- * or dev-status-leaking placeholder (fix ef364dfc), the image total is simply
- * omitted from this bar until the metadata-ingest pipeline exposes a real count.
+ * Renders the status bar with operation progress, library totals, storage health, and log controls.
  */
 export function StatusBar() {
   const { toggle } = useLogPanel();
@@ -54,7 +41,7 @@ export function StatusBar() {
   const isActive = opStatus !== 'idle';
 
   return (
-    <div className={statusBar}>
+    <div className={statusBar} data-testid="status-bar">
       {/* LEFT — current operation */}
       <div className={statusBarOp}>
         {isActive ? (

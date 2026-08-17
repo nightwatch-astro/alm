@@ -149,7 +149,7 @@ fn build_folder_plan_data(project_path: &str, tool_str: &str) -> FolderPlanData 
 /// Validates name (non-empty, ≤120 chars, unique), tool (canonical value),
 /// path (unique within library). A relative request path is anchored to the
 /// registered project folder before storage so `projects.path` is always an
-/// unambiguous absolute location (Constitution I; see [`anchor_project_path`]).
+/// unambiguous absolute location (Constitution I; see `anchor_project_path`).
 /// Persists the project in `setup_incomplete`,
 /// links any `initial_sources`, infers channels, checks the auto-ready trigger,
 /// and emits a `project.created` audit event.

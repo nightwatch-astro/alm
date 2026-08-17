@@ -141,14 +141,14 @@ test.describe('setup wizard · source-folder primitives at 320 CSS px', () => {
         calibration.getByTestId('requirement-status-calibration'),
       ).toHaveText(labels.optionalStatus);
 
-      const organization = lightFrames.getByRole('combobox');
+      const organization = lightFrames.getByTestId('org-select-light_frames-0');
       const manualPath = lightFrames.getByTestId(
         'manual-path-input-light_frames',
       );
-      // The org-state select carries the VE selectBase style.
-      // The manual-path input still uses the global .pv-input class (re-declared
-      // as a globalStyle in field.css.ts after wave-2 dissolved target-search.css).
-      await expect(organization).toHaveClass(/selectBase/);
+      // The org-state select is keyed on its per-row test id; its vanilla-extract
+      // class name is hashed in production builds and is not assertable. The
+      // manual-path input still uses the un-migrated global `.pv-input`.
+      await expect(organization).toHaveValue('organized');
       await expect(manualPath).toHaveClass(/pv-input/);
 
       const info = lightFrames.locator('[data-testid="info-tip"]').first();

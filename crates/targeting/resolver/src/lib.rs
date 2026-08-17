@@ -6,7 +6,7 @@
 //! Resolves astronomical target identities on demand against SIMBAD, backed by
 //! a bundled seed index and a local SQLite cache. This module owns the
 //! resolver seam (a testable [`Resolver`] trait — implemented later by
-//! `SimbadResolver` and a [`FakeResolver`]), the cache read/write layer, and
+//! `SimbadResolver` and a `FakeResolver`), the cache read/write layer, and
 //! the bundled-seed loader.
 //!
 //! This is metadata/identity resolution only — no image processing
@@ -24,7 +24,7 @@
 //! [`Resolver`] is the no-network-in-unit-tests seam, mirroring the retired
 //! `download::CatalogFetcher`/`FakeFetcher` pattern: production code uses the
 //! `reqwest`-backed `SimbadResolver` (see [`simbad`], T019); the search /
-//! resolve / ingest-queue logic is unit-tested offline with [`FakeResolver`].
+//! resolve / ingest-queue logic is unit-tested offline with `FakeResolver`.
 
 #![allow(clippy::doc_markdown)] // spec/domain terminology is not suited for backticks
 
@@ -357,7 +357,7 @@ pub enum ResolveError {
 /// `download::CatalogFetcher`.
 ///
 /// Production code uses the `reqwest`-backed `SimbadResolver` ([`simbad`],
-/// T019); unit tests use [`FakeResolver`] for fast, network-free coverage of
+/// T019); unit tests use `FakeResolver` for fast, network-free coverage of
 /// the search / resolve / ingest-queue logic.
 ///
 /// Methods are modelled on the `target.resolve.json` operation. Implementations
@@ -409,7 +409,7 @@ pub trait Resolver: Send + Sync {
 /// the ingest queue, typeahead) has no way to reach the Sesame fallback even
 /// by mistake — only code that explicitly asks for `ExplicitResolver` can.
 /// Implemented by the production `targeting_resolver::simbad::SimbadResolver`
-/// (TAP-first, Sesame-fallback-on-miss) and, for tests, [`FakeResolver`].
+/// (TAP-first, Sesame-fallback-on-miss) and, for tests, `FakeResolver`.
 #[async_trait::async_trait]
 pub trait ExplicitResolver: Resolver {
     /// Same contract as [`Resolver::resolve`], but permitted to consult a

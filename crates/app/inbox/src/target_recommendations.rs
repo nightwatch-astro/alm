@@ -55,9 +55,9 @@ use contracts_core::inbox::{
     InboxPointing, InboxTargetCandidate, InboxTargetRecommendationsResponse,
 };
 use contracts_core::{ContractError, ErrorSeverity};
+use target_match::skymath as tm_skymath;
 use target_match::{rank, Constraint, SkyObject};
-use targeting::coords::{self, Pointing};
-use targeting::{Angle, Equatorial};
+use targeting::coords;
 use targeting_resolver::cache;
 
 /// Default fixed search radius (degrees) used when a FOV-aware radius cannot be
@@ -155,7 +155,8 @@ async fn rank_sub_group(
             optics_known: false,
         });
     };
-    let pointing = coords::to_equatorial(Pointing::new(ra, dec));
+    let pointing = tm_skymath::Equatorial::j2000_lenient(ra, dec)
+        .expect("derive_pointing only returns finite coords");
 
     // 4. Frame membership: a rectangle sized from the sub-group's optics,
     //    rotated by the best available sky PA — sky_rotation_deg (OBJCTROT,
@@ -174,11 +175,11 @@ async fn rank_sub_group(
     );
     let optics_known = field.is_some();
     let constraint = field.map_or_else(
-        || Constraint::circular(Angle::from_degrees(fixed_radius_deg)),
+        || Constraint::circular(tm_skymath::Angle::from_degrees(fixed_radius_deg)),
         |field| {
             sky_pa_deg.map_or_else(
                 || Constraint::frame(&field),
-                |pa_deg| Constraint::frame_rotated(&field, Angle::from_degrees(pa_deg)),
+                |pa_deg| Constraint::frame_rotated(&field, tm_skymath::Angle::from_degrees(pa_deg)),
             )
         },
     );
@@ -194,7 +195,8 @@ async fn rank_sub_group(
             target_id: t.id.to_string(),
             // Effective label: user display_alias wins, else primary designation.
             name: t.display_alias.unwrap_or(t.primary_designation),
-            position: coords::to_equatorial(Pointing::new(t.ra_deg, t.dec_deg)),
+            position: tm_skymath::Equatorial::j2000_lenient(t.ra_deg, t.dec_deg)
+                .expect("catalog coords filtered to finite above"),
         })
         .collect();
 
@@ -323,14 +325,19 @@ pub async fn auto_resolve_target(
 /// A catalog entry adapted to `target_match::SkyObject` for frame ranking.
 /// Matching is coordinate-only (R-17): `name` rides along for display and is
 /// never read by [`rank`]/[`Constraint`] membership.
+///
+/// Stores `target_match::skymath::Equatorial` (0.6.x) because `target_match`
+/// 0.5.x re-exports that version and `SkyObject::position` must return it.
+/// The workspace-wide `skymath` 0.7.x lives alongside as a transitive dep;
+/// we bridge by constructing the 0.6.x type directly from raw degrees.
 struct CatalogObject {
     target_id: String,
     name: String,
-    position: Equatorial,
+    position: tm_skymath::Equatorial,
 }
 
 impl SkyObject for CatalogObject {
-    fn position(&self) -> Equatorial {
+    fn position(&self) -> tm_skymath::Equatorial {
         self.position
     }
 }

@@ -6,7 +6,7 @@
  * VIRTUALIZED + planning columns (#84/#85), spec 044 mock columns.
  *
  * A DENSE, FULL-WIDTH sortable table (shared `Table` look) that is the primary
- * content of the Targets page's `ListPageLayout`; TargetDetailV2 lives in the
+ * content of the Targets page's `ListPageLayout`; TargetDetail lives in the
  * detail pane.
  *
  * Columns (spec 044, iteration 2026-07-15 FR-007): Designation · Type ·
@@ -69,7 +69,7 @@
  *   (default) or Object type.
  *
  * Search + the catalogue / group-by controls live in the page top bar; this
- * surface owns no toolbar state. Selecting a row opens TargetDetailV2 (selection
+ * surface owns no toolbar state. Selecting a row opens TargetDetail (selection
  * is driven by the host page via `?selected`).
  *
  * Split by responsibility (refactor sweep #976): `table-model.ts` is the pure
@@ -88,13 +88,13 @@ import type { ObservingNight } from './astro/moon-state';
 import {
   DEFAULT_MOON_AVOIDANCE,
   type MoonAvoidanceParams,
-} from './astro/moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import type { SensorConfig } from './planner-derive';
 import { formatOppositionDate, oppositionRelative } from './astro/opposition';
 import { GuidanceCell } from './GuidanceCell';
 import { m } from '@/lib/i18n';
 import { useFavourites } from './useFavourites';
-import { useActiveSite } from './observing-sites/site-store';
+import { useActiveSite } from '@/shared/observing-sites/site-store';
 import { usePlannerDateMs } from './planner-date-store';
 import { usePreference } from '@/data/preferences';
 import { ROW_HEIGHT_PX } from '@/data/theme';

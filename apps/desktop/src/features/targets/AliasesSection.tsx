@@ -4,7 +4,7 @@
 /**
  * AliasesSection — alias list + add-alias form for a target.
  *
- * Extracted from TargetDetailV2.tsx.
+ * Extracted from TargetDetail.tsx.
  */
 
 import { X } from 'lucide-react';

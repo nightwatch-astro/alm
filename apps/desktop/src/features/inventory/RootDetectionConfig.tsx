@@ -63,6 +63,12 @@ export function RootDetectionConfig({ rootId }: RootDetectionConfigProps) {
   );
 }
 
+/**
+ * Displays and updates root inventory detection settings.
+ *
+ * @param rootId - Identifies the root whose detection settings are displayed
+ * @param onClose - Closes the configuration panel
+ */
 function RootDetectionConfigPanel({
   rootId,
   onClose,

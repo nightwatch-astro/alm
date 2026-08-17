@@ -41,7 +41,7 @@ import {
   minSeparationDeg,
   type Band,
   type MoonAvoidanceParams,
-} from './moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import { nextOpposition } from './opposition';
 
 const MS_PER_DAY = 86_400_000;

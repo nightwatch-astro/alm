@@ -40,6 +40,11 @@ const STRATEGIES: StrategyOption[] = [
   },
 ];
 
+/**
+ * Renders controls for selecting and displaying source view strategies.
+ *
+ * @param save - Persists the selected strategy under the source view settings
+ */
 export function SourceViewStrategy({ save }: SourceViewStrategyProps) {
   const [selected, setSelected] = useState('junctions');
 

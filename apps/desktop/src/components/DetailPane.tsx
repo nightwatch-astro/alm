@@ -14,6 +14,11 @@ export interface DetailPaneProps {
   fill?: boolean;
 }
 
+/**
+ * Renders the content area for a detail view.
+ *
+ * @param fill - Enables the fill layout with independently scrolling primary content.
+ */
 export function DetailPane({ children, fill }: DetailPaneProps) {
   return (
     <div

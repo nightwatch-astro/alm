@@ -38,7 +38,9 @@ import {
 } from './contracts-page.css';
 import { pageScroll } from '@/ui/page-layout.css';
 
-// ── Disabled stub ─────────────────────────────────────────────────────────────
+/**
+ * Renders a message explaining how to enable developer mode and access developer diagnostics.
+ */
 
 function DevModeDisabledStub() {
   return (
@@ -55,7 +57,9 @@ function DevModeDisabledStub() {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+/**
+ * Displays developer contract diagnostics, including registered contracts, recent calls, schema views, replay controls, and export actions when developer mode is enabled.
+ */
 
 export function ContractsPage() {
   const [devMode, setDevMode] = useState<boolean | null>(null);

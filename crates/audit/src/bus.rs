@@ -32,6 +32,15 @@ pub enum BusError {
     Database(#[from] persistence_core::DbError),
 }
 
+/// Column value for `events.source`.
+fn source_str(source: Source) -> &'static str {
+    match source {
+        Source::User => "user",
+        Source::Restore => "restore",
+        Source::System => "system",
+    }
+}
+
 /// Hybrid live + durable event bus.
 ///
 /// Clone to share across tasks — clones share the same underlying channel and pool.
@@ -77,11 +86,7 @@ impl EventBus {
         let envelope = EventEnvelope::new(topic, source, value.clone());
 
         // 1. Write durable row.
-        let source_str = match source {
-            Source::User => "user",
-            Source::Restore => "restore",
-            Source::System => "system",
-        };
+        let source_str = source_str(source);
         let emitted_at = envelope
             .emitted_at
             .as_offset_date_time()
@@ -101,6 +106,60 @@ impl EventBus {
         // 2. Broadcast to live subscribers.
         // `send` errors only when there are NO receivers at all (which is fine).
         Ok(self.sender.send(envelope).unwrap_or(0))
+    }
+
+    /// Publish many already-serialised events, writing every durable row in one
+    /// transaction before broadcasting the envelopes.
+    ///
+    /// Same observable outcome as calling [`Self::publish`] per event (one
+    /// `events` row and one live envelope each), at one commit for the batch
+    /// instead of one per event. Only for Tier-2 (re-derivable) events: on a
+    /// commit failure the whole batch is lost, and no envelope is broadcast.
+    ///
+    /// # Errors
+    /// Returns `BusError::Database` if the transaction or any insert fails.
+    pub async fn publish_batch(
+        &self,
+        events: &[(String, Source, serde_json::Value)],
+    ) -> Result<(), BusError> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let envelopes: Vec<EventEnvelope<serde_json::Value>> = events
+            .iter()
+            .map(|(topic, source, payload)| EventEnvelope::new(topic, *source, payload.clone()))
+            .collect();
+
+        let mut owned: Vec<(String, String)> = Vec::with_capacity(envelopes.len());
+        for envelope in &envelopes {
+            let emitted_at = envelope
+                .emitted_at
+                .as_offset_date_time()
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+            owned.push((emitted_at, serde_json::to_string(&envelope.payload)?));
+        }
+        let rows: Vec<(&str, &str, &str, &str)> = envelopes
+            .iter()
+            .zip(&owned)
+            .map(|(envelope, (emitted_at, payload))| {
+                (
+                    envelope.topic.as_str(),
+                    source_str(envelope.source),
+                    emitted_at.as_str(),
+                    payload.as_str(),
+                )
+            })
+            .collect();
+
+        let mut tx = self.pool.begin().await.map_err(persistence_core::DbError::Database)?;
+        persistence_lifecycle::repositories::events::insert_events_conn(&mut tx, &rows).await?;
+        tx.commit().await.map_err(persistence_core::DbError::Database)?;
+
+        for envelope in envelopes {
+            let _ = self.sender.send(envelope);
+        }
+        Ok(())
     }
 
     /// T121 (spec 030 FR-131, Q15/#647): single write-through path for

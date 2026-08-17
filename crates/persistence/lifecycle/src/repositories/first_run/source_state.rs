@@ -18,7 +18,7 @@ use super::{organization_state_to_str, str_to_organization_state, str_to_source_
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_source_organization_state(
     pool: &SqlitePool,
     source_id: &str,
@@ -42,7 +42,7 @@ pub async fn get_source_organization_state(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_source_path(pool: &SqlitePool, source_id: &str) -> DbResult<Option<String>> {
     let row: Option<(String,)> = sqlx::query_as("SELECT path FROM registered_sources WHERE id = ?")
         .bind(source_id)
@@ -57,7 +57,7 @@ pub async fn get_source_path(pool: &SqlitePool, source_id: &str) -> DbResult<Opt
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_source_kind_and_path(
     pool: &SqlitePool,
     source_id: &str,
@@ -74,14 +74,14 @@ pub async fn get_source_kind_and_path(
 ///
 /// Enforces the invariant that `inbox`-kind sources are always `unorganized`:
 /// attempting to set an inbox source to `organized` returns
-/// [`DbError::CasFailed`] with the `source.invalid_organization_state` marker
+/// `persistence_core::DbError::CasFailed` with the `source.invalid_organization_state` marker
 /// in the message (the app/core use-case maps this to the contract error code).
 ///
 /// # Errors
 ///
 /// - [`DbError::NotFound`] when no source row matches `source_id`.
-/// - [`DbError::CasFailed`] when attempting to set an inbox source to organized.
-/// - [`DbError::Database`] on query failure.
+/// - `persistence_core::DbError::CasFailed` when attempting to set an inbox source to organized.
+/// - `persistence_core::DbError::Database` on query failure.
 pub async fn set_source_organization_state(
     pool: &SqlitePool,
     source_id: &str,
@@ -144,7 +144,7 @@ pub async fn set_source_path(pool: &SqlitePool, source_id: &str, new_path: &str)
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_active_flags(
     pool: &SqlitePool,
 ) -> DbResult<std::collections::HashMap<String, bool>> {

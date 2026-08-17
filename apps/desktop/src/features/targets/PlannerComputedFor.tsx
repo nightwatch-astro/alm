@@ -16,7 +16,7 @@
 
 import { Link } from '@tanstack/react-router';
 import { m } from '@/lib/i18n';
-import { useActiveSite } from './observing-sites/site-store';
+import { useActiveSite } from '@/shared/observing-sites/site-store';
 
 export function PlannerComputedFor({ usableAltDeg }: { usableAltDeg: number }) {
   const site = useActiveSite();

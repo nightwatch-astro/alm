@@ -25,7 +25,7 @@ pub use super::q_targets_mgmt::target_exists;
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_favourited_at(pool: &SqlitePool, target_id: &str) -> DbResult<Option<String>> {
     let row: Option<(String,)> =
         sqlx::query_as("SELECT favourited_at FROM target_favourite WHERE target_id = ?")
@@ -40,7 +40,7 @@ pub async fn get_favourited_at(pool: &SqlitePool, target_id: &str) -> DbResult<O
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_favourites(pool: &SqlitePool) -> DbResult<Vec<String>> {
     let rows: Vec<(String,)> = sqlx::query_as(
         "SELECT target_id FROM target_favourite ORDER BY favourited_at DESC, target_id ASC",
@@ -57,7 +57,7 @@ pub async fn list_favourites(pool: &SqlitePool) -> DbResult<Vec<String>> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn count_favourites(pool: &SqlitePool) -> DbResult<i64> {
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM target_favourite").fetch_one(pool).await?;
@@ -69,7 +69,7 @@ pub async fn count_favourites(pool: &SqlitePool) -> DbResult<i64> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure (including a foreign
+/// Returns `persistence_core::DbError::Database` on query failure (including a foreign
 /// key violation if `target_id` does not reference an existing
 /// `canonical_target` row, when foreign keys are enabled).
 pub async fn add_favourite(
@@ -93,7 +93,7 @@ pub async fn add_favourite(
 ///
 /// # Errors
 ///
-/// Returns [`crate::DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn remove_favourite(pool: &SqlitePool, target_id: &str) -> DbResult<()> {
     sqlx::query("DELETE FROM target_favourite WHERE target_id = ?")
         .bind(target_id)

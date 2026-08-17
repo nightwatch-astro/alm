@@ -149,11 +149,10 @@ describe('StepSourceFolders — required-first ordering', () => {
     const addByPath = within(group).getByTestId(
       'manual-add-path-btn-light_frames',
     );
-    const organization = within(group).getByTestId('org-select-light_frames');
+    const organization = within(group).getByTestId('org-select-light_frames-0');
 
     expect(organization.tagName.toLowerCase()).toBe('select');
-    // Verify it's a text input — class names are VE-generated.
-    expect(input.tagName.toLowerCase()).toBe('input');
+    expect(input).toHaveClass('pv-input', 'pv-step-sources__manual-input');
     expect(info.compareDocumentPosition(choose)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );

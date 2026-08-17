@@ -5,8 +5,8 @@
 //! `inbox.materialization.apply` (Spec 062 §Ingestion).
 //!
 //! This module ties together the command ledger and the persistence-sessions
-//! materialization repositories. App-layer use cases call [`query_operation`]
-//! to read the current operation state and [`query_result_sessions`] to page
+//! materialization repositories. App-layer use cases call `query_operation`
+//! to read the current operation state and `query_result_sessions` to page
 //! through the result snapshot.
 
 pub mod operation_query;

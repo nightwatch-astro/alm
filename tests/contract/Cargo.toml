@@ -57,10 +57,15 @@ path = "project_tool_enum_parity.rs"
 name = "plan_state_sql_parity"
 path = "plan_state_sql_parity.rs"
 
+[[test]]
+name = "contract_jsonschema_roundtrip"
+path = "contract_jsonschema_roundtrip.rs"
+
 [dev-dependencies]
 audit_types = { path = "../../crates/audit-types" }
 contracts_core = { path = "../../crates/contracts/core" }
 domain_core = { path = "../../crates/domain/core" }
+jsonschema.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

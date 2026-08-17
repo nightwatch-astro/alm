@@ -68,7 +68,7 @@ pub struct InsertEquipmentResolution<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_equipment_resolution(
     conn: &mut SqliteConnection,
     params: &InsertEquipmentResolution<'_>,
@@ -114,7 +114,7 @@ pub async fn insert_equipment_resolution(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_equipment_resolution_head(
     conn: &mut SqliteConnection,
     session_row_id: i64,
@@ -135,13 +135,13 @@ pub async fn insert_equipment_resolution_head(
 /// Advance the equipment resolution head using CAS.
 ///
 /// Returns `Ok(())` when exactly one row was updated. Returns
-/// [`DbError::CasFailed`] when the current generation or head revision does not
+/// `persistence_core::DbError::CasFailed` when the current generation or head revision does not
 /// match the expected values (indicating a concurrent update).
 ///
 /// # Errors
 ///
-/// Returns [`DbError::CasFailed`] on optimistic-lock failure, or
-/// [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::CasFailed` on optimistic-lock failure, or
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn advance_equipment_resolution_head(
     conn: &mut SqliteConnection,
     session_row_id: i64,
@@ -176,7 +176,7 @@ pub async fn advance_equipment_resolution_head(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no head row exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_equipment_resolution_head(
     pool: &SqlitePool,
     session_row_id: i64,
@@ -201,7 +201,7 @@ pub async fn get_equipment_resolution_head(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no head or revision exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_accepted_equipment_resolution(
     pool: &SqlitePool,
     session_row_id: i64,

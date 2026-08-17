@@ -731,8 +731,9 @@ impl std::error::Error for RelationInvariantError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use skymath::{Angle, Equatorial};
-    use target_match::{FootprintProvenance, ImageParity, SkyEllipse};
+    // target-match embeds skymath 0.6; use its re-export so the types match.
+    use target_match::{skymath as tm_skymath, FootprintProvenance, ImageParity, SkyEllipse};
+    use tm_skymath::{Angle, Equatorial};
 
     fn edge(left: &str, right: &str) -> MosaicEdge {
         MosaicEdge::new(

@@ -38,7 +38,9 @@ pub struct SessionProjectionRow {
     pub session_kind: String,
     /// Frame type string: "light", "dark", "flat", "bias", or derived "mixed".
     pub frame_type: String,
-    /// Pre-aggregated frame count from `json_array_length(frame_ids)`.
+    /// Pre-aggregated count of `frame_ids` members whose `file_record` is not
+    /// `missing` — a frame absent from disk retains its session attribution
+    /// but stops counting as active.
     pub frame_count: i64,
     /// First element of the `frame_ids` JSON array (`json_extract(...,'$[0]')`),
     /// `None` when the session has no frames.
@@ -77,7 +79,7 @@ pub struct InventoryFilters {
 /// List all `LibraryRoot` rows that have at least one session under them.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn list_roots_with_sessions(pool: &SqlitePool) -> DbResult<Vec<LibraryRootRow>> {
     let rows = sqlx::query_as::<_, LibraryRootRow>(
         r"
@@ -103,7 +105,7 @@ pub async fn list_roots_with_sessions(pool: &SqlitePool) -> DbResult<Vec<Library
 /// Used by spec 011 cwd-containment check (R-CwdContain, FR-010).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn list_all_roots(pool: &SqlitePool) -> DbResult<Vec<LibraryRootRow>> {
     let rows = sqlx::query_as::<_, LibraryRootRow>(
         "SELECT id, current_path, kind, state FROM library_root ORDER BY current_path ASC",
@@ -129,7 +131,7 @@ pub async fn list_all_roots(pool: &SqlitePool) -> DbResult<Vec<LibraryRootRow>> 
 /// (spec 036, T007); the gen-3 `canonical_target` is the live store.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn list_sessions_for_root(
     pool: &SqlitePool,
     root_id: &str,
@@ -155,7 +157,11 @@ pub async fn list_sessions_for_root(
             acs.root_id                                 AS root_id,
             'acquisition'                               AS session_kind,
             'light'                                     AS frame_type,
-            json_array_length(acs.frame_ids)            AS frame_count,
+            (SELECT COUNT(*)
+               FROM json_each(acs.frame_ids) je
+               LEFT JOIN file_record fr ON fr.id = je.value
+              WHERE fr.state IS NULL OR fr.state != 'missing')
+                                                        AS frame_count,
             json_extract(acs.frame_ids, '$[0]')         AS first_frame_id,
             acs.target_id                               AS target_id,
             NULL                                        AS target_name,
@@ -182,7 +188,11 @@ pub async fn list_sessions_for_root(
             cs.root_id                                  AS root_id,
             'calibration'                               AS session_kind,
             cs.kind                                     AS frame_type,
-            json_array_length(cs.frame_ids)             AS frame_count,
+            (SELECT COUNT(*)
+               FROM json_each(cs.frame_ids) je
+               LEFT JOIN file_record fr ON fr.id = je.value
+              WHERE fr.state IS NULL OR fr.state != 'missing')
+                                                        AS frame_count,
             json_extract(cs.frame_ids, '$[0]')          AS first_frame_id,
             NULL                                        AS target_id,
             NULL                                        AS target_name,
@@ -251,7 +261,7 @@ struct ProjectSourcesRow {
 /// expected cardinality (a few hundred sessions per root at most).
 ///
 /// # Errors
-/// Returns [`crate::DbResult`] on query failure.
+/// Returns [`DbResult`] on query failure.
 pub async fn list_project_links_for_sessions(
     pool: &SqlitePool,
     session_ids: &[String],
@@ -295,8 +305,11 @@ pub async fn list_project_links_for_sessions(
 /// `primary_designation` (same effective-label rule as the Targets surface).
 /// `filter` and `acquisition_night` come from `acquisition_fingerprint`
 /// (absent until the metadata extraction pipeline populates a fingerprint
-/// row). `frame_count` is derived from `json_array_length(frame_ids)` and is
-/// always present for a matched row (the column is `NOT NULL DEFAULT '[]'`).
+/// row). `frame_count` counts the `frame_ids` members whose `file_record` is
+/// not `missing`, so a frame that vanished from disk stops counting while its
+/// session attribution is retained; an id with no `file_record` row still
+/// counts. Always present for a matched row (`frame_ids` is `NOT NULL DEFAULT
+/// '[]'`).
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SessionContextRow {
     pub id: String,
@@ -316,7 +329,7 @@ pub struct SessionContextRow {
 /// returned `Vec` — callers treat a missing id as "no context available".
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_session_context_by_ids(
     pool: &SqlitePool,
     session_ids: &[String],
@@ -332,7 +345,10 @@ pub async fn get_session_context_by_ids(
              COALESCE(ct.display_alias, ct.primary_designation)  AS target_name,
              af.filter_name                                      AS filter,
              af.observing_night_date                             AS acquisition_night,
-             json_array_length(acs.frame_ids)                    AS frame_count
+             (SELECT COUNT(*)
+                FROM json_each(acs.frame_ids) je
+                LEFT JOIN file_record fr ON fr.id = je.value
+               WHERE fr.state IS NULL OR fr.state != 'missing')  AS frame_count
          FROM acquisition_session acs
          LEFT JOIN canonical_target ct ON ct.id = acs.canonical_target_id
          LEFT JOIN acquisition_fingerprint af ON af.id = acs.id
@@ -380,7 +396,7 @@ pub struct SessionCameraRow {
 /// Sessions whose frames resolve no metadata row are simply absent.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn list_session_cameras(
     pool: &SqlitePool,
     session_ids: &[String],
@@ -426,52 +442,6 @@ pub async fn list_session_cameras(
     Ok(rows)
 }
 
-/// Set `root_id` on an `acquisition_session` row (T036, FR-012).
-///
-/// Called when the inbox confirm pipeline resolves the root for a session.
-/// Only updates rows where `root_id IS NULL` to avoid overwriting a correctly
-/// set root with a different one.
-///
-/// # Errors
-/// Returns [`DbError::Database`] on query failure.
-pub async fn update_acquisition_session_root_id(
-    pool: &SqlitePool,
-    session_id: &str,
-    root_id: &str,
-) -> DbResult<()> {
-    sqlx::query(
-        "UPDATE acquisition_session SET root_id = ? \
-         WHERE id = ? AND root_id IS NULL",
-    )
-    .bind(root_id)
-    .bind(session_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// Set `root_id` on a `calibration_session` row (T036, FR-012).
-///
-/// See [`update_acquisition_session_root_id`] for semantics.
-///
-/// # Errors
-/// Returns [`DbError::Database`] on query failure.
-pub async fn update_calibration_session_root_id(
-    pool: &SqlitePool,
-    session_id: &str,
-    root_id: &str,
-) -> DbResult<()> {
-    sqlx::query(
-        "UPDATE calibration_session SET root_id = ? \
-         WHERE id = ? AND root_id IS NULL",
-    )
-    .bind(root_id)
-    .bind(session_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 /// Write `notes` to whichever session table owns `session_id` — an
 /// inventory session id is always exactly one of `acquisition_session` or
 /// `calibration_session` (spec 006 union), so this tries the acquisition
@@ -483,7 +453,7 @@ pub async fn update_calibration_session_root_id(
 /// `session_id` matches neither (caller maps that to `session.not_found`).
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn set_session_notes(
     pool: &SqlitePool,
     session_id: &str,
@@ -529,7 +499,7 @@ pub struct SessionCalibrationLinkRow {
 /// input simply produce no rows.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn list_calibration_matches_for_sessions(
     pool: &SqlitePool,
     session_ids: &[String],
@@ -560,7 +530,7 @@ pub async fn list_calibration_matches_for_sessions(
 /// Returns `Some(path_string)` when found, `None` when not found.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_library_root_path(pool: &SqlitePool, root_id: &str) -> DbResult<Option<String>> {
     let row: Option<(String,)> =
         sqlx::query_as("SELECT current_path FROM library_root WHERE id = ?")
@@ -575,7 +545,7 @@ pub async fn get_library_root_path(pool: &SqlitePool, root_id: &str) -> DbResult
 /// Returns `Some(state)` when found, `None` when not found.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_library_root_state(pool: &SqlitePool, root_id: &str) -> DbResult<Option<String>> {
     let row: Option<(String,)> = sqlx::query_as("SELECT state FROM library_root WHERE id = ?")
         .bind(root_id)
@@ -597,7 +567,7 @@ pub struct FileRecordLookupRow {
 /// read-only source-resolution step). Returns `None` when no row exists.
 ///
 /// # Errors
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_file_record_lookup(
     pool: &SqlitePool,
     file_record_id: &str,
@@ -907,9 +877,10 @@ mod tests {
 
     // ── list_sessions_for_root — frame_count / first_frame_id aggregation ────
 
-    /// Verifies that `json_array_length` and `json_extract('$[0]')` return the
-    /// same values a Rust parse of the raw `frame_ids` column would produce.
-    /// This is the parity assertion called for by the task brief.
+    /// Verifies that the `frame_count` subquery and `json_extract('$[0]')`
+    /// return the same values a Rust parse of the raw `frame_ids` column would
+    /// produce when no `file_record` row exists for the ids. This is the parity
+    /// assertion called for by the task brief.
     #[tokio::test]
     async fn list_sessions_frame_count_and_first_frame_id_match_raw_array() {
         let db = setup_db().await;
@@ -958,6 +929,49 @@ mod tests {
         let cal = rows.iter().find(|r| r.id == "cal-fc").expect("cal-fc missing");
         assert_eq!(cal.frame_count, 0, "empty array → 0");
         assert!(cal.first_frame_id.is_none(), "empty array → None");
+    }
+
+    /// A frame marked `missing` stops counting toward `frame_count` while its
+    /// session attribution is retained (astro-plan-2uwa) — the projection is
+    /// what makes retained membership safe to leave in place.
+    #[tokio::test]
+    async fn list_sessions_frame_count_excludes_missing_frames() {
+        let db = setup_db().await;
+
+        sqlx::query(
+            "INSERT INTO library_root (id, label, kind, current_path, state, created_at) \
+             VALUES ('root-fm', 'Lib', 'local', '/lib', 'active', '2026-01-01T00:00:00Z')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        for (id, state) in [("fm-1", "classified"), ("fm-2", "missing")] {
+            sqlx::query(
+                "INSERT INTO file_record \
+                    (id, root_id, relative_path, size_bytes, mtime, state, \
+                     first_seen_at, last_seen_at) \
+                 VALUES (?, 'root-fm', ?, 100, 't0', ?, 't0', 't0')",
+            )
+            .bind(id)
+            .bind(format!("{id}.fits"))
+            .bind(state)
+            .execute(db.pool())
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, root_id, frame_ids, created_at) \
+             VALUES ('acq-fm', 'k', 'root-fm', '[\"fm-1\",\"fm-2\"]', '2026-01-01T00:00:00Z')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        let filters = InventoryFilters::default();
+        let (rows, _) = list_sessions_for_root(db.pool(), "root-fm", &filters).await.unwrap();
+        let acq = rows.iter().find(|r| r.id == "acq-fm").expect("acq-fm missing");
+
+        assert_eq!(acq.frame_count, 1, "the missing frame must not count as active");
     }
 
     /// Verifies offset/limit pagination bounds results per source root.

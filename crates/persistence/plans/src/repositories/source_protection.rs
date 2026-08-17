@@ -49,12 +49,6 @@ pub struct ResolvedProtection {
     pub inherits_default: bool,
 }
 
-// ── Global defaults fallback ──────────────────────────────────────────────
-
-const DEFAULT_LEVEL: &str = "protected";
-const DEFAULT_BLOCK_PERMANENT_DELETE: bool = true;
-const DEFAULT_CATEGORIES: &[&str] = &["lights", "masters", "finals"];
-
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 fn parse_categories(json: Option<&str>) -> DbResult<Vec<String>> {
@@ -79,7 +73,7 @@ fn parse_categories(json: Option<&str>) -> DbResult<Vec<String>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`]
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`]
 /// on JSON encoding failure.
 pub async fn upsert_source_protection(
     pool: &SqlitePool,
@@ -120,7 +114,7 @@ pub async fn upsert_source_protection(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_source_protection_row(
     pool: &SqlitePool,
     source_id: &str,
@@ -135,19 +129,6 @@ pub async fn get_source_protection_row(
     Ok(row)
 }
 
-/// Delete the per-source override row, reverting to global default inheritance.
-///
-/// # Errors
-///
-/// Returns [`DbError::Database`] on query failure.
-pub async fn delete_source_protection(pool: &SqlitePool, source_id: &str) -> DbResult<()> {
-    sqlx::query("DELETE FROM source_protection_state WHERE source_id = ?")
-        .bind(source_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 /// Resolve effective protection for a source.
 ///
 /// Implements the precedence rule from data-model.md §Resolver:
@@ -158,7 +139,7 @@ pub async fn delete_source_protection(pool: &SqlitePool, source_id: &str) -> DbR
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`]
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`]
 /// on JSON decode failure.
 pub async fn resolve_protection(
     pool: &SqlitePool,
@@ -205,15 +186,6 @@ pub async fn resolve_protection(
 
 // ── Protection defaults (migration 0035, FR-018) ─────────────────────────
 
-/// Raw DB row from the `protection_defaults` table.
-#[derive(Clone, Debug, sqlx::FromRow)]
-pub struct ProtectionDefaultRow {
-    pub scope: String,
-    pub key: String,
-    pub value: String,
-    pub updated_at: String,
-}
-
 /// Get the raw JSON value for a specific (scope, key) protection default.
 ///
 /// Returns `None` when no row exists (caller should fall back to hard-coded
@@ -221,7 +193,7 @@ pub struct ProtectionDefaultRow {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_protection_default(
     pool: &SqlitePool,
     scope: &str,
@@ -241,7 +213,7 @@ pub async fn get_protection_default(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`]
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`]
 /// on JSON encoding failure.
 pub async fn set_protection_default(
     pool: &SqlitePool,
@@ -272,7 +244,7 @@ pub async fn set_protection_default(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure or [`DbError::Serialise`]
+/// Returns [`persistence_core::DbError::Database`] on query failure or [`persistence_core::DbError::Serialise`]
 /// on JSON encoding failure.
 pub async fn set_protection_default_with_conn(
     conn: &mut SqliteConnection,
@@ -294,49 +266,6 @@ pub async fn set_protection_default_with_conn(
     .await?;
 
     Ok(())
-}
-
-/// List all protection defaults for a given scope.
-///
-/// # Errors
-///
-/// Returns [`DbError::Database`] on query failure.
-pub async fn list_protection_defaults(
-    pool: &SqlitePool,
-    scope: &str,
-) -> DbResult<Vec<ProtectionDefaultRow>> {
-    let rows: Vec<ProtectionDefaultRow> = sqlx::query_as(
-        "SELECT scope, key, value, updated_at FROM protection_defaults WHERE scope = ? ORDER BY key ASC",
-    )
-    .bind(scope)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows)
-}
-
-/// Resolve effective protection using hard-coded fallback defaults.
-///
-/// Used when global settings row is absent (e.g. first run before migration).
-///
-/// # Errors
-///
-/// Returns [`DbError::Database`] or [`DbError::Serialise`] on failure.
-pub async fn resolve_protection_with_fallback(
-    pool: &SqlitePool,
-    source_id: &str,
-    category: Option<&str>,
-) -> DbResult<ResolvedProtection> {
-    let defaults: Vec<String> = DEFAULT_CATEGORIES.iter().map(|s| (*s).to_owned()).collect();
-    resolve_protection(
-        pool,
-        source_id,
-        category,
-        DEFAULT_LEVEL,
-        DEFAULT_BLOCK_PERMANENT_DELETE,
-        &defaults,
-    )
-    .await
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -384,20 +313,6 @@ mod tests {
 
         assert_eq!(row.level, "unprotected");
         assert_eq!(row.block_permanent_delete, Some(1));
-    }
-
-    #[tokio::test]
-    async fn delete_removes_row() {
-        let db = setup_db().await;
-        let source_id = "src-003";
-
-        upsert_source_protection(db.pool(), source_id, "unprotected", None, None, "user")
-            .await
-            .unwrap();
-        delete_source_protection(db.pool(), source_id).await.unwrap();
-
-        let row = get_source_protection_row(db.pool(), source_id).await.unwrap();
-        assert!(row.is_none());
     }
 
     #[tokio::test]

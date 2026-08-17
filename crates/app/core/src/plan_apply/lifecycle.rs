@@ -22,12 +22,25 @@ use super::{
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on connection failure (non-fatal at boot —
+/// Returns `persistence_core::DbError::Database` on connection failure (non-fatal at boot —
 /// caller should log and continue).
 pub async fn sweep_crashed_applying_plans(
     pool: &SqlitePool,
 ) -> Result<Vec<String>, persistence_core::DbError> {
     apply_repo::sweep_crashed_applying_plans(pool).await
+}
+
+/// List plans interrupted by an unclean shutdown (still `applying`, or `paused`
+/// with a `crash` reason), for the recovery prompt. Order-independent with
+/// respect to the async boot sweep.
+///
+/// # Errors
+///
+/// Returns [`persistence_core::DbError`] on connection failure.
+pub async fn list_crash_interrupted_plans(
+    pool: &SqlitePool,
+) -> Result<Vec<String>, persistence_core::DbError> {
+    apply_repo::list_crash_interrupted_plans(pool).await
 }
 
 // ── cancel_plan ───────────────────────────────────────────────────────────────
@@ -316,14 +329,14 @@ pub(super) async fn revalidate_pause_condition(
 /// Resume a paused plan apply run (R-Pause-1, T052).
 ///
 /// Re-validates the pause condition recorded on the run
-/// ([`revalidate_pause_condition`]) before transitioning back to
+/// (`revalidate_pause_condition`) before transitioning back to
 /// `applying`. If the condition is still present, resume is refused with
 /// the matching `*.still.*` code and the plan stays `paused` — it is never
 /// silently flipped to `applying` for a run that would immediately stall
 /// again (constitution §II, issue #575).
 ///
-/// On success, re-registers an [`ActiveRun`] (R-Concur-1) and re-spawns the
-/// executor (via [`spawn_executor_run`]) over the plan's remaining
+/// On success, re-registers an `ActiveRun` (R-Concur-1) and re-spawns the
+/// executor (via `spawn_executor_run`) over the plan's remaining
 /// `pending` items. Items already `failed` when the run paused — including
 /// the one that triggered the pause — stay terminal for this run; per-item
 /// retry is a separate affordance (`retry_plan_item`), not part of resume.

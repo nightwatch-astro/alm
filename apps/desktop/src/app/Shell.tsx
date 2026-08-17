@@ -20,8 +20,9 @@ import { LogPanelProvider, useLogPanel } from './LogPanelContext';
 import { OperationStatusProvider } from './OperationStatusContext';
 import { PageStatusProvider } from './PageStatusContext';
 import { ToastContainer } from '@/ui/ToastContainer';
+import { RecoveryBanner } from '@/features/recovery/RecoveryBanner';
 import { useOnboardingState, useWalkActive } from '@/features/onboarding/store';
-import { loadObservingState } from '@/features/targets/observing-sites/site-store';
+import { loadObservingState } from '@/shared/observing-sites/site-store';
 import {
   startUpdateSubscription,
   stopUpdateSubscription,
@@ -38,6 +39,11 @@ const OrientationWalk = lazy(() =>
   })),
 );
 
+/**
+ * Renders the application shell with navigation, routed content, global controls, and conditional panels.
+ *
+ * @returns The application shell layout.
+ */
 function ShellInner() {
   const prefs = usePreferences();
   const onboarding = useOnboardingState();
@@ -155,6 +161,7 @@ function ShellInner() {
       <div className={frameBody}>
         <Sidebar />
         <main className={frameMain} data-testid="frame-main">
+          <RecoveryBanner />
           <Outlet />
         </main>
       </div>
@@ -173,7 +180,7 @@ function ShellInner() {
 
 export function Shell() {
   return (
-    <OperationStatusProvider>
+    <OperationStatusProvider data-testid="shell">
       <PageStatusProvider>
         <LogPanelProvider>
           <ShellInner />

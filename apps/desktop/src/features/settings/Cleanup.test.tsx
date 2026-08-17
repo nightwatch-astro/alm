@@ -22,17 +22,34 @@ import {
   within,
 } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ZodType } from 'zod';
 
 const { mockGetSettings, mockPolicyGet, mockPolicyUpdate } = vi.hoisted(() => ({
   mockGetSettings: vi.fn(),
   mockPolicyGet: vi.fn(),
   mockPolicyUpdate: vi.fn(),
 }));
-vi.mock('./settingsIpc', () => ({
-  getSettings: mockGetSettings,
-  cleanupPolicyGet: mockPolicyGet,
-  cleanupPolicyUpdate: mockPolicyUpdate,
-}));
+// Only the transport is stubbed; the real per-scope schema validation runs.
+// `getSettingsTyped` is re-composed over the stub because its internal
+// `getSettings` call resolves through the module's own binding, which replacing
+// the export does not intercept.
+vi.mock(import('./settingsIpc'), async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getSettings: mockGetSettings,
+    getSettingsTyped: async <T extends Record<string, unknown>>(
+      scope: string,
+      schema: ZodType<T>,
+    ): Promise<T> =>
+      actual.parseSettingsValues(
+        (await mockGetSettings({ scope })).values,
+        schema,
+      ),
+    cleanupPolicyGet: mockPolicyGet,
+    cleanupPolicyUpdate: mockPolicyUpdate,
+  };
+});
 
 import { Cleanup } from './Cleanup';
 

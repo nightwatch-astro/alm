@@ -5,7 +5,7 @@
 // step, so a user who cannot read the base locale picks a language before any
 // of the other steps (which are explained in prose).
 //
-// Reuses the `pv-theme-swatch(es)` card styling that General.tsx's theme
+// Reuses the ThemePicker swatch card styling that General.tsx's theme
 // picker already established (bordered card, active state via
 // border/box-shadow) instead of cloning a parallel CSS block — this step
 // only needs the name label, not the theme-preview strip. Cards are plain

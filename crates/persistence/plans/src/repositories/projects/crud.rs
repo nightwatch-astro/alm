@@ -16,7 +16,7 @@ use super::{InsertProject, ProjectRow, ProjectRowTuple};
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violation or query failure.
+/// Returns `persistence_core::DbError::Database` on constraint violation or query failure.
 pub async fn insert_project(pool: &SqlitePool, data: &InsertProject<'_>) -> DbResult<String> {
     let mut conn = pool.acquire().await?;
     insert_project_conn(&mut conn, data).await
@@ -29,7 +29,7 @@ pub async fn insert_project(pool: &SqlitePool, data: &InsertProject<'_>) -> DbRe
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violation or query failure.
+/// Returns `persistence_core::DbError::Database` on constraint violation or query failure.
 pub(super) async fn insert_project_conn(
     conn: &mut SqliteConnection,
     data: &InsertProject<'_>,
@@ -59,7 +59,7 @@ pub(super) async fn insert_project_conn(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] when no project with the given id exists.
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_project(pool: &SqlitePool, id: &str) -> DbResult<ProjectRow> {
     let row: Option<ProjectRowTuple> = sqlx::query_as(
         "SELECT id, name, tool, lifecycle, path, notes, channel_drift, created_at, updated_at,
@@ -107,7 +107,7 @@ pub async fn get_project(pool: &SqlitePool, id: &str) -> DbResult<ProjectRow> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_project_canonical_target_id(
     pool: &SqlitePool,
     id: &str,
@@ -140,7 +140,7 @@ pub struct ProjectCanonicalTargetRow {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn get_project_canonical_target(
     pool: &SqlitePool,
     id: &str,
@@ -176,7 +176,7 @@ pub async fn get_project_canonical_target(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn set_project_canonical_target_id(
     pool: &SqlitePool,
     id: &str,
@@ -199,7 +199,7 @@ pub async fn set_project_canonical_target_id(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_projects(pool: &SqlitePool) -> DbResult<Vec<ProjectRow>> {
     let rows: Vec<ProjectRowTuple> = sqlx::query_as(
         "SELECT id, name, tool, lifecycle, path, notes, channel_drift, created_at, updated_at,
@@ -251,7 +251,7 @@ pub async fn list_projects(pool: &SqlitePool) -> DbResult<Vec<ProjectRow>> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_projects_by_canonical_target_id(
     pool: &SqlitePool,
     canonical_target_id: &str,
@@ -306,7 +306,7 @@ pub async fn list_projects_by_canonical_target_id(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn name_exists(
     pool: &SqlitePool,
     name: &str,
@@ -334,7 +334,7 @@ pub async fn name_exists(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn path_exists(
     pool: &SqlitePool,
     path: &str,
@@ -364,7 +364,7 @@ pub async fn path_exists(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn update_project_fields(
     pool: &SqlitePool,
     id: &str,
@@ -401,7 +401,7 @@ pub async fn update_project_fields(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn update_project_lifecycle(
     pool: &SqlitePool,
     id: &str,
@@ -457,7 +457,7 @@ pub enum ProjectAutoBlockOutcome {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on update, audit, or transaction failure.
+/// Returns `persistence_core::DbError::Database` on update, audit, or transaction failure.
 pub async fn apply_project_auto_block(
     pool: &SqlitePool,
     id: &str,
@@ -522,7 +522,7 @@ pub async fn apply_project_auto_block(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn update_project_lifecycle_unblock(
     pool: &SqlitePool,
     id: &str,
@@ -549,7 +549,7 @@ pub async fn update_project_lifecycle_unblock(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn set_archived_via_plan_id(
     pool: &SqlitePool,
     project_id: &str,
@@ -570,7 +570,7 @@ pub async fn set_archived_via_plan_id(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn clear_archived_via_plan_id(pool: &SqlitePool, project_id: &str) -> DbResult<()> {
     sqlx::query("UPDATE projects SET archived_via_plan_id = NULL WHERE id = ?")
         .bind(project_id)
@@ -605,7 +605,7 @@ type ArchivedProjectTuple =
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn list_archived_projects(pool: &SqlitePool) -> DbResult<Vec<ArchivedProjectRow>> {
     let rows: Vec<ArchivedProjectTuple> = sqlx::query_as(
         "SELECT p.id, p.name, p.path, p.updated_at, p.archived_via_plan_id, \
@@ -638,7 +638,7 @@ pub async fn list_archived_projects(pool: &SqlitePool) -> DbResult<Vec<ArchivedP
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on query failure.
+/// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn set_channel_drift(pool: &SqlitePool, id: &str, has_drift: bool) -> DbResult<()> {
     let now = Timestamp::now_iso();
     sqlx::query("UPDATE projects SET channel_drift = ?, updated_at = ? WHERE id = ?")

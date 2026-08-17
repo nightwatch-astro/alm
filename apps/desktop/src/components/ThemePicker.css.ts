@@ -6,7 +6,7 @@
  * target-search.css. Consumers: ThemePicker.tsx, StepLanguage.tsx.
  */
 
-import { style } from '@vanilla-extract/css';
+import { globalStyle, style } from '@vanilla-extract/css';
 import { uvars, vars } from '@/styles/themes.css';
 
 export const picker = style({
@@ -75,7 +75,18 @@ export const swatchPrev = style({
   border: `1px solid ${vars.borderSubtle}`,
 });
 
-// color swatch bars — apply background inline per theme
+// The three preview bars are bare `<i>` elements (ThemePicker.tsx) whose colours
+// come from the `data-theme` scope on `swatchPrev`, so they are addressed by
+// descendant selector and read the re-scoped tokens rather than carrying classes.
+globalStyle(`${swatchPrev} > i`, {
+  flex: 1,
+  display: 'block',
+});
+
+globalStyle(`${swatchPrev} > i:nth-child(1)`, { background: vars.bg });
+globalStyle(`${swatchPrev} > i:nth-child(2)`, { background: vars.surface });
+globalStyle(`${swatchPrev} > i:nth-child(3)`, { background: vars.accent });
+
 export const swatchName = style({
   fontSize: uvars.textSm,
   fontWeight: uvars.weightSemibold,

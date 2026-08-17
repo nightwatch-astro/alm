@@ -6,20 +6,13 @@
  *
  * Migrated to vanilla-extract (pilot/css-vanilla-extract branch).
  */
-import {
-  useEffect,
-  useRef,
-  useCallback,
-  useSyncExternalStore,
-  useState,
-} from 'react';
+import { useRef, useCallback, useSyncExternalStore, useState } from 'react';
 import { m } from '@/lib/i18n';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Collapsible } from '@base-ui-components/react/collapsible';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogPanel } from './LogPanelContext';
 import { subscribeLog, getLogSnapshot } from '@/data/logStore';
-import { startLogSubscription } from '@/data/logSubscription';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
 import { errMessage } from '@/lib/errors';
@@ -54,7 +47,9 @@ import {
 } from './logpanel.css';
 import { virtualInner, virtualScroll } from '@/ui/page-layout.css';
 
-// ── LogPanel component ────────────────────────────────────────────────────────
+/**
+ * Displays a filterable, virtualised log panel with tail following, navigation, and export controls.
+ */
 
 export function LogPanel() {
   const {
@@ -100,10 +95,6 @@ export function LogPanel() {
     overscan: 12,
     observeElementOffset: observeElementOffsetWithCleanup,
   });
-
-  useEffect(() => {
-    void startLogSubscription();
-  }, []);
 
   useHotkeys(
     {

@@ -63,7 +63,7 @@ import {
   actions as mdActionsCls,
   linkedStack,
   match,
-} from '@/ui/two-col-detail-layout.css';
+} from '@/components/two-col-detail-layout.css';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -74,7 +74,13 @@ interface Props {
   agingThresholdDays: number;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+/**
+ * Displays the selected calibration master and its matching, archive, and reveal actions.
+ *
+ * @param master - The calibration master to display, or `null` to show the selection prompt
+ * @param prefillSuggestion - Whether to prefill the matching suggestion
+ * @param agingThresholdDays - The age threshold for showing the replace-master action
+ */
 
 export function MasterDetail({
   master,

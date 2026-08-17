@@ -68,3 +68,18 @@ globalStyle('.pv-input:focus', {
   boxShadow: vars.focusRing,
 });
 globalStyle('.pv-input::placeholder', { color: vars.textFaint });
+
+// Same backward-compat alias for the hint/error text: ConfirmModal, SettingsKit,
+// NumberField and the project/target dialogs still apply these class names
+// directly, and their rules also left with target-search.css.
+globalStyle('.pv-field-hint', {
+  color: vars.textFaint,
+  fontWeight: 400,
+});
+
+globalStyle('.pv-field-error', {
+  display: 'block',
+  fontSize: uvars.textXs,
+  color: vars.danger,
+  marginTop: uvars.sp1,
+});

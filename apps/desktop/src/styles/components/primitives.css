@@ -93,6 +93,206 @@
   margin-bottom: var(--pv-sp-2);
 }
 
+/* === BOX / CARD === */
+.pv-box {
+  border: 1px solid var(--pv-border);
+  border-radius: var(--pv-radius-md);
+  background: var(--pv-bg);
+  overflow: hidden;
+}
+.pv-box__header {
+  padding: var(--pv-sp-2) var(--pv-sp-3);
+  background: var(--pv-surface);
+  border-bottom: 1px solid var(--pv-border-subtle);
+  font-size: var(--pv-text-xs); font-weight: var(--pv-weight-semibold);
+  text-transform: uppercase; letter-spacing: var(--pv-tracking-normal);
+  color: var(--pv-text-muted);
+}
+.pv-box__body { padding: var(--pv-sp-3); }
+
+/* === TABLE === */
+.pv-table { width: 100%; border-collapse: collapse; }
+.pv-table th {
+  text-align: left; font-size: var(--pv-text-xs);
+  font-weight: var(--pv-weight-medium);
+  color: var(--pv-text-muted); text-transform: uppercase;
+  letter-spacing: var(--pv-tracking-normal);
+  padding: var(--pv-sp-2) var(--pv-sp-3);
+  border-bottom: 1px solid var(--pv-border);
+  background: var(--pv-surface);
+  white-space: nowrap;
+  /* Fixed-layout columns: truncate the header instead of clipping it mid-glyph
+     or letting it spill. Columns carry a title= tooltip with the full label. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pv-table td {
+  padding: var(--pv-sp-2) var(--pv-sp-3);
+  border-bottom: 1px solid var(--pv-border-subtle);
+  font-size: var(--pv-text-sm);
+  vertical-align: middle;
+  /* Keep cell content within its column box: with table-layout:fixed an
+     un-clipped cell (e.g. a Type pill) visually overflows into the next column
+     and wide content can push the last column off-screen. Clip + ellipsis.
+     Cells that must wrap (e.g. the Targets filter-badge strip) opt back in via
+     `white-space: normal` on their own class. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pv-table td.mono { font-family: var(--pv-font-mono); font-size: var(--pv-text-xs); }
+.pv-table td.num { font-variant-numeric: tabular-nums; text-align: right; }
+.pv-table td.muted { color: var(--pv-text-muted); }
+
+/* Group-header rows (sessions/calibration/projects/inbox/targets grouping): the
+   expand/label button sits in the FIRST cell with NO colspan and intentionally
+   overflows across the empty adjacent cells to show the full "label · count".
+   Exempt these cells from the global clip above — otherwise the group label is
+   chopped to the first column's width (looks like a boxed/truncated chip). */
+.pv-table tr[class*="__group"] > td {
+  overflow: visible;
+}
+
+/* Group-header cell button: reset the native <button> chrome (UA outset border +
+   grey background) and lay out caret + label + count inline with spacing. Only
+   the inbox table had this; sessions/calibration/projects/targets rendered the
+   default button box with the count jammed against the label. Unified globally. */
+.pv-table [class*="__group-cell"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pv-sp-2);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-size: var(--pv-text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--pv-tracking-normal);
+  font-weight: var(--pv-weight-semibold);
+  color: var(--pv-text-muted);
+}
+
+/* Selectable rows (`_onClick`): pointer affordance + a keyboard focus ring.
+   `--pv-focus-ring` is a box-shadow triple that does not render on a
+   border-collapsed <tr>, so the ring is drawn with an inset outline (the accent
+   token) which paints on table rows in both WebKit and Chromium webviews. */
+.pv-table__row--clickable {
+  cursor: pointer;
+}
+.pv-table__row--clickable:focus-visible {
+  outline: 2px solid var(--pv-accent);
+  outline-offset: -2px;
+}
+
+/* Grouped/nested rows (`_indent`): the per-row `--pv-row-indent` variable set
+   on the <tr> pads the first cell's content (group-header button or leaf label),
+   replacing the per-table inline paddingLeft clones. */
+.pv-table__row--indented > td:first-child > :first-child {
+  padding-left: var(--pv-row-indent);
+}
+
+/* Cell content that is a Pill (or several) sitting next to its label: without a
+   flex gap the pill butts straight against the text, since adjacent JSX nodes
+   emit no whitespace. Wrap the cell's children in this to space them. Replaces
+   the per-feature clones of the same three declarations (calibration masters,
+   setup scan). `flex-wrap` matters where a row carries two pills plus a label.
+   Note `.pv-table td` clips with an ellipsis; an inline-flex box is atomic and
+   clips rather than ellipsizing, which is the long-standing behaviour here. */
+.pv-table__cell-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pv-sp-2);
+  flex-wrap: wrap;
+}
+
+/* Virtualized Table (opt-in `virtualized` prop): own scroll container + sticky
+   header + zero-chrome sentinel spacer rows (padding-spacer windowing). */
+.pv-table__scroll {
+  min-height: 0;
+  overflow: auto;
+}
+.pv-table__scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.pv-table__spacer td {
+  padding: 0;
+  border: 0;
+}
+
+/* === KV ROW === */
+.pv-kv { display: flex; padding: var(--pv-sp-1) 0; gap: var(--pv-sp-3); }
+.pv-kv__label {
+  width: 120px; flex-shrink: 0;
+  font-size: var(--pv-text-xs); color: var(--pv-text-muted);
+  text-transform: uppercase; letter-spacing: var(--pv-tracking-tight);
+  font-weight: var(--pv-weight-medium);
+}
+.pv-kv__value { font-size: var(--pv-text-sm); }
+.pv-kv__provenance {
+  font-size: var(--pv-text-xs); color: var(--pv-text-faint);
+  margin-left: var(--pv-sp-1);
+}
+
+/* === COVERAGE BAR === */
+.pv-coverage { display: flex; align-items: center; gap: var(--pv-sp-2); }
+.pv-coverage__label {
+  width: 32px; font-size: var(--pv-text-xs); font-weight: var(--pv-weight-medium);
+  text-align: right; flex-shrink: 0;
+}
+.pv-coverage__bar {
+  flex: 1; height: 6px; background: var(--pv-rule2);
+  border-radius: 3px; overflow: hidden;
+}
+.pv-coverage__fill {
+  height: 100%; border-radius: 3px;
+  background: var(--pv-accent);
+  transition: width var(--pv-transition-slow);
+}
+.pv-coverage__fill--low { background: var(--pv-warn); }
+.pv-coverage__fill--ok { background: var(--pv-ok); }
+.pv-coverage__value {
+  width: 36px; font-size: var(--pv-text-xs); color: var(--pv-text-muted);
+  text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+
+/* === BANNER === */
+.pv-banner {
+  padding: var(--pv-sp-2) var(--pv-sp-3);
+  border-radius: var(--pv-radius-sm);
+  font-size: var(--pv-text-xs);
+  display: flex; align-items: center; gap: var(--pv-sp-2);
+}
+.pv-banner--warn { background: var(--pv-warn-bg); color: var(--pv-warn); border: 1px solid var(--pv-warn-border); }
+.pv-banner--danger { background: var(--pv-danger-bg); color: var(--pv-danger); border: 1px solid var(--pv-danger-border); }
+.pv-banner--info { background: var(--pv-info-bg); color: var(--pv-info); border: 1px solid var(--pv-info-border); }
+/* Optional inline call-to-action link inside a banner (e.g. "no site" -> Settings). */
+.pv-banner__action-link { color: inherit; font-weight: var(--pv-weight-medium); text-decoration: underline; white-space: nowrap; }
+
+/* === PROPERTY TABLE === */
+.pv-prop-table { width: 100%; }
+.pv-prop-table__row {
+  display: flex; border-bottom: 1px solid var(--pv-border-subtle);
+  padding: var(--pv-sp-2) 0;
+}
+.pv-prop-table__label {
+  width: 140px; flex-shrink: 0;
+  font-size: var(--pv-text-xs); color: var(--pv-text-muted);
+  font-weight: var(--pv-weight-medium);
+}
+.pv-prop-table__value {
+  flex: 1; font-size: var(--pv-text-sm);
+  display: flex; align-items: center; gap: var(--pv-sp-2);
+}
+.pv-prop-table__source {
+  font-size: var(--pv-text-xs); color: var(--pv-text-faint);
+  margin-left: auto;
+}
+.pv-prop-table__row--conflict { background: var(--pv-warn-bg); }
+
 /* === GLOBAL UTILITIES ===
  * Shared presentational classes extracted from duplicated component rules.
  * Reuse these instead of adding another per-feature clone.

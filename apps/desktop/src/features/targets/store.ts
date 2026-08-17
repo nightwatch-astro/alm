@@ -7,7 +7,7 @@
  * Mirrors `features/sessions/store.ts`: local `unwrap(await commands.X(req))`
  * helpers + `useQuery`/`useMutation` hooks keyed via `queryKeys.targets`.
  * Mutations invalidate the affected key(s) instead of the old manual `load()`
- * refetch calls that `TargetDetailV2`/`TargetsPage` used to thread through
+ * refetch calls that `TargetDetail`/`TargetsPage` used to thread through
  * props (`onMutated`).
  */
 
@@ -97,7 +97,7 @@ export interface TargetsListState extends QueryState<TargetListItem[]> {
  * for the unfiltered catalog.
  *
  * `refetch` replaces the old manual `load()` re-fetch — `TargetsPage` calls it
- * after "Add target" and passes it as `TargetDetailV2`'s `onMutated` so an
+ * after "Add target" and passes it as `TargetDetail`'s `onMutated` so an
  * alias/display-alias edit refreshes the list's search/label data too.
  */
 export function useTargets(search?: string): TargetsListState {
@@ -196,7 +196,7 @@ export function useTargetAstroFormat(
 
 // ── Mutation hooks ────────────────────────────────────────────────────────────
 //
-// Every mutation below invalidates its target's `detail` key so `TargetDetailV2`
+// Every mutation below invalidates its target's `detail` key so `TargetDetail`
 // refetches without a manual `load()` (spec `tiny/targets-tanstack-query-migration`).
 // The LIST payload also carries alias/display-label search terms, but is
 // refreshed via the `onMutated` callback prop (TargetsPage's `useTargets()`

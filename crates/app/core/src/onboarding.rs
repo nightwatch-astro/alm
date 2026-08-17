@@ -5,21 +5,21 @@
 //!
 //! Successor to the removed spec-010 first-project coach state machine.
 //! Three layers share this one backend:
-//! - L1 orientation walk: [`orientation_complete`] sets
+//! - L1 orientation walk: `orientation_complete` sets
 //!   `onboarding_flags.orientation_done_at`.
-//! - L2 checklists: [`get_state`]/[`set_item_state`]/[`section_set`] over
-//!   [`ITEM_REGISTRY`].
+//! - L2 checklists: `get_state`/`set_item_state`/`section_set` over
+//!   `ITEM_REGISTRY`.
 //! - L3 find-it spotlight: reads `anchor` from the registry; no backend use
 //!   case (UI-only).
 //!
 //! ## Item registry
 //!
-//! [`ITEM_REGISTRY`] is the single source of truth for the five FR-006
+//! `ITEM_REGISTRY` is the single source of truth for the five FR-006
 //! workflow pages (`inbox`, `sessions`, `calibration`, `targets`,
 //! `projects`), 2-4 items each. AUTOMATIC items (`completion_topic` +
 //! `seed_query` both set) are ticked by the live bus subscriber
 //! (`apps/desktop/src-tauri/src/commands/onboarding.rs`, T005) via
-//! [`tick_from_event`] and re-derived by seed/restore below; the rest are
+//! `tick_from_event` and re-derived by seed/restore below; the rest are
 //! manual (FR-017). `completion_topic`/`seed_query` pairs are drawn from the
 //! research R4 verified auto-tick inventory only — no new backend events are
 //! minted (decision record #2). Labels/tooltips/reasons are Paraglide keys
@@ -27,32 +27,32 @@
 //!
 //! ## Seed/restore derivation (FR-014/PQ-001)
 //!
-//! [`target_state_for`] computes "what should this item's state be given
+//! `target_state_for` computes "what should this item's state be given
 //! real recorded data" for every item — the one derivation routine backing
 //! both:
-//! - the lazy first-activation seed ([`ensure_seeded`], called from
-//!   [`get_state`]): only inserts rows that don't exist yet, via
+//! - the lazy first-activation seed (`ensure_seeded`, called from
+//!   `get_state`): only inserts rows that don't exist yet, via
 //!   `persistence_lifecycle::repositories::onboarding::insert_if_missing` — never
 //!   re-touches an existing row, so a mere read can never silently
 //!   auto-tick an item (that would bypass the bus subscriber, breaking
 //!   FR-021's backend-authoritative-via-subscriber-only invariant);
-//! - the explicit [`restore`] command: re-derives every AUTOMATIC item's row
+//! - the explicit `restore` command: re-derives every AUTOMATIC item's row
 //!   via `upsert_if_unsettled`, which is a no-op for settled
 //!   (`manually_checked`/`dismissed`) rows — user progress is never
 //!   discarded;
-//! - the once-per-startup [`reconcile_missed_events`] pass (PQ-005): the same
+//! - the once-per-startup `reconcile_missed_events` pass (PQ-005): the same
 //!   re-derivation narrowed to rows that are `unchecked` from a non-`user`
 //!   source, so a missed live event self-heals without ever undoing a
 //!   deliberate un-check.
 //!
 //! ## FR-031 settle path
 //!
-//! [`settle_and_maybe_hide`] runs after every write that could be a
-//! *settling* transition — a live-event tick ([`tick_from_event`]) or a
-//! manual check-off/dismiss ([`set_item_state`]) — never seed/restore, which
+//! `settle_and_maybe_hide` runs after every write that could be a
+//! *settling* transition — a live-event tick (`tick_from_event`) or a
+//! manual check-off/dismiss (`set_item_state`) — never seed/restore, which
 //! are derivations, not transitions. When it leaves zero `unchecked` rows
 //! across the whole registry, `onboarding_flags.section_hidden_at` is set.
-//! [`restore`] always clears that flag regardless of the resulting item
+//! `restore` always clears that flag regardless of the resulting item
 //! states (FR-014) — a still-complete section stays visible until a NEW
 //! settling transition or an explicit `section_set { hidden: true }`.
 
@@ -289,7 +289,7 @@ fn page_order(page: OnboardingPage) -> u8 {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum OnboardingError {
-    /// `item.set_state` referenced an `item_id` not in [`ITEM_REGISTRY`].
+    /// `item.set_state` referenced an `item_id` not in `ITEM_REGISTRY`.
     #[error("unknown onboarding item id: {0}")]
     UnknownItem(String),
     /// An automatic item was manually marked complete. Automatic completion
@@ -605,8 +605,8 @@ pub async fn orientation_complete(
 
 /// `onboarding.section.set` — explicit remove (FR-013) and collapse
 /// persistence (FR-012). `hidden` accepts only `true`; unhiding is
-/// exclusively [`restore`]. The FR-031 completion auto-hide is written only
-/// by [`settle_and_maybe_hide`], never through this command.
+/// exclusively `restore`. The FR-031 completion auto-hide is written only
+/// by `settle_and_maybe_hide`, never through this command.
 ///
 /// # Errors
 ///
@@ -678,16 +678,16 @@ pub async fn tick_from_event(pool: &SqlitePool, item_id: &str) -> Result<(), Onb
 /// item stays `unchecked` forever unless the user happens to run the Settings
 /// restore, which nothing prompts them to do.
 ///
-/// Re-derives AUTOMATIC items via [`target_state_for`], but only for rows that
+/// Re-derives AUTOMATIC items via `target_state_for`, but only for rows that
 /// are currently `unchecked` from a non-user source. A deliberate PQ-002
 /// un-check must survive startup reconciliation.
 ///
-/// Items with no row yet are skipped, not seeded: [`ensure_seeded`] derives
+/// Items with no row yet are skipped, not seeded: `ensure_seeded` derives
 /// those correctly on the next `state.get`, so there is nothing to recover.
 ///
 /// This does NOT violate FR-021's backend-authoritative-via-subscriber-only
 /// invariant. The invariant that matters is that a mere READ must never
-/// auto-tick (why [`ensure_seeded`] uses `insert_if_missing`). This is a
+/// auto-tick (why `ensure_seeded` uses `insert_if_missing`). This is a
 /// distinct, explicit, once-per-startup write path deriving from real recorded
 /// data — not a read side effect. It runs the FR-031 settle path for the same
 /// reason: it stands in for the tick that was lost, so it must settle exactly

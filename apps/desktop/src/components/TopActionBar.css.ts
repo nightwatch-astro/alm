@@ -31,3 +31,25 @@ export const actions = style({
   gap: 'var(--pv-sp-2)',
   alignItems: 'center',
 });
+
+// `wrap` variant (task #81): relaxes the fixed single-row height so the title
+// and the action cluster occupy their own rows and cannot overlap the content
+// below. Was `.pv-project-detail__action-bar .pv-action-bar*` in projects.css.
+export const actionBarWrap = style({
+  height: 'auto',
+  minHeight: 'var(--pv-toolbar-height)',
+  flexWrap: 'wrap',
+  rowGap: 'var(--pv-sp-2)',
+  paddingTop: 'var(--pv-sp-2)',
+  paddingBottom: 'var(--pv-sp-2)',
+});
+
+// `flex: 1 1 100%` already forces this onto its own flex line, so the wrap
+// variant renders no spacer: an empty full-width spacer would form a third,
+// zero-height line and apply `rowGap` twice.
+export const actionsWrap = style({
+  flex: '1 1 100%',
+  justifyContent: 'flex-end',
+  flexWrap: 'wrap',
+  rowGap: 'var(--pv-sp-1)',
+});

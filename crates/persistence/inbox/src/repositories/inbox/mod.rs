@@ -26,8 +26,8 @@ mod tests;
 pub use classification::{
     delete_evidence_for_item_conn, delete_evidence_for_items, get_classification, insert_evidence,
     insert_evidence_batch, insert_evidence_conn, list_evidence, list_file_overrides_for_group,
-    mark_file_override_stale, mark_override_stale, set_file_override, set_manual_override,
-    set_overrides, upsert_classification, upsert_classification_batch, upsert_classification_conn,
+    mark_file_override_stale, mark_override_stale, set_file_override, set_overrides,
+    upsert_classification, upsert_classification_batch, upsert_classification_conn,
     FileOverrideRow, InboxClassificationRow, InboxEvidenceRow, InsertEvidence,
     UpsertClassification, UpsertClassificationRow,
 };

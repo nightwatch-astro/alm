@@ -720,7 +720,7 @@ describe('InboxDetail — #789 exposure formatting', () => {
     );
     fireEvent.click(screen.getByTestId('inbox-files-popover-trigger'));
     const popup = screen.getByTestId('inbox-files-popup');
-    expect(within(popup).getByText('6.92 s')).toBeInTheDocument();
+    expect(within(popup).getByText('6.9 s')).toBeInTheDocument();
     expect(
       within(popup).queryByText('6.92447668013071 s'),
     ).not.toBeInTheDocument();
@@ -762,7 +762,7 @@ describe('InboxDetail — #789 exposure formatting', () => {
       .getByRole('rowheader', { name: m.inbox_col_exposure() })
       .closest('[role="row"]') as HTMLElement;
     expect(within(exposureRow).getAllByRole('cell')[0]).toHaveTextContent(
-      '6.92 s',
+      '6.9 s',
     );
   });
 });

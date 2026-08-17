@@ -2,12 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * CommandPalette T008 integration tests — alias-aware target search routing.
- *
- * Logic-layer tests validate:
- *   - search results are filtered/routed correctly
- *   - target results produced by searchGlobal have the right shape
- *   - the navigate call receives the verbatim route from the result
+ * CommandPalette tests — target search wiring, PAGES route guards, and rendered
+ * smoke coverage.
  *
  * Rendered smoke tests (#581 review) mount the real palette with a local
  * ResizeObserver/scrollIntoView stub (cmdk + @base-ui-components/react/dialog
@@ -15,27 +11,12 @@
  * the initialFocus fix, and ArrowDown+Enter keyboard navigation. Pixel-level
  * visual verification stays with Playwright (WSL constraint).
  *
- * Tests:
- *  1. Target search result routes start with /targets/
- *  2. Alias-matched result sublabel surfaces the matched alias
- *  3. Navigate receives the full /targets/<uuid> route string
- *  4. Non-target results are not routed to /targets/
- *  5. Empty query does not trigger searchGlobal
- *  6. Debounce: searchGlobal not called immediately on input change
- *  7. Real PAGES constant includes Targets (list page, not detail — T007)
- *  8. Real PAGES does not include a /targets/:id or /targets/$id pattern
- *  9. Real PAGES routes contain no path params
- * 10. Real PAGES label thunks resolve to non-empty strings
+ * PAGES tests import the constant directly from CommandPalette.tsx (not a
+ * hand-copied array) so a route rename/removal in production is caught here.
  *
- * Tests 7-10 import PAGES directly from CommandPalette.tsx (not a
- * hand-copied array) so a route rename/removal in production is actually
- * caught here.
- *
- * `buildTargetResults` tests (#581) exercise the client-side target matcher
- * against the REAL `matchesSearch`/`normalizeDesig` from TargetsPage.tsx (the
- * same import target-search.test.ts already uses as its source of truth) so a
- * regression in either the palette's wiring or the shared matcher is caught
- * here, not just at `/targets`.
+ * `buildTargetResults` tests cover ranking/shaping only: matching lives in the
+ * backend `target.list(search)` endpoint (kyo7.111), and the palette must not
+ * re-filter its rows.
  */
 
 import {
@@ -55,7 +36,6 @@ import {
   act,
 } from '@testing-library/react';
 import { CommandPalette, PAGES, buildTargetResults } from './CommandPalette';
-import { matchesSearch, normalizeDesig } from '@/features/targets/TargetsPage';
 import { commands } from '@/bindings/index';
 import type { TargetListItem } from '@/bindings/index';
 import { router } from './router';
@@ -175,15 +155,12 @@ describe('CommandPalette debounce contract', () => {
   });
 });
 
-// ── buildTargetResults (#581) ─────────────────────────────────────────────────
+// ── buildTargetResults (#581, kyo7.111) ───────────────────────────────────────
 //
-// Exercises the palette's client-side target matcher against the REAL
-// `matchesSearch`/`normalizeDesig` from TargetsPage.tsx — the same pairing
-// `target-search.test.ts` uses — so a regression in either the palette's
-// wiring or the shared matcher fails here, not just at `/targets`. This is
-// the exact bug from #581: the backend's SQL `LIKE` never matched "M31"
-// against a stored "M 31" designation; the fix routes through this matcher
-// instead of a second, drifting implementation.
+// `target.list(search)` owns matching (alias-aware, over the ~13k-alias
+// catalog); buildTargetResults only ranks and shapes the rows it is given. It
+// must NOT re-filter: aliases are absent from `TargetListItem`, so a
+// client-side filter would drop alias-only hits like "Caldwell 20" -> NGC 7000.
 
 function targetItem(
   id: string,
@@ -201,107 +178,67 @@ function targetItem(
   };
 }
 
-describe('buildTargetResults (#581 client-side target search via designation+label)', () => {
-  // Alias search moved to backend (GF-11 / DS-16); client-side matchesSearch
-  // matches only primaryDesignation and effectiveLabel.
+describe('buildTargetResults (ranks server-filtered target.list rows)', () => {
   const m31 = targetItem('t-m31', 'M 31', 'Andromeda Galaxy');
   const ngc7000 = targetItem('t-ngc7000', 'NGC 7000', 'North America Nebula');
   const targets = [m31, ngc7000];
 
   it('empty query short-circuits to no results (no crash on blank input)', () => {
-    expect(
-      buildTargetResults(targets, '', { matchesSearch, normalizeDesig }),
-    ).toEqual([]);
-    expect(
-      buildTargetResults(targets, '   ', { matchesSearch, normalizeDesig }),
-    ).toEqual([]);
+    expect(buildTargetResults(targets, '')).toEqual([]);
+    expect(buildTargetResults(targets, '   ')).toEqual([]);
   });
 
   it('exact match: "M 31" scores highest and routes to /targets/<id>', () => {
-    const results = buildTargetResults(targets, 'M 31', {
-      matchesSearch,
-      normalizeDesig,
-    });
+    const results = buildTargetResults([m31], 'M 31');
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe('t-m31');
     expect(results[0].route).toBe('/targets/t-m31');
     expect(results[0].score).toBe(1);
   });
 
-  it('compact query "M31" matches the spaced designation "M 31" (#581 bug)', () => {
-    // This is the exact case the backend LIKE match missed: "M31" (no space)
-    // against a stored "M 31" designation.
-    const results = buildTargetResults(targets, 'M31', {
-      matchesSearch,
-      normalizeDesig,
-    });
-    expect(results.map((r) => r.id)).toContain('t-m31');
+  it('compact query "M31" still scores the spaced designation "M 31" as exact', () => {
+    // Whitespace-collapsing normalization: "M31" === "M 31" for scoring.
+    expect(buildTargetResults([m31], 'M31')[0].score).toBe(1);
   });
 
   it('prefix match scores above a plain contains match', () => {
-    const prefixResult = buildTargetResults(targets, 'NGC 70', {
-      matchesSearch,
-      normalizeDesig,
-    })[0];
-    const containsResult = buildTargetResults(targets, 'C 700', {
-      matchesSearch,
-      normalizeDesig,
-    })[0];
-    expect(prefixResult.id).toBe('t-ngc7000');
-    expect(containsResult.id).toBe('t-ngc7000');
+    const prefixResult = buildTargetResults([ngc7000], 'NGC 70')[0];
+    const containsResult = buildTargetResults([ngc7000], 'C 700')[0];
     expect(prefixResult.score ?? 0).toBeGreaterThan(containsResult.score ?? 0);
   });
 
-  it('"Andromeda" matches M 31 via effectiveLabel "Andromeda Galaxy" (not alias lookup)', () => {
-    // effectiveLabel = 'Andromeda Galaxy' → still matches "Andromeda" via label.
-    // Alias-only matches (no label, only alias entry) require backend search.
-    const results = buildTargetResults(targets, 'Andromeda', {
-      matchesSearch,
-      normalizeDesig,
-    });
-    expect(results.map((r) => r.id)).toContain('t-m31');
+  it('keeps an alias-only row the query text does not appear in (kyo7.111)', () => {
+    // The regression this fix undoes: "Caldwell 20" appears in neither NGC
+    // 7000's designation nor its label, so a client-side filter dropped the
+    // row the backend had already matched by alias.
+    const results = buildTargetResults([ngc7000], 'Caldwell 20');
+    expect(results.map((r) => r.id)).toEqual(['t-ngc7000']);
+    // Ranked below any designation/label match.
+    expect(results[0].score).toBe(0.6);
   });
 
-  it('"Caldwell 20" does not match on client — alias-only queries need backend search', () => {
-    // "Caldwell 20" is not in primaryDesignation ("NGC 7000") nor effectiveLabel
-    // ("North America Nebula") — alias lookup moved to backend (GF-11 / DS-16).
-    const results = buildTargetResults(targets, 'Caldwell 20', {
-      matchesSearch,
-      normalizeDesig,
-    });
-    expect(results).toHaveLength(0);
-  });
-
-  it('non-matching query returns no results', () => {
-    const results = buildTargetResults(targets, 'zzz-no-such-target', {
-      matchesSearch,
-      normalizeDesig,
-    });
-    expect(results).toEqual([]);
+  it('caps results at the per-kind budget of 8', () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      targetItem(`t-${i}`, `NGC ${7000 + i}`),
+    );
+    expect(buildTargetResults(many, 'NGC')).toHaveLength(8);
   });
 
   it('sublabel carries the primary designation when it differs from the label', () => {
-    const results = buildTargetResults(targets, 'Andromeda', {
-      matchesSearch,
-      normalizeDesig,
-    });
-    expect(results[0].sublabel).toBe('M 31');
+    expect(buildTargetResults([m31], 'Andromeda')[0].sublabel).toBe('M 31');
   });
 
   it('sublabel is null when the designation equals the effective label', () => {
     const bare = targetItem('t-bare', 'Sh2-155', 'Sh2-155');
-    const results = buildTargetResults([bare], 'Sh2-155', {
-      matchesSearch,
-      normalizeDesig,
-    });
-    expect(results[0].sublabel).toBeNull();
+    expect(buildTargetResults([bare], 'Sh2-155')[0].sublabel).toBeNull();
   });
 
   it('results are sorted by descending score', () => {
-    const results = buildTargetResults(targets, 'NGC', {
-      matchesSearch,
-      normalizeDesig,
-    });
+    const results = buildTargetResults(
+      [ngc7000, targetItem('t-exact', 'NGC')],
+      'NGC',
+    );
+    expect(results[0].id).toBe('t-exact');
     for (let i = 1; i < results.length; i++) {
       expect(results[i - 1].score ?? 0).toBeGreaterThanOrEqual(
         results[i].score ?? 0,
@@ -413,50 +350,73 @@ describe('CommandPalette rendered smoke (#581)', () => {
   });
 });
 
-// ── targetList cache TTL (nJ09c/nJ10a carry-over) ──────────────────────────────
-//
-// The palette previously called `commands.targetList()` on every open. These
-// assert the cached-fetch fix: a re-open inside TARGET_CACHE_TTL_MS reuses the
-// cached catalog; a re-open after the TTL elapses refetches.
+// ── Server-side target search (kyo7.111) ──────────────────────────────────────
 
-describe('CommandPalette targetList cache TTL', () => {
+describe('CommandPalette server-side target search', () => {
   beforeEach(() => {
-    // Prior describe blocks in this file also mount + open the palette, so
-    // the mock's call count carries over — reset before each TTL assertion.
     vi.mocked(commands.targetList).mockClear();
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it('reopening within the TTL does not refetch targetList', async () => {
+  it('does not fetch targets until the user types', async () => {
     await openPalette();
-    await waitFor(() => {
-      expect(commands.targetList).toHaveBeenCalledTimes(1);
-    });
-    // Close and reopen — the toggle hotkey flips `open` back to false, then true.
-    fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
-    fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
-    await waitFor(() => {
-      expect(
-        document.querySelector('[data-testid="command-palette"]'),
-      ).not.toBeNull();
-    });
-    expect(commands.targetList).toHaveBeenCalledTimes(1);
+    expect(commands.targetList).not.toHaveBeenCalled();
   });
 
-  it('reopening after the TTL elapses refetches targetList', async () => {
+  it('forwards the query to target.list and shows an alias-only match', async () => {
+    // The regression: "Caldwell 20" is an alias of NGC 7000 and appears in
+    // neither its designation nor its label, so only the backend can match it.
+    vi.mocked(commands.targetList).mockResolvedValue({
+      status: 'ok',
+      data: [
+        {
+          id: 't-ngc7000',
+          effectiveLabel: 'North America Nebula',
+          primaryDesignation: 'NGC 7000',
+          objectType: 'other',
+          raDeg: 0,
+          decDeg: 0,
+          sessionCount: 0,
+        },
+      ],
+    } as Awaited<ReturnType<typeof commands.targetList>>);
+
     await openPalette();
+    const input = assertDefined(
+      document.querySelector<HTMLInputElement>('[data-testid="palette-input"]'),
+      'command palette search input',
+    );
+    fireEvent.change(input, { target: { value: 'Caldwell 20' } });
+
     await waitFor(() => {
-      expect(commands.targetList).toHaveBeenCalledTimes(1);
+      expect(commands.targetList).toHaveBeenCalledWith('Caldwell 20');
     });
-    const realNow = Date.now();
-    vi.spyOn(Date, 'now').mockReturnValue(realNow + 61_000);
-    fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
-    fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
     await waitFor(() => {
-      expect(commands.targetList).toHaveBeenCalledTimes(2);
+      expect(document.body.textContent).toContain('North America Nebula');
     });
+  });
+
+  it('debounces target.list by 200ms', async () => {
+    await openPalette();
+    const input = assertDefined(
+      document.querySelector<HTMLInputElement>('[data-testid="palette-input"]'),
+      'command palette search input',
+    );
+    vi.mocked(commands.targetList).mockClear();
+
+    vi.useFakeTimers();
+    fireEvent.change(input, { target: { value: 'M31' } });
+    await act(async () => {
+      vi.advanceTimersByTime(199);
+    });
+    expect(commands.targetList).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(commands.targetList).toHaveBeenCalledTimes(1);
   });
 });

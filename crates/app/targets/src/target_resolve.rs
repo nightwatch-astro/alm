@@ -16,7 +16,7 @@
 //! [`promote_by_id`], called from the app-layer commit points (add to
 //! project, link to session, favourite, Inbox-confirm) with the redb-cache id
 //! a prior `target.search`/`target.resolve` response already returned. The
-//! manual `override` path ([`apply_override`], FR-014/T032) is itself such a
+//! manual `override` path (`apply_override`, FR-014/T032) is itself such a
 //! commit — the user has explicitly bound a query to a chosen target — and
 //! keeps writing `canonical_target` directly.
 //!

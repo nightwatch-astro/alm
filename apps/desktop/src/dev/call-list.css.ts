@@ -38,6 +38,10 @@ export const tdStarted = style({
 });
 export const tdActions = style({
   padding: 'var(--pv-sp-1) var(--pv-sp-2)',
+});
+// `display: flex` belongs on a wrapper, not the `<td>`: a flex cell leaves table
+// layout, so its column stops contributing to width and baseline alignment.
+export const actions = style({
   display: 'flex',
   gap: 'var(--pv-sp-1)',
 });

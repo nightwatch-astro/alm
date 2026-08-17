@@ -114,10 +114,14 @@ export function ThemePicker({
             ✓
           </span>
         )}
-        <span className={tp.swatchPrev} data-theme={previewTheme}>
-          <i className="pv-theme-swatch__bg" />
-          <i className="pv-theme-swatch__surface" />
-          <i className="pv-theme-swatch__accent" />
+        <span
+          className={tp.swatchPrev}
+          data-theme={previewTheme}
+          data-testid="theme-swatch-preview"
+        >
+          <i />
+          <i />
+          <i />
         </span>
         <span className={tp.swatchName}>{theme.label()}</span>
         <span className={tp.swatchMode}>{modeLabel}</span>

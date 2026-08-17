@@ -161,7 +161,7 @@ pub struct InsertFlatFamily<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_calibration_family(
     conn: &mut SqliteConnection,
     params: &InsertCalibrationFamily<'_>,
@@ -194,7 +194,7 @@ pub async fn insert_calibration_family(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_dark_recipe(
     conn: &mut SqliteConnection,
     params: &InsertDarkRecipe<'_>,
@@ -232,7 +232,7 @@ pub async fn insert_dark_recipe(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_bias_recipe(
     conn: &mut SqliteConnection,
     params: &InsertBiasRecipe<'_>,
@@ -266,7 +266,7 @@ pub async fn insert_bias_recipe(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on constraint violations or SQL errors.
+/// Returns `persistence_core::DbError::Database` on constraint violations or SQL errors.
 pub async fn insert_flat_family(
     conn: &mut SqliteConnection,
     params: &InsertFlatFamily<'_>,
@@ -306,7 +306,7 @@ pub async fn insert_flat_family(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no matching row exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_family_by_public_id(
     pool: &SqlitePool,
     public_id: &str,
@@ -331,7 +331,7 @@ pub async fn get_family_by_public_id(
 /// # Errors
 ///
 /// Returns [`DbError::NotFound`] if no matching row exists, or
-/// [`DbError::Database`] on SQL errors.
+/// `persistence_core::DbError::Database` on SQL errors.
 pub async fn get_family_by_row_id(
     pool: &SqlitePool,
     row_id: i64,
@@ -423,7 +423,7 @@ pub async fn get_flat_family(pool: &SqlitePool, family_row_id: i64) -> DbResult<
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn find_dark_bias_family(
     pool: &SqlitePool,
     camera_row_id: i64,
@@ -454,7 +454,7 @@ pub async fn find_dark_bias_family(
 ///
 /// # Errors
 ///
-/// Returns [`DbError::Database`] on SQL errors.
+/// Returns `persistence_core::DbError::Database` on SQL errors.
 pub async fn find_flat_family(
     pool: &SqlitePool,
     optical_profile_row_id: i64,

@@ -8,7 +8,7 @@ import {
   linked as linkedCls,
   head,
   muted as mutedCls,
-} from '@/ui/two-col-detail-layout.css';
+} from './two-col-detail-layout.css';
 
 export interface TwoColDetailLayoutProps {
   /** Left property column (typically a `PropertyTable` half). */
@@ -42,10 +42,12 @@ export interface TwoColDetailLayoutProps {
 }
 
 /**
- * The two-column-properties + third-slot detail layout (`.pv-session-detail2`,
- * #813) shared by Sessions/Calibration/Inbox detail panes. Wraps the CSS
- * convention in one component so a future layout change (spacing, a11y
- * attribute, responsive behavior) is applied once instead of hand-copied.
+ * Renders a shared detail layout with property columns and an optional linked section.
+ *
+ * @param colB - Optional second property column.
+ * @param extraCols - Additional property columns; nullish entries are skipped.
+ * @param linked - Optional content for the trailing linked section.
+ * @param linkedClassName - Additional class name for the linked section.
  */
 export function TwoColDetailLayout({
   colA,
@@ -94,11 +96,10 @@ export interface DetailLinkedGroupProps {
 }
 
 /**
- * A single labeled block inside a `linked` slot (#813): heading + either
- * content or a muted empty placeholder. Same `__head`/`__muted` convention
- * `SessionDetail`'s linked-projects block and `InboxDetail`'s Files column
- * apply inline; extracted here so `SessionListPopover` doesn't hand-roll the
- * two class names itself.
+ * Renders a labelled content block with an optional empty-state placeholder.
+ *
+ * @param empty - Whether to display the empty-state content instead of the children.
+ * @param emptyLabel - Content displayed when the block is empty.
  */
 export function DetailLinkedGroup({
   label,

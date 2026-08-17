@@ -208,7 +208,14 @@ async fn mark_missing_and_resolved() {
     .await
     .unwrap();
 
-    mark_missing(&pool, &bus, "proj-1", &art_id, "output/img.xisf").await.unwrap();
+    mark_missing_batch(
+        &pool,
+        &bus,
+        "proj-1",
+        &[GoneArtifact { id: art_id.clone(), path: "output/img.xisf".to_owned() }],
+    )
+    .await
+    .unwrap();
     let arts = list(&pool, "proj-1", &["missing"]).await.unwrap();
     assert_eq!(arts.len(), 1);
     assert_eq!(arts[0].state, "missing");
@@ -317,7 +324,7 @@ async fn sweep_uses_last_artifact_activity_not_launch_time() {
     .await
     .unwrap();
     repo::set_tool_launch_id(&pool, &art_id, "tl-active").await.unwrap();
-    repo::touch_artifact(&pool, &art_id).await.unwrap(); // bumps last_seen_at to now
+    repo::touch_artifacts(&pool, std::slice::from_ref(&art_id)).await.unwrap(); // bumps last_seen_at to now
 
     let completed = sweep_stale_launches(&pool, &bus, "proj-1").await.unwrap();
     assert_eq!(completed, 0);
