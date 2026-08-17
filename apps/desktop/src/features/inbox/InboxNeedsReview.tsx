@@ -16,6 +16,7 @@ import { m } from '@/paraglide/messages';
 import { Banner, Section, Table } from '@/ui';
 import { FRAME_TYPE_OPTIONS, humanizeKey } from './inboxDetailHelpers';
 import type { UseInboxReclassifyState } from './useInboxReclassifyState';
+import { selectBase } from '@/styles/select.css';
 
 export interface InboxNeedsReviewProps {
   reclassify: UseInboxReclassifyState;
@@ -25,6 +26,15 @@ export interface InboxNeedsReviewProps {
   rows: Record<string, React.ReactNode>[];
 }
 
+/**
+ * Renders the inbox section for files requiring review, including selection,
+ * bulk overrides, pending overrides, and related feedback.
+ *
+ * @param reclassify - State and actions for managing file reclassification
+ * @param itemFrameType - Frame type used to filter applicable bulk-editable properties
+ * @param columns - Columns to render in the unclassified-files table
+ * @param rows - Rows to render in the unclassified-files table
+ */
 export function InboxNeedsReview({
   reclassify,
   itemFrameType,
@@ -144,7 +154,7 @@ export function InboxNeedsReview({
               onChange={(e) => setBulkFrameType(e.target.value)}
               aria-label={m.inbox_bulk_frame_type_aria()}
               data-testid="bulk-frame-type"
-              className="pv-select pv-select--sm"
+              className={selectBase}
             >
               <option value="">{m.inbox_unchanged_placeholder()}</option>
               {FRAME_TYPE_OPTIONS.map((t) => (

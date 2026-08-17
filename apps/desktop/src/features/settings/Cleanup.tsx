@@ -32,6 +32,7 @@ import {
   SettingsRow,
   RestoreDefaultsBtn,
 } from './SettingsKit';
+import { selectBase } from '@/styles/select.css';
 
 const CLEANUP_KEYS = [
   'blockPermanentDelete',
@@ -97,6 +98,12 @@ interface CleanupProps {
   save: (scope: string, values: Record<string, unknown>) => void;
 }
 
+/**
+ * Provides controls for source protection and per-data-type cleanup policies.
+ *
+ * @param save - Persists source protection setting changes.
+ * @returns The cleanup settings pane.
+ */
 export function Cleanup({ save }: CleanupProps) {
   // ── spec 018 owned state ─────────────────────────────────────────────────
   const [blockPermanentDelete, setBlockPermanentDelete] = useState(true);
@@ -234,7 +241,7 @@ export function Cleanup({ save }: CleanupProps) {
           info={m.settings_cleanup_protection_info()}
         >
           <select
-            className="pv-select pv-cleanup__protection-select"
+            className={`${selectBase} pv-cleanup__protection-select`}
             value={defaultProtection}
             onChange={(e) => {
               editedRef.current = true;

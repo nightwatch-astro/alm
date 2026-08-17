@@ -27,6 +27,7 @@ import {
   startUpdateSubscription,
   stopUpdateSubscription,
 } from '@/data/updateSubscription';
+import { frame, frameBody, frameMain } from './shell.css';
 
 // react-joyride is large (~100 kB gz). The lazy chunk loads only when
 // walkReady is true — i.e. never for users who finished the walk and haven't
@@ -38,6 +39,11 @@ const OrientationWalk = lazy(() =>
   })),
 );
 
+/**
+ * Renders the application shell with navigation, routed content, global controls, and conditional panels.
+ *
+ * @returns The application shell layout.
+ */
 function ShellInner() {
   const prefs = usePreferences();
   const onboarding = useOnboardingState();
@@ -151,10 +157,10 @@ function ShellInner() {
   }, [navigate]);
 
   return (
-    <div className={`pv-frame density-${prefs.density}`} data-testid="frame">
-      <div className="pv-frame__body">
+    <div className={`${frame} density-${prefs.density}`} data-testid="frame">
+      <div className={frameBody}>
         <Sidebar />
-        <main className="pv-frame__main" data-testid="frame-main">
+        <main className={frameMain} data-testid="frame-main">
           <RecoveryBanner />
           <Outlet />
         </main>

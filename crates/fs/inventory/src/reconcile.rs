@@ -17,10 +17,16 @@
 //! Symlink/junction gating (spec 048 T004/R6) is applied via
 //! [`fs_pathsafe::real_files_under`] so a linked subtree is never
 //! traversed unless the root has explicitly enabled it.
+//!
+//! Because a gated or unreachable root yields an *empty* disk listing, the
+//! pass first proves the root is walkable via [`fs_pathsafe::probe_root`] and
+//! aborts with [`RootUnavailable`] otherwise. Without that guard an unmounted
+//! drive reads as "every frame deleted".
 
 use std::path::{Path, PathBuf};
 
-use fs_pathsafe::real_files_under;
+pub use fs_pathsafe::RootUnavailable;
+use fs_pathsafe::{probe_root, real_files_under};
 
 /// One inventoried frame's identity + expected size, as recorded in
 /// `file_record` for the root being reconciled.
@@ -102,16 +108,20 @@ impl ReconcileReport {
 ///
 /// # Errors
 ///
-/// This never fails for a missing/unreadable root — an unreadable root
-/// yields every known frame as `Missing` (nothing found on disk), matching
-/// the "removable drive absent" edge case (frames are reported unavailable,
-/// never treated as permanently deleted).
-#[must_use]
+/// Returns [`RootUnavailable`] when the root itself cannot be walked — it is
+/// absent (unmounted drive), is not a directory, is unreadable, or is a
+/// symlink/junction while `follow_symlinks` is off. The pass is aborted rather
+/// than reporting frames, because an un-walkable root produces an empty disk
+/// listing that is indistinguishable from "every frame was deleted", and
+/// acting on that difference destroys frame-to-session attribution the
+/// filesystem cannot supply back (Constitution V, Tier 1).
 pub fn reconcile_root(
     root_path: &Path,
     known: &[KnownFrame],
     follow_symlinks: bool,
-) -> ReconcileReport {
+) -> Result<ReconcileReport, RootUnavailable> {
+    probe_root(root_path, follow_symlinks)?;
+
     let disk_files: Vec<PathBuf> = real_files_under(root_path, follow_symlinks);
 
     let entries = known
@@ -138,7 +148,7 @@ pub fn reconcile_root(
         })
         .collect();
 
-    ReconcileReport { entries }
+    Ok(ReconcileReport { entries })
 }
 
 /// Compare two paths for equality after best-effort canonicalisation.
@@ -168,7 +178,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("light_001.fits"), vec![0u8; 4096]).unwrap();
 
-        let report = reconcile_root(dir.path(), &[known("f1", "light_001.fits", 0)], false);
+        let report =
+            reconcile_root(dir.path(), &[known("f1", "light_001.fits", 0)], false).unwrap();
 
         assert_eq!(report.entries.len(), 1);
         assert_eq!(report.entries[0].outcome, FrameOutcome::Present { real_size_bytes: 4096 });
@@ -178,7 +189,8 @@ mod tests {
     fn deleted_frame_reports_missing() {
         let dir = tempfile::tempdir().unwrap();
         // Nothing written to disk — "f1" was deleted outside the app.
-        let report = reconcile_root(dir.path(), &[known("f1", "light_001.fits", 4096)], false);
+        let report =
+            reconcile_root(dir.path(), &[known("f1", "light_001.fits", 4096)], false).unwrap();
 
         assert_eq!(report.entries[0].outcome, FrameOutcome::Missing);
         assert_eq!(report.missing().count(), 1);
@@ -192,7 +204,8 @@ mod tests {
         // File now lives at a different relative path under the same root.
         std::fs::write(dir.path().join("moved_to").join("light_001.fits"), b"data").unwrap();
 
-        let report = reconcile_root(dir.path(), &[known("f1", "light_001.fits", 4096)], false);
+        let report =
+            reconcile_root(dir.path(), &[known("f1", "light_001.fits", 4096)], false).unwrap();
 
         // Reported missing at the recorded (old) path — never auto-followed (R3/FR-012a).
         assert_eq!(report.entries[0].outcome, FrameOutcome::Missing);
@@ -204,7 +217,8 @@ mod tests {
         std::fs::write(dir.path().join("light_001.fits"), vec![0u8; 8192]).unwrap();
 
         // Recorded size (4096) differs from the real on-disk size (8192).
-        let report = reconcile_root(dir.path(), &[known("f1", "light_001.fits", 4096)], false);
+        let report =
+            reconcile_root(dir.path(), &[known("f1", "light_001.fits", 4096)], false).unwrap();
 
         let corrections: Vec<_> = report.size_corrections().collect();
         assert_eq!(corrections.len(), 1);
@@ -217,25 +231,62 @@ mod tests {
         std::fs::write(dir.path().join("dark_001.fits"), vec![0u8; 2048]).unwrap();
 
         // Historical row recorded with the size_bytes = 0 placeholder (pre-048).
-        let report = reconcile_root(dir.path(), &[known("f1", "dark_001.fits", 0)], false);
+        let report = reconcile_root(dir.path(), &[known("f1", "dark_001.fits", 0)], false).unwrap();
 
         assert_eq!(report.entries[0].outcome, FrameOutcome::Present { real_size_bytes: 2048 });
     }
 
     #[test]
-    fn unreadable_root_reports_every_known_frame_missing_not_deleted() {
-        // A root that doesn't exist (e.g. a disconnected removable drive) —
-        // frames must be reported unavailable/missing, never as an error that
-        // could be mistaken for "permanently deleted".
+    fn absent_root_aborts_the_pass_instead_of_reporting_every_frame_missing() {
+        // A disconnected removable drive must never read as "all frames
+        // deleted" — the caller gets no entries to act on at all.
         let missing_root = Path::new("/definitely/does/not/exist/spec-048");
-        let report = reconcile_root(
+        let err = reconcile_root(
             missing_root,
             &[known("f1", "a.fits", 100), known("f2", "b.fits", 0)],
             false,
-        );
+        )
+        .unwrap_err();
 
-        assert_eq!(report.entries.len(), 2);
-        assert!(report.entries.iter().all(|e| e.outcome == FrameOutcome::Missing));
+        assert_eq!(err, RootUnavailable::Missing);
+    }
+
+    #[test]
+    fn file_as_root_aborts_the_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_root = dir.path().join("not_a_dir.fits");
+        std::fs::write(&file_root, b"data").unwrap();
+
+        let err = reconcile_root(&file_root, &[known("f1", "a.fits", 100)], false).unwrap_err();
+
+        assert_eq!(err, RootUnavailable::NotADirectory);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_root_aborts_the_pass_when_following_is_disabled() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let real_root = dir.path().join("real_root");
+        std::fs::create_dir_all(&real_root).unwrap();
+        std::fs::write(real_root.join("light_001.fits"), b"data").unwrap();
+
+        let linked_root = dir.path().join("linked_root");
+        symlink(&real_root, &linked_root).unwrap();
+
+        // `Path::is_dir()` follows the link and would accept this root, but
+        // `real_files_under` refuses to descend it and returns nothing.
+        assert!(linked_root.is_dir());
+        let err =
+            reconcile_root(&linked_root, &[known("f1", "light_001.fits", 4)], false).unwrap_err();
+
+        assert_eq!(err, RootUnavailable::GatedLink);
+
+        // With following enabled the same root walks normally.
+        let report =
+            reconcile_root(&linked_root, &[known("f1", "light_001.fits", 4)], true).unwrap();
+        assert_eq!(report.present().count(), 1);
     }
 
     #[cfg(unix)]
@@ -252,7 +303,8 @@ mod tests {
         std::fs::create_dir_all(&scan_root).unwrap();
         symlink(&real_target, scan_root.join("linked")).unwrap();
 
-        let report = reconcile_root(&scan_root, &[known("f1", "linked/flat_001.fits", 4)], false);
+        let report =
+            reconcile_root(&scan_root, &[known("f1", "linked/flat_001.fits", 4)], false).unwrap();
 
         assert_eq!(report.entries[0].outcome, FrameOutcome::Missing);
     }

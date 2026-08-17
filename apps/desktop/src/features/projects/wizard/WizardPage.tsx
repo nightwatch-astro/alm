@@ -25,6 +25,7 @@ import {
   projectCreateErrorField,
   type ProjectCreateErrorField,
 } from '@/features/projects/projectCreateErrors';
+import { page, pageBar } from '@/ui/page-layout.css';
 
 import { z } from 'zod';
 import { readLocalStorage, writeLocalStorage } from '@/lib/local-storage';
@@ -216,6 +217,13 @@ function deriveProjectPath(trimmedName: string): string {
   return safeName || 'new-project';
 }
 
+/**
+ * Renders the project creation wizard for configuring and creating a project.
+ *
+ * The wizard restores and saves its draft, supports optional target prefill,
+ * validates navigation between steps, and reports project creation errors on
+ * the relevant step.
+ */
 export function WizardPage() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
@@ -626,9 +634,9 @@ export function WizardPage() {
   // T078c layout fix: min-height: 0 prevents flex overflow that caused the
   // wizard to render at the bottom of the window instead of filling the main area.
   return (
-    <div className="pv-page pv-wizard-page">
+    <div className={`${page} pv-wizard-page`}>
       {/* Wizard toolbar — styled consistently with other page toolbars */}
-      <div className="pv-page__bar pv-wizard-page__toolbar">
+      <div className={`${pageBar} pv-wizard-page__toolbar`}>
         <span className="pv-wizard-page__toolbar-title">
           {m.projects_wizard_toolbar_title()} {projectLabel}
         </span>
@@ -651,7 +659,7 @@ export function WizardPage() {
       </div>
 
       {/* Sub-toolbar: workflow profile breadcrumb */}
-      <div className="pv-page__bar pv-wizard-page__subbbar">
+      <div className={`${pageBar} pv-wizard-page__subbbar`}>
         <span>
           {m.projects_wizard_workflow_profile_label()} {profileLabel}
         </span>

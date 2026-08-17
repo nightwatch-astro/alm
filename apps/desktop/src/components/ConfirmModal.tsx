@@ -16,6 +16,7 @@
 
 import type { ReactNode } from 'react';
 import { Modal } from './Modal';
+import { message as messageClass } from './modal.css';
 import { Btn } from '@/ui';
 import { m } from '@/lib/i18n';
 
@@ -29,8 +30,8 @@ export interface ConfirmModalProps {
   /** Dialog title. */
   title: ReactNode;
   /**
-   * Body message shown below the title. Rendered inside
-   * `<p className="pv-modal__message">`.
+   * Body message shown below the title. Rendered inside a `<p>` carrying the
+   * `modal.css` message class.
    */
   message: ReactNode;
   /** Label for the action (confirm) button. */
@@ -108,7 +109,7 @@ export function ConfirmModal({
         </>
       }
     >
-      <p className="pv-modal__message">{message}</p>
+      <p className={messageClass}>{message}</p>
       {children}
       {error && <span className="pv-field-error">{error}</span>}
     </Modal>

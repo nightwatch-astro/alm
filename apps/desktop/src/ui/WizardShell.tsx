@@ -4,6 +4,7 @@
 import { forwardRef, useEffect, useRef } from 'react';
 import { m } from '@/lib/i18n';
 import type { ReactNode, HTMLAttributes } from 'react';
+import { wizardRoot } from './wizard-shell.css';
 
 export interface WizardStep {
   label: string;
@@ -58,7 +59,7 @@ export const WizardShell = forwardRef<HTMLDivElement, WizardShellProps>(
   ) {
     const hasSidebar = summary != null;
     const hasCenteredFooter = footer != null;
-    const cls = ['pv-wizard', className].filter(Boolean).join(' ');
+    const cls = [wizardRoot, className].filter(Boolean).join(' ');
     const previousStepRef = useRef(currentStep);
     const progressRef = useRef<HTMLElement>(null);
     const stepContentRef = useRef<HTMLDivElement>(null);

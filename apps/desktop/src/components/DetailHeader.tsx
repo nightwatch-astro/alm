@@ -2,6 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
+import {
+  header as detailHeader,
+  content as detailHeaderContent,
+  title as detailTitle,
+  subtitle as detailSubtitle,
+  actions as detailActions,
+} from './DetailHeader.css';
 
 export interface DetailHeaderProps {
   title: ReactNode;
@@ -11,6 +18,16 @@ export interface DetailHeaderProps {
   children?: ReactNode;
 }
 
+/**
+ * Renders a detail header with optional subtitle, actions, and additional content.
+ *
+ * @param title - The main header content
+ * @param titleExtra - Additional content displayed alongside the title
+ * @param subtitle - Optional subtitle text
+ * @param actions - Optional actions displayed beside the header content
+ * @param children - Optional content displayed within the header
+ * @returns The rendered detail header
+ */
 export function DetailHeader({
   title,
   titleExtra,
@@ -19,16 +36,16 @@ export function DetailHeader({
   children,
 }: DetailHeaderProps) {
   return (
-    <div className="pv-detail__header">
-      <div className="pv-detail__header-content">
-        <div className="pv-detail__title">
+    <div className={detailHeader} data-testid="detail-header">
+      <div className={detailHeaderContent}>
+        <div className={detailTitle}>
           {title}
           {titleExtra}
         </div>
-        {subtitle && <div className="pv-detail__subtitle">{subtitle}</div>}
+        {subtitle && <div className={detailSubtitle}>{subtitle}</div>}
         {children}
       </div>
-      {actions && <div className="pv-detail__actions">{actions}</div>}
+      {actions && <div className={detailActions}>{actions}</div>}
     </div>
   );
 }
