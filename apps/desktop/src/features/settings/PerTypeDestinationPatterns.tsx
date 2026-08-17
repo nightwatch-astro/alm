@@ -90,6 +90,7 @@ export function PerTypeDestinationPatterns() {
       const nextErrors: Partial<Record<FrameTypeClass, string>> = {};
 
       await Promise.all(
+        // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: per-frame-class pattern validation fan-out with override checks
         FRAME_TYPE_CLASSES.map(async (cls) => {
           const chips = chipsByClass[cls];
           const isOverridden = !chipsAreEmpty(chips);
@@ -151,6 +152,7 @@ export function PerTypeDestinationPatterns() {
           // Clear any stale backend errors on a successful save.
           setBackendErrors({});
         },
+        // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: pattern rejection handler flagging every class from one opaque payload
         (err: unknown) => {
           // Backend rejected at least one pattern (error code value.invalid).
           // We cannot tell which class from a single payload; flag all classes

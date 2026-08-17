@@ -11,7 +11,7 @@
 
 import type { TargetListItem, TargetObjectType } from '@/bindings/index';
 import { objectTypeLabel } from '@/components/TargetSearch/objectType';
-import { catalogueOf, catalogueLabel } from './planner-catalog';
+import { catalogueOf, catalogueLabel } from '@/shared/planner/planner-catalog';
 import { rowAltitudeFor, type RowAltitude } from './planner-altitude';
 import type { ObservingNight } from './astro/moon-state';
 import {
@@ -19,11 +19,11 @@ import {
   type RowMoonGeometry,
   type RowMoonPlanning,
 } from './astro/row-planning';
-import type { MoonAvoidanceParams } from './astro/moon-avoidance';
+import type { MoonAvoidanceParams } from '@/shared/planner/moon-avoidance';
 import { recommendationLabel } from './FilterBadges';
 import { m } from '@/lib/i18n';
 import type { DimensionAccessor } from '@/lib/grouping';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 
 // ── Sort model ────────────────────────────────────────────────────────────────
 
@@ -90,6 +90,7 @@ function compareStr(a: string, b: string): number {
  * require the pre-computed `RowAltitude` values (which encode the user's
  * threshold), so the comparator receives them alongside the list items.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: flat comparator dispatch over sortable target columns
 export function compareTargetRows(
   a: TargetListItem,
   altA: RowAltitude,

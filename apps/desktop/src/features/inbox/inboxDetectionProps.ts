@@ -25,6 +25,7 @@ export interface BuildDetectionPropsArgs {
   itemFrameType: string | null;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: flat mapping from classification evidence to detection display props
 export function buildDetectionProps({
   item,
   classification,

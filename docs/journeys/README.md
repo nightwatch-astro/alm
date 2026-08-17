@@ -80,7 +80,7 @@ validation. Agent judgment bridges anything unmapped.
 | `apps/desktop/src/features/guided/**` | onboarding |
 | `apps/desktop/src/features/onboarding/**` | onboarding |
 | `apps/desktop/src/features/targets/**` | targets |
-| `apps/desktop/src/features/targets/observing-sites/**` | observing-sites |
+| `apps/desktop/src/shared/observing-sites/**` | observing-sites |
 | `apps/desktop/src/features/calibration/**` | calibration |
 | `apps/desktop/src/features/archive/**` | archive |
 | `apps/desktop/src/features/plans/**` | plans |

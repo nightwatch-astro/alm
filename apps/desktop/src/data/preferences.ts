@@ -2,9 +2,45 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { useSyncExternalStore, useCallback } from 'react';
+import { z } from 'zod';
+import { readLocalStorage, writeLocalStorage } from '@/lib/local-storage';
 import type { AppPreferences } from '@/bindings/types';
 
 const STORAGE_KEY = 'alm-preferences';
+
+/**
+ * Validation schema for the persisted `AppPreferences` bag, mirroring the
+ * generated type in `@/bindings/types`.
+ *
+ * Every field is `.optional().catch(undefined)`: a bag written by an older
+ * build legitimately lacks keys added since, and a field whose type has changed
+ * must be dropped on its own rather than discarding every valid sibling. The
+ * reader spreads the surviving subset over `defaults`, the same merge the
+ * previous unvalidated `JSON.parse` performed — the difference being that a
+ * wrong-typed field now yields its default instead of reaching the UI.
+ */
+const DensitySchema = z.enum(['compact', 'comfortable', 'spacious']);
+const ViewModeSchema = z.enum(['center', 'pipeline', 'combined']);
+const DetailDockPrefSchema = z.object({
+  placement: z.enum(['side', 'bottom']).nullable(),
+  width: z.number().nullable(),
+});
+
+const optional = <T extends z.ZodType>(schema: T) =>
+  schema.optional().catch(undefined);
+
+const AppPreferencesSchema = z.object({
+  sidebarCollapsed: optional(z.boolean()),
+  density: optional(DensitySchema),
+  projectViewModes: optional(z.record(z.string(), ViewModeSchema)),
+  defaultProjectView: optional(ViewModeSchema),
+  sessionsGroupBy: optional(
+    z.enum(['none', 'target', 'month', 'filter', 'train']),
+  ),
+  sessionsView: optional(z.enum(['list', 'calendar'])),
+  setupCompleted: optional(z.boolean()),
+  detailDock: optional(z.record(z.string(), DetailDockPrefSchema)),
+});
 
 type Listener = () => void;
 
@@ -35,17 +71,13 @@ export function getPreferences(): AppPreferences {
   if (cachedPreferences !== undefined) {
     return cachedPreferences;
   }
-  let result: AppPreferences;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      result = { ...defaults, ...JSON.parse(raw) };
-    } else {
-      result = { ...defaults };
-    }
-  } catch {
-    result = { ...defaults };
-  }
+  const stored = readLocalStorage(STORAGE_KEY, AppPreferencesSchema, {});
+  // A dropped field is present with value `undefined`, which would override its
+  // default in the spread below.
+  const present = Object.fromEntries(
+    Object.entries(stored).filter(([, v]) => v !== undefined),
+  );
+  const result: AppPreferences = { ...defaults, ...present };
   cachedPreferences = result;
   return result;
 }
@@ -55,11 +87,8 @@ export function getPreferences(): AppPreferences {
  */
 function persistPreferences(prefs: AppPreferences): void {
   cachedPreferences = prefs;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    // Storage full or unavailable; state is still in memory
-  }
+  // Storage full or unavailable is non-fatal; state is still in memory.
+  writeLocalStorage(STORAGE_KEY, prefs);
   notify();
 }
 

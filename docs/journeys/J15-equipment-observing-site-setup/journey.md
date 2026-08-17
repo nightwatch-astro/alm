@@ -104,7 +104,7 @@ imaging time) reflects a real location instead of the no-site placeholder.
   a non-numeric elevation, or a minimum horizon altitude outside 0–90° is
   each rejected inline — no site is saved.
 - **Trace:** spec-044 Track B US6 T016 (first-site default+active),
-  `apps/desktop/src/features/targets/observing-sites/ObservingSites.tsx`
+  `apps/desktop/src/features/settings/ObservingSites.tsx`
   handleSubmit (range validation, first-site pointer assignment).
 
 ### S7 — Add a second site and switch the active one {#S7}

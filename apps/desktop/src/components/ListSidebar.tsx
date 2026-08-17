@@ -3,6 +3,14 @@
 
 import type { ReactNode, Ref } from 'react';
 import { m } from '@/lib/i18n';
+import {
+  listSidebar,
+  search as listSidebarSearch,
+  controls as listSidebarControls,
+  list as listSidebarList,
+  footer as listSidebarFooter,
+} from './ListSidebar.css';
+import { virtualScroll } from '@/ui/page-layout.css';
 
 export interface ListSidebarProps {
   placeholder?: string;
@@ -23,6 +31,15 @@ export interface ListSidebarProps {
   virtualized?: boolean;
 }
 
+/**
+ * Renders a searchable sidebar containing optional controls, a list, and footer content.
+ *
+ * @param placeholder - Custom placeholder and accessible label for the search input.
+ * @param searchValue - Controlled value displayed in the search input.
+ * @param onSearchChange - Callback invoked with the updated search text.
+ * @param virtualized - Whether to mark the list container for virtual scrolling.
+ * @returns The rendered sidebar.
+ */
 export function ListSidebar({
   placeholder,
   searchValue,
@@ -34,8 +51,8 @@ export function ListSidebar({
   virtualized = false,
 }: ListSidebarProps) {
   return (
-    <div className="pv-list-sidebar">
-      <div className="pv-list-sidebar__search">
+    <div className={listSidebar}>
+      <div className={listSidebarSearch}>
         <input
           type="text"
           placeholder={placeholder || m.common_search_placeholder()}
@@ -47,15 +64,17 @@ export function ListSidebar({
           aria-label={placeholder || m.common_search_aria()}
         />
       </div>
-      {controls && <div className="pv-list-sidebar__controls">{controls}</div>}
+      {controls && <div className={listSidebarControls}>{controls}</div>}
       <div
-        className={`pv-list-sidebar__list${virtualized ? ' pv-virtual-scroll' : ''}`}
+        className={[listSidebarList, virtualized ? virtualScroll : undefined]
+          .filter(Boolean)
+          .join(' ')}
         ref={scrollRef}
         data-virtual-scroll={virtualized ? 'true' : undefined}
       >
         {children}
       </div>
-      {footer && <div className="pv-list-sidebar__footer">{footer}</div>}
+      {footer && <div className={listSidebarFooter}>{footer}</div>}
     </div>
   );
 }

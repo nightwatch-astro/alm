@@ -25,7 +25,7 @@
  */
 import { Btn, NumberField, Table } from '@/ui';
 import type { TableRow } from '@/ui';
-import { Modal } from '@/components';
+import { ConfirmModal } from '@/components';
 import { m } from '@/lib/i18n';
 import type { SensorType, FilterCategory } from './settingsIpc';
 import { SettingsSection, SettingsFormShell } from './SettingsKit';
@@ -41,6 +41,7 @@ import {
   type PassbandChoice,
 } from './equipment-helpers';
 import { useEquipment } from './useEquipment';
+import { selectBase } from '@/styles/select.css';
 
 interface EquipmentProps {
   save: (scope: string, values: Record<string, unknown>) => void;
@@ -49,8 +50,13 @@ interface EquipmentProps {
 // The add/edit form shell (field grid + error line + cancel/save actions) now
 // lives in `SettingsKit.tsx` as `SettingsFormShell`, shared with other panes'
 // CRUD lists (e.g. observing-site management, spec 044 US3) — no per-pane
-// clone (shared-component mandate).
+/**
+ * Renders settings controls for managing optical trains, cameras, telescopes, and filters.
+ *
+ * @param save - Persistence handler supplied to the equipment state hook.
+ */
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: equipment panel render over camera, telescope, and filter lists
 export function Equipment({ save: _save }: EquipmentProps) {
   const {
     cameras,
@@ -236,7 +242,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
               </label>
               <select
                 id="equipment-train-camera"
-                className="pv-select"
+                className={selectBase}
                 value={trainForm.cameraId}
                 onChange={(e) =>
                   setTrainForm({ ...trainForm, cameraId: e.target.value })
@@ -259,7 +265,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
               </label>
               <select
                 id="equipment-train-telescope"
-                className="pv-select"
+                className={selectBase}
                 value={trainForm.telescopeId}
                 onChange={(e) =>
                   setTrainForm({ ...trainForm, telescopeId: e.target.value })
@@ -796,7 +802,7 @@ export function Equipment({ save: _save }: EquipmentProps) {
               </label>
               <select
                 id="equipment-filter-category"
-                className="pv-select"
+                className={selectBase}
                 value={filterForm.category}
                 onChange={(e) =>
                   setFilterForm({
@@ -816,33 +822,19 @@ export function Equipment({ save: _save }: EquipmentProps) {
         )}
       </SettingsSection>
 
-      <Modal
+      <ConfirmModal
         open={deleteTarget != null}
         onClose={closeDeleteConfirm}
         title={m.settings_equipment_delete_confirm_title({
           name: deleteTarget?.name ?? '',
         })}
-        size="sm"
-        hideClose
-        footer={
-          <>
-            <Btn variant="ghost" onClick={closeDeleteConfirm}>
-              {m.common_cancel()}
-            </Btn>
-            <Btn
-              variant="destructive"
-              onClick={() => void handleConfirmDelete()}
-            >
-              {deleteBusy ? m.common_removing() : m.common_remove()}
-            </Btn>
-          </>
-        }
-      >
-        <p className="pv-modal__message">
-          {m.settings_equipment_delete_confirm_desc()}
-        </p>
-        {deleteError && <span className="pv-field-error">{deleteError}</span>}
-      </Modal>
+        message={m.settings_equipment_delete_confirm_desc()}
+        actionLabel={deleteBusy ? m.common_removing() : m.common_remove()}
+        busy={deleteBusy}
+        onConfirm={() => void handleConfirmDelete()}
+        error={deleteError}
+        data-testid="equipment-delete-confirm"
+      />
     </>
   );
 }

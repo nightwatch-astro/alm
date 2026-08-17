@@ -23,7 +23,7 @@ import {
   altitudeFor,
   USABLE_ALT_DEG,
 } from './planner-altitude';
-import type { ObserverSite } from './observing-sites/observer-site';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 
 const AMSTERDAM: ObserverSite = {
   id: 'site-ams',

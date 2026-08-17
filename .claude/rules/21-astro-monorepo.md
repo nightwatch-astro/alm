@@ -16,7 +16,9 @@ Primary paths:
 - `crates/calibration/core/`: calibration matching and reuse policy model.
 - `crates/calibration/master-detect/`: heuristic detection of calibration
   master files (STACKCNT/NCOMBINE headers, tool-specific patterns).
-- `crates/workflow/profiles/`: processing tool/workflow profile model.
+- `crates/workflow/profiles/`: processing tool/workflow profile model, seeded
+  tool profiles, `{folder}`/`{file}` args-template rendering, per-OS executable
+  discovery, and the `ProcessSpawner` detach seam (spec 011).
 - `crates/workflow/artifacts/`: workflow artifact observation — rule-driven
   classifier, debounce watcher, reconciler, and tool-launch attribution.
 - `crates/project/structure/`: app-owned project envelope rules.
@@ -77,6 +79,17 @@ remote backend transport. Concrete schemas are produced during planning.
 SQLite is the canonical local store for metadata, relationships, rules,
 lifecycle, plans, and audit history. JSON Schema based operation contracts form
 the transport boundary, with Tauri as the first adapter.
+
+Tool launches are detached: the app spawns PixInsight, Siril, or a planetary
+tool and never supervises or kills the process (constitution III). Launch rows
+in `crates/app/core/src/tool_launch.rs` record `pid`, `launched_at`,
+`project_id`, and `tool_id`; `pid` is nullable because macOS `open -a` does not
+return one. `completed_at` is written by artifact observation
+(`crates/app/lifecycle/src/artifact/launches.rs`), not by the launch path. A
+prior `spawned` launch with a null `completed_at` and a live PID triggers the
+re-launch warning. Tests inject
+`workflow_profiles::launch::FakeSpawner` instead of spawning binaries. See
+[`specs/011-processing-tool-launch/research.md`](../../specs/011-processing-tool-launch/research.md).
 
 The workspace Cargo manifest defines a `dev-tools` feature (default off) that
 compile-time-gates the developer-mode surface from spec 021 (recording proxy,

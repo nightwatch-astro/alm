@@ -51,6 +51,10 @@ pub(super) async fn finalize_project_create_manifest(
 /// fail the apply. Every failure is logged for an external watchdog (§II).
 /// Idempotent: a re-entrant call (e.g. a retried terminal transition) skips
 /// item rows that already exist for this view id.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "view-generation finalize: per-item materialization dispatch with skip paths"
+)]
 pub(super) async fn finalize_view_generation(pool: &SqlitePool, plan_id: &str, project_id: &str) {
     use domain_core::source_view::Materialization;
     use persistence_plans::repositories::prepared_source_views as views_repo;
@@ -153,6 +157,10 @@ pub(super) async fn view_id_for_plan(pool: &SqlitePool, plan_id: &str) -> Option
 /// state from disk, same as any other spec-026 US3 sweep.
 ///
 /// Best-effort: failures are logged only, never fail the apply (§II).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "view-removal finalize with per-precondition early return"
+)]
 pub(super) async fn finalize_view_removal(pool: &SqlitePool, plan_id: &str, terminal: &str) {
     use persistence_plans::repositories::prepared_source_views as views_repo;
 
@@ -190,6 +198,10 @@ pub(super) async fn finalize_view_removal(pool: &SqlitePool, plan_id: &str, term
 /// stuck `removed` forever after a successful regeneration.
 ///
 /// Best-effort: failures are logged only, never fail the apply (§II).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "view-regeneration finalize with per-precondition early return"
+)]
 pub(super) async fn finalize_view_regeneration(pool: &SqlitePool, plan_id: &str) {
     use persistence_plans::repositories::prepared_source_views as views_repo;
 
@@ -226,6 +238,10 @@ pub(super) async fn finalize_view_regeneration(pool: &SqlitePool, plan_id: &str)
 ///
 /// Best-effort: the files are already archived, so a failure here must NOT fail
 /// the apply. Every failure is logged for an external watchdog (§II).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "archive finalize: lifecycle transition per project entity with per-step logging"
+)]
 pub(super) async fn finalize_archive_lifecycle(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -315,6 +331,10 @@ pub(super) async fn finalize_archive_lifecycle(
 ///
 /// Best-effort: the files are already moved back, so a failure here must NOT
 /// fail the apply. Every failure is logged for an external watchdog (§II).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "restore finalize: lifecycle transition per project entity with per-step logging"
+)]
 pub(super) async fn finalize_restore_lifecycle(
     pool: &SqlitePool,
     bus: &EventBus,

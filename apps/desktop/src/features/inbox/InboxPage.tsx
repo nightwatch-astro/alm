@@ -106,6 +106,7 @@ const EMPTY_ITEMS: InboxListItem[] = [];
  */
 const EMPTY_SOURCE_GROUPS: InboxSourceGroupListItem[] = [];
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: page render branching over selection, type filter, and load state
 export function InboxPage() {
   const { selected, type } = useSearch({ from: '/shell/inbox' });
   const navigate = useNavigate({ from: '/inbox' });

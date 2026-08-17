@@ -38,6 +38,7 @@ import type {
   PlanDetail_Serialize,
   PlanItemDetail_Serialize,
 } from '@/bindings/index';
+import { bodyFill as modalBodyFill } from '@/components/modal.css';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -118,8 +119,20 @@ function destinationLabel(plan: PlanDetail_Serialize): string {
     : m.plans_dest_archive();
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+/**
+ * Reviews and applies a generated plan in a modal overlay.
+ *
+ * @param planId - The identifier of the plan to review, or `null` when no plan is selected
+ * @param open - Whether the overlay is visible
+ * @param onClose - Called when the overlay is closed
+ * @param title - Optional overlay title
+ * @param onApplied - Called when applying the plan completes successfully
+ * @param onDiscarded - Called after the plan is discarded
+ * @param onRetryCreated - Called with the identifier of a newly generated retry plan
+ * @param emptyReason - Optional explanation shown when the plan contains no items
+ */
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: overlay render branching over plan state, item counts, and action availability
 export function PlanReviewOverlay({
   planId,
   open,
@@ -504,7 +517,7 @@ export function PlanReviewOverlay({
       footer={footer}
       // The item table owns its own scroll region (below); the body itself
       // must not also scroll, or the item list would double-scroll.
-      bodyClassName="pv-modal__body--fill"
+      bodyClassName={modalBodyFill}
       data-testid="plan-review-overlay"
     >
       {planLoading && plan == null ? (

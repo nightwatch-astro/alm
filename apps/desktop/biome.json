@@ -21,7 +21,13 @@
       "preset": "recommended",
       "a11y": "off",
       "complexity": {
-        "useLiteralKeys": "off"
+        "useLiteralKeys": "off",
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": {
+            "maxAllowedComplexity": 20
+          }
+        }
       },
       "correctness": {
         "noUnusedVariables": "error",
@@ -41,6 +47,33 @@
       }
     }
   },
+  "plugins": [
+    "./biome-plugins/no-retired-commands-wrapper.grit"
+  ],
+  "overrides": [
+    {
+      "includes": [
+        "src/**",
+        "!src/api/ipc.ts",
+        "!src/features/sessions/sessionsGroupsIpc.ts",
+        "!src/features/calibration/calibrationHandoffIpc.ts"
+      ],
+      "plugins": [
+        "./biome-plugins/no-raw-invoke.grit"
+      ]
+    },
+    {
+      "includes": [
+        "src/**",
+        "!**/*.test.ts",
+        "!**/*.test.tsx"
+      ],
+      "plugins": [
+        "./biome-plugins/no-legacy-token-namespace.grit",
+        "./biome-plugins/no-bare-pv-radius.grit"
+      ]
+    }
+  ],
   "assist": {
     "enabled": false
   },

@@ -5,10 +5,16 @@
  * Log stream subscription (spec 019, T020).
  *
  * Subscribes to the backend log stream in two ways:
- * 1. Initial hydration: calls the `logRecent` binding (`log_recent`) on first
- *    mount to populate the ring buffer with the most recent 500 entries.
- * 2. Live updates: listens for `log:entry` Tauri events forwarded by the
+ * 1. Live updates: listens for `log:entry` Tauri events forwarded by the
  *    backend bus→Tauri forwarder.
+ * 2. Initial hydration: calls the `logRecent` binding (`log_recent`) to populate
+ *    the ring buffer with the most recent 500 entries.
+ *
+ * The listener attaches BEFORE hydration. Reversing that order leaves a window
+ * in which a committed row is past the hydration query and ahead of the
+ * listener: the forwarder emits it to nobody and advances its cursor past it, so
+ * no later drain re-sends it. The overlap the listener-first order creates
+ * instead is absorbed by `appendLog`'s id dedup and ordering.
  *
  * Deduplication is handled by `appendLog` in `logStore.ts`.
  *
@@ -86,14 +92,17 @@ async function startLiveListener(): Promise<void> {
 /**
  * Start the log subscription (idempotent).
  *
- * On first call: fetches the initial window, then starts the live listener.
+ * On first call: starts the live listener, then fetches the initial window.
  * On subsequent calls: no-op (dedup handles reconnect replay).
  */
 export async function startLogSubscription(): Promise<void> {
   if (subscribed) return;
   subscribed = true;
 
-  // Get the most recent cursor from the current buffer to resume from.
+  // Read the resume cursor before the listener can widen the buffer: a live
+  // entry arriving first would otherwise become the cursor and suppress the
+  // older history this hydration exists to fetch.
+  //
   // Entries are newest-first; we prefer the latest aud: entry as cursor because
   // dia: (diagnostic) entries are in-memory only and have no DB row to resume from.
   // Without this, a dia: entry as the last seen causes a full replay (T062 FR-025).
@@ -101,8 +110,8 @@ export async function startLogSubscription(): Promise<void> {
   const audEntry = snapshot.entries.find((e) => e.id.startsWith('aud:'));
   const cursor = audEntry?.id;
 
-  await fetchRecentEntries(cursor);
   await startLiveListener();
+  await fetchRecentEntries(cursor);
 }
 
 /**

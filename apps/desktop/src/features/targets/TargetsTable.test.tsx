@@ -120,10 +120,10 @@ import {
   DEFAULT_TARGET_SORT,
   __testExports,
 } from './TargetsTable';
-import { __setObservingStateForTest } from './observing-sites/site-store';
-import type { ObserverSite } from './observing-sites/observer-site';
+import { __setObservingStateForTest } from '@/shared/observing-sites/site-store';
+import type { ObserverSite } from '@/shared/observing-sites/observer-site';
 import type { ObservingNight } from './astro/moon-state';
-import { DEFAULT_MOON_AVOIDANCE } from './astro/moon-avoidance';
+import { DEFAULT_MOON_AVOIDANCE } from '@/shared/planner/moon-avoidance';
 
 function item(
   primaryDesignation: string,

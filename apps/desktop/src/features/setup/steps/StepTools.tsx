@@ -177,6 +177,7 @@ export function StepTools({ tools, onToolsChange }: StepToolsProps) {
 }
 
 /** A single tool card: name + detected status + description + enable toggle + path picker. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: tool card render with per-tool detection and config branches
 function ToolCard({
   def,
   config,

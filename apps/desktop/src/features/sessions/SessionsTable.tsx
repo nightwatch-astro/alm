@@ -266,6 +266,7 @@ export function SessionsTable({
 
   const rows: TableRow[] = useMemo(() => {
     const firstItemIndex = visualRows.findIndex((row) => row.kind === 'item');
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: table row render with per-column conditional formatting
     return visualRows.map((row, rowIndex) => {
       if (row.kind === 'header') {
         const { node, depth, path, collapsed: isCollapsed } = row;

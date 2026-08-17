@@ -2,6 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
+import {
+  wrapper,
+  col as colCls,
+  linked as linkedCls,
+  head,
+  muted as mutedCls,
+} from './two-col-detail-layout.css';
 
 export interface TwoColDetailLayoutProps {
   /** Left property column (typically a `PropertyTable` half). */
@@ -35,10 +42,12 @@ export interface TwoColDetailLayoutProps {
 }
 
 /**
- * The two-column-properties + third-slot detail layout (`.pv-session-detail2`,
- * #813) shared by Sessions/Calibration/Inbox detail panes. Wraps the CSS
- * convention in one component so a future layout change (spacing, a11y
- * attribute, responsive behavior) is applied once instead of hand-copied.
+ * Renders a shared detail layout with property columns and an optional linked section.
+ *
+ * @param colB - Optional second property column.
+ * @param extraCols - Additional property columns; nullish entries are skipped.
+ * @param linked - Optional content for the trailing linked section.
+ * @param linkedClassName - Additional class name for the linked section.
  */
 export function TwoColDetailLayout({
   colA,
@@ -47,23 +56,31 @@ export function TwoColDetailLayout({
   linked,
   linkedClassName,
 }: TwoColDetailLayoutProps) {
-  const linkedCls = ['pv-session-detail2__linked', linkedClassName]
-    .filter(Boolean)
-    .join(' ');
+  const finalLinkedCls = [linkedCls, linkedClassName].filter(Boolean).join(' ');
   return (
-    <div className="pv-session-detail2">
-      <div className="pv-session-detail2__col">{colA}</div>
-      {colB != null && <div className="pv-session-detail2__col">{colB}</div>}
-      {(extraCols ?? []).map((col, i) =>
-        col == null ? null : (
+    <div className={wrapper} data-testid="two-col-detail">
+      <div className={colCls} data-testid="detail-col">
+        {colA}
+      </div>
+      {colB != null && (
+        <div className={colCls} data-testid="detail-col">
+          {colB}
+        </div>
+      )}
+      {(extraCols ?? []).map((item, i) =>
+        item == null ? null : (
           // Positional slots: a caller passes a fixed-length array whose
           // entries may be null, so the index IS the stable identity here.
-          <div className="pv-session-detail2__col" key={i}>
-            {col}
+          <div className={colCls} data-testid="detail-col" key={i}>
+            {item}
           </div>
         ),
       )}
-      {linked != null && <div className={linkedCls}>{linked}</div>}
+      {linked != null && (
+        <div className={finalLinkedCls} data-testid="detail-linked">
+          {linked}
+        </div>
+      )}
     </div>
   );
 }
@@ -79,11 +96,10 @@ export interface DetailLinkedGroupProps {
 }
 
 /**
- * A single labeled block inside a `linked` slot (#813): heading + either
- * content or a muted empty placeholder. Same `__head`/`__muted` convention
- * `SessionDetail`'s linked-projects block and `InboxDetail`'s Files column
- * apply inline; extracted here so `SessionListPopover` doesn't hand-roll the
- * two class names itself.
+ * Renders a labelled content block with an optional empty-state placeholder.
+ *
+ * @param empty - Whether to display the empty-state content instead of the children.
+ * @param emptyLabel - Content displayed when the block is empty.
  */
 export function DetailLinkedGroup({
   label,
@@ -93,12 +109,10 @@ export function DetailLinkedGroup({
 }: DetailLinkedGroupProps) {
   return (
     <div>
-      <div className="pv-session-detail2__head">{label}</div>
-      {empty ? (
-        <span className="pv-session-detail2__muted">{emptyLabel}</span>
-      ) : (
-        children
-      )}
+      <div className={head} data-testid="detail-group-head">
+        {label}
+      </div>
+      {empty ? <span className={mutedCls}>{emptyLabel}</span> : children}
     </div>
   );
 }
