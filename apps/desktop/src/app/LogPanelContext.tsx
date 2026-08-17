@@ -161,6 +161,7 @@ export function LogPanelProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
+    // eslint-disable-next-line alm/require-root-testid -- a context Provider renders no DOM node, so it cannot carry a data-testid; the panel itself carries one where it mounts
     <LogPanelContext.Provider
       value={{
         expanded,

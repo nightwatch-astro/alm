@@ -6,12 +6,7 @@
  *
  * Migrated to vanilla-extract (pilot/css-vanilla-extract branch).
  */
-import {
-  useRef,
-  useCallback,
-  useSyncExternalStore,
-  useState,
-} from 'react';
+import { useRef, useCallback, useSyncExternalStore, useState } from 'react';
 import { m } from '@/lib/i18n';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Collapsible } from '@base-ui-components/react/collapsible';
