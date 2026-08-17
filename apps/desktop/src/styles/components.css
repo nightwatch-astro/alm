@@ -17,23 +17,23 @@
  *   land on the spacing scale — those use --pv-sp-*.
  */
 
-@import './components/app-shell.css';
+/* app-shell.css migrated to VE: src/styles/app-shell.css.ts */
 @import './components/primitives.css';
 @import './components/settings.css';
-@import './components/wizard-base.css';
+/* wizard-base.css migrated to VE: src/styles/select.css.ts, src/components/lifecycle.css.ts, src/ui/wizard-shell.css.ts */
 @import './components/target-search.css';
 @import './components/detail-panes.css';
 @import './components/plan-panel.css';
 @import './components/wizard-steps.css';
 @import './components/settings-detail.css';
 @import './components/feature-lists.css';
-@import './components/dev.css';
+/* dev.css migrated to VE: src/dev/dev.css.ts (dev-tools surfaces), src/features/settings/advanced.css.ts (adv-settings layout) */
 @import './components/redesign-detail.css';
 @import './components/tables-lists.css';
 @import './components/projects.css';
 @import './components/targets.css';
 @import './components/inbox.css';
-@import './components/sessions.css';
-@import './components/modals.css';
-@import './components/skeleton.css';
+/* sessions.css migrated to VE: two-col-detail-layout.css.ts, session-list-popover.css.ts; pv-session-frames dead */
+/* modals.css migrated to VE: src/components/modal.css.ts */
+/* skeleton.css migrated to VE: src/ui/skeleton.css.ts */
 @import './components/logpanel.css';

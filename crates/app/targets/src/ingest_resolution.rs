@@ -225,6 +225,10 @@ pub struct DrainSummary {
 ///
 /// Returns [`ContractError`] on a local database failure. Resolver failures are
 /// recorded as `unresolved`, never propagated as an error.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "resolve drain loop with per-candidate online, cache, and failure paths"
+)]
 pub async fn resolve_pending<R: Resolver + ?Sized>(
     pool: &SqlitePool,
     resolver: &R,
@@ -342,6 +346,10 @@ pub async fn resolve_pending<R: Resolver + ?Sized>(
 /// promptly instead of waiting for the next ~30s periodic tick. Never returns
 /// an error — a failure to build the resolver, drain, or back-fill is logged
 /// and the caller (periodic tick or next plan-applied event) retries.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "drain-then-backfill sequence, each phase with independent error handling"
+)]
 pub async fn drain_and_backfill_once(
     pool: &SqlitePool,
     bus: &EventBus,

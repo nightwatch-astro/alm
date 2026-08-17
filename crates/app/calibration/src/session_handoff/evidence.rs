@@ -184,6 +184,10 @@ pub struct EvaluateEvidenceInput<'a> {
     clippy::cast_sign_loss,        // DB row values are non-negative by schema constraints
     clippy::cast_precision_loss,   // frame counts and percentages don't need full i64 precision
 )]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "spec-transcribed evidence scoring across age, count, and equipment dimensions"
+)]
 pub fn evaluate_candidate_evidence(input: &EvaluateEvidenceInput<'_>) -> CandidateEvidence {
     // ── Age ──────────────────────────────────────────────────────────────────
     let (fresh_threshold, red_threshold, age_basis) = if input.kind == CalibrationKind::Flat {

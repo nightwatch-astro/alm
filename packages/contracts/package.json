@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "node scripts/build-schemas.mjs",
-    "test": "node tests/lifecycle.transition.errors.test.mjs && node tests/sourceview.generate.test.mjs && node tests/sourceview.verify.test.mjs && node tests/conformance-harness.mjs",
+    "test": "node tests/lifecycle.transition.errors.test.mjs && node tests/sourceview.generate.test.mjs && node tests/sourceview.verify.test.mjs && node tests/calibration.type.parity.test.mjs && node tests/conformance-harness.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

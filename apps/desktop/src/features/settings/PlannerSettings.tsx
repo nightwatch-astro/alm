@@ -36,9 +36,9 @@ import {
   setAltitudeThreshold,
   ALTITUDE_THRESHOLD_MIN,
   ALTITUDE_THRESHOLD_MAX,
-} from '@/features/targets/altitude-settings';
-import { USABLE_ALT_DEG } from '@/features/targets/planner-altitude';
-import { ObservingSites } from '@/features/targets/observing-sites/ObservingSites';
+  DEFAULT_USABLE_ALTITUDE_DEG,
+} from '@/shared/planner/altitude-settings';
+import { ObservingSites } from './ObservingSites';
 import {
   useGuidanceParams,
   saveGuidanceParams,
@@ -47,8 +47,8 @@ import {
   DISTANCE_MAX,
   WIDTH_MIN,
   WIDTH_MAX,
-} from '@/features/targets/guidance-settings';
-import { BANDS, type Band } from '@/features/targets/astro/moon-avoidance';
+} from '@/shared/planner/guidance-settings';
+import { BANDS, type Band } from '@/shared/planner/moon-avoidance';
 
 export function PlannerSettings() {
   const stored = useAltitudeThreshold();
@@ -81,7 +81,9 @@ export function PlannerSettings() {
       <SettingsSection title={m.settings_planner_altitude_title()}>
         <SettingsRow
           label={m.settings_planner_altitude_label()}
-          info={m.settings_planner_altitude_info({ deg: USABLE_ALT_DEG })}
+          info={m.settings_planner_altitude_info({
+            deg: DEFAULT_USABLE_ALTITUDE_DEG,
+          })}
         >
           <input
             type="number"

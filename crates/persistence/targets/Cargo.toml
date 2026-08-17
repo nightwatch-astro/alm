@@ -19,7 +19,7 @@ time.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-persistence_core = { path = "../core", features = [] }
+persistence_core = { path = "../core", features = ["test-fixture"] }
 persistence_lifecycle = { path = "../lifecycle" }
 tempfile.workspace = true
 tokio.workspace = true

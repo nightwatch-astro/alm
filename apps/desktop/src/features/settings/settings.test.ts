@@ -22,10 +22,12 @@ const {
   mockUpdateSettings,
   mockSettingsRestoreDefaults,
   mockSettingsSourceOverrideSet,
+  mockSettingsGet,
 } = vi.hoisted(() => ({
   mockUpdateSettings: vi.fn(),
   mockSettingsRestoreDefaults: vi.fn(),
   mockSettingsSourceOverrideSet: vi.fn(),
+  mockSettingsGet: vi.fn(),
 }));
 
 vi.mock('@/bindings/index', () => ({
@@ -33,14 +35,23 @@ vi.mock('@/bindings/index', () => ({
     settingsUpdate: mockUpdateSettings,
     settingsRestoreDefaults: mockSettingsRestoreDefaults,
     settingsSourceOverrideSet: mockSettingsSourceOverrideSet,
+    settingsGet: mockSettingsGet,
   },
 }));
 
 import { useAutoSave } from './useAutoSave';
 import {
+  getSettingsTyped,
   settingsRestoreDefaults,
   settingsSourceOverrideSet,
 } from './settingsIpc';
+import {
+  AdvancedSettingsSchema,
+  CleanupSettingsSchema,
+  FramingSettingsSchema,
+  SourceViewsSettingsSchema,
+  NamingSettingsSchema,
+} from './settingsSchemas';
 
 // ── useAutoSave ───────────────────────────────────────────────────────────────
 
@@ -261,5 +272,108 @@ describe('settingsSourceOverrideSet', () => {
       value: false,
     });
     expect(result).toEqual({ sourceId: 'root-uuid-1', key: 'hashOnScan' });
+  });
+});
+
+// ── getSettingsTyped ──────────────────────────────────────────────────────────
+
+describe('getSettingsTyped', () => {
+  beforeEach(() => {
+    mockSettingsGet.mockReset();
+  });
+
+  const respond = (values: Record<string, unknown>) => {
+    mockSettingsGet.mockResolvedValue({ status: 'ok', data: { values } });
+  };
+
+  it('returns every field when the whole object validates', async () => {
+    respond({ logLevel: 'debug', rememberFollowLogs: true, devMode: false });
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({
+      logLevel: 'debug',
+      rememberFollowLogs: true,
+      devMode: false,
+    });
+  });
+
+  it('keeps the valid fields when one field is invalid', async () => {
+    // A stale enum member left by an older build must not discard its
+    // neighbours: whole-object safeParse would reject all three.
+    respond({
+      logLevel: 'verbose',
+      rememberFollowLogs: true,
+      devMode: false,
+    });
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({ rememberFollowLogs: true, devMode: false });
+  });
+
+  it('drops unknown keys', async () => {
+    respond({ logLevel: 'info', somethingRetired: 'x' });
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({ logLevel: 'info' });
+  });
+
+  it('returns an empty object when every field is invalid', async () => {
+    respond({ logLevel: 42, rememberFollowLogs: 'yes' });
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({});
+  });
+
+  it('returns an empty object when the scope has no values', async () => {
+    respond({});
+    await expect(
+      getSettingsTyped('advanced', AdvancedSettingsSchema),
+    ).resolves.toEqual({});
+  });
+
+  // Each pane's mount read drops a stale field and keeps its neighbour, so the
+  // pane falls back to its in-code default for the bad key alone.
+  it('cleanup: drops a retired protection level, keeps the sibling', async () => {
+    // 'standard' is the third level issue #506 retired.
+    respond({ defaultProtection: 'standard', blockPermanentDelete: false });
+    await expect(
+      getSettingsTyped('cleanup', CleanupSettingsSchema),
+    ).resolves.toEqual({ blockPermanentDelete: false });
+  });
+
+  it('framing: drops a non-numeric tolerance, keeps the sibling', async () => {
+    respond({
+      framingRotationToleranceDeg: '3.0',
+      framingPointingFallbackDeg: 0.5,
+    });
+    await expect(
+      getSettingsTyped('framing', FramingSettingsSchema),
+    ).resolves.toEqual({ framingPointingFallbackDeg: 0.5 });
+  });
+
+  it('sourceViews: drops a cross-drive hardlink, keeps the intra-drive kind', async () => {
+    // FR-004a: a hardlink cannot cross a volume, so this value is invalid.
+    respond({
+      sourceViewLinkKindCrossDrive: 'hardlink',
+      sourceViewLinkKindIntraDrive: 'junction',
+    });
+    await expect(
+      getSettingsTyped('sourceViews', SourceViewsSettingsSchema),
+    ).resolves.toEqual({ sourceViewLinkKindIntraDrive: 'junction' });
+  });
+
+  it('naming: drops a malformed pattern element list, keeps the sibling', async () => {
+    respond({ pattern: ['target', 'filter'], autoApplyPattern: false });
+    await expect(
+      getSettingsTyped('naming', NamingSettingsSchema),
+    ).resolves.toEqual({ autoApplyPattern: false });
+  });
+
+  it('naming: accepts a well-formed pattern', async () => {
+    const pattern = [{ id: 'a', kind: 'token', value: 'target' }];
+    respond({ pattern });
+    await expect(
+      getSettingsTyped('naming', NamingSettingsSchema),
+    ).resolves.toEqual({ pattern });
   });
 });

@@ -27,6 +27,7 @@ interface RootCardProps {
   deleting: boolean;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: root card render with per-root-state action and status branches
 export function RootCard({
   root,
   onRescan,

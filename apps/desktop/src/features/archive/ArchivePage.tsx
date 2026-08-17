@@ -25,8 +25,14 @@
 
 import { useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { ListPageLayout, PageTopBar, FilterToolbar, Modal } from '@/components';
-import { Btn, EmptyState, Skeleton } from '@/ui';
+import {
+  ListPageLayout,
+  PageTopBar,
+  FilterToolbar,
+  Modal,
+  TableStateGate,
+} from '@/components';
+import { Btn, EmptyState } from '@/ui';
 import { m } from '@/lib/i18n';
 import { useStaleSelectionCleanup } from '@/lib/use-stale-selection';
 import { revealLabel } from '@/lib/reveal-label';
@@ -63,6 +69,7 @@ function filterEntries(entries: ArchiveEntry[], query: string): ArchiveEntry[] {
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: page render branching over selection, loading, and empty states
 export function ArchivePage() {
   const { selected } = useSearch({ from: '/shell/archive' });
   const navigate = useNavigate({ from: '/archive' });
@@ -272,18 +279,25 @@ export function ArchivePage() {
         detail={item != null ? <ArchiveDetail item={item} /> : undefined}
         onCloseDetail={item != null ? () => void clearSelection() : undefined}
       >
-        {loading ? (
-          <Skeleton variant="block" count={6} label={m.common_loading()} />
-        ) : error ? (
-          <EmptyState title={m.archive_load_error()} />
-        ) : entries.length === 0 ? (
-          <EmptyState
-            title={m.archive_empty_title()}
-            desc={m.archive_empty_desc()}
-          />
-        ) : filtered.length === 0 ? (
-          <EmptyState title={m.archive_no_match()} />
-        ) : (
+        <TableStateGate
+          loading={loading}
+          error={error ? error.message : null}
+          isEmpty={filtered.length === 0}
+          isFilteredEmpty={
+            entries.length > 0 &&
+            search.trim().length > 0 &&
+            filtered.length === 0
+          }
+          skeletonLabel={m.common_loading()}
+          errorEmpty={<EmptyState title={m.archive_load_error()} />}
+          empty={
+            <EmptyState
+              title={m.archive_empty_title()}
+              desc={m.archive_empty_desc()}
+            />
+          }
+          filteredEmpty={<EmptyState title={m.archive_no_match()} />}
+        >
           <ArchiveTable
             entries={filtered}
             selected={selected ?? null}
@@ -291,7 +305,7 @@ export function ArchivePage() {
             sort={sort}
             onSort={handleSort}
           />
-        )}
+        </TableStateGate>
       </ListPageLayout>
 
       {item && (

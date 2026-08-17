@@ -7,7 +7,13 @@ import { useEffect, useState } from 'react';
 import { checkFirstRunComplete } from '@/app/first-run';
 import { m } from '@/lib/i18n';
 import { SetupWizard } from './SetupWizard';
+import { page } from '@/ui/page-layout.css';
 
+/**
+ * Renders the setup page or redirects to the inbox when setup is complete.
+ *
+ * @returns A loading view while setup status is checked, or the setup wizard.
+ */
 export function SetupPage() {
   const [setupCompleted] = usePreference('setupCompleted');
   const [density] = usePreference('density');
@@ -39,7 +45,9 @@ export function SetupPage() {
 
   if (setupCompleted || checking) {
     return (
-      <div className="pv-page pv-setup-page__loading">{m.common_loading()}</div>
+      <div className={`${page} pv-setup-page__loading`}>
+        {m.common_loading()}
+      </div>
     );
   }
 
@@ -47,7 +55,7 @@ export function SetupPage() {
     // density-* mirrors Shell.tsx's `.pv-frame` class: the wizard renders
     // outside the Shell, so it needs its own carrier for a live density
     // preview during setup (#505).
-    <div className={`pv-page density-${density}`}>
+    <div className={`${page} density-${density}`} data-testid="setup-page">
       <SetupWizard />
     </div>
   );

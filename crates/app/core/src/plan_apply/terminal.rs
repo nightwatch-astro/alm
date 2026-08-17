@@ -20,6 +20,10 @@ use super::apply::cumulative_counts;
 
 /// Handle `ApplyOutcome::Completed`: finalize origin-specific side-effects,
 /// persist the terminal state, emit audit + bus + long-op events.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "terminal-state dispatch over plan origin and per-origin finalizer set"
+)]
 pub(super) async fn handle_completed(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -334,6 +338,10 @@ pub(super) async fn handle_paused(
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 /// Batch-cancel pending items with retry-once resilience.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "per-pending-item cancel loop with independent audit emission"
+)]
 async fn cancel_pending_items(
     pool: &SqlitePool,
     bus: &EventBus,

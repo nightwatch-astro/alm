@@ -45,6 +45,44 @@ pub const MAIN_WINDOW_LABEL: &str = "main";
 // scope. `tests/bindings.rs` depends on `desktop_shell::specta_builder`.
 include!("bootstrap/specta.rs");
 
+/// Build the signed auto-update plugin.
+///
+/// Split out of [`build_app`] rather than inlined: the `dev-tools` override
+/// below is ~30 lines of conditional wiring, and folding it into the builder
+/// chain pushed that function past the line ceiling. Keeping it here also puts
+/// the whole override in one readable place.
+///
+/// `PV_E2E_VERSION_OVERRIDE` spoofs a lower "current" version so an e2e run can
+/// exercise the "update available" path against a fixture endpoint without
+/// modifying the real release binary or its embedded version. It is gated
+/// behind `dev-tools` at compile time, so release binaries ignore the env var
+/// entirely — the code is absent, not merely inactive.
+fn build_updater_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry, tauri_plugin_updater::Config> {
+    #[cfg(not(feature = "dev-tools"))]
+    let b = tauri_plugin_updater::Builder::new();
+    #[cfg(feature = "dev-tools")]
+    let mut b = tauri_plugin_updater::Builder::new();
+    #[cfg(feature = "dev-tools")]
+    if let Ok(override_ver) = std::env::var("PV_E2E_VERSION_OVERRIDE") {
+        match override_ver.parse::<semver::Version>() {
+            Ok(fake_ver) => {
+                b = b.default_version_comparator(move |_current, remote| remote.version > fake_ver);
+                tracing::info!(
+                    PV_E2E_VERSION_OVERRIDE = %override_ver,
+                    "updater version override active"
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
+                    PV_E2E_VERSION_OVERRIDE = %override_ver,
+                    "invalid semver in PV_E2E_VERSION_OVERRIDE — using real version"
+                );
+            }
+        }
+    }
+    b.build()
+}
+
 /// Build the Tauri `App` **without** starting the event loop.
 ///
 /// The returned handle exposes the platform path resolver (needed to locate
@@ -54,6 +92,10 @@ include!("bootstrap/specta.rs");
 /// # Panics
 /// Panics if the Tauri runtime cannot be initialised.
 #[must_use]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "sequential Tauri builder wiring: plugin, state, and command registration"
+)]
 pub fn build_app() -> tauri::App {
     let builder = specta_builder();
 
@@ -157,7 +199,7 @@ pub fn build_app() -> tauri::App {
         // T060, #762) — the check/download/verify/relaunch flow itself is
         // frontend-driven (`updateSubscription.ts`, #888 staged flow), not
         // triggered from this Rust process.
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(build_updater_plugin())
         .plugin(tauri_plugin_process::init())
         // Spec 051 US7 (T041): diagnostics log file. `skip_logger()` is
         // required here — this app already installs a global `tracing`
@@ -298,7 +340,41 @@ fn instance_context() -> tauri::Context {
     // needed here any more (`crates/e2e-tests/tests/common/mod.rs`, refs
     // #1204).
 
+    #[cfg(feature = "e2e")]
+    apply_dev_url_override(&mut context);
+
     context
+}
+
+/// Environment variable that redirects the `devUrl` this instance loads its
+/// frontend from.
+///
+/// Read by the E2E harness (`crates/e2e-tests/tests/common/mod.rs`) and by
+/// `.github/workflows/e2e.yml`, which serve the built `dist` on the same port.
+pub const DEV_URL_ENV: &str = "PV_DEV_URL";
+
+/// Redirect `devUrl` at run time when [`DEV_URL_ENV`] is set.
+///
+/// `tauri.conf.json`'s `devUrl` is compiled into the binary by
+/// `generate_context!`, so without this override the served port is fixed at
+/// build time while the port a lane can actually claim is only known at run
+/// time. Two concurrent E2E lanes then resolve the same `localhost` port and
+/// each silently loads whichever lane's `vite preview` bound it first.
+///
+/// Compiled only under the `e2e` feature, so a release binary cannot have its
+/// frontend origin redirected by an environment variable (Constitution
+/// Principle V, mirrors `bootstrap::single_instance_guard_enabled`).
+///
+/// A malformed value aborts startup: a silently ignored override would load
+/// the baked port and reintroduce exactly that cross-lane contamination.
+#[cfg(feature = "e2e")]
+fn apply_dev_url_override(context: &mut tauri::Context) {
+    let Some(raw) = std::env::var_os(DEV_URL_ENV) else {
+        return;
+    };
+    let raw = raw.to_string_lossy();
+    let url = raw.parse().unwrap_or_else(|e| panic!("{DEV_URL_ENV}={raw} is not a valid URL: {e}"));
+    context.config_mut().build.dev_url = Some(url);
 }
 
 /// Start the event loop first, then finish database startup behind the splash.
@@ -404,6 +480,10 @@ fn sqlite_file_path(db_url: &str) -> Option<std::path::PathBuf> {
 /// deleting older ones after a successful backup.  A failure here (full disk,
 /// permission error) is non-fatal: the caller logs a warning and proceeds with
 /// migration rather than bricking startup.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "linear backup precondition chain, each step with its own skip and warn path"
+)]
 async fn run_pre_migration_backup(db: &Database, db_path: &std::path::Path, app_version: &str) {
     // Skip fresh databases (no _sqlx_migrations table) and up-to-date ones.
     match db.has_pending_migrations().await {
@@ -585,12 +665,12 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         &bus,
         resolve_cache.clone(),
     );
-    crate::commands::log::start_log_forwarder(
+    drop(crate::commands::log::start_log_forwarder(
         app.clone(),
         &bus,
         contracts_core::log::LogLevel::Debug,
         pool.clone(),
-    );
+    ));
     drop(spawn_stale_dependent_propagator(pool.clone(), &bus));
     // spec 056 (R5): backend-authoritative onboarding tick subscriber →
     // persists auto-ticks from domain-completion topics and emits

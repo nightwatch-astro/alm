@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
+import {
+  listItem,
+  listItemSelected,
+  title as listItemTitle,
+  meta as listItemMeta,
+} from './ListItem.css';
 
 export interface ListItemProps {
   selected?: boolean;
@@ -11,6 +17,15 @@ export interface ListItemProps {
   meta?: ReactNode;
 }
 
+/**
+ * Renders a list item with optional selection, supplementary content, and interaction.
+ *
+ * @param selected - Whether the item is displayed as selected
+ * @param onClick - Action invoked when the interactive item is activated
+ * @param title - Main content displayed in the item
+ * @param pills - Supplementary content displayed alongside the title
+ * @param meta - Secondary content displayed beneath the title
+ */
 export function ListItem({
   selected,
   onClick,
@@ -21,7 +36,9 @@ export function ListItem({
   return (
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- interactivity is conditional; role becomes button and a keydown handler is attached only when onClick is provided
     <div
-      className={`pv-list-item ${selected ? 'pv-list-item--selected' : ''}`}
+      className={[listItem, selected ? listItemSelected : undefined]
+        .filter(Boolean)
+        .join(' ')}
       data-testid="list-item"
       onClick={onClick}
       role={onClick ? 'button' : undefined}
@@ -39,11 +56,11 @@ export function ListItem({
           : undefined
       }
     >
-      <div className="pv-list-item__title">
+      <div className={listItemTitle}>
         {title}
         {pills}
       </div>
-      {meta && <div className="pv-list-item__meta">{meta}</div>}
+      {meta && <div className={listItemMeta}>{meta}</div>}
     </div>
   );
 }

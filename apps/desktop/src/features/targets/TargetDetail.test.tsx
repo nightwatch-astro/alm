@@ -950,7 +950,7 @@ describe('TargetDetail', () => {
 describe('TargetDetail — no-site prompt (US6/T015/T018)', () => {
   beforeEach(async () => {
     const { __setObservingStateForTest } = await import(
-      './observing-sites/site-store'
+      '@/shared/observing-sites/site-store'
     );
     __setObservingStateForTest({});
   });
@@ -967,7 +967,7 @@ describe('TargetDetail — no-site prompt (US6/T015/T018)', () => {
 
   it('32. hides the no-site prompt and shows real tonight stats once a site is active', async () => {
     const { __setObservingStateForTest } = await import(
-      './observing-sites/site-store'
+      '@/shared/observing-sites/site-store'
     );
     __setObservingStateForTest({
       sites: [
@@ -1015,7 +1015,7 @@ const SITE_744 = {
 describe('TargetDetail — needs-coordinates degrade + Moon-separation trio (#757/#758)', () => {
   beforeEach(async () => {
     const { __setObservingStateForTest } = await import(
-      './observing-sites/site-store'
+      '@/shared/observing-sites/site-store'
     );
     __setObservingStateForTest({
       sites: [SITE_744],

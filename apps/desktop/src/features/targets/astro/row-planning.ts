@@ -34,7 +34,7 @@ import {
   type Band,
   type MoonAvoidanceParams,
   type Recommendation,
-} from './moon-avoidance';
+} from '@/shared/planner/moon-avoidance';
 import { nextOpposition } from './opposition';
 
 /** Minimal catalogued coordinates a row exposes for planning. */

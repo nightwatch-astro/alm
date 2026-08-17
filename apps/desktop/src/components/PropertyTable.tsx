@@ -30,6 +30,7 @@ import {
   type FieldApplicability,
   type ValueSource,
 } from './RenderValue';
+import { selectBase } from '@/styles/select.css';
 
 export interface PropertyDef {
   key: string;
@@ -71,6 +72,11 @@ export interface PropertyTableProps {
   showConfirm?: boolean;
 }
 
+/**
+ * Renders an editor for a property based on its configured input type.
+ *
+ * @param prop - The property definition containing the value, input type, and change handler
+ */
 function PropertyValueEditor({ prop }: { prop: PropertyDef }) {
   const { type = 'text', value, onChange, options } = prop;
 
@@ -82,10 +88,7 @@ function PropertyValueEditor({ prop }: { prop: PropertyDef }) {
           if (v !== null) onChange?.(v);
         }}
       >
-        <Select.Trigger
-          className="pv-select pv-select--sm"
-          aria-label={prop.label}
-        >
+        <Select.Trigger className={selectBase} aria-label={prop.label}>
           <Select.Value />
           <Select.Icon className="pv-select__icon" />
         </Select.Trigger>

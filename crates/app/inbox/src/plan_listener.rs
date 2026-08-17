@@ -125,6 +125,10 @@ fn spawn_repair_sweep(pool: SqlitePool, bus: EventBus, resolve_cache: ResolveCac
 
 // ── Listener loop ─────────────────────────────────────────────────────────────
 
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "event-loop dispatch over broadcast topics with per-topic recv error handling"
+)]
 async fn run_listener_loop(
     pool: SqlitePool,
     bus: EventBus,
@@ -293,6 +297,10 @@ async fn ingest_light_frames_if_applicable(
 /// reaches `applied` exactly once and the link is deleted on transition.
 ///
 /// Non-master items and plans with no linked inbox item are a no-op.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "master-registration precondition chain, each link stage returning early"
+)]
 async fn register_master_if_applicable(pool: &SqlitePool, plan_id: &str) -> Result<(), String> {
     let link = inbox_repo::get_plan_link_by_plan_id(pool, plan_id)
         .await
@@ -599,6 +607,29 @@ pub(crate) mod tests {
         .await;
     }
 
+    /// Poll until the `inbox_plan_links` row for `item_id` is gone, panic after
+    /// 2 s.
+    ///
+    /// `transition_via_plan_id` updates the item state and deletes the link as
+    /// two separate writes, so observing the new state does NOT imply the link
+    /// is already gone — asserting on it directly after `wait_item_state` is a
+    /// race that fails intermittently under load.
+    async fn wait_plan_link_deleted(pool: &sqlx::SqlitePool, item_id: &str) {
+        let owned_id = item_id.to_owned();
+        poll_until(
+            move || {
+                let id = owned_id.clone();
+                let pool = pool.clone();
+                async move {
+                    let link = inbox_repo::get_plan_link(&pool, &id).await.expect("poll plan link");
+                    link.is_none().then_some(())
+                }
+            },
+            &format!("plan link for inbox item {item_id} was never deleted"),
+        )
+        .await;
+    }
+
     fn make_bus(db: &Database) -> EventBus {
         EventBus::with_pool(db.pool().clone())
     }
@@ -682,8 +713,7 @@ pub(crate) mod tests {
         let item = inbox_repo::get_inbox_item(db.pool(), "item-t1").await.unwrap();
         assert_eq!(item.state, "resolved");
 
-        let link = inbox_repo::get_plan_link(db.pool(), "item-t1").await.unwrap();
-        assert!(link.is_none(), "plan link should be deleted after resolution");
+        wait_plan_link_deleted(db.pool(), "item-t1").await;
     }
 
     /// issue #1256: a `plan.applying.completed`("applied") event must trigger

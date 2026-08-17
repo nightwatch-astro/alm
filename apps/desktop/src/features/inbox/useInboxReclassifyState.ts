@@ -180,6 +180,7 @@ export function useInboxReclassifyState({
     !isHeterogeneousFrameTypeBulk ||
     heterogeneousAckKey === heterogeneousSignature;
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: bulk apply guard chain then per-selection reclassify dispatch
   const handleBulkApply = async () => {
     if (selectedFiles.size === 0) return;
     if (isHeterogeneousFrameTypeBulk && !heterogeneousAcked) return;

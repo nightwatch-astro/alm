@@ -98,6 +98,7 @@ export function useSessionMaterializationFlow(
       pollTimerRef.current = setInterval(() => {
         void queryMaterializationProgress({ operationId })
           .then((progress) => {
+            // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: progress reducer over materialization states with terminal handling
             setState((prev) => {
               const isTerminal = TERMINAL_STATES.has(progress.state);
               if (isTerminal) {

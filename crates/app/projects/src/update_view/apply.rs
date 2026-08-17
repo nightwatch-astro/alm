@@ -123,6 +123,10 @@ async fn apply_inner(
 /// absolute source path and destination root path for a plan item. The Tauri
 /// adapter supplies these from the registered library-root and destination-root
 /// paths. Tests may supply a closure that returns real temp-dir paths.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "linear per-item apply loop with failure taxonomy and lease checks"
+)]
 pub async fn run_apply_loop(
     pool: &SqlitePool,
     plan_id: &str,

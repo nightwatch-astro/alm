@@ -107,6 +107,7 @@ dependencies = [
  "contracts_core",
  "dashmap",
  "domain_core",
+ "filetime",
  "fs_executor",
  "fs_inventory",
  "hex",
@@ -133,6 +134,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "workflow_artifacts",
  "workflow_profiles",
@@ -1423,6 +1425,7 @@ dependencies = [
  "persistence_lifecycle",
  "persistence_plans",
  "persistence_targets",
+ "semver",
  "serde",
  "serde_json",
  "simbad-resolver",
@@ -4360,11 +4363,18 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 name = "perf-bench"
 version = "0.1.0"
 dependencies = [
+ "app_core",
  "app_core_inbox",
+ "app_core_targets",
+ "audit",
+ "contracts_core",
  "domain_core",
+ "persistence_calibration",
  "persistence_core",
  "persistence_inbox",
  "persistence_lifecycle",
+ "persistence_plans",
+ "persistence_targets",
  "serde_json",
  "tempfile",
  "tokio",
@@ -8533,6 +8543,8 @@ name = "workflow_profiles"
 version = "0.1.0"
 dependencies = [
  "itertools",
+ "project_structure",
+ "tempfile",
  "winreg 0.56.0",
 ]
 

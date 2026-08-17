@@ -158,6 +158,7 @@ export function useInboxConfirmFlow(deps: ConfirmFlowDeps): ConfirmFlowResult {
       contentSignature: string,
       rootId?: string,
       chosenAttribution?: ChosenAttributionRequest,
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: confirm submit handler with per-error-code recovery branches
     ) => {
       try {
         const result = await confirm({

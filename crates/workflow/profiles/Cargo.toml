@@ -7,10 +7,24 @@ license.workspace = true
 [lib]
 path = "src/lib.rs"
 
+# Child process for the real-spawn integration test (spec 011 T022). A fake
+# spawner only records intended argv; proving the OS honours cwd/argv needs a
+# real compiled child that reports what it received. Located at test runtime via
+# `CARGO_BIN_EXE_spawn-stub`.
+[[bin]]
+name = "spawn-stub"
+path = "src/bin/spawn-stub.rs"
+
 [dependencies]
 # spec 042 (T203): first-wins dedup of discovery results by tool id
 # (replaces the hand-rolled `HashSet`-insert filter).
 itertools = { workspace = true }
+
+[dev-dependencies]
+# Real-spawn integration test (spec 011 T022): disposable project roots, plus
+# the same working-folder resolution production launch uses.
+project_structure = { path = "../../project/structure" }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

@@ -166,6 +166,10 @@ enum FrameOutcome {
 }
 
 /// Ingest one applied light frame. See the module docs for the pipeline.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "light-frame ingest: root, session, and target attribution steps in sequence"
+)]
 async fn ingest_light_frame(
     pool: &SqlitePool,
     bus: Option<&EventBus>,

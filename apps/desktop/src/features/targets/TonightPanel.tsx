@@ -26,6 +26,7 @@ export interface TonightPanelProps {
   sensorConfig?: SensorConfig | null;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: panel render over visibility windows and per-condition labels
 export function TonightPanel({
   tonight,
   effectiveLabel,

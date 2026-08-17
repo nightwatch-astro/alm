@@ -32,7 +32,6 @@ import { m } from '@/lib/i18n';
 import type {
   CalibrationCandidateEvidence,
   AutomaticEligibility,
-  CalibrationKind,
 } from './calibrationHandoffTypes';
 
 // ── DarkFlat boundary ─────────────────────────────────────────────────────────
@@ -94,13 +93,7 @@ function StateIcon({ state, label }: { state: TrafficState; label: string }) {
 
 // ── Age evidence ──────────────────────────────────────────────────────────────
 
-function AgeLabel({
-  evidence,
-  kind,
-}: {
-  evidence: CalibrationCandidateEvidence;
-  kind: string;
-}) {
+function AgeLabel({ evidence }: { evidence: CalibrationCandidateEvidence }) {
   const { age } = evidence;
   const state = age.state;
 
@@ -392,7 +385,7 @@ export function CandidateEvidencePanel({
 
       {/* Evidence row: age + thermal + orientation */}
       <div className="pv-candidate-evidence__evidence-row">
-        <AgeLabel evidence={evidence} kind={kind} />
+        <AgeLabel evidence={evidence} />
         <ThermalLabel evidence={evidence} />
         <OrientationLabel evidence={evidence} />
       </div>
