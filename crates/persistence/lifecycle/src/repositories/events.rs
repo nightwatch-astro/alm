@@ -211,15 +211,24 @@ pub async fn list_by_emitted_at_range(
     Ok(rows)
 }
 
-/// Largest assigned `event_id`, or `0` if the table is empty. Used to seed a
-/// live forwarder's cursor so only events emitted after subscribe are sent.
+/// Exclusive cursor that replays at most the newest `window` rows.
+///
+/// Callers pass the result to [`list_since`]. With `window` rows or fewer in the
+/// table the cursor is `0`, which replays the whole table.
+///
+/// A live subscriber seeds its cursor with this rather than the table's maximum
+/// `event_id` so rows committed before it started are still delivered, bounded
+/// so a long history cannot be replayed in full on every launch.
 ///
 /// # Errors
 /// Returns `persistence_core::DbError::Database` on query failure.
-pub async fn max_event_id(pool: &SqlitePool) -> DbResult<i64> {
-    let (max_id,): (i64,) =
-        sqlx::query_as("SELECT COALESCE(MAX(event_id), 0) FROM events").fetch_one(pool).await?;
-    Ok(max_id)
+pub async fn rewound_cursor(pool: &SqlitePool, window: i64) -> DbResult<i64> {
+    let cursor: Option<i64> =
+        sqlx::query_scalar("SELECT event_id FROM events ORDER BY event_id DESC LIMIT 1 OFFSET ?")
+            .bind(window)
+            .fetch_optional(pool)
+            .await?;
+    Ok(cursor.unwrap_or(0))
 }
 
 /// Smallest retained `event_id`, or `None` if the table is empty. Used to
@@ -285,7 +294,7 @@ mod tests {
 
     use super::{
         count_events, insert_event, list_by_emitted_at_range, list_recent_since, list_since,
-        list_since_by_topic, max_event_id, min_event_id, prune_events_older_than,
+        list_since_by_topic, min_event_id, prune_events_older_than, rewound_cursor,
     };
 
     async fn setup() -> SqlitePool {
@@ -376,13 +385,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn max_event_id_empty_is_zero() {
+    async fn rewound_cursor_bounds_the_replay_to_the_window() {
         let pool = setup().await;
-        assert_eq!(max_event_id(&pool).await.expect("max_event_id"), 0);
+        assert_eq!(rewound_cursor(&pool, 2).await.expect("empty table"), 0);
 
-        let id1 = insert_event(&pool, "t.a", "system", "2026-01-01T00:00:00Z", "{}").await.unwrap();
-        insert_event(&pool, "t.b", "system", "2026-01-01T00:00:01Z", "{}").await.unwrap();
-        assert_eq!(max_event_id(&pool).await.expect("max_event_id"), id1 + 1);
+        for i in 0..5 {
+            insert_event(&pool, "t.a", "system", &format!("2026-01-01T00:00:0{i}Z"), "{}")
+                .await
+                .unwrap();
+        }
+
+        // Window larger than the table replays everything.
+        assert_eq!(rewound_cursor(&pool, 10).await.expect("wide window"), 0);
+
+        // A window of 2 leaves ids 1..=3 behind the cursor and replays 4 and 5,
+        // where seeding the cursor at the table maximum would replay nothing.
+        let cursor = rewound_cursor(&pool, 2).await.expect("narrow window");
+        assert_eq!(cursor, 3);
+        assert_eq!(list_since(&pool, cursor).await.unwrap().len(), 2);
     }
 
     #[tokio::test]
