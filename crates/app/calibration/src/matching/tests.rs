@@ -631,3 +631,47 @@ async fn load_config_reads_require_same_offset_from_tolerances_table() {
     let config = load_config(db.pool()).await;
     assert!(!config.require_same_offset, "toggling off must reach MatchingRuleConfig");
 }
+
+/// astro-plan-qgyu: the sensor-temperature tolerance the user sets in Settings >
+/// Calibration Matching must actually reach the matching engine.
+///
+/// It did not. The UI wrote `temperature_tolerance_c` to the
+/// `calibration_tolerances` row while `load_config_from_db` read only
+/// `require_same_offset` from that row and took its temperature from the older
+/// `calibrationDarkTempTolerance` settings key. So the row value round-tripped
+/// through the DTO — list and update both worked — and never influenced a match.
+/// The engine kept its own 2.0 default while the control displayed 5.0.
+///
+/// A round-trip test cannot catch this: reading back what you wrote passes
+/// either way. The assertion has to be against `MatchingRuleConfig`, which is
+/// what the ranking rules actually consume.
+#[tokio::test]
+async fn load_config_reads_temperature_tolerance_from_tolerances_table() {
+    let _guard = lock_cache_tests().await;
+    caches::invalidate_calibration_config();
+    let db = test_db().await;
+
+    // Deliberately not 5.0 (the column default) and not 2.0 (the engine
+    // default), so passing cannot be explained by either default surviving.
+    let row =
+        persistence_calibration::repositories::calibration_tolerances::CalibrationTolerancesRow {
+            temperature_tolerance_c: 7.5,
+            exposure_tolerance_s: 2.0,
+            aging_limit_days: 365,
+            require_same_camera: true,
+            require_same_gain: true,
+            require_same_binning: true,
+            require_same_offset: true,
+        };
+    persistence_calibration::repositories::calibration_tolerances::update(db.pool(), &row)
+        .await
+        .unwrap();
+
+    let config = load_config(db.pool()).await;
+    assert!(
+        (config.dark_temp_tolerance_c - 7.5).abs() < f64::EPSILON,
+        "the Settings temperature tolerance must reach MatchingRuleConfig; got {} \
+         (2.0 means the engine default won, 5.0 means the column default did)",
+        config.dark_temp_tolerance_c
+    );
+}
