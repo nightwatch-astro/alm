@@ -13,8 +13,10 @@
  * fallback values below.
  */
 import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { m } from '@/lib/i18n';
-import { getSettingsTyped, parseSettingsValues } from './settingsIpc';
+import { parseSettingsValues } from './settingsIpc';
+import { settingsQueryOptions } from './settingsQueries';
 import { FramingSettingsSchema, type FramingSettings } from './settingsSchemas';
 import {
   SettingsSection,
@@ -92,20 +94,15 @@ export function Framing({ save }: FramingProps) {
     applyTyped(parseSettingsValues(values, FramingSettingsSchema));
   }
 
+  // A read failure leaves the in-code R11a defaults in place; the pane has no
+  // error surface of its own, so `error` is deliberately unused.
+  const { data } = useQuery(settingsQueryOptions(FRAMING_SCOPE));
+
   useEffect(() => {
-    let cancelled = false;
-    getSettingsTyped(FRAMING_SCOPE, FramingSettingsSchema)
-      .then((values) => {
-        if (cancelled || editedRef.current) return;
-        applyTyped(values);
-      })
-      .catch(() => {
-        // Backend unavailable — stay with in-code R11a defaults.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (data === undefined || editedRef.current) return;
+    applyTyped(parseSettingsValues(data.values, FramingSettingsSchema));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
   // Marks the mount-time fetch stale as soon as the user starts typing, not
   // only once they blur/Enter to commit. Without this, the fetch can resolve

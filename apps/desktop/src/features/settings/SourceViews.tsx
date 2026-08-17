@@ -19,7 +19,9 @@
  * a pre-select achievability check.
  */
 import { useState, useEffect, useRef } from 'react';
-import { getSettingsTyped, parseSettingsValues } from './settingsIpc';
+import { useQuery } from '@tanstack/react-query';
+import { parseSettingsValues } from './settingsIpc';
+import { settingsQueryOptions } from './settingsQueries';
 import {
   SourceViewsSettingsSchema,
   INTRA_DRIVE_LINK_KINDS,
@@ -81,21 +83,15 @@ export function SourceViews({ save }: SourceViewsProps) {
     }
   }
 
+  // A read failure leaves the in-code defaults in place; the pane has no error
+  // surface of its own, so `error` is deliberately unused.
+  const { data } = useQuery(settingsQueryOptions('sourceViews'));
+
   useEffect(() => {
-    let cancelled = false;
-    getSettingsTyped('sourceViews', SourceViewsSettingsSchema)
-      .then((values) => {
-        if (cancelled || editedRef.current) return;
-        applyTyped(values);
-      })
-      .catch(() => {
-        // Backend unavailable — stay with in-code defaults.
-      });
-    return () => {
-      cancelled = true;
-    };
+    if (data === undefined || editedRef.current) return;
+    applyTyped(parseSettingsValues(data.values, SourceViewsSettingsSchema));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [data]);
 
   return (
     <SettingsSection

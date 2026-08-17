@@ -14,13 +14,8 @@
  * Covers: load, per-type round-trip, auto-on-completion round-trip, the
  * protected-category warning, restore-defaults, and the stale-fetch race.
  */
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  within,
-} from '@testing-library/react';
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { renderWithQuery as render } from '@/test/renderWithQuery';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ZodType } from 'zod';
 

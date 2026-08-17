@@ -12,8 +12,10 @@
 // firstrun.restart was fully wired on the backend but had no UI caller).
 import { useState, useEffect, useSyncExternalStore } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { Btn } from '@/ui';
-import { getSettingsTyped, restartFirstRun } from './settingsIpc';
+import { parseSettingsValues, restartFirstRun } from './settingsIpc';
+import { settingsQueryOptions } from './settingsQueries';
 import { AdvancedSettingsSchema, type LOG_LEVELS } from './settingsSchemas';
 import { m } from '@/lib/i18n';
 import { errMessage } from '@/lib/errors';
@@ -76,22 +78,16 @@ export function Advanced({ save }: AdvancedProps) {
     }
   };
 
-  // Load persisted logLevel from backend on mount (T015).
+  // A read failure leaves the in-code default in place; this pane surfaces no
+  // error for it, so `error` is deliberately unused.
+  const { data } = useQuery(settingsQueryOptions('advanced'));
+
   useEffect(() => {
-    let cancelled = false;
-    getSettingsTyped('advanced', AdvancedSettingsSchema)
-      .then((vals) => {
-        if (cancelled) return;
-        if (vals.logLevel) setLogLevel(vals.logLevel);
-      })
-      .catch(() => {
-        // Backend unavailable — stay with in-code default.
-      });
-    return () => {
-      cancelled = true;
-    };
+    if (data === undefined) return;
+    const vals = parseSettingsValues(data.values, AdvancedSettingsSchema);
+    if (vals.logLevel) setLogLevel(vals.logLevel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [data]);
 
   // Running app semver, independent of update state (#845).
   useEffect(() => {

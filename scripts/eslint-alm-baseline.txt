@@ -63,7 +63,7 @@ src/features/sessions/CalendarScroll.tsx	72	alm/require-root-testid
 src/features/sessions/SessionNotesSection.tsx	93	alm/require-root-testid
 src/features/settings/AuditLog.tsx	308	alm/require-root-testid
 src/features/settings/CalibrationMatching.tsx	189	alm/require-root-testid
-src/features/settings/Framing.tsx	137	alm/require-root-testid
+src/features/settings/Framing.tsx	134	alm/require-root-testid
 src/features/settings/ObservingSites.tsx	293	alm/require-root-testid
 src/features/settings/PatternChipsEditor.tsx	39	alm/require-root-testid
 src/features/settings/PerTypePatternChipsEditor.tsx	90	alm/require-root-testid
@@ -74,7 +74,7 @@ src/features/settings/SettingsKit.tsx	33	alm/require-root-testid
 src/features/settings/SettingsPage.tsx	187	alm/require-root-testid
 src/features/settings/SourceProtectionOverride.tsx	139	alm/require-root-testid
 src/features/settings/SourceViewStrategy.tsx	60	alm/require-root-testid
-src/features/settings/SourceViews.tsx	101	alm/require-root-testid
+src/features/settings/SourceViews.tsx	97	alm/require-root-testid
 src/features/setup/SetupPage.tsx	48	alm/require-root-testid
 src/features/setup/SetupWizard.tsx	244	alm/require-root-testid
 src/features/setup/steps/StepCatalogs.tsx	168	alm/require-root-testid

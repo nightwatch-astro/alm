@@ -12,9 +12,10 @@
 // `cleanupTypeOverrides` blob no scan path ever consulted — it looked like the
 // cleanup configuration surface while having zero effect on cleanup.
 import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Toggle, SegControl, Pill, Banner } from '@/ui';
+import { settingsQueryOptions } from './settingsQueries';
 import {
-  getSettingsTyped,
   parseSettingsValues,
   cleanupPolicyGet,
   cleanupPolicyUpdate,
@@ -136,22 +137,15 @@ export function Cleanup({ save }: CleanupProps) {
   // before applying its (now-outdated) snapshot.
   const editedRef = useRef(false);
 
-  // Load persisted values from backend on mount (T015).
+  // A read failure leaves the in-code defaults in place; this pane has no error
+  // surface of its own, so `error` is deliberately unused.
+  const { data } = useQuery(settingsQueryOptions('cleanup'));
+
   useEffect(() => {
-    let cancelled = false;
-    getSettingsTyped('cleanup', CleanupSettingsSchema)
-      .then((vals) => {
-        if (cancelled || editedRef.current) return;
-        applyTyped(vals);
-      })
-      .catch(() => {
-        // Backend unavailable — stay with in-code defaults.
-      });
-    return () => {
-      cancelled = true;
-    };
+    if (data === undefined || editedRef.current) return;
+    applyTyped(parseSettingsValues(data.values, CleanupSettingsSchema));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [data]);
 
   // Policy has its own store and its own in-flight guard: a slow policy fetch
   // must not clobber a policy edit, independent of the settings-scope fetch.

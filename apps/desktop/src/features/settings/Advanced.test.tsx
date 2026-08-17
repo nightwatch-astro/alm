@@ -12,7 +12,8 @@
  * buffer, clear the `setupCompleted` cache, and navigate to `/setup`.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithQuery as render } from '@/test/renderWithQuery';
 import { Advanced } from './Advanced';
 import type { FirstRunRestartResponse } from './settingsIpc';
 

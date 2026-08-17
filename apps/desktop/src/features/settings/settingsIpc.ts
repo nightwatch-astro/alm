@@ -17,6 +17,8 @@ import type { ZodType } from 'zod';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
 import { ipcArgs } from '@/lib/ipc-args';
+import { queryClient } from '@/data/queryClient';
+import { queryKeys } from '@/data/queryKeys';
 // `LibraryRoot` is a plain `_Serialize` re-export in `@/bindings/types` (the
 // facade every settings pane already imports it through), NOT the wider
 // `LibraryRoot_Serialize | LibraryRoot_Deserialize` union `@/bindings/index`
@@ -191,6 +193,9 @@ export async function updateSettings(args: {
   values: Record<string, unknown>;
 }): Promise<void> {
   unwrap(await commands.settingsUpdate(args.scope, args.values));
+  await queryClient.invalidateQueries({
+    queryKey: queryKeys.settings.scope(args.scope),
+  });
 }
 
 /**
@@ -200,7 +205,11 @@ export async function updateSettings(args: {
 export async function settingsRestoreDefaults(
   keys: string[],
 ): Promise<RestoreDefaultsResponse> {
-  return unwrap(await commands.settingsRestoreDefaults({ keys }));
+  const response = unwrap(await commands.settingsRestoreDefaults({ keys }));
+  // Restore is key-scoped, not scope-scoped (an empty `keys` restores
+  // everything), so the affected scopes cannot be derived here.
+  await queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() });
+  return response;
 }
 
 /**
