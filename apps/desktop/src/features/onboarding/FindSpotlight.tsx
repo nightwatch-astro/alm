@@ -152,13 +152,17 @@ export function useActiveFindItem(): OnboardingItemDto | null {
 // ── Spotlight ─────────────────────────────────────────────────────────────────
 
 const PULSE_MS = 2500;
-// Two budgets, because waiting for a route to land and waiting for an anchor on
-// the page already shown are different problems. Cross-page navigation plus
-// React hydration under full-suite Playwright load can take ~2s, so the
-// pre-arrival budget is generous; once the target page is on screen an absent
-// anchor is absent, and the user should not wait 3s for the explanation.
+// Two budgets, because the two phases wait on different things. No route in
+// `router.tsx` has a loader, so a route commit waits only on a lazy chunk plus
+// the optional pre-navigation lookup here (`fetchFirstSessionId` for a deep
+// link) — page DATA is fetched after the commit, in the mounted component. The
+// post-arrival phase is therefore the one that waits on an IPC query and a
+// render: data-gated anchors (inbox rows, sessions rows, master rows) do not
+// exist until their query resolves, and a large library makes that slow. A
+// premature `missing` is terminal — the resolve effect re-runs only on
+// `[selector]` — so the post-arrival budget gets the larger allowance.
 const NAVIGATION_GRACE_MS = 3000;
-const ARRIVED_TIMEOUT_MS = 1500;
+const ARRIVED_TIMEOUT_MS = 4000;
 const RESOLVE_POLL_MS = 60;
 
 // react-joyride wire strings (enum imports stay in the adapter — mirrored here).
@@ -261,8 +265,8 @@ function SpotlightFor({
         return;
       }
       // Before arrival the navigation grace applies; arrival restarts the clock
-      // on the shorter anchor wait, so a genuinely absent control is reported
-      // ~1.5s after the page is visible instead of ~3s after activation.
+      // on the anchor wait, so the query that renders a data-gated anchor gets
+      // its full allowance measured from when its page came on screen.
       const arrivedAt = arrivedAtRef.current;
       const deadline =
         arrivedAt === null
