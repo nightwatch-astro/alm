@@ -109,14 +109,20 @@ pub fn new_frame_watcher_registry() -> FrameWatcherRegistry {
 
 /// Run one scoped reconcile pass over `root_id` with the given trigger reason.
 ///
-/// Failures are logged, never propagated: a trigger is best-effort background
-/// work, and the next trigger (or the on-demand command) retries.
+/// Returns whether the root's pending work can be considered discharged: `true`
+/// on success, and also on a non-retryable failure (e.g. the root is not
+/// registered as a `library_root`, which no amount of retrying fixes). `false`
+/// only for a retryable failure, and the caller MUST then keep its pending-work
+/// marker set — clearing it would drop the only record that those filesystem
+/// events were never processed.
+///
+/// Failures are never propagated: a trigger is best-effort background work.
 async fn schedule_reconcile(
     pool: &SqlitePool,
     bus: &EventBus,
     root_id: &str,
     reason: ReconcileReason,
-) {
+) -> bool {
     let req = InventoryReconcileRunRequest { root_id: root_id.to_owned(), reason };
     match app_core::frame_inventory::run_reconcile(pool, bus, &req).await {
         Ok(resp) => {
@@ -128,14 +134,17 @@ async fn schedule_reconcile(
                 recovered = resp.recovered,
                 "frame watcher: reconcile pass complete"
             );
+            true
         }
         Err(error) => {
             tracing::warn!(
                 root_id,
                 ?reason,
                 error = error.message,
+                retryable = error.retryable,
                 "frame watcher: reconcile pass failed"
             );
+            !error.retryable
         }
     }
 }
@@ -179,8 +188,12 @@ fn spawn_drain_task(
                         dirty = true;
                     }
                     if dirty {
-                        dirty = false;
-                        schedule_reconcile(&pool, &bus, &root_id, ReconcileReason::LiveEvent).await;
+                        // Stays dirty on failure so the next tick retries: this
+                        // flag is the only record that those events were never
+                        // processed.
+                        dirty = !schedule_reconcile(
+                            &pool, &bus, &root_id, ReconcileReason::LiveEvent
+                        ).await;
                     }
                 }
             }
@@ -198,7 +211,7 @@ fn spawn_scheduled_task(pool: SqlitePool, bus: EventBus, root_id: String) -> Joi
         interval.tick().await;
         loop {
             interval.tick().await;
-            schedule_reconcile(&pool, &bus, &root_id, ReconcileReason::Scheduled).await;
+            let _ = schedule_reconcile(&pool, &bus, &root_id, ReconcileReason::Scheduled).await;
         }
     })
 }
@@ -269,6 +282,41 @@ fn build_entry(
     Ok(FrameWatcherEntry { _guard: guard, drain_task, scheduled_task })
 }
 
+/// Publish a freshly built entry under the registry lock.
+///
+/// Discards the entry (aborting its tasks) when a concurrent attach already
+/// inserted one, or when a detach tombstone was written while
+/// [`attach_root_watcher`] was doing its unlocked work.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "three guard arms, each with one tracing call whose macro expansion is what crosses the ceiling"
+)]
+async fn publish_entry(
+    registry: &FrameWatcherRegistry,
+    root_id: &str,
+    entry: FrameWatcherEntry,
+    config: &RootInventoryConfig,
+) {
+    let mut reg = registry.lock().await;
+    if reg.entries.contains_key(root_id) {
+        entry.abort();
+        tracing::debug!(root_id, "frame watcher: concurrent attach, discarding duplicate");
+        return;
+    }
+    if reg.detach_requested.remove(root_id) {
+        entry.abort();
+        tracing::debug!(root_id, "frame watcher: detach arrived during attach, discarding");
+        return;
+    }
+    tracing::info!(
+        root_id,
+        live = config.detection.live,
+        scheduled = config.detection.scheduled,
+        "frame watcher: attached"
+    );
+    reg.entries.insert(root_id.to_owned(), entry);
+}
+
 /// Attach the live/scheduled detection triggers for `root_id`.
 ///
 /// Idempotent: attaching an already-attached root is a no-op (guards against
@@ -288,6 +336,10 @@ fn build_entry(
 /// # Errors
 /// Returns `Err(String)` if the root's config cannot be read or its OS watcher
 /// cannot be started.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "sequential early-return guards (registered, available, config), each with one tracing call"
+)]
 pub async fn attach_root_watcher(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -324,30 +376,11 @@ pub async fn attach_root_watcher(
     }
 
     if config.detection.on_open {
-        schedule_reconcile(pool, bus, root_id, ReconcileReason::OnOpen).await;
+        let _ = schedule_reconcile(pool, bus, root_id, ReconcileReason::OnOpen).await;
     }
 
     let entry = build_entry(pool, bus, root_id, Path::new(&root_path_str), config)?;
-
-    let mut reg = registry.lock().await;
-    if reg.entries.contains_key(root_id) {
-        entry.abort();
-        tracing::debug!(root_id, "frame watcher: concurrent attach, discarding duplicate");
-        return Ok(());
-    }
-    if reg.detach_requested.remove(root_id) {
-        entry.abort();
-        tracing::debug!(root_id, "frame watcher: detach arrived during attach, discarding");
-        return Ok(());
-    }
-    tracing::info!(
-        root_id,
-        live = config.detection.live,
-        scheduled = config.detection.scheduled,
-        "frame watcher: attached"
-    );
-    reg.entries.insert(root_id.to_owned(), entry);
-    drop(reg);
+    publish_entry(registry, root_id, entry, &config).await;
     Ok(())
 }
 
@@ -402,6 +435,20 @@ mod tests {
         attach_root_watcher(db.pool(), &bus, &registry, "no-such-root").await.unwrap();
 
         assert!(registry.lock().await.entries.is_empty());
+    }
+
+    /// A non-retryable failure discharges the caller's pending-work marker, so a
+    /// permanently unregistered root cannot spin the drain task's retry loop.
+    #[tokio::test]
+    async fn a_non_retryable_reconcile_failure_discharges_pending_work() {
+        let db = persistence_core::Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        let bus = EventBus::with_pool(db.pool().clone());
+
+        let discharged =
+            schedule_reconcile(db.pool(), &bus, "no-such-root", ReconcileReason::LiveEvent).await;
+
+        assert!(discharged, "an unregistered root must not be retried forever");
     }
 
     #[tokio::test]

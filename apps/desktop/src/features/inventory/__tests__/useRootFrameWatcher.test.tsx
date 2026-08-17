@@ -14,8 +14,8 @@ import { render } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockAttach, mockDetach } = vi.hoisted(() => ({
-  mockAttach: vi.fn(() => Promise.resolve()),
-  mockDetach: vi.fn(() => Promise.resolve()),
+  mockAttach: vi.fn((_req: { rootId: string }) => Promise.resolve()),
+  mockDetach: vi.fn((_req: { rootId: string }) => Promise.resolve()),
 }));
 
 vi.mock('../inventoryIpc', () => ({
