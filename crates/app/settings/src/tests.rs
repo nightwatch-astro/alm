@@ -320,6 +320,22 @@ async fn get_settings_repairs_invalid_stored_value() {
     assert!(raw.is_none());
 }
 
+/// Range validation runs on read as well as on write, and `observingSites` is
+/// repaired as one whole key: a single out-of-range site discards every sibling
+/// site stored alongside it. Callers that persist sites must therefore validate
+/// before writing rather than relying on read-time repair to isolate the bad row.
+#[tokio::test]
+async fn get_settings_repair_of_one_bad_site_discards_the_whole_list() {
+    let (db, bus, cache) = setup().await;
+    let stored = serde_json::json!([sample_site("good", 52.1), edge_site("bad", 90.1, 0.0, 0.0),]);
+    repo::set_raw(db.pool(), "observingSites", &stored).await.unwrap();
+
+    let resp = get_settings(db.pool(), &bus, &cache).await.unwrap();
+
+    assert!(resp.settings.observing_sites.is_empty());
+    assert!(repo::get_raw(db.pool(), "observingSites").await.unwrap().is_none());
+}
+
 // ── T021/T022: source override tests ──────────────────────────────
 
 #[tokio::test]
@@ -565,6 +581,17 @@ fn locale_default_is_base_locale() {
     assert_eq!(default_value_for_key("locale"), serde_json::json!("en-GB"));
 }
 
+/// A site whose three range-checked numeric fields are set explicitly, so a
+/// case can sit exactly on or just past one inclusive bound while every other
+/// field stays valid.
+fn edge_site(id: &str, latitude_deg: f64, longitude_deg: f64, min_horizon_alt_deg: f64) -> Value {
+    serde_json::json!({
+        "id": id, "name": "Edge", "latitudeDeg": latitude_deg,
+        "longitudeDeg": longitude_deg, "timezone": "UTC",
+        "twilight": "astronomical", "minHorizonAltDeg": min_horizon_alt_deg
+    })
+}
+
 // ── Value validation unit tests ─────────────────────────────────────
 //
 // These exercise `validate_value` directly. Previously this logic was only
@@ -615,6 +642,14 @@ fn locale_default_is_base_locale() {
     "elevationM": null, "timezone": "America/Santiago",
     "twilight": "nautical", "minHorizonAltDeg": 15.0
 }]))]
+// Inclusive range edges for every `observingSites` numeric field: both ends of
+// latitudeDeg, longitudeDeg, and minHorizonAltDeg must be accepted.
+#[case("observingSites", serde_json::json!([edge_site("lat-lo", -90.0, 0.0, 0.0)]))]
+#[case("observingSites", serde_json::json!([edge_site("lat-hi", 90.0, 0.0, 0.0)]))]
+#[case("observingSites", serde_json::json!([edge_site("lon-lo", 0.0, -180.0, 0.0)]))]
+#[case("observingSites", serde_json::json!([edge_site("lon-hi", 0.0, 180.0, 0.0)]))]
+#[case("observingSites", serde_json::json!([edge_site("hor-lo", 0.0, 0.0, 0.0)]))]
+#[case("observingSites", serde_json::json!([edge_site("hor-hi", 0.0, 0.0, 90.0)]))]
 #[case("observingDefaultSiteId", serde_json::json!(null))]
 #[case("observingDefaultSiteId", serde_json::json!("s1"))]
 #[case("observingActiveSiteId", serde_json::json!("s1"))]
@@ -668,7 +703,15 @@ fn validate_value_accepts(#[case] key: &str, #[case] value: Value) {
 #[case("observingSites", serde_json::json!([{
     "id": "s1", "name": "A", "latitudeDeg": 91.0, "longitudeDeg": 0.0,
     "timezone": "UTC", "twilight": "astronomical", "minHorizonAltDeg": 0.0
-}]))] // latitude out of range
+}]))]
+// latitude out of range
+// Just outside each inclusive edge — these pin the comparison operators.
+#[case("observingSites", serde_json::json!([edge_site("lat-lo", -90.1, 0.0, 0.0)]))]
+#[case("observingSites", serde_json::json!([edge_site("lat-hi", 90.1, 0.0, 0.0)]))]
+#[case("observingSites", serde_json::json!([edge_site("lon-lo", 0.0, -180.1, 0.0)]))]
+#[case("observingSites", serde_json::json!([edge_site("lon-hi", 0.0, 180.1, 0.0)]))]
+#[case("observingSites", serde_json::json!([edge_site("hor-lo", 0.0, 0.0, -0.1)]))]
+#[case("observingSites", serde_json::json!([edge_site("hor-hi", 0.0, 0.0, 90.1)]))]
 #[case("observingSites", serde_json::json!([{
     "id": "s1", "name": "A", "latitudeDeg": 0.0, "longitudeDeg": 0.0,
     "timezone": "UTC", "twilight": "civil", "minHorizonAltDeg": 0.0
