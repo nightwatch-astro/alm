@@ -614,6 +614,7 @@ deferred and must reference a revision of the same group.
 | `revision_number` | INTEGER | `NOT NULL CHECK (revision_number >= 1)` |
 | `parent_revision_id` | UUID FK | Nullable only for initial revision |
 | `representative_session_id` | UUID FK | Exact immutable representative |
+| `representative_evidence_id` | UUID FK | `NOT NULL REFERENCES relation_evidence(id)`; the evidence computed for the representative session; the repository projection returns it as `PanelGroupRevision.representativeEvidenceId` |
 | `proposal_id` | UUID FK | Null only for the ingestion-created singleton |
 | `config_version_id` | UUID FK | `NOT NULL` |
 | `actor_id` | UUID | System or user actor |
@@ -695,7 +696,10 @@ timestamps.
 
 An immutable accepted revision stores UUID, mosaic UUID, numeric
 `revision_number`, optional same-mosaic parent revision UUID, accepted proposal
-UUID, configuration version UUID, actor, reason, and creation time.
+UUID, configuration version UUID, actor, reason, and creation time. A
+`captured_union_evidence_id` UUID FK `NOT NULL REFERENCES relation_evidence(id)`
+holds the union-coverage evidence the repository projection returns as
+`MosaicRevision.capturedUnionEvidenceId`.
 `UNIQUE(mosaic_id, revision_number)` orders revisions and
 `UNIQUE(parent_revision_id)` permits one accepted successor from a head.
 
@@ -774,6 +778,61 @@ per-proposal ordinal uniqueness constraint in its typed table:
 typed integer value, unit, comparison, threshold, outcome, and source evidence
 digest. Geometry payloads remain in the exact edge or frame evidence tables.
 Corrected proposals retain measured evidence and store typed review overrides.
+
+### `relation_evidence`
+
+One row is the `RelationEvidence` envelope the contract requires on every
+`RelationProposal`, `ManualRelationCreateRequest`, `PanelGroupRevision`, and
+`MosaicRevision`. It is keyed by its own `id`, so a proposal, a panel-group
+revision's representative session, and a mosaic revision's captured union each
+reference the same table by UUID.
+
+| Field | Type | Constraints and meaning |
+|---|---|---|
+| `id` | UUID | Public evidence identity; the contract `evidenceId` |
+| `target_compatibility` | TEXT | `NOT NULL`; `same_target`, `reviewed_cross_target`, or `incompatible` |
+| `parity` | TEXT | `NOT NULL`; `match`, `mismatch`, or `unknown` |
+| `acquisition_geometry` | TEXT | `NOT NULL`; `compatible`, `incompatible`, or `unknown` |
+| `equipment` | TEXT | `NOT NULL`; `compatible`, `incompatible`, or `unknown` |
+| `footprint_coverage_ppm` | INTEGER | Nullable; `CHECK (value BETWEEN 0 AND 1000000)`; the optional `footprintCoveragePercent` |
+| `centre_separation_ppm` | INTEGER | Nullable; `CHECK (value >= 0)`; the optional `centerSeparationPercent`, a percent, distinct from the angular `centre_separation_udeg` on `mosaic_edge_evidence` |
+| `residual_sky_rotation_udeg` | INTEGER | Nullable; the optional `residualSkyRotationDeg` in microdegrees |
+| `config_version_id` | UUID FK | `NOT NULL`; matching-settings revision the evidence was measured under |
+| `input_digest` | TEXT | `NOT NULL`; digest over the ordered footprints and settings revision the evidence derives from |
+| `created_sequence` | INTEGER | `NOT NULL`; append-only sequence |
+| `created_at` | timestamp | `NOT NULL` |
+
+`missingEvidenceCodes`, `allowedResidualRotationRangesDeg`, and
+`thresholdSnapshot` are bounded contract lists, so each is a typed child table
+with a per-evidence ordinal, never JSON:
+
+- `relation_evidence_missing_code(evidence_id, ordinal, code)` with
+  `UNIQUE(evidence_id, ordinal)`; a `manual.create` guard requires it to
+  enumerate every geometry or orientation measurement the proposal could not
+  compute.
+- `relation_evidence_allowed_rotation(evidence_id, ordinal, lower_udeg,
+  upper_udeg)` with `UNIQUE(evidence_id, ordinal)` and `CHECK (lower_udeg <=
+  upper_udeg)`; the geometry-derived allowed residual intervals, bounded at 16.
+- `relation_evidence_measurement(evidence_id, measurement_key, integer_value,
+  unit, comparison, threshold_min, threshold_max, outcome,
+  source_evidence_digest)` keyed by `(evidence_id, measurement_key)`, mirroring
+  `proposal_measurement` but scoped to the evidence envelope so representative
+  and captured-union evidence carry their own `thresholdSnapshot`.
+
+A committed light session's singleton panel revision references a
+`relation_evidence` row whose geometry columns are null and whose
+`missing_code` children enumerate the unavailable measurements, with
+`parity`, `acquisition_geometry`, and `equipment` set to `unknown`. The row
+therefore exists even when no geometry is available, satisfying the non-optional
+contract field.
+
+`relation_evidence` is a Tier 2 record: every column and child row re-derives
+from the endpoint footprints plus the named matching-settings revision, so its
+writes may be batched or asynchronous. The Tier 1 record is the manual relation
+itself, written synchronously by `relation_proposal` and its typed review
+overrides; losing a `relation_evidence` row costs a recomputation and keeps the
+user decision intact. Principle V of the project governance document defines
+these tiers.
 
 ### `relation_decision_snapshot`
 
