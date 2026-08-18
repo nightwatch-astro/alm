@@ -14,9 +14,11 @@
  *
  * `onDismiss` receives the originating event: a surface that stops Escape
  * propagation or restores focus to its trigger does so from the callback, since
- * those concerns differ per consumer. It is read through a ref, so registration
- * depends on `enabled` alone — an inline callback does not re-register the
- * listeners on every render.
+ * those concerns differ per consumer. `refs` and `onDismiss` are read through a
+ * ref synced after commit, so registration depends on `enabled` alone: an inline
+ * callback or array literal at the call site does not re-register the listeners
+ * on every render. Both listeners fire after commit, so they never observe a
+ * stale value.
  */
 
 import { useEffect, useRef } from 'react';
@@ -30,7 +32,9 @@ export function useDismiss(
   enabled: boolean,
 ): void {
   const latest = useRef({ refs, onDismiss });
-  latest.current = { refs, onDismiss };
+  useEffect(() => {
+    latest.current = { refs, onDismiss };
+  });
 
   useEffect(() => {
     if (!enabled) return undefined;
