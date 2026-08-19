@@ -614,7 +614,7 @@ deferred and must reference a revision of the same group.
 | `revision_number` | INTEGER | `NOT NULL CHECK (revision_number >= 1)` |
 | `parent_revision_id` | UUID FK | Nullable only for initial revision |
 | `representative_session_id` | UUID FK | Exact immutable representative |
-| `representative_evidence_id` | UUID FK | `NOT NULL REFERENCES relation_evidence(id)`; the evidence computed for the representative session; the repository projection returns it as `PanelGroupRevision.representativeEvidenceId` |
+| `representative_evidence_id` | UUID FK | `NOT NULL UNIQUE REFERENCES relation_evidence(id)`; the evidence computed for the representative session; the repository projection returns it as `PanelGroupRevision.representativeEvidenceId` |
 | `proposal_id` | UUID FK | Null only for the ingestion-created singleton |
 | `config_version_id` | UUID FK | `NOT NULL` |
 | `actor_id` | UUID | System or user actor |
@@ -697,7 +697,8 @@ timestamps.
 An immutable accepted revision stores UUID, mosaic UUID, numeric
 `revision_number`, optional same-mosaic parent revision UUID, accepted proposal
 UUID, configuration version UUID, actor, reason, and creation time. A
-`captured_union_evidence_id` UUID FK `NOT NULL REFERENCES relation_evidence(id)`
+`captured_union_evidence_id` UUID FK `NOT NULL UNIQUE REFERENCES
+relation_evidence(id)`
 holds the union-coverage evidence the repository projection returns as
 `MosaicRevision.capturedUnionEvidenceId`.
 `UNIQUE(mosaic_id, revision_number)` orders revisions and
@@ -751,7 +752,8 @@ modifies image files.
 | `proposal_revision` | INTEGER | `NOT NULL CHECK (proposal_revision >= 1)`; contract CAS token incremented by each state decision |
 | `kind` | TEXT | `panel_add`, `panel_replace`, `panel_split`, `panel_merge`, `mosaic_create`, `mosaic_edge`, `mosaic_split`, `mosaic_merge`, or `manual_relation` |
 | `basis_digest` | TEXT | `NOT NULL`; exact ordered inputs and relation kind |
-| `evidence_digest` | TEXT | `NOT NULL` |
+| `evidence_id` | UUID FK | `NOT NULL UNIQUE REFERENCES relation_evidence(id)`; the envelope this proposal was measured from, returned as the contract `evidenceId` |
+| `evidence_digest` | TEXT | `NOT NULL`; equals the `input_digest` of the referenced `relation_evidence` row |
 | `config_version_id` | UUID FK | `NOT NULL` |
 | `state` | TEXT | `pending`, `accepted`, `rejected`, `superseded`, or `stale` |
 | `created_at`, `decided_at` | timestamp | Decision time follows state |
@@ -760,7 +762,10 @@ modifies image files.
 | `superseded_by_proposal_id` | UUID FK | Required only for `superseded` |
 
 `UNIQUE(kind, basis_digest, evidence_digest, config_version_id)` makes proposal
-generation idempotent. Specific input and proposed-output tables preserve
+generation idempotent. Because `evidence_digest` restates the referenced
+envelope's `input_digest`, that uniqueness key rejects a second proposal over the
+same inputs, and a digest that disagrees with the referenced row is a write bug
+the `manual.create` guard rejects rather than a state the table can hold. Specific input and proposed-output tables preserve
 foreign keys. Every ordered child row has a non-negative `ordinal` and a
 per-proposal ordinal uniqueness constraint in its typed table:
 
@@ -787,6 +792,23 @@ One row is the `RelationEvidence` envelope the contract requires on every
 revision's representative session, and a mosaic revision's captured union each
 reference the same table by UUID.
 
+One envelope serves exactly one subject. `relation_proposal.evidence_id`,
+`panel_group_revision.representative_evidence_id`, and
+`mosaic_revision.captured_union_evidence_id` are each `UNIQUE`, so no two
+subjects can name the same row and no row is shared or reused. Which subject a
+row belongs to is recorded on the row itself:
+
+| Field | Type | Constraints and meaning |
+|---|---|---|
+| `subject_kind` | TEXT | `NOT NULL`; `proposal`, `panel_group_representative`, or `mosaic_captured_union` |
+| `subject_digest` | TEXT | `NOT NULL`; digest over the ordered subject identities the evidence was measured for: the proposal's ordered inputs, the representative session, or the mosaic's captured membership |
+
+A referencing write computes `subject_digest` from its own inputs and stores it;
+a reader that recomputes a different digest has found a mispaired row and MUST
+treat the evidence as absent rather than authoritative. `subject_kind` makes the
+mismatch cheap to detect, because an envelope measured for a representative
+session can never legally sit under a mosaic's captured-union column.
+
 | Field | Type | Constraints and meaning |
 |---|---|---|
 | `id` | UUID | Public evidence identity; the contract `evidenceId` |
@@ -807,17 +829,28 @@ reference the same table by UUID.
 with a per-evidence ordinal, never JSON:
 
 - `relation_evidence_missing_code(evidence_id, ordinal, code)` with
-  `UNIQUE(evidence_id, ordinal)`; a `manual.create` guard requires it to
-  enumerate every geometry or orientation measurement the proposal could not
-  compute.
+  `UNIQUE(evidence_id, ordinal)` and `CHECK (ordinal BETWEEN 0 AND 99)`, matching
+  the contract bound of 100; a `manual.create` guard requires it to enumerate
+  every geometry or orientation measurement the proposal could not compute.
 - `relation_evidence_allowed_rotation(evidence_id, ordinal, lower_udeg,
-  upper_udeg)` with `UNIQUE(evidence_id, ordinal)` and `CHECK (lower_udeg <=
-  upper_udeg)`; the geometry-derived allowed residual intervals, bounded at 16.
+  upper_udeg)` with `UNIQUE(evidence_id, ordinal)`, `CHECK (ordinal BETWEEN 0 AND
+  15)` for the contract bound of 16, and `CHECK (lower_udeg <= upper_udeg)`; the
+  geometry-derived allowed residual intervals.
 - `relation_evidence_measurement(evidence_id, measurement_key, integer_value,
   unit, comparison, threshold_min, threshold_max, outcome,
   source_evidence_digest)` keyed by `(evidence_id, measurement_key)`, mirroring
-  `proposal_measurement` but scoped to the evidence envelope so representative
-  and captured-union evidence carry their own `thresholdSnapshot`.
+  `proposal_measurement`, including its closed `comparison` and `outcome`
+  vocabularies, but scoped to the evidence envelope so representative and
+  captured-union evidence carry their own `thresholdSnapshot`.
+
+The ordinal ranges above bound the row count. An ordinal is dense from zero,
+so `CHECK (ordinal BETWEEN 0 AND 99)` plus per-evidence ordinal uniqueness caps
+the child list at the contract's 100 without a counting trigger. `code`,
+`measurement_key`, and `unit` stay open `TEXT`, exactly as `proposal_measurement`
+already treats them, because the contract types them as `SafeText` rather than
+closed enums; the accepted values are owned by the `manual.create` and
+proposal-generation validators, not by a database `CHECK`. `comparison` and
+`outcome` are closed enums in the contract and carry `CHECK` constraints.
 
 A committed light session's singleton panel revision references a
 `relation_evidence` row whose geometry columns are null and whose
@@ -826,13 +859,27 @@ A committed light session's singleton panel revision references a
 therefore exists even when no geometry is available, satisfying the non-optional
 contract field.
 
-`relation_evidence` is a Tier 2 record: every column and child row re-derives
+Durability splits between the envelope row and its measurement children, and
+referential integrity, not the tier, fixes the write order.
+
+The `relation_evidence` row is written in the same transaction as the subject
+that references it. Three `NOT NULL` foreign keys point at it, so the subject
+cannot commit before the envelope exists; batching the envelope behind its
+subject is not available at any tier. Its content is nonetheless re-derivable
 from the endpoint footprints plus the matching-settings revision in
-`config_version_id`, so its writes may be batched or asynchronous. The Tier 1 record is the manual relation
-itself, written synchronously by `relation_proposal` and its typed review
-overrides; losing a `relation_evidence` row costs a recomputation and keeps the
-user decision intact. Principle V of the project governance document defines
-these tiers.
+`config_version_id`, so a value lost to a crash costs a recomputation rather than
+user knowledge, and no write-ahead record is required beyond the transaction
+itself.
+
+`relation_evidence_measurement`, `relation_evidence_missing_code`, and
+`relation_evidence_allowed_rotation` rows are Tier 2 and may be batched or
+written asynchronously. An envelope whose children have not yet landed reads as
+an evidence row with an empty `thresholdSnapshot`, which the projection reports
+as unmeasured rather than as passing.
+
+The Tier 1 record stays the user decision: the proposal state, actor, reason code,
+and typed review overrides on `relation_proposal`. Principle V of the project
+governance document defines these tiers.
 
 ### `relation_decision_snapshot`
 
