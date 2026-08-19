@@ -9,12 +9,21 @@ use std::sync::Arc;
 
 use tracing_subscriber::Layer;
 
-/// Counts tracing events whose target starts with `sqlx`.
+/// Counts tracing events whose target is exactly `sqlx::query`.
 ///
-/// sqlx emits a tracing event per statement execution at the `debug` level
-/// under the `sqlx` target (target prefix `"sqlx"`). Counting those events gives a
-/// statement-count proxy for DB pressure without adding any instrumentation
-/// dependency inside the production crates.
+/// sqlx emits one event per statement execution under the `sqlx::query` target
+/// (`sqlx-core/src/logger.rs`), which gives a statement-count proxy for DB
+/// pressure without adding any instrumentation dependency inside the production
+/// crates. Both the normal and the slow-statement branch use that same target,
+/// so the count is one per statement at either level.
+///
+/// The match is exact rather than a `starts_with("sqlx")` prefix. `sqlx::pool::
+/// acquire` also matches that prefix and fires only when a connection acquire
+/// exceeds `acquire_slow_threshold` (`sqlx-core/src/pool/inner.rs`), which is
+/// load-dependent: it never fires on an idle machine and does fire on a
+/// contended CI runner. Counting it made `sqlx_stmts` read one higher under
+/// load, so the same commit produced 10 and 11 on separate runs and
+/// `scripts/check-perf-baseline.sh` hard-failed an unrelated PR (astro-plan-hgh6).
 ///
 /// The inner `Arc<AtomicU64>` lets the layer and the harness share the same
 /// counter. The newtype wrapper is required by Rust's orphan rule: `Layer` is
@@ -42,9 +51,35 @@ impl<S: tracing::Subscriber> Layer<S> for SqlxCounterLayer {
         event: &tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        if event.metadata().target().starts_with("sqlx") {
+        if event.metadata().target() == "sqlx::query" {
             self.0.fetch_add(1, Ordering::Relaxed);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    /// The counter must track statements only. `sqlx::pool::acquire` fires on a
+    /// slow connection acquire, which depends on machine load rather than on the
+    /// query plan, so counting it makes the baseline gate flake (astro-plan-hgh6).
+    #[test]
+    fn counts_query_events_and_ignores_slow_acquire_events() {
+        let (layer, counter) = SqlxCounterLayer::new();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::debug!(target: "sqlx::query", summary = "SELECT 1");
+            tracing::warn!(target: "sqlx::query", summary = "SELECT 2");
+            tracing::warn!(target: "sqlx::pool::acquire", "slow acquire");
+            tracing::debug!(target: "sqlx_sqlite::something", "unrelated");
+            tracing::debug!(target: "app_core", "unrelated");
+        });
+
+        // Two `sqlx::query` events, one per statement, at either level.
+        assert_eq!(counter.load(Ordering::Relaxed), 2);
     }
 }
 
