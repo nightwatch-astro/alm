@@ -827,8 +827,8 @@ therefore exists even when no geometry is available, satisfying the non-optional
 contract field.
 
 `relation_evidence` is a Tier 2 record: every column and child row re-derives
-from the endpoint footprints plus the named matching-settings revision, so its
-writes may be batched or asynchronous. The Tier 1 record is the manual relation
+from the endpoint footprints plus the matching-settings revision in
+`config_version_id`, so its writes may be batched or asynchronous. The Tier 1 record is the manual relation
 itself, written synchronously by `relation_proposal` and its typed review
 overrides; losing a `relation_evidence` row costs a recomputation and keeps the
 user decision intact. Principle V of the project governance document defines
