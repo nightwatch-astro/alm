@@ -57,32 +57,6 @@ impl<S: tracing::Subscriber> Layer<S> for SqlxCounterLayer {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tracing_subscriber::layer::SubscriberExt as _;
-
-    /// The counter must track statements only. `sqlx::pool::acquire` fires on a
-    /// slow connection acquire, which depends on machine load rather than on the
-    /// query plan, so counting it makes the baseline gate flake (astro-plan-hgh6).
-    #[test]
-    fn counts_query_events_and_ignores_slow_acquire_events() {
-        let (layer, counter) = SqlxCounterLayer::new();
-        let subscriber = tracing_subscriber::registry().with(layer);
-
-        tracing::subscriber::with_default(subscriber, || {
-            tracing::debug!(target: "sqlx::query", summary = "SELECT 1");
-            tracing::warn!(target: "sqlx::query", summary = "SELECT 2");
-            tracing::warn!(target: "sqlx::pool::acquire", "slow acquire");
-            tracing::debug!(target: "sqlx_sqlite::something", "unrelated");
-            tracing::debug!(target: "app_core", "unrelated");
-        });
-
-        // Two `sqlx::query` events, one per statement, at either level.
-        assert_eq!(counter.load(Ordering::Relaxed), 2);
-    }
-}
-
 /// Print one scenario result as a single JSON object on stdout.
 ///
 /// `scripts/check-perf-baseline.sh` parses each line independently and reads
@@ -105,4 +79,41 @@ pub fn print_result(scenario: &str, n: usize, wall_ms: u128, extra: &serde_json:
 /// Read a `usize` scenario-size knob from the environment.
 pub fn env_size(key: &str, default: usize) -> usize {
     std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    /// Both sqlx logging branches use the `sqlx::query` target and differ only in
+    /// level, so a slow statement must still count as exactly one statement.
+    #[test]
+    fn counts_a_query_event_at_either_level() {
+        let (layer, counter) = SqlxCounterLayer::new();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::debug!(target: "sqlx::query", summary = "one");
+            tracing::warn!(target: "sqlx::query", summary = "two");
+        });
+
+        assert_eq!(counter.load(Ordering::Relaxed), 2);
+    }
+
+    /// `sqlx::pool::acquire` fires on a slow connection acquire, which depends on
+    /// machine load rather than on the query plan. A `starts_with("sqlx")`
+    /// predicate counts it and makes the baseline gate flake (astro-plan-hgh6).
+    #[test]
+    fn ignores_targets_that_are_not_statements() {
+        let (layer, counter) = SqlxCounterLayer::new();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::warn!(target: "sqlx::pool::acquire", "slow acquire");
+            tracing::debug!(target: "sqlx_sqlite::something", "unrelated");
+        });
+
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+    }
 }
