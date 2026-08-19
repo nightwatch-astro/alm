@@ -233,6 +233,7 @@ export function CommandPalette() {
   const visiblePages = visiblePagesFor(devMode);
 
   return (
+    // eslint-disable-next-line alm/require-root-testid -- Dialog.Root renders no DOM node of its own; the popup it portals carries data-testid="command-palette"
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Backdrop
