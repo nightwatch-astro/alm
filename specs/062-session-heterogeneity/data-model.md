@@ -794,9 +794,11 @@ reference the same table by UUID.
 
 One envelope serves exactly one subject. `relation_proposal.evidence_id`,
 `panel_group_revision.representative_evidence_id`, and
-`mosaic_revision.captured_union_evidence_id` are each `UNIQUE`, so no two
-subjects can name the same row and no row is shared or reused. Which subject a
-row belongs to is recorded on the row itself:
+`mosaic_revision.captured_union_evidence_id` are each `UNIQUE`, which stops
+reuse within a table but not across the three: a proposal and a panel-group
+revision can both name one row and every foreign key still succeeds. Exclusive
+ownership across the three tables is a repository precommit query under the
+boundary described above, and the row also records which subject it belongs to:
 
 | Field | Type | Constraints and meaning |
 |---|---|---|
@@ -809,6 +811,14 @@ treat the evidence as absent rather than authoritative. `subject_kind` makes the
 mismatch cheap to detect, because an envelope measured for a representative
 session can never legally sit under a mosaic's captured-union column.
 
+The same precommit query requires the subject's `config_version_id` to equal the
+envelope's. Without that check a subject can claim settings revision B while
+carrying verdicts and thresholds measured under A, and the projection reports B
+as `matchingSettingsRevision` over evidence that contradicts it. The equality
+also keeps proposal deduplication honest, since
+`UNIQUE(kind, basis_digest, evidence_digest, config_version_id)` reads the
+proposal's copy of the revision, not the evidence's.
+
 | Field | Type | Constraints and meaning |
 |---|---|---|
 | `id` | UUID | Public evidence identity; the contract `evidenceId` |
@@ -820,7 +830,7 @@ session can never legally sit under a mosaic's captured-union column.
 | `centre_separation_ppm` | INTEGER | Nullable; `CHECK (value >= 0)`; the optional `centerSeparationPercent`, a percent, distinct from the angular `centre_separation_udeg` on `mosaic_edge_evidence` |
 | `residual_sky_rotation_udeg` | INTEGER | Nullable; the optional `residualSkyRotationDeg` in microdegrees |
 | `config_version_id` | UUID FK | `NOT NULL`; matching-settings revision the evidence was measured under |
-| `input_digest` | TEXT | `NOT NULL`; digest over the ordered footprints and settings revision the evidence derives from |
+| `input_digest` | TEXT | `NOT NULL`; digest over every input the stored verdicts derive from: the ordered footprints, the settings revision, the ordered resolved target identities behind `target_compatibility`, and the equipment-resolution revisions behind `equipment` |
 | `created_sequence` | INTEGER | `NOT NULL`; append-only sequence |
 | `created_at` | timestamp | `NOT NULL` |
 
@@ -843,6 +853,24 @@ with a per-evidence ordinal, never JSON:
   vocabularies, but scoped to the evidence envelope so representative and
   captured-union evidence carry their own `thresholdSnapshot`.
 
+The stored `comparison` and `outcome` vocabularies are wider than the contract's.
+`proposal_measurement` admits `inside` alongside the five single-sided
+comparisons and `warn` alongside `pass` and `fail`, which is why the threshold is
+a `threshold_min`/`threshold_max` pair rather than one column. Projecting into
+`ThresholdMeasurement`, whose `thresholdValue` is one decimal, therefore needs a
+stated rule:
+
+- `lt` and `lte` read `threshold_max`; `gt` and `gte` read `threshold_min`; `eq`
+  requires the two columns to be equal and reads either.
+- `inside` has no contract counterpart. A row storing it projects as the
+  `missingEvidenceCodes` entry for an unrepresentable measurement, not as a
+  `ThresholdMeasurement` with an arbitrary bound chosen from the pair.
+- `warn` projects as `fail`, because the contract's `outcome` is two-valued and a
+  warning is not a pass.
+
+A repository precommit query rejects a single-sided `comparison` whose
+corresponding column is null, so the projection never has to invent a value.
+
 The ordinal ranges above bound the row count. An ordinal is dense from zero,
 so `CHECK (ordinal BETWEEN 0 AND 99)` plus per-evidence ordinal uniqueness caps
 the child list at the contract's 100 without a counting trigger. `code`,
@@ -850,7 +878,8 @@ the child list at the contract's 100 without a counting trigger. `code`,
 already treats them, because the contract types them as `SafeText` rather than
 closed enums; the accepted values are owned by the `manual.create` and
 proposal-generation validators, not by a database `CHECK`. `comparison` and
-`outcome` are closed enums in the contract and carry `CHECK` constraints.
+`outcome` do carry `CHECK` constraints, over the wider stored vocabularies set
+out above rather than over the contract's.
 
 A committed light session's singleton panel revision references a
 `relation_evidence` row whose geometry columns are null and whose
@@ -866,10 +895,9 @@ The `relation_evidence` row is written in the same transaction as the subject
 that references it. Three `NOT NULL` foreign keys point at it, so the subject
 cannot commit before the envelope exists; batching the envelope behind its
 subject is not available at any tier. Its content is nonetheless re-derivable
-from the endpoint footprints plus the matching-settings revision in
-`config_version_id`, so a value lost to a crash costs a recomputation rather than
-user knowledge, and no write-ahead record is required beyond the transaction
-itself.
+from the inputs `input_digest` covers, so a value lost to a crash costs a
+recomputation rather than user knowledge, and no write-ahead record is required
+beyond the transaction itself.
 
 `relation_evidence_measurement`, `relation_evidence_missing_code`, and
 `relation_evidence_allowed_rotation` rows are Tier 2 and may be batched or
