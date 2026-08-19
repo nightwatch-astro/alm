@@ -31,6 +31,7 @@
 #   scripts/check-db-boundary.sh            # enforce zero (CI mode)
 #   scripts/check-db-boundary.sh --generate # re-seal the empty baseline; refuses if any leak exists
 #   scripts/check-db-boundary.sh --list     # print current per-file counts
+#   scripts/check-db-boundary.sh --self-test # prove the detector still detects
 
 set -euo pipefail
 
@@ -40,7 +41,15 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BASELINE="$SCRIPT_DIR/db-boundary-baseline.txt"
 
 # Patterns that denote a raw sqlx query/exec site.
-PATTERN='sqlx::query|query_as|query_scalar|\.fetch_(one|all|optional)|\.execute\('
+#
+# The constructor names must be followed by a call, a macro bang, or a turbofish.
+# A bare `sqlx::query` also appears as a tracing target string
+# (`event.metadata().target() == "sqlx::query"` in crates/tools/perf-bench), which
+# names an event and executes nothing; counting it reported three query sites in a
+# file that has none. Every real site in crates/persistence/ takes one of the three
+# suffix forms — `sqlx::query(`, `query_as::<T>`, `query_scalar!` — so requiring
+# the suffix loses no coverage. `--self-test` proves both directions.
+PATTERN='(sqlx::query|query_as|query_scalar)[[:space:]]*(\(|!|::<)|\.fetch_(one|all|optional)|\.execute\('
 
 # True when the compiler excludes this ENTIRE file from production builds.
 #
@@ -132,6 +141,12 @@ count_file() {
       next
     }
 
+    # A line that is entirely a comment compiles to nothing, so prose quoting a
+    # call form is not a call site. Only full-line comments are dropped: stripping
+    # a trailing `//` would also cut a `//` inside a string literal and could hide
+    # real code on the same line.
+    /^[[:space:]]*\/\// { next }
+
     $0 ~ pat { n++ }
     END { print n + 0 }
   ' "$file"
@@ -146,6 +161,50 @@ list_files() {
     -not -path '*/tests/*' \
     -not -name 'query_builder_example.rs' \
     | sort
+}
+
+# Prove the detector still detects before any run reports zero.
+#
+# A sealed-at-zero guard fails open: if the pattern stops matching, every file
+# counts 0 and the run prints OK. That is exactly how the pattern was narrowed
+# from a bare `sqlx::query` — the narrowing is only safe because these cases run
+# first. Each case is a synthetic file counted through count_file, so the fixture
+# exercises the awk scanner, the cfg(test) cutoff, and the pattern together.
+self_test() {
+  local tmp expected actual name body entry status=0
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  # name|expected count|body (\n escapes expanded by printf %b)
+  local -a cases=(
+    'plain_query|1|let r = sqlx::query("SELECT 1").execute(p).await;'
+    'turbofish|1|let r = sqlx::query_as::<_, Row>("SELECT 1");'
+    'macro_bang|1|let r = sqlx::query_scalar!("SELECT 1");'
+    'fetch_one|1|let r = builder.fetch_one(p).await;'
+    'tracing_target|0|if event.metadata().target() == "sqlx::query" { n += 1; }'
+    'doc_mention|0|/// Wraps sqlx::query_as::<_, Row>() for callers.'
+    'cfg_test_scope|0|#[cfg(test)]\nmod tests {\n    fn t() { sqlx::query("SELECT 1"); }\n}'
+    'after_cfg_test|1|#[cfg(test)]\nmod tests {\n    fn t() {}\n}\nfn prod() { sqlx::query("SELECT 1"); }'
+  )
+
+  for entry in "${cases[@]}"; do
+    name="${entry%%|*}"
+    body="${entry##*|}"
+    expected="${entry#*|}"
+    expected="${expected%%|*}"
+    printf '%b\n' "$body" > "$tmp/$name.rs"
+    actual="$(count_file "$tmp/$name.rs")"
+    if [[ "$actual" != "$expected" ]]; then
+      echo "FAIL: self-test case '$name' counted $actual, expected $expected." >&2
+      status=1
+    fi
+  done
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "db-boundary self-test: FAIL" >&2
+    return 1
+  fi
+  echo "db-boundary self-test: PASS (detector flags call sites, not target strings or prose)."
 }
 
 # Emit "count<TAB>path" for every file that has >=1 production query site.
@@ -185,7 +244,16 @@ case "${1:-}" in
     collect
     ;;
 
+  --self-test)
+    self_test
+    ;;
+
   ""|--check)
+    self_test >/dev/null || {
+      echo "FAIL: db-boundary detector self-test failed; a zero result is not trustworthy." >&2
+      exit 1
+    }
+
     if [[ ! -f "$BASELINE" ]]; then
       echo "ERROR: baseline missing: $BASELINE" >&2
       echo "Run: scripts/check-db-boundary.sh --generate" >&2
