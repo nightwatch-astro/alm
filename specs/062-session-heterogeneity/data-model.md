@@ -802,7 +802,7 @@ boundary described above, and the row also records which subject it belongs to:
 
 | Field | Type | Constraints and meaning |
 |---|---|---|
-| `subject_kind` | TEXT | `NOT NULL`; `proposal`, `panel_group_representative`, or `mosaic_captured_union` |
+| `subject_kind` | TEXT | `NOT NULL CHECK (subject_kind IN ('proposal', 'panel_group_representative', 'mosaic_captured_union'))` |
 | `subject_digest` | TEXT | `NOT NULL`; digest over the ordered subject identities the evidence was measured for: the proposal's ordered inputs, the representative session, or the mosaic's captured membership |
 
 A referencing write computes `subject_digest` from its own inputs and stores it;
@@ -819,6 +819,19 @@ also keeps proposal deduplication honest, since
 `UNIQUE(kind, basis_digest, evidence_digest, config_version_id)` reads the
 proposal's copy of the revision, not the evidence's.
 
+Equality between two server-written columns is not enough on
+`relation_proposal.manual.create`:
+
+1. A caller reads the matching settings and measures its geometry against them.
+2. The settings change before the caller submits.
+3. The repository stamps the new revision on both the proposal and the envelope,
+   so the equality check passes over thresholds the caller never saw.
+
+The request therefore includes `expectedMatchingSettingsRevision`, and the command
+rejects a submission whose expected revision differs from the current one, in the
+same shape as `expectedProjectRevision` elsewhere in these contracts. The caller
+remeasures against the new settings and resubmits.
+
 | Field | Type | Constraints and meaning |
 |---|---|---|
 | `id` | UUID | Public evidence identity; the contract `evidenceId` |
@@ -831,6 +844,9 @@ proposal's copy of the revision, not the evidence's.
 | `residual_sky_rotation_udeg` | INTEGER | Nullable; the optional `residualSkyRotationDeg` in microdegrees |
 | `config_version_id` | UUID FK | `NOT NULL`; matching-settings revision the evidence was measured under |
 | `input_digest` | TEXT | `NOT NULL`; digest over every input the stored verdicts derive from: the ordered footprints, the settings revision, the ordered resolved target identities behind `target_compatibility`, and the equipment-resolution revisions behind `equipment` |
+| `expected_measurement_count` | INTEGER | `NOT NULL CHECK (value BETWEEN 0 AND 100)`; how many `relation_evidence_measurement` rows this envelope will hold |
+| `expected_missing_code_count` | INTEGER | `NOT NULL CHECK (value BETWEEN 0 AND 100)`; how many `relation_evidence_missing_code` rows this envelope will hold |
+| `expected_rotation_range_count` | INTEGER | `NOT NULL CHECK (value BETWEEN 0 AND 16)`; how many `relation_evidence_allowed_rotation` rows this envelope will hold |
 | `created_sequence` | INTEGER | `NOT NULL`; append-only sequence |
 | `created_at` | timestamp | `NOT NULL` |
 
@@ -838,48 +854,49 @@ proposal's copy of the revision, not the evidence's.
 `thresholdSnapshot` are bounded contract lists, so each is a typed child table
 with a per-evidence ordinal, never JSON:
 
-- `relation_evidence_missing_code(evidence_id, ordinal, code)` with
-  `UNIQUE(evidence_id, ordinal)` and `CHECK (ordinal BETWEEN 0 AND 99)`, matching
-  the contract bound of 100; a `manual.create` guard requires it to enumerate
-  every geometry or orientation measurement the proposal could not compute.
+- `relation_evidence_missing_code(evidence_id, ordinal, code, created_sequence)`
+  with `UNIQUE(evidence_id, ordinal)` and `CHECK (ordinal BETWEEN 0 AND 99)`,
+  matching the contract bound of 100; a `manual.create` guard requires it to
+  enumerate every geometry or orientation measurement the proposal could not
+  compute.
 - `relation_evidence_allowed_rotation(evidence_id, ordinal, lower_udeg,
-  upper_udeg)` with `UNIQUE(evidence_id, ordinal)`, `CHECK (ordinal BETWEEN 0 AND
-  15)` for the contract bound of 16, and `CHECK (lower_udeg <= upper_udeg)`; the
-  geometry-derived allowed residual intervals.
-- `relation_evidence_measurement(evidence_id, measurement_key, integer_value,
-  unit, comparison, threshold_min, threshold_max, outcome,
-  source_evidence_digest)` keyed by `(evidence_id, measurement_key)`, mirroring
-  `proposal_measurement`, including its closed `comparison` and `outcome`
-  vocabularies, but scoped to the evidence envelope so representative and
-  captured-union evidence carry their own `thresholdSnapshot`.
+  upper_udeg, created_sequence)` with `UNIQUE(evidence_id, ordinal)`, `CHECK
+  (ordinal BETWEEN 0 AND 15)` for the contract bound of 16, and `CHECK
+  (lower_udeg <= upper_udeg)`; the geometry-derived allowed residual intervals.
+- `relation_evidence_measurement(evidence_id, ordinal, measurement_key,
+  integer_value, unit, comparison, threshold_value, outcome,
+  source_evidence_digest, created_sequence)` with `UNIQUE(evidence_id, ordinal)`,
+  `CHECK (ordinal BETWEEN 0 AND 99)`, and `UNIQUE(evidence_id, measurement_key)`,
+  scoped to the evidence envelope so representative and captured-union evidence
+  carry their own `thresholdSnapshot`.
 
-The stored `comparison` and `outcome` vocabularies are wider than the contract's.
-`proposal_measurement` admits `inside` alongside the five single-sided
-comparisons and `warn` alongside `pass` and `fail`, which is why the threshold is
-a `threshold_min`/`threshold_max` pair rather than one column. Projecting into
-`ThresholdMeasurement`, whose `thresholdValue` is one decimal, therefore needs a
-stated rule:
+All three child tables store `created_sequence` and answer the same watermark
+predicate as any other append-only table, so a child inserted between two pages
+of one `relation_proposal.query` walk is excluded from the later pages and a
+single paginated snapshot reports one commit rather than two.
 
-- `lt` and `lte` read `threshold_max`; `gt` and `gte` read `threshold_min`; `eq`
-  requires the two columns to be equal and reads either.
-- `inside` has no contract counterpart. A row storing it projects as the
-  `missingEvidenceCodes` entry for an unrepresentable measurement, not as a
-  `ThresholdMeasurement` with an arbitrary bound chosen from the pair.
-- `warn` projects as `fail`, because the contract's `outcome` is two-valued and a
-  warning is not a pass.
+`relation_evidence_measurement` stores exactly the contract's
+`ThresholdMeasurement` vocabulary: `CHECK (comparison IN ('lt', 'lte', 'eq',
+'gte', 'gt'))`, `CHECK (outcome IN ('pass', 'fail'))`, and one
+`threshold_value`. The projection into `ThresholdMeasurement` is therefore an
+identity mapping.
 
-A repository precommit query rejects a single-sided `comparison` whose
-corresponding column is null, so the projection never has to invent a value.
+`proposal_measurement` keeps the wider stored set, `inside` alongside the five
+single-sided comparisons and `warn` alongside `pass` and `fail`, because it is
+internal review state that no contract field projects. An interval bound belongs
+in `relation_evidence_allowed_rotation`, which the contract exposes as
+`allowedResidualRotationRangesDeg`, so the envelope doesn't need a two-column
+threshold. A verdict outside the contract vocabulary becomes a
+`missingEvidenceCodes` entry at measurement time rather than a stored row
+rewritten during projection.
 
-The ordinal ranges above bound the row count. An ordinal is dense from zero,
-so `CHECK (ordinal BETWEEN 0 AND 99)` plus per-evidence ordinal uniqueness caps
-the child list at the contract's 100 without a counting trigger. `code`,
+The ordinal ranges above bound the row count. An ordinal is dense from zero, so
+`CHECK (ordinal BETWEEN 0 AND 99)` plus per-evidence ordinal uniqueness caps
+each child list at its contract bound without a counting trigger. `code`,
 `measurement_key`, and `unit` stay open `TEXT`, exactly as `proposal_measurement`
 already treats them, because the contract types them as `SafeText` rather than
 closed enums; the accepted values are owned by the `manual.create` and
-proposal-generation validators, not by a database `CHECK`. `comparison` and
-`outcome` do carry `CHECK` constraints, over the wider stored vocabularies set
-out above rather than over the contract's.
+proposal-generation validators, not by a database `CHECK`.
 
 A committed light session's singleton panel revision references a
 `relation_evidence` row whose geometry columns are null and whose
@@ -899,11 +916,28 @@ from the inputs `input_digest` covers, so a value lost to a crash costs a
 recomputation rather than user knowledge, and no write-ahead record is required
 beyond the transaction itself.
 
-`relation_evidence_measurement`, `relation_evidence_missing_code`, and
-`relation_evidence_allowed_rotation` rows are Tier 2 and may be batched or
-written asynchronously. An envelope whose children have not yet landed reads as
-an evidence row with an empty `thresholdSnapshot`, which the projection reports
-as unmeasured rather than as passing.
+Children written by proposal generation are Tier 2 and may be batched or written
+asynchronously. Children supplied by a caller on
+`relation_proposal.manual.create` are Tier 1: the missing-evidence codes are a
+user disclosure that no scan re-derives, so they commit in the same transaction
+as the proposal and the envelope.
+
+An empty `thresholdSnapshot` cannot carry the difference between an envelope
+measured as unmeasurable and an envelope whose asynchronous children are still in
+flight, so the count columns carry it instead. Each expected count is written in
+the envelope's own transaction, by the code that already knows how many rows it
+computed. An envelope is complete when each child table holds exactly its
+expected count; until then:
+
+- the projection reports the envelope as unmeasured and emits the
+  `evidence_incomplete` missing-evidence code, rather than returning the partial
+  children as a snapshot;
+- automatic acceptance refuses the proposal, so no membership or edge is written
+  from evidence that is still arriving.
+
+Completeness is therefore a comparison against a durable number rather than a
+separate state machine, and a crash between the envelope and its children costs a
+recomputation the counts make detectable.
 
 The Tier 1 record stays the user decision: the proposal state, actor, reason code,
 and typed review overrides on `relation_proposal`. Principle V of the project
