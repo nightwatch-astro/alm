@@ -12,6 +12,7 @@ import { unwrap } from '@/api/ipc';
 import { openInNewWindow } from '@/lib/window';
 import { useHotkeys } from '@/lib/useHotkeys';
 import { normalizeDesig } from '@/features/targets/target-search-helpers';
+import { DEV_TOOLS_ENABLED } from '@/dev/devToolsEnabled';
 import type { SearchResult } from '@/bindings/types';
 import type { TargetListItem } from '@/bindings/index';
 
@@ -95,12 +96,31 @@ const ACTIONS: Array<PaletteAction> = [
 ];
 
 /**
- * Developer-only palette entry (spec 021 T013).
- * Appended to the Pages group only when devMode is on.
+ * Developer-only palette entries (spec 021 T013, FR-031, SC-009).
+ *
+ * Two gates, both required. `DEV_TOOLS_ENABLED` is compile-time, so a release
+ * bundle drops the array contents entirely — without it the `/dev/contracts`
+ * string shipped in `dist/assets/*.js` pointing at a route `router.tsx` had
+ * already compiled out. The runtime `devMode` setting then decides whether a
+ * developer build shows the entry.
  */
-const DEV_PAGES: Array<{ label: () => string; route: string }> = [
-  { label: () => m.cmdk_dev_contracts(), route: '/dev/contracts' },
-];
+export const DEV_PAGES: Array<{ label: () => string; route: string }> =
+  DEV_TOOLS_ENABLED
+    ? [{ label: () => m.cmdk_dev_contracts(), route: '/dev/contracts' }]
+    : [];
+
+/**
+ * Pages shown for a given `devMode` state. Exported for the T007/T009 gate
+ * tests. `devPages` is a parameter because `DEV_TOOLS_ENABLED` folds to a
+ * constant per build, so the enabled branch is otherwise unreachable from a
+ * test run, which bakes `VITE_DEV_TOOLS="false"` into its own config.
+ */
+export function visiblePagesFor(
+  devMode: boolean,
+  devPages: Array<{ label: () => string; route: string }> = DEV_PAGES,
+): Array<{ label: () => string; route: string }> {
+  return devMode ? [...PAGES, ...devPages] : PAGES;
+}
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -210,7 +230,7 @@ export function CommandPalette() {
   const ALL_ACTIONS: Array<PaletteAction> = [...ACTIONS];
 
   // All visible pages: standard pages + dev pages when devMode is on.
-  const visiblePages = devMode ? [...PAGES, ...DEV_PAGES] : PAGES;
+  const visiblePages = visiblePagesFor(devMode);
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
