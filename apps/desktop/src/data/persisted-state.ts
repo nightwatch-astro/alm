@@ -194,11 +194,8 @@ export function createPersistedState<T>(
         try {
           const { isTauri } = await importTauriCore();
           if (!isTauri()) return;
-          const [{ commands }, { unwrap }] = await Promise.all([
-            import('@/bindings/index'),
-            import('@/api/ipc'),
-          ]);
-          unwrap(await commands.settingsUpdate(scope, { [key]: value }));
+          const { updateSettings } = await import('@/data/settingsWrite');
+          await updateSettings({ scope, values: { [key]: value } });
         } catch {
           // Best-effort — a DB write failure never blocks or reverts the UI change.
         }
