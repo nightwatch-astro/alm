@@ -25,9 +25,11 @@
 # genuinely required. Its bats fixture embedded the SAME wrong list, so the
 # suite passed while measuring nothing. That is the failure this guards.
 #
-# Comparison (1) always runs. Comparison (2) needs network and a token with repo
-# scope, so it exits 0 with a NOTE when it cannot reach the API and non-zero only
-# when it has a real answer and the lists disagree.
+# Comparison (1) gates: it is the only one that exits non-zero. Comparison (2) is
+# advisory, because a PR that updates the policy and the watcher together is
+# correct while live protection still names the old contexts -- protection is
+# applied at merge, not at lint. It also needs network and a token with repo scope,
+# so it prints a NOTE and exits 0 when it cannot reach the API.
 
 set -euo pipefail
 
@@ -38,9 +40,13 @@ WATCHER="$SCRIPT_DIR/pv-watch-queue.sh"
 FIXTURE="$SCRIPT_DIR/tests/pv-watch-queue.bats"
 POLICY="$SCRIPT_DIR/branch-protection-main.json"
 
+# A missing jq is a hard failure, not a skip. The gating comparison is offline and
+# claims to always run, so skipping it would report a pass that measured nothing --
+# the same fail-open this guard exists to prevent. pv-watch-queue.sh needs jq to
+# run at all, so any environment that can use the watcher can check it.
 command -v jq >/dev/null 2>&1 || {
-  echo "NOTE: jq not available; skipping required-context drift check."
-  exit 0
+  echo "FAIL: jq is required to compare the watcher against $POLICY." >&2
+  exit 1
 }
 
 # Extract the embedded array: everything between `[` and `] as $required`.
@@ -137,21 +143,27 @@ if [ -z "$live_missing" ] && [ -z "$live_extra" ]; then
   exit 0
 fi
 
-echo "FAIL: live branch protection on $REPO@$BRANCH differs from $POLICY." >&2
+# Advisory, and it has to be. A PR that updates the policy and the watcher
+# together is correct while live protection still names the old contexts, because
+# protection is applied at merge, not at lint. Failing here would make `just lint`
+# red for exactly that PR -- the case the gating comparison above was rewritten to
+# admit.
+echo "WARN: live branch protection on $REPO@$BRANCH differs from $POLICY."
 [ -n "$live_missing" ] && {
-  echo "  Required live but absent from the checked-in policy:" >&2
-  printf '    %s\n' "$live_missing" >&2
+  echo "  Required live but absent from the checked-in policy:"
+  printf '    %s\n' "$live_missing"
 }
 [ -n "$live_extra" ] && {
-  echo "  In the checked-in policy but not required live:" >&2
-  printf '    %s\n' "$live_extra" >&2
+  echo "  In the checked-in policy but not required live:"
+  printf '    %s\n' "$live_extra"
 }
-cat >&2 <<EOF
+cat <<EOF
 
-Protection was changed out of band, so the checked-in policy the watcher is
-validated against no longer describes what gates a merge. Either reapply the
-declared policy:
-  bash $SCRIPT_DIR/branch-protection-main.sh
+This is expected on a PR that changes the required contexts, since protection is
+applied at merge. Otherwise protection was changed out of band, and the checked-in
+policy the watcher is validated against no longer describes what gates a merge.
+Reapply the declared policy:
+  bash $SCRIPT_DIR/branch-protection-main.sh apply
 or record the intended change in $POLICY and resync the watcher.
 EOF
-exit 1
+exit 0
