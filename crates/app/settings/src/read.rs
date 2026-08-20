@@ -1,8 +1,8 @@
 use app_core_cache::SnapshotCache;
 
 use super::{
-    bus_err, db_err, descriptors, is_catalogues_enabled_key, is_locale_key, is_tools_bundle_id_key,
-    repair, repo, validate_value, ContractError, EventBus, SettingsGetResponse, SettingsRepair,
+    db_err, descriptors, is_catalogues_enabled_key, is_locale_key, is_tools_bundle_id_key, repair,
+    repo, validate_value, ContractError, EventBus, SettingsGetResponse, SettingsRepair,
     SettingsState, Source, SqlitePool, Timestamp, Value, TOPIC_SETTINGS_REPAIR,
 };
 
@@ -42,14 +42,14 @@ pub async fn get_settings(
             // user typed in (constitution V, Tier 1).
             if let Some(salvaged) = repair::salvage(&key, &value) {
                 repo::set_raw(pool, &key, &salvaged.kept).await.map_err(db_err)?;
-                publish_repair(bus, &key, salvaged.dropped, salvaged.kept.clone()).await?;
+                publish_repair(bus, &key, salvaged.dropped, salvaged.kept.clone()).await;
                 apply_value_to_state(&key, salvaged.kept, &mut settings);
                 continue;
             }
 
             // Repair: delete the bad row and emit a warn audit event.
             repo::delete_key(pool, &key).await.map_err(db_err)?;
-            publish_repair(bus, &key, value.clone(), default_value_for_key(&key)).await?;
+            publish_repair(bus, &key, value.clone(), default_value_for_key(&key)).await;
 
             // Use the default — do not apply the invalid stored value.
             continue;
@@ -68,25 +68,40 @@ pub async fn get_settings(
 /// `discarded` is the whole stored value for a full reset and only the dropped
 /// entries for a partial repair. `restored` is the value now stored: the in-code
 /// default, or the salvaged remainder.
-async fn publish_repair(
-    bus: &EventBus,
-    key: &str,
-    discarded: Value,
-    restored: Value,
-) -> Result<(), ContractError> {
-    bus.publish(
-        TOPIC_SETTINGS_REPAIR,
-        Source::System,
-        SettingsRepair {
-            key: key.to_owned(),
-            invalid_value: discarded,
-            default_value: restored,
-            at: Timestamp::now_iso(),
-        },
-    )
-    .await
-    .map_err(bus_err)?;
-    Ok(())
+///
+/// A publish failure is logged and swallowed rather than returned. Propagating it
+/// would deny the caller every setting in the bag because one subscriber went
+/// away, and the repaired row is already durable, so the error would report a
+/// failure over a repair that succeeded.
+///
+/// The event is a Tier-2 notification under constitution V: what it announces is
+/// a value that failed validation, which the application could not have presented
+/// as a setting either way. The discarded value is nonetheless the only copy left
+/// once the repaired row is stored, so the failure path logs it instead of
+/// dropping it silently.
+async fn publish_repair(bus: &EventBus, key: &str, discarded: Value, restored: Value) {
+    let result = bus
+        .publish(
+            TOPIC_SETTINGS_REPAIR,
+            Source::System,
+            SettingsRepair {
+                key: key.to_owned(),
+                invalid_value: discarded.clone(),
+                default_value: restored,
+                at: Timestamp::now_iso(),
+            },
+        )
+        .await;
+
+    if let Err(e) = result {
+        tracing::error!(
+            key,
+            error = %e,
+            discarded = %discarded,
+            "settings.repair notification could not be published; the discarded value is \
+             recorded here because the repaired row has replaced it"
+        );
+    }
 }
 
 /// Apply a raw JSON value to the correct field of `SettingsState`.
