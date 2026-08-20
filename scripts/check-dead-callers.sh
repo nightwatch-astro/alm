@@ -299,51 +299,199 @@ collect_dead() {
 #
 # Accepts an `astro-plan-*` bead id or a `#NNNN` issue reference anywhere in the
 # preceding comment block.
+#
+# One comment block covers the whole contiguous group of names beneath it, which
+# is how the file is already written (see the groups at
+# scripts/dead-callers-baseline.txt:32-48 and :71-96). A blank line ends a group;
+# a comment line following a name starts a new block rather than extending the
+# previous one.
+classify_baseline() {
+    awk '
+        /^[[:space:]]*#/ {
+            # A comment after a name opens a new block instead of appending to
+            # the one that covered the group above it.
+            if (after_name) { block = ""; after_name = 0 }
+            block = block " " $0
+            next
+        }
+        /^[[:space:]]*$/ { block = ""; after_name = 0; next }
+        {
+            after_name = 1
+            print (block ~ /astro-plan-[a-z0-9.]+|#[0-9]+/ ? "T" : "U") "\t" $0
+        }
+    '
+}
+
+# Names in $2 (current baseline file) that violate the tracking rule, relative to
+# $1 (base-revision baseline file). Prints `new<TAB>name` or `regressed<TAB>name`.
+tracking_violations() {
+    local base="$1" current="$2"
+    local base_class current_class
+    base_class="$(classify_baseline <"$base")"
+    current_class="$(classify_baseline <"$current")"
+
+    local current_untracked
+    current_untracked="$(printf '%s\n' "$current_class" | awk -F'\t' '$1 == "U" { print $2 }' | sort -u)"
+    [ -n "$current_untracked" ] || return 0
+
+    # (1) Names this revision ADDS must carry a reference. Pre-existing untracked
+    # names stay grandfathered.
+    comm -13 \
+        <(printf '%s\n' "$base_class" | cut -f2 | sort -u) \
+        <(printf '%s\n' "$current_untracked") \
+        | sed 's/^/new\t/'
+
+    # (2) A name that HAD a reference in the base and lost it is a regression:
+    # without this the ratchet holds only until the entry lands, after which the
+    # comment can be deleted while the name stays put.
+    comm -12 \
+        <(printf '%s\n' "$base_class" | awk -F'\t' '$1 == "T" { print $2 }' | sort -u) \
+        <(printf '%s\n' "$current_untracked") \
+        | sed 's/^/regressed\t/'
+}
+
+# Revision to compare the baseline against, echoed on stdout. Empty means the
+# base is unavailable.
+#
+# Why this fetches: the PR and merge-queue job uses the default shallow
+# `actions/checkout@v4` (.github/workflows/ci.yml:280), which populates the event
+# ref only -- `origin/main` does not exist there, so a bare `git show
+# origin/main:...` fails and the gate skipped itself on every PR. On the
+# post-merge main canary (:866) `origin/main` IS present but points at the commit
+# just pushed, so the baseline would be compared with itself and nothing ever
+# reads as added; the HEAD^ fallback below makes that run check the commit's own
+# additions instead.
+resolve_base_commit() {
+    local ref="${DEAD_CALLERS_BASE_REF:-origin/main}"
+    if ! git -C "$ROOT" rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1; then
+        git -C "$ROOT" fetch --quiet --depth=1 origin \
+            "+refs/heads/${ref#origin/}:refs/remotes/origin/${ref#origin/}" >/dev/null 2>&1 || true
+        git -C "$ROOT" rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || return 0
+    fi
+
+    # A shallow fetch can leave no common ancestor, so fall back to the ref tip.
+    local base
+    base="$(git -C "$ROOT" merge-base HEAD "$ref" 2>/dev/null \
+        || git -C "$ROOT" rev-parse "$ref^{commit}")"
+
+    if [ "$base" = "$(git -C "$ROOT" rev-parse HEAD)" ]; then
+        git -C "$ROOT" rev-parse --verify --quiet 'HEAD~1^{commit}' >/dev/null 2>&1 || return 0
+        base="$(git -C "$ROOT" rev-parse 'HEAD~1')"
+    fi
+    printf '%s' "$base"
+}
+
 check_tracking_references() {
-    local baseline_head untracked="" baseline_rel
+    local base_commit baseline_rel
+    base_commit="$(resolve_base_commit)"
+    if [ -z "$base_commit" ]; then
+        # Failing closed in CI: a skip here is what let the check pass on every
+        # PR while reading as enforced.
+        if [ -n "${CI:-}" ]; then
+            echo "FAIL: cannot resolve a base revision for the tracking check (tried ${DEAD_CALLERS_BASE_REF:-origin/main})." >&2
+            echo "Fetch the base branch in the workflow, or set DEAD_CALLERS_BASE_REF." >&2
+            return 1
+        fi
+        echo "NOTE: no base revision available locally; skipping the tracking check."
+        return 0
+    fi
+
     # `git show` needs a repo-relative path; $BASELINE is absolute.
     baseline_rel="$(git -C "$SCRIPT_DIR" rev-parse --show-prefix 2>/dev/null)dead-callers-baseline.txt"
-    # Compare against origin/main so only names this branch ADDS are checked.
-    baseline_head="$(git show "origin/main:$baseline_rel" 2>/dev/null || true)"
-    [ -n "$baseline_head" ] || { echo "NOTE: no origin/main baseline to diff against; skipping tracking check."; return 0; }
 
-    local added
-    added="$(comm -13 \
-        <(printf '%s\n' "$baseline_head" | grep -vE '^\s*(#|$)' | sort) \
-        <(grep -vE '^\s*(#|$)' "$BASELINE" | sort))"
-    [ -n "$added" ] || return 0
+    local base_file violations
+    base_file="$(mktemp)"
+    # shellcheck disable=SC2064  # expand now, not at trap time
+    trap "rm -f '$base_file'" RETURN
+    if ! git -C "$ROOT" show "$base_commit:$baseline_rel" >"$base_file" 2>/dev/null; then
+        echo "NOTE: no baseline file at $base_commit; skipping the tracking check."
+        return 0
+    fi
 
-    local name
-    while IFS= read -r name; do
-        [ -n "$name" ] || continue
-        # The contiguous comment block immediately above this name.
-        local block
-        block="$(awk -v target="$name" '
-            /^[[:space:]]*#/ { buf = buf " " $0; next }
-            /^[[:space:]]*$/ { buf = ""; next }
-            $0 == target     { print buf; exit }
-                             { buf = "" }
-        ' "$BASELINE")"
-        if ! printf '%s' "$block" | grep -qE 'astro-plan-[a-z0-9.]+|#[0-9]+'; then
-            untracked="$untracked  $name"$'\n'
-        fi
-    done <<<"$added"
+    violations="$(tracking_violations "$base_file" "$BASELINE")"
+    [ -n "$violations" ] || return 0
 
-    [ -n "$untracked" ] || return 0
-
-    echo "FAIL: these newly baselined names carry no tracking reference:" >&2
-    printf '%s' "$untracked" >&2
+    echo "FAIL: baseline entries without a tracking reference (base $base_commit):" >&2
+    printf '%s\n' "$violations" \
+        | sed -e 's/^new\t/  added:     /' -e 's/^regressed\t/  lost ref:  /' >&2
     cat >&2 <<'EOF'
 
 An entry here means the function is implemented and tested but never called by
 shipped code. Add a comment directly above it naming the bead or issue that will
-remove it -- an `astro-plan-*` id or `#NNNN`.
+remove it -- an `astro-plan-*` id or `#NNNN`. One comment block covers the whole
+group of names under it, so joining an existing group is enough.
 
-Without one the entry reads as settled rather than owed, and a feature that
-never runs can sit here indefinitely while the specs call it shipped. If the
+`lost ref` means the entry HAD a reference and no longer does. Restore it rather
+than leaving the name behind, or the tracking holds only until the entry lands.
+
+Without a reference the entry reads as settled rather than owed, and a feature
+that never runs can sit here indefinitely while the specs call it shipped. If the
 function is genuinely not needed, delete it instead of baselining it.
 EOF
     return 1
+}
+
+# Prove the tracking rule on fixture baselines where the answer is known.
+#
+# Needed because the real baseline passes the check, which is indistinguishable
+# from a check that classifies nothing: every way this can break is silent. The
+# group-carrying and lost-reference cases in particular each shipped as a bug in
+# the first version of this block.
+tracking_self_test() {
+    local tmp failures=0
+    tmp="$(mktemp -d)"
+    # shellcheck disable=SC2064  # expand $tmp now, not at trap time
+    trap "rm -rf '$tmp'" RETURN
+
+    expect() {  # expect <label> <expected> <actual>
+        [ "$2" = "$3" ] && return 0
+        echo "FAIL: tracking self-test: $1" >&2
+        echo "  expected: [$2]" >&2
+        echo "  actual:   [$3]" >&2
+        failures=$((failures + 1))
+    }
+
+    # A comment block covers every name in its group; a blank line ends the group;
+    # a comment after a name opens a new block.
+    cat >"$tmp/classify" <<'FIX'
+# tracked by astro-plan-abcd
+group_first
+group_second
+
+untracked_after_blank
+# no reference in this block
+new_block_name
+FIX
+    expect 'group carrying + blank/new-block resets' \
+        'T group_first|T group_second|U untracked_after_blank|U new_block_name' \
+        "$(classify_baseline <"$tmp/classify" | awk -F'\t' '{ printf "%s%s %s", sep, $1, $2; sep = "|" }')"
+
+    # A `#NNNN` issue reference is accepted alongside a bead id.
+    printf '# see #1655\nissue_tracked\n' >"$tmp/issue"
+    expect 'issue reference is accepted' 'T issue_tracked' \
+        "$(classify_baseline <"$tmp/issue" | tr '\t' ' ')"
+
+    printf '# tracked by astro-plan-aaaa\nkept_tracked\n\nold_untracked\n' >"$tmp/base"
+
+    # Grandfathered: an untracked name already in the base is not reported.
+    expect 'pre-existing untracked name is grandfathered' '' \
+        "$(tracking_violations "$tmp/base" "$tmp/base")"
+
+    # A new name with no reference is reported; one sharing a tracked group is not.
+    printf '# tracked by astro-plan-aaaa\nkept_tracked\nadded_in_group\n\nold_untracked\nadded_bare\n' >"$tmp/added"
+    expect 'new untracked name reported, group-mate accepted' 'new	added_bare' \
+        "$(tracking_violations "$tmp/base" "$tmp/added")"
+
+    # Deleting the comment from a landed entry is a regression, not a pass.
+    printf 'kept_tracked\n\nold_untracked\n' >"$tmp/regressed"
+    expect 'a landed entry losing its reference is reported' 'regressed	kept_tracked' \
+        "$(tracking_violations "$tmp/base" "$tmp/regressed")"
+
+    if [ "$failures" -gt 0 ]; then
+        echo "FAIL: tracking self-test: $failures case(s) failed." >&2
+        return 1
+    fi
+    echo "OK: tracking self-test passed — group blocks carry, grandfathering holds, lost references fail."
 }
 
 self_test() {
@@ -454,6 +602,7 @@ main() {
     case "${1:-}" in
         --self-test)
             self_test
+            tracking_self_test
             return
             ;;
     esac
