@@ -115,6 +115,7 @@ jobs:
       frontend_full: ${{ steps.decide.outputs.frontend_full }}
       docs_only: ${{ steps.decide.outputs.docs_only }}
       scripts: ${{ steps.filter.outputs.scripts }}
+      spec_contracts: ${{ steps.filter.outputs.spec_contracts }}
       all_files: ${{ steps.filter.outputs.all_files }}
     steps:
       - uses: actions/checkout@v4
@@ -172,6 +173,11 @@ jobs:
               - '**/*.css'
             scripts:
               - 'scripts/**'
+            # Feeds the TypeScript declaration generator, so it has to trigger
+            # the drift gate. Narrower than `docs`, which would put a
+            # Rust-compiling gate behind every markdown edit.
+            spec_contracts:
+              - 'specs/*/contracts/**'
             docs:
               - 'docs/**'
               - 'e2e-agentic-test/**'
@@ -648,14 +654,26 @@ jobs:
         run: pnpm --filter @astro-plan/desktop size
 
       # --- Generated contract / binding drift gate (review finding W1) ---
-      # Regenerates Rust->TS bindings and contracts and fails on drift. Compiles
+      # Regenerates Rust->TS bindings, contract schemas, and the
+      # json-schema-to-typescript declarations, then fails on drift. Compiles
       # Rust, so it belongs to the Rust lane. Linux-only for the same reason as
       # clippy and the doctests above: the generator's output is OS-agnostic and
       # every file it writes is pinned to `eol=lf` in .gitattributes, so the
-      # `git diff --exit-code` verdict cannot differ per platform.
+      # verdict cannot differ per platform.
       - name: Generated contract/binding drift
         if: runner.os == 'Linux' && needs.changes.outputs.rust == 'true'
         run: just check-generated
+
+      # The declaration generator also reads `packages/contracts/schemas/` and
+      # `specs/*/contracts/`, neither of which sets the `rust` filter. This leg
+      # covers them without the Rust toolchain, system webkit, or cargo cache
+      # that a frontend-only change does not install.
+      - name: Contract declaration drift (no Rust)
+        if: >-
+          runner.os == 'Linux' && needs.changes.outputs.rust != 'true' &&
+          (needs.changes.outputs.frontend == 'true' ||
+          needs.changes.outputs.spec_contracts == 'true')
+        run: just check-contracts-ts
 
       # A frontend-only change leaves this leg with every step skipped on macOS
       # and Windows. The leg still has to report its required context, so say in

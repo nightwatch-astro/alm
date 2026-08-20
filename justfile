@@ -153,13 +153,20 @@ contracts-build:
 ve-themes-check:
     pnpm --filter @astro-plan/desktop ve:themes:check
 
-# Regenerate Rust-derived JSON contract schemas and the tauri-specta
-# TypeScript bindings, then fail when either is out of sync with the
-# committed tree. Wire this into CI for spec 002 + onward.
+# Regenerate every generated artifact — Rust-derived JSON contract schemas, the
+# tauri-specta TypeScript bindings, and the json-schema-to-typescript
+# declarations — then fail when any is out of sync with the committed tree.
 check-generated:
     cargo run -q -p contracts_core --bin generate-contracts
     cargo test -q -p desktop_shell --features dev-tools --test bindings
-    git diff --exit-code specs/*/contracts/*.generated.json apps/desktop/src/bindings/
+    pnpm --filter @astro-plan/contracts build
+    bash scripts/check-generated-drift.sh
+
+# The declaration half of check-generated, without the cargo steps. For a change
+# that touches the schemas or a spec contract but no Rust.
+check-contracts-ts:
+    pnpm --filter @astro-plan/contracts build
+    bash scripts/check-generated-drift.sh packages/contracts/src/generated/
 
 # Full pre-merge gate: lint + tests + typecheck + generated-artifact drift +
 # DB/dead-caller/hot-read/lifecycle-strings boundary ratchets.
