@@ -523,6 +523,10 @@ jobs:
             # zero runnable tests (e.g. an e2e_tests-only change — all its
             # tests are #[ignore]d for the Layer-2 e2e.yml job), and nextest
             # otherwise exits 4 ("no tests to run", run 28751553778).
+            #
+            # $args is a word list of `-p <crate>` flags and has to split, so the
+            # SC2086 quote would collapse it into one bad argument.
+            # shellcheck disable=SC2086
             cargo nextest run --profile ci --no-tests=pass $args
           fi
 
