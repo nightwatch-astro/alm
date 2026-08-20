@@ -57,6 +57,12 @@ dead-callers:
 lifecycle-strings:
     bash scripts/check-lifecycle-strings.sh
 
+# Test-target declaration guard — every *.rs at the root of tests/contract/ must
+# have a [[test]] entry. Cargo auto-discovery only covers `<pkg>/tests/*.rs`, so
+# an undeclared file there is compiled never and asserts nothing.
+test-targets:
+    bash scripts/check-test-targets-declared.sh
+
 # Hot-read ratchet — fail if per-operation hot-read call sites in the inbox /
 # plan-apply / watcher paths exceed the checked-in baseline. Shrink-only:
 # any new site fails CI. After removing a site, regenerate the baseline:
@@ -157,7 +163,7 @@ check-generated:
 
 # Full pre-merge gate: lint + tests + typecheck + generated-artifact drift +
 # DB/dead-caller/hot-read/lifecycle-strings boundary ratchets.
-check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings
+check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings test-targets
 
 # Placeholder fixture check hook.
 fixtures-check:
