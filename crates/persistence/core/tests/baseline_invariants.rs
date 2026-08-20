@@ -42,8 +42,10 @@ async fn baseline_schema_and_seed_match_oracle_counts() {
     let db = migrated().await;
     let pool = db.pool();
 
-    // Oracle excludes SQLite internals and _sqlx_migrations: 309 application
-    // tables, indexes, and views are present in the candidate baseline.
+    // Oracle excludes SQLite internals and _sqlx_migrations: 314 application
+    // tables, indexes, and views are present once the chain has been applied —
+    // 309 from the frozen 0001 baseline, plus 5 from 0002_relation_evidence
+    // (the envelope, its three list tables, and the subject-digest index).
     // (The rtree virtual table for frame footprints contributes 4 entries: the
     // virtual table itself plus 3 shadow tables created automatically.)
     assert_eq!(
@@ -53,7 +55,7 @@ async fn baseline_schema_and_seed_match_oracle_counts() {
              AND name NOT LIKE 'sqlite_%' AND name != '_sqlx_migrations'",
         )
         .await,
-        309
+        314
     );
 
     for (table, expected) in [
