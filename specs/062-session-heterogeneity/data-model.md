@@ -700,7 +700,8 @@ UUID, configuration version UUID, actor, reason, and creation time. A
 `captured_union_evidence_id` UUID FK `NOT NULL UNIQUE REFERENCES
 relation_evidence(id)`
 holds the union-coverage evidence the repository projection returns as
-`MosaicRevision.capturedUnionEvidenceId`.
+`MosaicRevision.capturedUnionEvidenceId`, which a client resolves to the envelope
+through `relation_evidence.query`.
 `UNIQUE(mosaic_id, revision_number)` orders revisions and
 `UNIQUE(parent_revision_id)` permits one accepted successor from a head.
 
@@ -872,7 +873,7 @@ with a per-evidence ordinal, never JSON:
   (ordinal BETWEEN 0 AND 15)` for the contract bound of 16, and `CHECK
   (lower_udeg <= upper_udeg)`; the geometry-derived allowed residual intervals.
 - `relation_evidence_measurement(evidence_id, ordinal, measurement_key,
-  integer_value, unit, comparison, threshold_value, outcome,
+  measured_value_micro, unit, comparison, threshold_value_micro, outcome,
   source_evidence_digest, created_sequence)` with `UNIQUE(evidence_id, ordinal)`,
   `CHECK (ordinal BETWEEN 0 AND 99)`, and `UNIQUE(evidence_id, measurement_key)`,
   scoped to the evidence envelope so representative and captured-union evidence
@@ -893,9 +894,17 @@ single paginated snapshot reports one commit rather than two.
 
 `relation_evidence_measurement` stores exactly the contract's
 `ThresholdMeasurement` vocabulary: `CHECK (comparison IN ('lt', 'lte', 'eq',
-'gte', 'gt'))`, `CHECK (outcome IN ('pass', 'fail'))`, and one
-`threshold_value`. The projection into `ThresholdMeasurement` is therefore an
-identity mapping.
+'gte', 'gt'))`, `CHECK (outcome IN ('pass', 'fail'))`, and one threshold column.
+No verdict is rewritten on the way out.
+
+`measuredValue` and `thresholdValue` are contract decimals, and SQLite `REAL`
+would make two envelopes with the same measurement disagree in
+`input_digest`. Both are stored as signed integer microunits of the row's own
+`unit`, the scale `footprint_coverage_ppm` and `residual_sky_rotation_udeg`
+already use on the envelope, and the column names carry the scale:
+`measured_value_micro`, `threshold_value_micro`. The projection divides by
+1,000,000; a measurement that needs finer resolution than 1e-6 of its unit
+changes the unit rather than the scale.
 
 `proposal_measurement` keeps the wider stored set, `inside` alongside the five
 single-sided comparisons and `warn` alongside `pass` and `fail`, because it is
@@ -906,9 +915,21 @@ threshold. A verdict outside the contract vocabulary becomes a
 `missingEvidenceCodes` entry at measurement time rather than a stored row
 rewritten during projection.
 
-The ordinal ranges above bound the row count. An ordinal is dense from zero, so
-`CHECK (ordinal BETWEEN 0 AND 99)` plus per-evidence ordinal uniqueness caps
-each child list at its contract bound without a counting trigger. `code`,
+The ordinal ranges above bound the row count: `CHECK (ordinal BETWEEN 0 AND 99)`
+plus per-evidence ordinal uniqueness caps each child list at its contract bound
+without a counting trigger.
+
+Density is a separate obligation the bound does not give. One row at ordinal 99
+satisfies both constraints while `expected_measurement_count` is 1, so a count
+comparison calls a list with holes complete. Two rules close it:
+
+- a child batch writes ordinals `0..expected_count - 1` with no gaps, enforced by
+  the repository rather than by SQLite;
+- the completeness predicate reads `COUNT(*) = MAX(ordinal) + 1 = expected_count`
+  rather than the count alone, and reconciliation applies the same predicate, so a
+  row left non-dense by an older writer is repaired instead of read as complete.
+
+`code`,
 `measurement_key`, and `unit` stay open `TEXT`, exactly as `proposal_measurement`
 already treats them, because the contract types them as `SafeText` rather than
 closed enums; the accepted values are owned by the `manual.create` and
@@ -942,8 +963,9 @@ An empty `thresholdSnapshot` cannot carry the difference between an envelope
 measured as unmeasurable and an envelope whose asynchronous children are still in
 flight, so the count columns carry it instead. Each expected count is written in
 the envelope's own transaction, by the code that already knows how many rows it
-computed. An envelope is complete when each child table holds exactly its
-expected count; until then:
+computed. An envelope is complete when each child table satisfies
+`COUNT(*) = MAX(ordinal) + 1 = expected_count`, which no envelope holding extra
+or non-dense children can pass; until then:
 
 - the projection reports the envelope as unmeasured and emits the
   `evidence_incomplete` missing-evidence code, rather than returning the partial
@@ -961,11 +983,16 @@ have written the children died with the process, and
 proposal over the same inputs, so nothing re-enters the path that produced the
 first one. A boot-time reconciliation pass repairs it:
 
-1. Select every `relation_evidence` row holding fewer children than one of its
-   expected counts.
-2. Recompute the missing children into that same envelope, keyed by
+1. Select every `relation_evidence` row failing the completeness predicate on any
+   child table, which is a count or a maximum ordinal differing from the stored
+   expectation in either direction. Selecting only the short rows would leave an
+   envelope holding more children than it expects permanently incomplete and
+   never reported.
+2. Recompute the children into that same envelope, keyed by
    `(evidence_id, ordinal)`, so a partially written list resumes instead of
-   duplicating.
+   duplicating, and delete any child whose ordinal is at or above the recomputed
+   count. A row above the count is a stale write from an abandoned attempt, and
+   the envelope's inputs, not the stored children, decide the list.
 3. Where the recomputation produces a count other than the stored expectation,
    leave the envelope incomplete and report a repair prompt against its proposal.
 

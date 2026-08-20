@@ -444,6 +444,20 @@ complete tuple.
 - Notes: results exclude point-like objects outside the captured union and
   extended objects with zero intersection.
 
+### `relation_evidence.query`
+
+- Type: read-only.
+- Request: `{ evidenceId }`.
+- Response: `RelationEvidence`.
+- Errors: `relation_evidence.not_found`.
+- `PanelGroupRevision.representativeEvidenceId` and
+  `MosaicRevision.capturedUnionEvidenceId` are the only handles a revision gives to
+  the reasoning behind it, and neither resolves through `relation_proposal.query`:
+  an ingestion-created singleton panel group has no proposal at all, and an
+  accepted revision references an exclusively held envelope of its own rather than
+  the proposal's. Without this operation a client can show a revision but not why
+  it holds.
+
 ### `relation_proposal.list`
 
 - Type: read-only.
