@@ -610,14 +610,32 @@ async fn resume_refused_when_plan_not_paused() {
 
 // ── resume + retry item-set agreement (review fix) ────────────────────────────
 
-/// Removes the named var on drop, including on panic unwind, so a failed
-/// assertion cannot leak executor pacing into the rest of this binary. `cargo
-/// nextest` runs one process per test; plain `cargo test` shares one, which is
-/// what this guards.
-struct EnvVarGuard(&'static str);
+/// Sets a var and puts back whatever was there on drop, including on panic
+/// unwind, so a failed assertion cannot leak executor pacing into the rest of
+/// this binary. `cargo nextest` runs one process per test; plain `cargo test`
+/// shares one, which is what this guards.
+///
+/// Restores rather than removes: an outer runner that set the var for its own
+/// reasons gets it back, and nothing here has to assume it was unset.
+struct EnvVarGuard {
+    name: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvVarGuard {
+    fn set(name: &'static str, value: &str) -> Self {
+        let previous = std::env::var(name).ok();
+        std::env::set_var(name, value);
+        Self { name, previous }
+    }
+}
+
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
-        std::env::remove_var(self.0);
+        match self.previous.take() {
+            Some(previous) => std::env::set_var(self.name, previous),
+            None => std::env::remove_var(self.name),
+        }
     }
 }
 
@@ -690,8 +708,7 @@ async fn resume_then_retry_of_pre_pause_failed_item_reaches_terminal_state() {
     // Set before `resume_plan`, which spawns the run that has to still be
     // draining when the retry arrives. The first apply above is unaffected: it
     // pauses on item 0, so it pays the delay once.
-    let _env_guard = EnvVarGuard("PV_TEST_ITEM_DELAY_MS");
-    std::env::set_var("PV_TEST_ITEM_DELAY_MS", ITEM_DELAY_MS);
+    let _env_guard = EnvVarGuard::set("PV_TEST_ITEM_DELAY_MS", ITEM_DELAY_MS);
 
     app_core::plan_apply::resume_plan(db.pool(), &bus, &plan_id, &run_row.id)
         .await
