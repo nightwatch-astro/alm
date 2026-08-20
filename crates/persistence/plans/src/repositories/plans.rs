@@ -386,21 +386,30 @@ pub(crate) async fn update_plan_state_conn(
     Ok(())
 }
 
-/// Set `approved_at` and `approval_token` on a plan row.
+/// Approve a plan: `ready_for_review → approved`, recording `approved_at` and
+/// `approval_token`.
 ///
-/// Called by `approve_plan` after state is updated to `approved`.
+/// The expected state is in the `WHERE` clause, so this loses rather than
+/// overwrites when it races another transition. Without that predicate a
+/// concurrent [`set_reopened`] could be undone by an approval that had already
+/// read `ready_for_review`, leaving the plan `approved` with a live token while
+/// the reopen returned success.
 ///
 /// # Errors
 ///
-/// Returns [`persistence_core::DbError::Database`] on connection failure.
+/// - [`persistence_core::DbError::NotFound`] when no row matches `plan_id`.
+/// - [`persistence_core::DbError::CasFailed`] when the row exists in a state
+///   other than `ready_for_review`.
+/// - [`persistence_core::DbError::Database`] on connection failure.
 pub async fn set_approved(
     pool: &SqlitePool,
     plan_id: &str,
     approved_at: &str,
     approval_token: &str,
 ) -> DbResult<()> {
-    sqlx::query(
-        "UPDATE plans SET state = 'approved', approved_at = ?, approval_token = ? WHERE id = ?",
+    let rows = sqlx::query(
+        "UPDATE plans SET state = 'approved', approved_at = ?, approval_token = ? \
+         WHERE id = ? AND state = 'ready_for_review'",
     )
     .bind(approved_at)
     .bind(approval_token)
@@ -408,7 +417,34 @@ pub async fn set_approved(
     .execute(pool)
     .await?;
 
+    if rows.rows_affected() == 0 {
+        return Err(state_cas_error(pool, plan_id, "'ready_for_review'").await?);
+    }
     Ok(())
+}
+
+/// The error a lost state CAS on `plans` should return.
+///
+/// A guarded `UPDATE` affecting zero rows does not say why. Re-reading the state
+/// separates a missing plan from one in a state the transition does not accept:
+/// the first is [`persistence_core::DbError::NotFound`], the second
+/// [`persistence_core::DbError::CasFailed`], which the app layer maps to
+/// `plan.invalid_state`. Reporting both as `NotFound` told the caller a plan it
+/// had just read no longer existed.
+///
+/// `expected` is quoted by the caller, so a transition accepting more than one
+/// state can name all of them.
+async fn state_cas_error(pool: &SqlitePool, plan_id: &str, expected: &str) -> DbResult<DbError> {
+    let found: Option<String> = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind(plan_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(match found {
+        None => DbError::NotFound(format!("plan {plan_id}")),
+        Some(state) => {
+            DbError::CasFailed(format!("plan {plan_id} expected state {expected}, found '{state}'"))
+        }
+    })
 }
 
 /// Return a plan to `draft` and clear its approval (spec 017 T023).
@@ -421,9 +457,10 @@ pub async fn set_approved(
 ///
 /// # Errors
 ///
-/// Returns [`persistence_core::DbError::Database`] on connection failure and
-/// [`persistence_core::DbError::NotFound`] when no row matches `plan_id` in a
-/// reopenable state.
+/// - [`persistence_core::DbError::NotFound`] when no row matches `plan_id`.
+/// - [`persistence_core::DbError::CasFailed`] when the row exists in a state
+///   with no `→ draft` edge, which the app layer maps to `plan.invalid_state`.
+/// - [`persistence_core::DbError::Database`] on connection failure.
 pub async fn set_reopened(pool: &SqlitePool, plan_id: &str) -> DbResult<()> {
     let rows = sqlx::query(
         "UPDATE plans SET state = 'draft', approved_at = NULL, approval_token = NULL \
@@ -434,7 +471,7 @@ pub async fn set_reopened(pool: &SqlitePool, plan_id: &str) -> DbResult<()> {
     .await?;
 
     if rows.rows_affected() == 0 {
-        return Err(DbError::NotFound(format!("reopenable plan {plan_id}")));
+        return Err(state_cas_error(pool, plan_id, "'approved' or 'ready_for_review'").await?);
     }
     Ok(())
 }
@@ -732,6 +769,92 @@ mod tests {
         // Idempotent: a second confirm on an already-confirmed plan touches nothing.
         let confirmed_again = confirm_plan_destructive_items(db.pool(), "p-confirm").await.unwrap();
         assert_eq!(confirmed_again, 0);
+    }
+
+    // ── State CAS on approval and reopen ────────────────────────────────────
+    //
+    // Both statements are guarded `UPDATE`s, so the interesting cases are the
+    // ones that affect zero rows: a lost race must be distinguishable from a
+    // plan that is not there.
+
+    #[tokio::test]
+    async fn approval_requires_ready_for_review() {
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p-cas")).await.unwrap();
+
+        // Still a draft: approval must not force the state.
+        let err =
+            set_approved(db.pool(), "p-cas", "2026-08-01T00:00:00Z", "tok-1").await.unwrap_err();
+        assert!(matches!(err, DbError::CasFailed(_)), "got {err:?}");
+        let row = get_plan(db.pool(), "p-cas", false).await.unwrap();
+        assert_eq!(row.state, "draft");
+        assert_eq!(row.approval_token, None);
+
+        update_plan_state(db.pool(), "p-cas", "ready_for_review").await.unwrap();
+        set_approved(db.pool(), "p-cas", "2026-08-01T00:00:00Z", "tok-1").await.unwrap();
+        let row = get_plan(db.pool(), "p-cas", false).await.unwrap();
+        assert_eq!(row.state, "approved");
+        assert_eq!(row.approval_token.as_deref(), Some("tok-1"));
+    }
+
+    #[tokio::test]
+    async fn approval_of_a_reopened_plan_loses() {
+        // The concurrency case from the review: approval read `ready_for_review`,
+        // a reopen landed first, and the approval must not resurrect the token.
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p-race")).await.unwrap();
+        update_plan_state(db.pool(), "p-race", "ready_for_review").await.unwrap();
+        set_reopened(db.pool(), "p-race").await.unwrap();
+
+        let err = set_approved(db.pool(), "p-race", "2026-08-01T00:00:00Z", "tok-race")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DbError::CasFailed(_)), "got {err:?}");
+        let row = get_plan(db.pool(), "p-race", false).await.unwrap();
+        assert_eq!(row.state, "draft");
+        assert_eq!(row.approval_token, None);
+    }
+
+    #[tokio::test]
+    async fn approval_of_a_missing_plan_is_not_found() {
+        let db = setup_db().await;
+        let err =
+            set_approved(db.pool(), "ghost", "2026-08-01T00:00:00Z", "tok").await.unwrap_err();
+        assert!(matches!(err, DbError::NotFound(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn reopen_clears_the_approval() {
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p-reopen")).await.unwrap();
+        update_plan_state(db.pool(), "p-reopen", "ready_for_review").await.unwrap();
+        set_approved(db.pool(), "p-reopen", "2026-08-01T00:00:00Z", "tok-r").await.unwrap();
+
+        set_reopened(db.pool(), "p-reopen").await.unwrap();
+        let row = get_plan(db.pool(), "p-reopen", false).await.unwrap();
+        assert_eq!(row.state, "draft");
+        assert_eq!(row.approval_token, None);
+        assert_eq!(row.approved_at, None);
+    }
+
+    #[tokio::test]
+    async fn reopen_of_an_applying_plan_reports_invalid_state_not_missing() {
+        // `applying` has no `→ draft` edge. Reporting this as NotFound told the
+        // caller a plan it had just read had disappeared.
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p-applying")).await.unwrap();
+        update_plan_state(db.pool(), "p-applying", "applying").await.unwrap();
+
+        let err = set_reopened(db.pool(), "p-applying").await.unwrap_err();
+        assert!(matches!(err, DbError::CasFailed(_)), "got {err:?}");
+        assert!(format!("{err}").contains("found 'applying'"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn reopen_of_a_missing_plan_is_not_found() {
+        let db = setup_db().await;
+        let err = set_reopened(db.pool(), "ghost").await.unwrap_err();
+        assert!(matches!(err, DbError::NotFound(_)), "got {err:?}");
     }
 
     #[tokio::test]

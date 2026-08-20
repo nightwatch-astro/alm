@@ -41,6 +41,13 @@ pub enum DbError {
     NotFound(String),
     #[error("compare-and-swap failed: {0}")]
     CasFailed(String),
+    /// The approval token an operation was authorised with is no longer the one
+    /// on the row. Separate from [`DbError::CasFailed`] because a state CAS can
+    /// hold while the token has been revoked and reissued by a reopen plus
+    /// re-approval, and the caller owes the user `plan.approval.stale` for that
+    /// rather than `plan.invalid_state`.
+    #[error("approval token stale: {0}")]
+    ApprovalStale(String),
     #[error("serialisation error: {0}")]
     Serialise(#[from] serde_json::Error),
     #[error("database error: {0}")]

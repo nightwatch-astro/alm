@@ -920,3 +920,23 @@ async fn reopen_plan_is_idempotent_on_a_draft() {
     let resp = reopen_plan(db.pool(), &bus, "p-draft", "tester").await.unwrap();
     assert_eq!(resp.new_state, "draft");
 }
+
+/// A lost state CAS is `plan.invalid_state`, not a retryable database fault.
+///
+/// `approve_plan` and `reopen_plan` both read the state, then run a guarded
+/// UPDATE. When another transition wins in between, the repository returns
+/// `CasFailed`; routed through the generic arm it surfaced as
+/// `internal.database` with `retryable: true`, offering the user a retry for a
+/// request that cannot succeed.
+#[test]
+fn a_lost_state_cas_maps_to_plan_invalid_state() {
+    let err = db_err(persistence_core::DbError::CasFailed(
+        "plan p1 expected state 'ready_for_review', found 'draft'".to_owned(),
+    ));
+    assert_eq!(err.code, ErrorCode::PlanInvalidState);
+    assert!(!err.retryable);
+
+    // A genuinely missing plan still maps to plan.not_found.
+    let err = db_err(persistence_core::DbError::NotFound("plan p1".to_owned()));
+    assert_eq!(err.code, ErrorCode::PlanNotFound);
+}
