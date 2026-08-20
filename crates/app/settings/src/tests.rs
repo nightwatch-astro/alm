@@ -320,15 +320,79 @@ async fn get_settings_repairs_invalid_stored_value() {
     assert!(raw.is_none());
 }
 
-/// Range validation runs on read as well as on write, and `observingSites` is
-/// repaired as one whole key: a single out-of-range site discards every sibling
-/// site stored alongside it. Callers that persist sites must therefore validate
-/// before writing rather than relying on read-time repair to isolate the bad row.
+// ── Partial repair of observing sites (mq5m) ───────────────────────
+
+/// A valid observing site with the given id and name.
+fn site(id: &str, name: &str) -> Value {
+    serde_json::json!({
+        "id": id, "name": name, "latitudeDeg": 52.1, "longitudeDeg": 5.3,
+        "elevationM": 12.0, "timezone": "Europe/Amsterdam",
+        "twilight": "astronomical", "minHorizonAltDeg": 0.0
+    })
+}
+
+/// One malformed site must not take the user's other sites with it. Observing
+/// sites are coordinates the user typed in, so the whole-key reset lost Tier-1
+/// user knowledge with nothing left to recover from.
 #[tokio::test]
-async fn get_settings_repair_of_one_bad_site_discards_the_whole_list() {
+async fn get_settings_keeps_the_valid_observing_sites_when_one_is_malformed() {
     let (db, bus, cache) = setup().await;
-    let stored = serde_json::json!([sample_site("good", 52.1), edge_site("bad", 90.1, 0.0, 0.0),]);
+    let mut bad = site("s2", "Broken");
+    bad["latitudeDeg"] = serde_json::json!(91.0);
+    let stored = serde_json::json!([site("s1", "Home"), bad, site("s3", "Dark")]);
     repo::set_raw(db.pool(), "observingSites", &stored).await.unwrap();
+
+    let resp = get_settings(db.pool(), &bus, &cache).await.unwrap();
+
+    let ids: Vec<&str> = resp.settings.observing_sites.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, vec!["s1", "s3"], "only the malformed site may be dropped");
+
+    // The repaired remainder is written back, not deleted.
+    let raw = repo::get_raw(db.pool(), "observingSites").await.unwrap();
+    assert_eq!(raw, Some(serde_json::json!([site("s1", "Home"), site("s3", "Dark")])));
+}
+
+/// The repair event names the dropped site and the remainder that was kept.
+#[tokio::test]
+async fn partial_repair_audits_the_dropped_site_and_the_kept_remainder() {
+    let (db, bus, cache) = setup().await;
+    let mut bad = site("s2", "Broken");
+    bad["latitudeDeg"] = serde_json::json!(91.0);
+    let stored = serde_json::json!([site("s1", "Home"), bad]);
+    repo::set_raw(db.pool(), "observingSites", &stored).await.unwrap();
+
+    get_settings(db.pool(), &bus, &cache).await.unwrap();
+
+    let payload: String =
+        sqlx::query_scalar("SELECT payload FROM events WHERE topic = 'settings.repair'")
+            .fetch_one(db.pool())
+            .await
+            .expect("partial repair must still audit");
+    let payload: Value = serde_json::from_str(&payload).expect("payload is JSON");
+    assert_eq!(payload["invalidValue"], serde_json::json!([bad]));
+    assert_eq!(payload["defaultValue"], serde_json::json!([site("s1", "Home")]));
+}
+
+/// A duplicate id is only visible against the sites already kept, so the first
+/// occurrence survives.
+#[tokio::test]
+async fn get_settings_keeps_the_first_of_two_sites_sharing_an_id() {
+    let (db, bus, cache) = setup().await;
+    let stored = serde_json::json!([site("dup", "First"), site("dup", "Second")]);
+    repo::set_raw(db.pool(), "observingSites", &stored).await.unwrap();
+
+    let resp = get_settings(db.pool(), &bus, &cache).await.unwrap();
+
+    let names: Vec<&str> = resp.settings.observing_sites.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, vec!["First"]);
+}
+
+/// Salvage applies to arrays of independently valid entries. A value that is not
+/// an array has no entries to keep, so the whole key still resets.
+#[tokio::test]
+async fn get_settings_resets_observing_sites_when_the_value_is_not_an_array() {
+    let (db, bus, cache) = setup().await;
+    repo::set_raw(db.pool(), "observingSites", &serde_json::json!("nope")).await.unwrap();
 
     let resp = get_settings(db.pool(), &bus, &cache).await.unwrap();
 
