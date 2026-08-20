@@ -61,6 +61,31 @@ use persistence_topology::repositories::panels::{
 
 use super::progress::MaterializationProgress;
 
+/// Propagate an error out of an open write transaction, rolling it back first.
+///
+/// A bare `?` inside a `begin_immediate` region drops the `PoolConnection` with
+/// the transaction still open. SQLite does not roll that back, and sqlx's pool
+/// has no `after_release` reset here, so the connection returns to the idle pool
+/// still holding the write lock. A later writer then either gets that same
+/// connection back and fails with `cannot start a transaction within a
+/// transaction`, or gets another one and waits out `busy_timeout` before failing
+/// with `database is locked`. Either way one failed apply takes writes down for
+/// the lifetime of the pool.
+///
+/// `a_failed_apply_leaves_the_database_writable`, in
+/// `crates/app/core/tests/session_materialization/mod.rs`, pins that behaviour.
+macro_rules! tx_try {
+    ($conn:expr, $result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => {
+                rollback(&mut $conn).await;
+                return Err(error);
+            }
+        }
+    };
+}
+
 // ── Params struct ────────────────────────────────────────────────────────
 
 /// Parameters for [`run_apply`]. Kept in a struct to stay within the 8-arg clippy limit.
@@ -137,16 +162,16 @@ pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<S
     let actor_row_id: i64 = {
         let mut conn = pool.acquire().await?;
         begin_immediate(&mut conn).await?;
-        let id = ensure_spec062_actor(&mut conn, params.actor_public_id, &now).await?;
-        commit(&mut conn).await?;
+        let id = tx_try!(conn, ensure_spec062_actor(&mut conn, params.actor_public_id, &now).await);
+        tx_try!(conn, commit(&mut conn).await);
         id
     };
 
     let canonical_target_row_id: Option<i64> = if let Some(t) = params.canonical_target_public_id {
         let mut conn = pool.acquire().await?;
         begin_immediate(&mut conn).await?;
-        let row_id = ensure_spec062_target(&mut conn, t, &now).await?;
-        commit(&mut conn).await?;
+        let row_id = tx_try!(conn, ensure_spec062_target(&mut conn, t, &now).await);
+        tx_try!(conn, commit(&mut conn).await);
         Some(row_id)
     } else {
         None
@@ -176,8 +201,8 @@ pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<S
 
         // Read sequence inside the IMMEDIATE transaction on this connection to
         // avoid racing a concurrent writer on a separate pool connection.
-        let seq = current_sequence_on_conn(&mut conn).await? + 1;
-        insert_repository_change(&mut conn, None, &now).await?;
+        let seq = tx_try!(conn, current_sequence_on_conn(&mut conn).await) + 1;
+        tx_try!(conn, insert_repository_change(&mut conn, None, &now).await);
 
         // Derive observing night from the pinned site resolution revision.
         let observing_night = site_rev.observing_night_date.as_deref().unwrap_or("2000-01-01");
@@ -194,65 +219,80 @@ pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<S
         let session_public_id = Uuid::new_v4().to_string();
         let ordinal_in_operation = i64::try_from(applied_sessions.len()).unwrap_or(i64::MAX);
 
-        let session_row_id = insert_session(
-            &mut conn,
-            &InsertSession {
-                public_id: &session_public_id,
-                materialization_operation_row_id: params.operation_row_id,
-                kind: &proposed.kind,
-                ordinal_in_operation,
-                identity_digest: &proposed.identity_digest,
-                observing_night_date: observing_night,
-                site_row_id: site_rev.selected_site_row_id,
-                timezone_name_snapshot: site_rev.timezone_name.as_deref(),
-                night_derivation,
-                canonical_target_row_id,
-                created_sequence: seq,
-                created_at: &now,
-            },
-        )
-        .await?;
-
-        insert_session_visibility(&mut conn, session_row_id, seq, "inbox_ingestion").await?;
-
-        for (i, frame) in frame_rows.iter().enumerate() {
-            insert_session_frame(
+        let session_row_id = tx_try!(
+            conn,
+            insert_session(
                 &mut conn,
-                &InsertSessionFrame {
-                    session_row_id,
-                    frame_row_id: frame.frame_row_id,
+                &InsertSession {
+                    public_id: &session_public_id,
                     materialization_operation_row_id: params.operation_row_id,
-                    ordinal: frame.ordinal,
-                    is_representative: i == 0,
-                    created_sequence: seq,
-                    _phantom: std::marker::PhantomData,
-                },
-            )
-            .await?;
-        }
-
-        // Light sessions receive a singleton panel group atomically in the same tx.
-        let (panel_group_row_id, panel_revision_row_id) = if proposed.kind == "light" {
-            let target_row_id = canonical_target_row_id.ok_or_else(|| {
-                persistence_core::DbError::NotFound(
-                    "light session requires a canonical target row id".to_owned(),
-                )
-            })?;
-
-            let (g, r) = insert_singleton_panel_group(
-                &mut conn,
-                &InsertSingletonPanel {
-                    group_public_id: &Uuid::new_v4().to_string(),
-                    revision_public_id: &Uuid::new_v4().to_string(),
-                    session_row_id,
-                    canonical_target_row_id: target_row_id,
-                    config_revision_row_id,
-                    actor_row_id,
+                    kind: &proposed.kind,
+                    ordinal_in_operation,
+                    identity_digest: &proposed.identity_digest,
+                    observing_night_date: observing_night,
+                    site_row_id: site_rev.selected_site_row_id,
+                    timezone_name_snapshot: site_rev.timezone_name.as_deref(),
+                    night_derivation,
+                    canonical_target_row_id,
                     created_sequence: seq,
                     created_at: &now,
                 },
             )
-            .await?;
+            .await
+        );
+
+        tx_try!(
+            conn,
+            insert_session_visibility(&mut conn, session_row_id, seq, "inbox_ingestion").await
+        );
+
+        for (i, frame) in frame_rows.iter().enumerate() {
+            tx_try!(
+                conn,
+                insert_session_frame(
+                    &mut conn,
+                    &InsertSessionFrame {
+                        session_row_id,
+                        frame_row_id: frame.frame_row_id,
+                        materialization_operation_row_id: params.operation_row_id,
+                        ordinal: frame.ordinal,
+                        is_representative: i == 0,
+                        created_sequence: seq,
+                        _phantom: std::marker::PhantomData,
+                    },
+                )
+                .await
+            );
+        }
+
+        // Light sessions receive a singleton panel group atomically in the same tx.
+        let (panel_group_row_id, panel_revision_row_id) = if proposed.kind == "light" {
+            let target_row_id = tx_try!(
+                conn,
+                canonical_target_row_id.ok_or_else(|| {
+                    persistence_core::DbError::NotFound(
+                        "light session requires a canonical target row id".to_owned(),
+                    )
+                })
+            );
+
+            let (g, r) = tx_try!(
+                conn,
+                insert_singleton_panel_group(
+                    &mut conn,
+                    &InsertSingletonPanel {
+                        group_public_id: &Uuid::new_v4().to_string(),
+                        revision_public_id: &Uuid::new_v4().to_string(),
+                        session_row_id,
+                        canonical_target_row_id: target_row_id,
+                        config_revision_row_id,
+                        actor_row_id,
+                        created_sequence: seq,
+                        created_at: &now,
+                    },
+                )
+                .await
+            );
 
             light_group_count += 1;
             (Some(g), Some(r))
@@ -260,7 +300,7 @@ pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<S
             (None, None)
         };
 
-        commit(&mut conn).await?;
+        tx_try!(conn, commit(&mut conn).await);
 
         let frame_count = i64::try_from(frame_rows.len()).unwrap_or(0);
         total_frames_written += frame_count;
@@ -280,14 +320,17 @@ pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<S
         let cancel_now = Timestamp::now_iso();
         let mut conn = pool.acquire().await?;
         begin_immediate(&mut conn).await?;
-        transition_operation_to_cancelled(
-            &mut conn,
-            params.operation_row_id,
-            applying_state_version,
-            &cancel_now,
-        )
-        .await?;
-        commit(&mut conn).await?;
+        tx_try!(
+            conn,
+            transition_operation_to_cancelled(
+                &mut conn,
+                params.operation_row_id,
+                applying_state_version,
+                &cancel_now,
+            )
+            .await
+        );
+        tx_try!(conn, commit(&mut conn).await);
         return get_operation_public_id_by_row_id(pool, params.operation_row_id).await;
     }
 
@@ -299,8 +342,8 @@ pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<S
     enable_foreign_keys(&mut conn).await?;
     begin_immediate(&mut conn).await?;
 
-    let term_seq = current_sequence_on_conn(&mut conn).await? + 1;
-    insert_repository_change(&mut conn, None, &terminal_now).await?;
+    let term_seq = tx_try!(conn, current_sequence_on_conn(&mut conn).await) + 1;
+    tx_try!(conn, insert_repository_change(&mut conn, None, &terminal_now).await);
 
     // Stable SHA-256 over ordered session public_ids — terminal idempotency token.
     let canonical_result_digest = {
@@ -314,69 +357,89 @@ pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<S
     };
 
     let snapshot_public_id = Uuid::new_v4().to_string();
-    let snapshot_row_id = insert_result_snapshot(
-        &mut conn,
-        &InsertMaterializationResultSnapshot {
-            public_id: &snapshot_public_id,
-            operation_row_id: params.operation_row_id,
-            session_count,
-            membership_count: total_frames_written,
-            singleton_group_count: light_group_count,
-            blocked_frame_count: plan_snapshot.blocked_frame_count,
-            canonical_digest: &canonical_result_digest,
-            created_sequence: term_seq,
-            created_at: &terminal_now,
-        },
-    )
-    .await?;
+    let snapshot_row_id = tx_try!(
+        conn,
+        insert_result_snapshot(
+            &mut conn,
+            &InsertMaterializationResultSnapshot {
+                public_id: &snapshot_public_id,
+                operation_row_id: params.operation_row_id,
+                session_count,
+                membership_count: total_frames_written,
+                singleton_group_count: light_group_count,
+                blocked_frame_count: plan_snapshot.blocked_frame_count,
+                canonical_digest: &canonical_result_digest,
+                created_sequence: term_seq,
+                created_at: &terminal_now,
+            },
+        )
+        .await
+    );
 
     let mut frame_ordinal: i64 = 0;
     for (session_ordinal, session) in applied_sessions.iter().enumerate() {
         let session_ordinal = i64::try_from(session_ordinal).unwrap_or(i64::MAX);
-        insert_result_session(&mut conn, snapshot_row_id, session.session_row_id, session_ordinal)
-            .await?;
-
-        for &frame_row_id in &session.frame_row_ids {
-            insert_result_frame(
+        tx_try!(
+            conn,
+            insert_result_session(
                 &mut conn,
                 snapshot_row_id,
                 session.session_row_id,
-                frame_row_id,
-                frame_ordinal,
+                session_ordinal
             )
-            .await?;
+            .await
+        );
+
+        for &frame_row_id in &session.frame_row_ids {
+            tx_try!(
+                conn,
+                insert_result_frame(
+                    &mut conn,
+                    snapshot_row_id,
+                    session.session_row_id,
+                    frame_row_id,
+                    frame_ordinal,
+                )
+                .await
+            );
             frame_ordinal += 1;
         }
 
         if let (Some(g), Some(r)) = (session.panel_group_row_id, session.panel_revision_row_id) {
-            insert_result_panel_group(
-                &mut conn,
-                snapshot_row_id,
-                session.session_row_id,
-                g,
-                r,
-                session_ordinal,
-            )
-            .await?;
+            tx_try!(
+                conn,
+                insert_result_panel_group(
+                    &mut conn,
+                    snapshot_row_id,
+                    session.session_row_id,
+                    g,
+                    r,
+                    session_ordinal,
+                )
+                .await
+            );
         }
     }
 
-    transition_operation_to_applied(
-        &mut conn,
-        &ApplyOperationResult {
-            operation_row_id: params.operation_row_id,
-            expected_state_version: applying_state_version,
-            result_snapshot_row_id: snapshot_row_id,
-            session_count,
-            membership_count: total_frames_written,
-            singleton_group_count: light_group_count,
-            blocked_frame_count: plan_snapshot.blocked_frame_count,
-            finished_at: &terminal_now,
-        },
-    )
-    .await?;
+    tx_try!(
+        conn,
+        transition_operation_to_applied(
+            &mut conn,
+            &ApplyOperationResult {
+                operation_row_id: params.operation_row_id,
+                expected_state_version: applying_state_version,
+                result_snapshot_row_id: snapshot_row_id,
+                session_count,
+                membership_count: total_frames_written,
+                singleton_group_count: light_group_count,
+                blocked_frame_count: plan_snapshot.blocked_frame_count,
+                finished_at: &terminal_now,
+            },
+        )
+        .await
+    );
 
-    commit(&mut conn).await?;
+    tx_try!(conn, commit(&mut conn).await);
 
     get_operation_public_id_by_row_id(pool, params.operation_row_id).await
 }
@@ -398,21 +461,24 @@ pub async fn insert_ready_operation(
     let now = Timestamp::now_iso();
     let mut conn = pool.acquire().await?;
     begin_immediate(&mut conn).await?;
-    let seq = current_sequence_on_conn(&mut conn).await?;
-    insert_repository_change(&mut conn, Some(command_row_id), &now).await?;
-    let row_id = insert_materialization_operation(
-        &mut conn,
-        &InsertMaterializationOperation {
-            public_id: operation_public_id,
-            kind: "inbox_ingestion",
-            command_row_id,
-            config_revision_row_id,
-            created_sequence: seq + 1,
-            created_at: &now,
-        },
-    )
-    .await?;
-    commit(&mut conn).await?;
+    let seq = tx_try!(conn, current_sequence_on_conn(&mut conn).await);
+    tx_try!(conn, insert_repository_change(&mut conn, Some(command_row_id), &now).await);
+    let row_id = tx_try!(
+        conn,
+        insert_materialization_operation(
+            &mut conn,
+            &InsertMaterializationOperation {
+                public_id: operation_public_id,
+                kind: "inbox_ingestion",
+                command_row_id,
+                config_revision_row_id,
+                created_sequence: seq + 1,
+                created_at: &now,
+            },
+        )
+        .await
+    );
+    tx_try!(conn, commit(&mut conn).await);
     // state_version starts at 0 on insert
     Ok((row_id, 0))
 }
@@ -432,8 +498,17 @@ pub async fn mark_operation_failed(
     let now = Timestamp::now_iso();
     let mut conn = pool.acquire().await?;
     begin_immediate(&mut conn).await?;
-    transition_operation_to_failed(&mut conn, operation_row_id, state_version, failure_code, &now)
-        .await?;
-    commit(&mut conn).await?;
+    tx_try!(
+        conn,
+        transition_operation_to_failed(
+            &mut conn,
+            operation_row_id,
+            state_version,
+            failure_code,
+            &now
+        )
+        .await
+    );
+    tx_try!(conn, commit(&mut conn).await);
     Ok(())
 }
