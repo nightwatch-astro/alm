@@ -212,3 +212,80 @@ fn generated_typescript_exposes_schema_contract_names() {
         );
     }
 }
+
+/// Spec 006 T001 copied its two contracts into `packages/contracts/schemas/` as
+/// build-time mirrors, which makes the spec file and the mirror two records of
+/// one contract with nothing holding them together. They came apart: pagination
+/// (`limit`, `offset`, `hasMore`) was added to the mirror and to three Rust
+/// crates, and the spec copy never got it (`astro-plan-9aq6`).
+///
+/// Compares parsed JSON, so formatting and key order are free to differ.
+#[test]
+fn spec_contracts_match_their_packages_contracts_mirrors() {
+    let root = repo_root();
+
+    for stem in ["inventory.list", "inventory.session.review"] {
+        let spec_path =
+            root.join(format!("specs/006-inventory-library-lifecycle/contracts/{stem}.json"));
+        let mirror_path = root.join(format!("packages/contracts/schemas/{stem}.schema.json"));
+
+        let spec: Value = serde_json::from_str(
+            &fs::read_to_string(&spec_path)
+                .unwrap_or_else(|error| panic!("failed to read {}: {error}", spec_path.display())),
+        )
+        .unwrap_or_else(|error| panic!("{} is not valid JSON: {error}", spec_path.display()));
+
+        let mirror: Value =
+            serde_json::from_str(&fs::read_to_string(&mirror_path).unwrap_or_else(|error| {
+                panic!("failed to read {}: {error}", mirror_path.display())
+            }))
+            .unwrap_or_else(|error| panic!("{} is not valid JSON: {error}", mirror_path.display()));
+
+        let mut differences = Vec::new();
+        collect_json_differences(&spec, &mirror, "", &mut differences);
+
+        assert!(
+            differences.is_empty(),
+            "{stem}: the spec contract and its packages/contracts mirror disagree at \
+             {} location(s):\n{}\n\nThe mirror is what tests/contract validates and what the \
+             TypeScript declarations are generated from, so port the change into {} rather \
+             than reverting the mirror.",
+            differences.len(),
+            differences.join("\n"),
+            spec_path.display()
+        );
+    }
+}
+
+/// Records the JSON pointers at which `spec` and `mirror` disagree.
+///
+/// Whole-value equality is enough to fail the assertion but not to act on it:
+/// these contracts are ~6 KB each, and printing both sides buries a
+/// three-field difference. Recurses into objects so the message names the
+/// pointer, and stops at the first differing scalar or array.
+fn collect_json_differences(spec: &Value, mirror: &Value, at: &str, out: &mut Vec<String>) {
+    let here = if at.is_empty() { "(root)".to_owned() } else { at.to_owned() };
+
+    match (spec, mirror) {
+        (Value::Object(spec_map), Value::Object(mirror_map)) => {
+            for (key, spec_value) in spec_map {
+                match mirror_map.get(key) {
+                    Some(mirror_value) => {
+                        collect_json_differences(
+                            spec_value,
+                            mirror_value,
+                            &format!("{at}/{key}"),
+                            out,
+                        );
+                    }
+                    None => out.push(format!("  {at}/{key}: in the spec copy only")),
+                }
+            }
+            for key in mirror_map.keys().filter(|key| !spec_map.contains_key(*key)) {
+                out.push(format!("  {at}/{key}: in the mirror only"));
+            }
+        }
+        _ if spec != mirror => out.push(format!("  {here}: values differ")),
+        _ => {}
+    }
+}
