@@ -250,6 +250,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "changes: rust=$rust frontend=$frontend frontend_full=$frontend_full docs_only=$docs_only scripts=${{ steps.filter.outputs.scripts }}"
 
+      # This job is the only one with no gate, which is what the guard needs: a
+      # PR that reintroduces an ignore rule for `.github/` may touch nothing
+      # else, and every other job would skip it. The check is a `git ls-files`
+      # plus one `git check-ignore`, so it costs nothing here.
+      - name: Workflows visible to ignore-respecting scanners
+        run: bash scripts/check-github-not-ignored.sh
+
   # Three lanes share this matrix (Rust, frontend, scripts), each with its own
   # step-level gate, so it is NOT split into separate jobs. The job-level gate
   # below fires only when ALL lanes are idle -- the case where the job had
