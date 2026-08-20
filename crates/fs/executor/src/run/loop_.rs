@@ -71,11 +71,17 @@ async fn drive_plan<C: ExecutorCallbacks>(
     let item_by_id: HashMap<&str, &ExecutorItem> =
         items.iter().map(|i| (i.id.as_str(), i)).collect();
 
+    let item_delay = test_item_delay();
+
     'items: for item in &items {
         // Skip items that are already in a terminal state (re-apply idempotency).
         if matches!(item.current_state.as_str(), "succeeded" | "skipped" | "cancelled" | "failed") {
             tracing::debug!(item_id = %item.id, state = %item.current_state, "skipping already-terminal item");
             continue;
+        }
+
+        if let Some(delay) = item_delay {
+            tokio::time::sleep(delay).await;
         }
 
         // Check cancellation between items (never mid-item).
@@ -194,6 +200,23 @@ async fn drain_retries<C: ExecutorCallbacks>(
         }
     }
     DrainOutcome::Continue
+}
+
+/// Per-item pacing for tests that need the forward pass to still be running
+/// when they act on it.
+///
+/// A test that files a mid-run retry, pause, or cancel has to reach the
+/// executor before the forward pass drains its queue. Without a seam the only
+/// lever is item count, which makes the outcome a race: 30 small
+/// same-directory moves against a warm pool finish inside three awaits often
+/// enough to fail in CI (`astro-plan-ytx7`).
+///
+/// Read once per run, not per item, so a run cannot change pace midway.
+/// Production never sets this; an unparseable or zero value is ignored.
+fn test_item_delay() -> Option<std::time::Duration> {
+    let raw = std::env::var("PV_TEST_ITEM_DELAY_MS").ok()?;
+    let ms: u64 = raw.parse().ok()?;
+    (ms > 0).then(|| std::time::Duration::from_millis(ms))
 }
 
 /// Outcome of processing a single item through the gate/execute pipeline.

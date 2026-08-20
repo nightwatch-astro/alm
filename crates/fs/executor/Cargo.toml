@@ -15,7 +15,9 @@ fs_pathsafe = { path = "../pathsafe" }
 project_structure = { path = "../../project/structure" }
 camino = { workspace = true }
 serde.workspace = true
-tokio = { workspace = true }
+# `time` for the per-item pacing seam in `run::loop_`; the workspace feature set
+# does not include it.
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 time.workspace = true
 trash.workspace = true
