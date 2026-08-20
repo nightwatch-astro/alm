@@ -12,20 +12,21 @@
  * `settingsRestoreDefaults` — so a caller that goes through them cannot forget.
  *
  * The risk is the caller that does NOT go through them: several modules invoke
- * `commands.settingsUpdate` directly. Today none of their scopes has a
- * `useQuery` reader, so nothing goes stale — the bug is latent, not live. It
- * becomes real the moment someone adds a reader for one of those scopes, and at
- * that point the failure is a pane showing a value the user just changed, with
- * nothing in the diff to suggest why.
+ * `commands.settingsUpdate` or `commands.settingsRestoreDefaults` directly. The
+ * allowlist below is the set of modules permitted to do so, and a new bypass
+ * fails until it is either routed through the chokepoint or added here
+ * deliberately.
  *
- * A comment cannot hold that line. This gate does: the allowlist below is the
- * set of modules permitted to bypass the chokepoint, and a new bypass fails
- * until it is either routed through `updateSettings` or added here deliberately.
+ * A bypass is only latent while no `useQuery` reads the scope it writes, so this
+ * gate checks that too: each allowlist entry declares the scopes its writes
+ * affect, and a cached reader appearing for one of them fails. That is the event
+ * that turns a baselined bypass into a pane showing a value the user just
+ * changed, with nothing in the diff to suggest why.
  *
  * Deliberately a baseline rather than a prohibition. The existing bypasses have
  * reasons — theme and locale write during boot, before a QueryClient
- * necessarily exists — and rewriting them is a separate change from stopping
- * the set from growing.
+ * necessarily exists — and rewriting them is a separate change from stopping the
+ * set from growing.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -42,26 +43,41 @@ const SRC = join(REPO_ROOT, 'apps/desktop/src');
 const CHOKEPOINT = 'features/settings/settingsIpc.ts';
 
 /**
- * Modules allowed to call `commands.settingsUpdate` directly.
+ * The two cache-invalidating commands. `settingsRestoreDefaults` matters as much
+ * as `settingsUpdate`: its wrapper invalidates `queryKeys.settings.all()`, so a
+ * direct call leaves every cached scope stale rather than one.
+ */
+const WRITE_COMMANDS = ['settingsUpdate', 'settingsRestoreDefaults'];
+
+/**
+ * Modules allowed to call a settings-write command directly, and the scopes each
+ * one's writes affect.
  *
- * Each entry is a module that writes a settings scope no `useQuery` currently
- * reads. If you add one, say which scope it writes and why it cannot use
- * `updateSettings` — "it runs before the QueryClient exists" is a real reason;
+ * `scopes` is what makes the bypass safe to baseline: it is checked against the
+ * scopes `settingsQueryOptions` is called with, and a reader appearing for one of
+ * them fails the gate. If you add an entry, say why it cannot use
+ * `updateSettings` — "it runs before the QueryClient exists" is a real reason,
  * "it was easier" is not.
  */
-const ALLOWED_BYPASS = new Set([
-  // Scope `general`. Writes during boot, before the QueryClient is mounted.
-  'data/theme.ts',
-  'data/locale.tsx',
-  // Scope `ui_state`. Write-behind per constitution V; the in-memory value is
-  // authoritative, so a stale cache read is not the failure mode here.
-  'data/persisted-state.ts',
-  // Scope `observing`.
-  'shared/observing-sites/site-store.ts',
-  // Scopes `planner` and `catalogues`.
-  'shared/planner/guidance-settings.ts',
-  'shared/planner/catalogue-settings.ts',
+const ALLOWED_BYPASS = new Map([
+  // Writes during boot, before the QueryClient is mounted.
+  ['data/theme.ts', { scopes: ['general'] }],
+  ['data/locale.tsx', { scopes: ['general'] }],
+  // Write-behind per constitution V; the in-memory value is authoritative, so a
+  // stale cache read is not the failure mode here. The scope is a parameter, so
+  // it cannot be derived from the call site — `ui_state` is what its callers pass.
+  ['data/persisted-state.ts', { scopes: ['ui_state'], derivable: false }],
+  ['shared/observing-sites/site-store.ts', { scopes: ['observing'] }],
+  // Also the one direct `settingsRestoreDefaults` caller. Restore is key-scoped,
+  // and the keys it restores belong to `planner`.
+  ['shared/planner/guidance-settings.ts', { scopes: ['planner'] }],
+  ['shared/planner/catalogue-settings.ts', { scopes: ['catalogues'] }],
 ]);
+
+/** Windows `path.relative` returns `a\b`; every path in this file uses `/`. */
+function toPosix(path) {
+  return path.split('\\').join('/');
+}
 
 /** Every `.ts`/`.tsx` file under a directory, excluding tests. */
 function sourceFiles(dir) {
@@ -73,72 +89,229 @@ function sourceFiles(dir) {
       continue;
     }
     if (!/\.tsx?$/.test(name)) continue;
-    if (/\.test\.|\.spec\.|__tests__/.test(full)) continue;
+    if (/\.test\.|\.spec\.|__tests__/.test(toPosix(full))) continue;
     out.push(full);
   }
   return out;
 }
 
-/** Modules calling `commands.settingsUpdate`, as SRC-relative paths. */
+/**
+ * A call-site matcher for `commands.<command>(`.
+ *
+ * `\s*` around the property access is load-bearing: prettier breaks a chained
+ * call as `commands\n  .settingsUpdate(...)`, which the fixed-token spelling
+ * missed. `app/LogPanelContext.tsx` and `features/setup/steps/StepCatalogs.tsx`
+ * were both written that way and both bypassed this gate unseen.
+ */
+function callPattern(command) {
+  return new RegExp(String.raw`commands\s*\.\s*${command}\s*\(`, 'g');
+}
+
+/**
+ * First argument of each `commands.<command>(` call in `source`, as written.
+ *
+ * Returns the raw argument text, which is a string literal or an identifier.
+ */
+function firstArguments(source, command) {
+  const out = [];
+  const pattern = new RegExp(
+    String.raw`commands\s*\.\s*${command}\s*\(\s*([^,)\s]+)`,
+    'g',
+  );
+  let match;
+  while ((match = pattern.exec(source)) !== null) out.push(match[1]);
+  return out;
+}
+
+/**
+ * The string a scope argument denotes, or null when it cannot be resolved.
+ *
+ * Scopes are written as module-local constants at every call site here
+ * (`SETTINGS_SCOPE`, `OBSERVING_SCOPE`, `FRAMING_SCOPE`), so a literal-only
+ * reader would resolve nothing at all.
+ */
+function resolveScope(source, argument) {
+  const literal = /^['"]([^'"]+)['"]$/.exec(argument);
+  if (literal !== null) return literal[1];
+  if (!/^[A-Za-z_$][\w$]*$/.test(argument)) return null;
+  const declaration = new RegExp(
+    String.raw`\b${argument}\s*(?::\s*[^=]+)?=\s*['"]([^'"]+)['"]`,
+  ).exec(source);
+  return declaration === null ? null : declaration[1];
+}
+
+/**
+ * Modules calling a settings-write command directly.
+ *
+ * Returns a Map of SRC-relative path to `{ commands, scopes, unresolved }`,
+ * where `scopes` holds the resolvable `settingsUpdate` scopes at that call site.
+ */
 function directWriters(root = SRC) {
-  return sourceFiles(root)
-    .filter((f) => /commands\.settingsUpdate\s*\(/.test(readFileSync(f, 'utf8')))
-    .map((f) => relative(root, f))
-    .sort();
+  const out = new Map();
+  for (const file of sourceFiles(root)) {
+    const source = readFileSync(file, 'utf8');
+    const found = WRITE_COMMANDS.filter((c) => callPattern(c).test(source));
+    if (found.length === 0) continue;
+
+    const scopes = new Set();
+    let unresolved = false;
+    for (const argument of firstArguments(source, 'settingsUpdate')) {
+      const scope = resolveScope(source, argument);
+      if (scope === null) unresolved = true;
+      else scopes.add(scope);
+    }
+    out.set(toPosix(relative(root, file)), {
+      commands: found,
+      scopes: [...scopes].sort(),
+      unresolved,
+    });
+  }
+  return new Map([...out].sort(([a], [b]) => (a < b ? -1 : 1)));
+}
+
+/**
+ * Scopes some component reads through `settingsQueryOptions`, with the module
+ * that reads each.
+ *
+ * The definition in `settingsQueries.ts` is skipped: its own `scope` parameter is
+ * not a reader.
+ */
+function cachedReaderScopes(root = SRC) {
+  const out = new Map();
+  for (const file of sourceFiles(root)) {
+    const rel = toPosix(relative(root, file));
+    if (rel === 'features/settings/settingsQueries.ts') continue;
+    const source = readFileSync(file, 'utf8');
+    const pattern = /settingsQueryOptions\s*\(\s*([^,)\s]+)/g;
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+      const scope = resolveScope(source, match[1]);
+      if (scope === null) continue;
+      if (!out.has(scope)) out.set(scope, []);
+      out.get(scope).push(rel);
+    }
+  }
+  return out;
+}
+
+/**
+ * Every problem with the current tree, as `{ kind, detail }` records.
+ *
+ * `allowlist` is a parameter so the self-test can drive each violation kind from
+ * a fixture tree instead of the repo's own (passing) allowlist.
+ */
+function violations(
+  writers = directWriters(),
+  readers = cachedReaderScopes(),
+  allowlist = ALLOWED_BYPASS,
+) {
+  const out = [];
+
+  for (const [path, info] of writers) {
+    if (path === CHOKEPOINT || allowlist.has(path)) continue;
+    out.push({
+      kind: 'bypass',
+      detail: `${path} calls ${info.commands.map((c) => `commands.${c}`).join(' and ')} directly`,
+    });
+  }
+
+  for (const [path, entry] of allowlist) {
+    const info = writers.get(path);
+
+    // A stale entry is an error, not a note: left in place it permanently
+    // authorizes the path, so a direct write added back later passes unseen and
+    // the set can regrow without the gate ever failing.
+    if (info === undefined) {
+      out.push({
+        kind: 'stale',
+        detail: `${path} no longer calls a settings-write command; drop it from ALLOWED_BYPASS`,
+      });
+      continue;
+    }
+
+    // The declared scopes are what the reader check is applied to, so a bypass
+    // quietly changing scope would otherwise dodge it.
+    if (entry.derivable !== false) {
+      const undeclared = info.scopes.filter((s) => !entry.scopes.includes(s));
+      if (undeclared.length > 0) {
+        out.push({
+          kind: 'scope-drift',
+          detail: `${path} writes ${undeclared.join(', ')}, which ALLOWED_BYPASS does not declare`,
+        });
+      }
+    }
+
+    for (const scope of entry.scopes) {
+      const readerModules = readers.get(scope);
+      if (readerModules === undefined) continue;
+      out.push({
+        kind: 'cached-reader',
+        detail: `scope \`${scope}\` is bypassed by ${path} and cached by ${readerModules.join(', ')}`,
+      });
+    }
+  }
+
+  return out;
 }
 
 function main() {
   const writers = directWriters();
+  const readers = cachedReaderScopes();
 
   // A gate that finds nothing is indistinguishable from a clean repo, and this
-  // one depends on a path and a call spelling that could both change. Refuse to
-  // pass vacuously: the chokepoint itself must always be found.
-  if (!writers.includes(CHOKEPOINT)) {
+  // one depends on a path, a call spelling and a scope resolver that could each
+  // change. Refuse to pass vacuously: the chokepoint must be found calling both
+  // commands, and at least one cached reader must resolve.
+  const chokepoint = writers.get(CHOKEPOINT);
+  const missing = WRITE_COMMANDS.filter(
+    (c) => !(chokepoint?.commands ?? []).includes(c),
+  );
+  if (missing.length > 0) {
     console.error(
       `settings-write gate FAILED: expected ${CHOKEPOINT} to call ` +
-        'commands.settingsUpdate, and it does not.\n' +
+        `${missing.map((c) => `commands.${c}`).join(' and ')}, and it does not.\n` +
         'Either the chokepoint moved or the call spelling changed — this gate ' +
         'is not measuring anything until that is fixed.',
     );
     process.exitCode = 1;
     return;
   }
-
-  const unexpected = writers.filter(
-    (f) => f !== CHOKEPOINT && !ALLOWED_BYPASS.has(f),
-  );
-  const stale = [...ALLOWED_BYPASS].filter((f) => !writers.includes(f)).sort();
-
-  if (stale.length > 0) {
-    console.warn(
-      'NOTE: these no longer call commands.settingsUpdate; drop them from ' +
-        `ALLOWED_BYPASS in ${relative('.', 'scripts/check-settings-write-invalidation.mjs')}:`,
+  if (readers.size === 0) {
+    console.error(
+      'settings-write gate FAILED: resolved no settingsQueryOptions reader ' +
+        'scopes.\nThe scope resolver or the reader spelling changed — the ' +
+        'cached-reader half of this gate is not measuring anything until that ' +
+        'is fixed.',
     );
-    for (const f of stale) console.warn(`  ${f}`);
+    process.exitCode = 1;
+    return;
   }
 
-  if (unexpected.length === 0) {
+  const found = violations(writers, readers);
+  if (found.length === 0) {
     console.log(
       `OK: settings writes go through ${CHOKEPOINT} ` +
-        `(${ALLOWED_BYPASS.size} baselined bypasses).`,
+        `(${ALLOWED_BYPASS.size} baselined bypasses, ${readers.size} cached scopes).`,
     );
     return;
   }
 
+  console.error('settings-write gate FAILED:');
+  for (const { kind, detail } of found) console.error(`  [${kind}] ${detail}`);
   console.error(
-    'settings-write gate FAILED: these call commands.settingsUpdate directly, ' +
-      'bypassing the invalidation chokepoint:',
-  );
-  for (const f of unexpected) console.error(`  ${f}`);
-  console.error(
-    `\n\`settingsQueryOptions\` caches with \`staleTime: Infinity\`, so a write` +
-      '\nthat skips `updateSettings` leaves any cached reader showing the old' +
+    '\n`settingsQueryOptions` caches with `staleTime: Infinity`, so a write' +
+      '\nthat skips the chokepoint leaves any cached reader showing the old' +
       '\nvalue forever — and the symptom is a pane ignoring a change the user' +
       '\njust made.' +
-      '\n\nPrefer routing the write through `updateSettings` in' +
-      `\n${CHOKEPOINT}. If it genuinely cannot (it runs before the QueryClient` +
-      '\nexists, say), add it to ALLOWED_BYPASS with the scope it writes and' +
-      '\nwhy.',
+      '\n\n[bypass]        route the write through `updateSettings` /' +
+      `\n                \`settingsRestoreDefaults\` in ${CHOKEPOINT}, or add` +
+      '\n                it to ALLOWED_BYPASS with the scopes it writes and why.' +
+      '\n[cached-reader] the latent bypass is now live: either invalidate in the' +
+      '\n                bypassing module, or move it onto the chokepoint.' +
+      '\n[scope-drift]   the module writes a scope ALLOWED_BYPASS does not list;' +
+      '\n                declare it so the reader check covers it.' +
+      '\n[stale]         the bypass is gone; drop the entry so it cannot' +
+      '\n                authorize a future one.',
   );
   process.exitCode = 1;
 }
@@ -151,4 +324,15 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }
 
-export { ALLOWED_BYPASS, CHOKEPOINT, directWriters };
+export {
+  ALLOWED_BYPASS,
+  CHOKEPOINT,
+  WRITE_COMMANDS,
+  cachedReaderScopes,
+  callPattern,
+  directWriters,
+  firstArguments,
+  resolveScope,
+  toPosix,
+  violations,
+};

@@ -23,6 +23,7 @@ import {
 } from 'react';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
+import { updateSettings } from '@/features/settings/settingsIpc';
 import type { LogLevel, LogEntrySource } from '@/data/logStore';
 import { startLogSubscription } from '@/data/logSubscription';
 import { createPersistedState } from '@/data/persisted-state';
@@ -154,10 +155,14 @@ export function LogPanelProvider({ children }: { children: ReactNode }) {
     // above) — from here on, the user owns it for this session.
     followTouchedRef.current = true;
     setFollowLogsState(v);
-    // Persist via settings.update (spec 018).
-    void commands
-      .settingsUpdate('advanced', { rememberFollowLogs: v })
-      .then(unwrap);
+    // Persist via settings.update (spec 018). Routed through `updateSettings`
+    // rather than `commands.settingsUpdate` because `Advanced.tsx` reads the
+    // `advanced` scope with `staleTime: Infinity`; a direct write leaves that
+    // pane showing the previous value for the rest of the session.
+    void updateSettings({
+      scope: 'advanced',
+      values: { rememberFollowLogs: v },
+    });
   }, []);
 
   return (

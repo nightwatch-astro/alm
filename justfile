@@ -10,6 +10,7 @@ test:
     pnpm -r --if-present test
     node scripts/check-eslint-baseline.test.mjs
     node scripts/check-mock-baseline.test.mjs
+    node scripts/check-settings-write-invalidation.test.mjs
 
 # Lint and format. This recipe is the single local definition of the lint set;
 # the root package.json `lint` script delegates here so the two cannot drift.
