@@ -444,6 +444,14 @@ jobs:
         if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
         run: just lifecycle-strings
 
+      # Test-target declaration guard: every *.rs at the root of tests/contract/
+      # must have a [[test]] entry. Cargo auto-discovery only reaches
+      # `<pkg>/tests/*.rs`, so an undeclared file there compiles never and
+      # asserts nothing — three sat that way for two months.
+      - name: Test-target declaration guard
+        if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
+        run: just test-targets
+
       # .pv-* selector ratchet: sealed at zero class selectors in e2e test
       # files (Playwright TS under tests/e2e/ and Rust journeys under
       # crates/e2e-tests/), which the eslint alm/require-root-testid rule

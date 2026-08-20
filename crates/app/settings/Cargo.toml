@@ -21,6 +21,7 @@ persistence_plans = { path = "../../persistence/plans" }
 serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 # "v5" beyond the workspace default ("v4"): deterministic audit `entity_id`
 # derivation for settings keys (T122, spec 030 FR-133), same pattern as
 # `crates/targeting/Cargo.toml`.
