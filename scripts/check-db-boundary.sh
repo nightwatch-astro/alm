@@ -153,6 +153,34 @@ count_file() {
     # real code on the same line.
     /^[[:space:]]*\/\// { next }
 
+    # Block comments compile to nothing either, and unlike `//` they span lines, so
+    # a full-line rule cannot see them. `/* sqlx::query("SELECT 1") */` counted as a
+    # site and pushed the baseline up with no production query behind it.
+    #
+    # Removing the span rather than skipping the line is what makes
+    # `sqlx::query /* runtime */ ("SELECT 1")` count: the pattern allows only
+    # whitespace between the constructor and its `(`, and deleting the comment
+    # leaves exactly that. Nesting is not handled, because Rust nests block
+    # comments and awk has no counter here; a nested comment ends the span early and
+    # leaves the tail to be matched, which over-counts rather than under-counts, and
+    # a ratchet that fails loudly beats one that passes quietly.
+    {
+      line = $0
+      if (in_block) {
+        idx = index(line, "*/")
+        if (idx == 0) { next }
+        line = substr(line, idx + 2)
+        in_block = 0
+      }
+      while ((s = index(line, "/*")) > 0) {
+        rest = substr(line, s + 2)
+        e = index(rest, "*/")
+        if (e == 0) { line = substr(line, 1, s - 1); in_block = 1; break }
+        line = substr(line, 1, s - 1) substr(rest, e + 2)
+      }
+      $0 = line
+    }
+
     $0 ~ pat { n++ }
     END { print n + 0 }
   ' "$file"
@@ -192,6 +220,10 @@ self_test() {
     'query_file_as_macro|1|let r = sqlx::query_file_as!(Row, "queries/one.sql");'
     'fetch_one|1|let r = builder.fetch_one(p).await;'
     'fetch_stream|1|let mut s = builder.fetch(p);'
+    'block_comment_inline|0|/* let r = sqlx::query("SELECT 1"); */'
+    'block_comment_span|0|/*\nlet r = sqlx::query("SELECT 1");\n*/'
+    'comment_between_stem_and_call|1|let r = sqlx::query /* runtime */ ("SELECT 1");'
+    'code_after_block_comment_closes|1|/* note */ let r = sqlx::query("SELECT 1");'
     'tracing_target|0|if event.metadata().target() == "sqlx::query" { n += 1; }'
     'doc_mention|0|/// Wraps sqlx::query_as::<_, Row>() for callers.'
     'cfg_test_scope|0|#[cfg(test)]\nmod tests {\n    fn t() { sqlx::query("SELECT 1"); }\n}'
