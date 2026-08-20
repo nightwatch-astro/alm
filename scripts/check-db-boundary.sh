@@ -46,10 +46,16 @@ BASELINE="$SCRIPT_DIR/db-boundary-baseline.txt"
 # A bare `sqlx::query` also appears as a tracing target string
 # (`event.metadata().target() == "sqlx::query"` in crates/tools/perf-bench), which
 # names an event and executes nothing; counting it reported three query sites in a
-# file that has none. Every real site in crates/persistence/ takes one of the three
-# suffix forms — `sqlx::query(`, `query_as::<T>`, `query_scalar!` — so requiring
-# the suffix loses no coverage. `--self-test` proves both directions.
-PATTERN='(sqlx::query|query_as|query_scalar)[[:space:]]*(\(|!|::<)|\.fetch_(one|all|optional)|\.execute\('
+# file that has none. Requiring the suffix drops that string, because a `"` follows
+# it, and keeps every constructor a call site can use.
+#
+# `[[:alnum:]_]*` between the stem and the suffix is what admits the rest of the
+# sqlx constructor family: `query_with`, `query_as_with`, `query_scalar_with`,
+# `query_file!`, `query_file_as!`, `query_file_scalar!`. A stem alternation alone
+# matched `sqlx::query` but not `sqlx::query_with(`, so a production site written
+# with a bound-argument or file-backed constructor and consumed through `.fetch()`
+# counted zero and the sealed boundary admitted it.
+PATTERN='(sqlx::query|query_as|query_scalar|query_file)[[:alnum:]_]*[[:space:]]*(\(|!|::<)|\.fetch(_(one|all|optional))?\(|\.execute\('
 
 # True when the compiler excludes this ENTIRE file from production builds.
 #
@@ -180,7 +186,12 @@ self_test() {
     'plain_query|1|let r = sqlx::query("SELECT 1").execute(p).await;'
     'turbofish|1|let r = sqlx::query_as::<_, Row>("SELECT 1");'
     'macro_bang|1|let r = sqlx::query_scalar!("SELECT 1");'
+    'query_with|1|let r = sqlx::query_with("SELECT 1", args).execute(p).await;'
+    'query_as_with|1|let r = sqlx::query_as_with::<_, Row, _>("SELECT 1", args);'
+    'query_file_macro|1|let r = sqlx::query_file!("queries/one.sql");'
+    'query_file_as_macro|1|let r = sqlx::query_file_as!(Row, "queries/one.sql");'
     'fetch_one|1|let r = builder.fetch_one(p).await;'
+    'fetch_stream|1|let mut s = builder.fetch(p);'
     'tracing_target|0|if event.metadata().target() == "sqlx::query" { n += 1; }'
     'doc_mention|0|/// Wraps sqlx::query_as::<_, Row>() for callers.'
     'cfg_test_scope|0|#[cfg(test)]\nmod tests {\n    fn t() { sqlx::query("SELECT 1"); }\n}'
