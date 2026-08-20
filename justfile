@@ -28,6 +28,10 @@ lint:
     pnpm -r --if-present lint
     pnpm run lint:tests
     pre-commit run --all-files
+    # The merge scanner's required-context list against the checked-in branch
+    # protection policy. That comparison is offline; the live-protection
+    # comparison after it skips with a NOTE when there is no network or token.
+    bash scripts/check-required-contexts.sh
 
 # Build the Rust workspace and package workspaces when present.
 build:
