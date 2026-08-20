@@ -579,10 +579,10 @@ unavailable rather than replaying the traversal against another snapshot.
 ### `relation_proposal.manual.create`
 
 - Type: atomic database mutation.
-- Request: `{ relationKind, sourceRevisionRefs: BoundedList<RevisionRef, 500>, subjectRefs: BoundedList<EntityRef, 500>, proposedMembershipRefs?: BoundedList<EntityRef, 500>, proposedEdges?: BoundedList<MosaicEdge, 500>, proposedLineage?: BoundedList<{ predecessorGroupId: string, successorGroupId: string }, 500>, targetScope: ManualRelationReview.targetScope, evidence: RelationEvidence, expectedMatchingSettingsRevision: string, reviewReason: SafeText, mutationContext }`.
+- Request: `{ relationKind, sourceRevisionRefs: BoundedList<RevisionRef, 500>, subjectRefs: BoundedList<EntityRef, 500>, proposedMembershipRefs?: BoundedList<EntityRef, 500>, proposedEdges?: BoundedList<MosaicEdge, 500>, proposedLineage?: BoundedList<{ predecessorGroupId: string, successorGroupId: string }, 500>, targetScope: ManualRelationReview.targetScope, evidence: RelationEvidence, expectedMatchingSettingsRevision: uint64, reviewReason: SafeText, mutationContext }`.
 - Response: `{ proposal: RelationProposal, auditId }`.
 - Guard: `reviewReason` must contain non-whitespace text.
-- Guard: `expectedMatchingSettingsRevision` must equal the current matching-settings revision. The submitted `evidence` was measured under that revision, and both the proposal and the envelope are stamped with it, so a revision change between measurement and submission rejects with a stale-revision error instead of storing thresholds the caller never saw.
+- Guard: `expectedMatchingSettingsRevision` must equal the current matching-settings revision, and is the same `uint64` a caller reads from `MatchingSettings.revision`. The submitted `evidence` was measured under that revision, and both the proposal and the envelope are stamped with it, so a revision change between measurement and submission rejects with a stale-revision error instead of storing thresholds the caller never saw.
 - Guard: `evidence.missingEvidenceCodes` must enumerate every required geometry or orientation measurement unavailable to the proposal.
 - Guard: a `new_reviewed_cross_target` scope must contain at least two distinct canonical target IDs.
 - Guard: every source revision, subject, proposed member, edge endpoint, and lineage endpoint must exist.

@@ -819,6 +819,14 @@ also keeps proposal deduplication honest, since
 `UNIQUE(kind, basis_digest, evidence_digest, config_version_id)` reads the
 proposal's copy of the revision, not the evidence's.
 
+The query enforces `relation_proposal.evidence_digest = relation_evidence.input_digest`
+on the same footing, for every writer rather than for `manual.create` alone. The
+uniqueness key reads the proposal's copy, so a generator, migration, or
+maintenance writer that stored a stale digest would deduplicate and suppress
+rejections against a digest that describes different evidence from the envelope
+clients are returned. Automatic generation, manual creation, and any backfill each
+pass the same query before commit.
+
 Equality between two server-written columns is not enough on
 `relation_proposal.manual.create`:
 
@@ -869,6 +877,14 @@ with a per-evidence ordinal, never JSON:
   `CHECK (ordinal BETWEEN 0 AND 99)`, and `UNIQUE(evidence_id, measurement_key)`,
   scoped to the evidence envelope so representative and captured-union evidence
   carry their own `thresholdSnapshot`.
+
+Every column listed above is `NOT NULL`. SQLite evaluates a `CHECK` over a null
+to null and admits the row, and `UNIQUE` admits repeated nulls, so a null ordinal
+would satisfy both the bound and the per-evidence uniqueness while leaving the
+list without a stable order and the projection without a
+`ThresholdMeasurement.comparison` or `outcome` to return. The nullable columns in
+this design are the optional geometry values on the envelope itself, named as
+such in the table above.
 
 All three child tables store `created_sequence` and answer the same watermark
 predicate as any other append-only table, so a child inserted between two pages
@@ -938,6 +954,26 @@ expected count; until then:
 Completeness is therefore a comparison against a durable number rather than a
 separate state machine, and a crash between the envelope and its children costs a
 recomputation the counts make detectable.
+
+Detection alone would leave the envelope stuck. The asynchronous job that would
+have written the children died with the process, and
+`UNIQUE(kind, basis_digest, evidence_digest, config_version_id)` refuses a second
+proposal over the same inputs, so nothing re-enters the path that produced the
+first one. A boot-time reconciliation pass repairs it:
+
+1. Select every `relation_evidence` row holding fewer children than one of its
+   expected counts.
+2. Recompute the missing children into that same envelope, keyed by
+   `(evidence_id, ordinal)`, so a partially written list resumes instead of
+   duplicating.
+3. Where the recomputation produces a count other than the stored expectation,
+   leave the envelope incomplete and report a repair prompt against its proposal.
+
+Steps 1 and 2 repair the row without asking the user, because the work is
+re-derivable Tier 2 recomputation over the inputs `input_digest` already covers
+and the project governance document permits auto-healing for an unambiguous
+outcome on re-derivable state. Step 3 is the ambiguous case that same document
+reserves for the user.
 
 The Tier 1 record stays the user decision: the proposal state, actor, reason code,
 and typed review overrides on `relation_proposal`. Principle V of the project
