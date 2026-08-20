@@ -872,6 +872,12 @@ with a per-evidence ordinal, never JSON:
   upper_udeg, created_sequence)` with `UNIQUE(evidence_id, ordinal)`, `CHECK
   (ordinal BETWEEN 0 AND 15)` for the contract bound of 16, and `CHECK
   (lower_udeg <= upper_udeg)`; the geometry-derived allowed residual intervals.
+  `lower_udeg` and `upper_udeg` describe an interval closed at both ends, so the
+  projection returns
+  `minInclusive` and `maxInclusive` of the contract `Range<decimal>` as `true`
+  without storing either flag. A validator rejects a `manual.create` range that
+  asks for an open endpoint; the caller narrows the bound by one microdegree
+  instead, which the microdegree scale of the stored columns makes exact.
 - `relation_evidence_measurement(evidence_id, ordinal, measurement_key,
   measured_value_micro, unit, comparison, threshold_value_micro, outcome,
   source_evidence_digest, created_sequence)` with `UNIQUE(evidence_id, ordinal)`,
@@ -921,11 +927,12 @@ without a counting trigger.
 
 Density is a separate obligation the bound does not give. One row at ordinal 99
 satisfies both constraints while `expected_measurement_count` is 1, so a count
-comparison calls a list with holes complete. Two rules close it:
+comparison calls a list with holes complete. The repository and the predicate
+close it between them:
 
 - a child batch writes ordinals `0..expected_count - 1` with no gaps, enforced by
   the repository rather than by SQLite;
-- the completeness predicate reads `COUNT(*) = MAX(ordinal) + 1 = expected_count`
+- the completeness predicate reads `COUNT(*) = COALESCE(MAX(ordinal) + 1, 0) = expected_count`
   rather than the count alone, and reconciliation applies the same predicate, so a
   row left non-dense by an older writer is repaired instead of read as complete.
 
@@ -964,7 +971,7 @@ measured as unmeasurable and an envelope whose asynchronous children are still i
 flight, so the count columns carry it instead. Each expected count is written in
 the envelope's own transaction, by the code that already knows how many rows it
 computed. An envelope is complete when each child table satisfies
-`COUNT(*) = MAX(ordinal) + 1 = expected_count`, which no envelope holding extra
+`COUNT(*) = COALESCE(MAX(ordinal) + 1, 0) = expected_count`, which no envelope holding extra
 or non-dense children can pass; until then:
 
 - the projection reports the envelope as unmeasured and emits the
@@ -988,19 +995,33 @@ first one. A boot-time reconciliation pass repairs it:
    expectation in either direction. Selecting only the short rows would leave an
    envelope holding more children than it expects permanently incomplete and
    never reported.
-2. Recompute the children into that same envelope, keyed by
-   `(evidence_id, ordinal)`, so a partially written list resumes instead of
-   duplicating, and delete any child whose ordinal is at or above the recomputed
-   count. A row above the count is a stale write from an abandoned attempt, and
-   the envelope's inputs, not the stored children, decide the list.
-3. Where the recomputation produces a count other than the stored expectation,
-   leave the envelope incomplete and report a repair prompt against its proposal.
+2. Recompute the children from the envelope's inputs as they stand at boot, and
+   compare the recomputed `input_digest` against the stored one. A digest that
+   still matches means the heads behind the envelope have not moved and the
+   recomputation reproduces the interrupted one, so the pass writes the children
+   into that same envelope keyed by `(evidence_id, ordinal)` and a partially
+   written list resumes instead of duplicating. A digest that differs means a
+   target or equipment-resolution head advanced while the envelope was
+   incomplete: the row is stale rather than short, the envelope keeps whichever
+   children it holds, and the pass stops at step 3. The envelope stores no
+   foreign keys to the historical revisions and reconciliation does not try to
+   reconstruct them.
+3. Leave the envelope incomplete and report a repair prompt where the digest
+   differs, where the recomputation produces a count other than the stored
+   expectation, or where the envelope holds more children than it expects. Route
+   the prompt through `subject_kind` and `subject_digest`, which identify the
+   panel revision, mosaic revision, or session that references the envelope. A
+   proposal is not a usable route on its own, because an ingestion-created
+   singleton panel revision has `proposal_id = NULL`. Deleting the surplus
+   children of an overfull envelope is not available either: these tables are
+   append-only, so an overfull envelope is an ambiguous outcome for the user and
+   not a row the pass rewrites.
 
-Steps 1 and 2 repair the row without asking the user, because the work is
-re-derivable Tier 2 recomputation over the inputs `input_digest` already covers
-and the project governance document permits auto-healing for an unambiguous
-outcome on re-derivable state. Step 3 is the ambiguous case that same document
-reserves for the user.
+Steps 1 and 2 repair the row without asking the user where the digest still
+matches, because the work is then re-derivable Tier 2 recomputation over the
+inputs `input_digest` covers and the project governance document permits
+auto-healing for an unambiguous outcome on re-derivable state. Step 3 collects
+the ambiguous cases that same document reserves for the user.
 
 The Tier 1 record stays the user decision: the proposal state, actor, reason code,
 and typed review overrides on `relation_proposal`. Principle V of the project

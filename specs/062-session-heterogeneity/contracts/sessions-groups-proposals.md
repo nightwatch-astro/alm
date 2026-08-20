@@ -193,14 +193,14 @@ RelationEvidence {
   parity: "match" | "mismatch" | "unknown",
   acquisitionGeometry: "compatible" | "incompatible" | "unknown",
   equipment: "compatible" | "incompatible" | "unknown",
-  missingEvidenceCodes: BoundedList<string, 100>,
+  missingEvidenceCodes: BoundedList<SafeText, 100>,
   thresholdSnapshot: BoundedList<ThresholdMeasurement, 100>
 }
 
 ThresholdMeasurement {
-  key: string,
+  key: SafeText,
   measuredValue: decimal,
-  unit: string,
+  unit: SafeText,
   comparison: "lt" | "lte" | "eq" | "gte" | "gt",
   thresholdValue: decimal,
   outcome: "pass" | "fail"
@@ -680,14 +680,15 @@ unavailable rather than replaying the traversal against another snapshot.
 | `mosaic.not_found` | A mosaic ID is unknown. | `mosaicId` |
 | `mosaic.revision_not_found` | A mosaic revision ID is unknown for the mosaic. | `mosaicId`, `revisionId` |
 | `relation_proposal.not_found` | A proposal ID is unknown. | `proposalId` |
+| `relation_evidence.not_found` | An evidence ID is unknown. | `evidenceId` |
 | `relation_proposal.not_pending` | A decision already exists. | `proposalId`, `state` |
 | `relation_proposal.stale` | Evidence, a source head, or a subject revision changed. | `proposalId`, `staleRefCount`, `staleRefs: BoundedList<RevisionRef, 100>`, `truncated` |
 | `relation_proposal.invalid_membership` | Membership violates target, uniqueness, or supersession rules. | `proposalId`, `violations: BoundedList<Violation, 100>` |
 | `relation_proposal.lineage_cycle` | Proposed lineage would contain a cycle. | `proposalId`, `groupCount`, `groupIds: BoundedList<string, 100>`, `truncated` |
 | `relation_proposal.merge_required` | A bridge would join accepted mosaic components. | `proposalId`, `mosaicCount`, `mosaicIds: BoundedList<string, 100>`, `truncated` |
 | `relation_proposal.cross_target_review_required` | A durable cross-target relation lacks an accepted association. | `proposalId`, `targetCount`, `targetIds: BoundedList<string, 100>`, `truncated` |
-| `relation_proposal.evidence_missing` | Automatic acceptance lacks required geometry or orientation evidence. | `proposalId`, `missingEvidenceCodes: BoundedList<string, 100>` |
-| `relation_proposal.manual_evidence_disclosure_incomplete` | A manual proposal omits a required missing-evidence code. | `missingEvidenceCodes: BoundedList<string, 100>` |
+| `relation_proposal.evidence_missing` | Automatic acceptance lacks required geometry or orientation evidence. | `proposalId`, `missingEvidenceCodes: BoundedList<SafeText, 100>` |
+| `relation_proposal.manual_evidence_disclosure_incomplete` | A manual proposal omits a required missing-evidence code. | `missingEvidenceCodes: BoundedList<SafeText, 100>` |
 | `pagination.snapshot_unavailable` | A cursor's immutable read watermark is unavailable. | None |
 | `traversal.operation_not_found` | A preview operation is unknown, expired, or lost with its process. | `operationId` |
 | `traversal.result_not_ready` | Result rows were requested before completion. | `operationId`, `state` |
