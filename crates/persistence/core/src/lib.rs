@@ -88,9 +88,11 @@ impl Database {
     ///   at most losing the last un-checkpointed transaction — the database is
     ///   never corrupted.  This is materially faster than `FULL` on spinning or
     ///   network-backed storage without sacrificing integrity guarantees the app
-    ///   depends on.  Tier-1 (`FULL`) escalation per-connection for high-value
-    ///   writes (audit events, filesystem plan commits) is tracked as a follow-up
-    ///   in kyo7.49.
+    ///   depends on.  Tier-1 records are not covered by the pool default: the
+    ///   filesystem-mutation intent path escalates per commit with
+    ///   `PRAGMA wal_checkpoint(TRUNCATE)` (see `checkpoint_intent` in
+    ///   `persistence_plans::repositories::plan_apply`) rather than raising
+    ///   `synchronous` for every writer.
     /// - **`foreign_keys = ON`**: enforced explicitly so the constraint is not
     ///   silently absent if a future sqlx version changes its default.
     /// - **`busy_timeout`** (#1231): pins the wait interval so it is ours, not
