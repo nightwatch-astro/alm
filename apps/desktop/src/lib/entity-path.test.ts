@@ -64,7 +64,9 @@ describe('entityPath', () => {
     });
 
     it('treats a null fallback result as unlinked', () => {
-      expect(entityPath('equipment', 'e1', { fallback: () => null })).toBeNull();
+      expect(
+        entityPath('equipment', 'e1', { fallback: () => null }),
+      ).toBeNull();
     });
   });
 

@@ -12,7 +12,11 @@ describe('buildEntityPath', () => {
     ['session', 's1', '/sessions/s1'],
     ['target', 't1', '/targets/t1'],
     ['catalog', 'c1', '/settings/catalogs'],
-    ['settings', 'root-3', '/settings/audit?entityType=settings&entityId=root-3'],
+    [
+      'settings',
+      'root-3',
+      '/settings/audit?entityType=settings&entityId=root-3',
+    ],
     ['', '', '/settings/audit?entityType=&entityId='],
   ])('%s/%s resolves to %s', (entityType, entityId, expected) => {
     expect(buildEntityPath(entityType, entityId)).toBe(expected);
