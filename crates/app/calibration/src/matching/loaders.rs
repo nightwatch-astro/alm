@@ -190,8 +190,6 @@ async fn load_config_from_db(pool: &SqlitePool) -> MatchingRuleConfig {
         // "Gain match required" and "Binning match required" toggles. Same dead
         // config class as the fields below: the pane persisted both and no rule
         // read them, so clearing either toggle changed nothing (astro-plan-rcvr).
-        // `require_same_camera` is deliberately not read here — the matcher has
-        // no camera dimension to relax (astro-plan-3y8tt).
         config.require_same_gain = row.require_same_gain;
         config.require_same_binning = row.require_same_binning;
 
