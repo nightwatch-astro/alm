@@ -276,7 +276,9 @@ jobs:
   integration:
     name: Unit + integration (L1+L2) — ${{ matrix.os }}
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.scripts == 'true'
+    if: >-
+      needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' ||
+      needs.changes.outputs.scripts == 'true' || needs.changes.outputs.spec_contracts == 'true'
     strategy:
       fail-fast: false # report each platform distinctly (FR-011)
       matrix:
@@ -316,25 +318,35 @@ jobs:
           shared-key: "rust-${{ matrix.os }}-v2"
 
       - uses: pnpm/action-setup@v6
-        if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true'
+        if: >-
+          needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' ||
+          needs.changes.outputs.spec_contracts == 'true'
         with:
           version: 11.17.0
 
       - uses: actions/setup-node@v4
-        if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true'
+        if: >-
+          needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' ||
+          needs.changes.outputs.spec_contracts == 'true'
         with:
           node-version: 24
           cache: pnpm
 
-      # `just` drives the DB-boundary ratchet and the generated-drift gate, both
-      # of which run under the Rust lane.
+      # `just` drives the DB-boundary ratchet, the generated-drift gate, and the
+      # no-Rust contract-declaration drift gate below. That last one runs on the
+      # frontend and spec-contract lanes, so gating this install on `rust` alone
+      # left it calling a `just` that was never installed.
       - uses: taiki-e/install-action@v2
-        if: needs.changes.outputs.rust == 'true'
+        if: >-
+          needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' ||
+          needs.changes.outputs.spec_contracts == 'true'
         with:
           tool: just,nextest
 
       - name: Install JS deps
-        if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true'
+        if: >-
+          needs.changes.outputs.rust == 'true' || needs.changes.outputs.frontend == 'true' ||
+          needs.changes.outputs.spec_contracts == 'true'
         run: pnpm install --frozen-lockfile
 
       # Vite's dependency-optimizer output. Restored AFTER `pnpm install`
@@ -727,7 +739,9 @@ jobs:
   integration-idle:
     name: Unit + integration (L1+L2) — ${{ matrix.os }}
     needs: changes
-    if: needs.changes.outputs.rust != 'true' && needs.changes.outputs.frontend != 'true'
+    if: >-
+      needs.changes.outputs.rust != 'true' && needs.changes.outputs.frontend != 'true' &&
+      needs.changes.outputs.spec_contracts != 'true'
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
