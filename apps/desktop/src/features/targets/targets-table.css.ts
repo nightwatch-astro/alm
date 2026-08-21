@@ -87,12 +87,24 @@ globalStyle(`${scroll} ${table} thead th:nth-child(-n + 2)`, {
   position: 'sticky',
 });
 
-globalStyle(`${scroll} ${table} thead th:nth-child(1)`, { left: 0 });
+// `left` goes on the body cells as well as the headers. `position: sticky` with
+// an `auto` inset does not stick at all, so heading-only offsets left the star
+// and designation cells scrolling out from under their own pinned headers
+// whenever the table was narrower than its 1000px minimum.
+globalStyle(
+  `${scroll} ${table} thead th:nth-child(1), ${scroll} ${table} ${row} > td:nth-child(1)`,
+  { left: 0 },
+);
 
-globalStyle(`${scroll} ${table} thead th:nth-child(2)`, {
-  left: 'var(--pv-targets-star-w)',
-  boxShadow: `1px 0 0 ${vars.borderSubtle}`,
-});
+globalStyle(
+  `${scroll} ${table} thead th:nth-child(2), ${scroll} ${table} ${row} > td:nth-child(2)`,
+  {
+    left: 'var(--pv-targets-star-w)',
+    // Seam marking: a box-shadow tracks the sticky cell, where a border-right
+    // detaches from it while scrolling.
+    boxShadow: `1px 0 0 ${vars.borderSubtle}`,
+  },
+);
 
 globalStyle(`${scroll} ${table} ${row} > td:nth-child(-n + 2)`, {
   position: 'sticky',
