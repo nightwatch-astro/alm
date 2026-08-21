@@ -44,6 +44,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import ts from 'typescript';
+
 // Anchored to this file, not cwd: the gate is invoked both from the repo root
 // and from apps/desktop, and a cwd-relative path breaks one of the two.
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -93,33 +95,32 @@ function walk(dir) {
   return out;
 }
 
-// Static `import`/`export ... from`, bare side-effect `import 'x'`, dynamic
-// `import('x')`, and the CSS `@import`. Only the specifier is captured, so a
-// comment naming a module matches nothing: a comment has no specifier.
-const SPECIFIER_PATTERNS = [
-  /(?:^|[\s;}])(?:import|export)\s[\s\S]*?\sfrom\s*['"]([^'"]+)['"]/g,
-  /(?:^|[\s;}])import\s*['"]([^'"]+)['"]/g,
-  /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  /@import\s+(?:url\()?\s*['"]([^'"]+)['"]/g,
-];
+// CSS `@import`, with block comments removed first so a commented-out import is
+// not a live specifier. CSS has no line comments and no template literals, so
+// the two together are the whole grammar that matters here.
+const CSS_IMPORT = /@import\s+(?:url\()?\s*['"]([^'"]+)['"]/g;
+const CSS_COMMENT = /\/\*[\s\S]*?\*\//g;
 
 /**
  * Specifiers in `source` that name a file in this tree, as written.
  *
+ * TypeScript's own preprocessor supplies the JS/TS side. A regex over raw source
+ * cannot: it reads `// import './x.css'` as a live specifier, which leaves this
+ * gate green when a refactor comments an import out. Stripping comments by regex
+ * trades that for a worse bug, because a regex literal holding an unbalanced
+ * quote (`/['"]/`) desynchronises the string tracking.
+ *
  * A bare specifier is a package and never a local module, so it is dropped here
  * rather than resolved and discarded later.
  */
-function specifiers(source) {
-  const out = new Set();
-  for (const pattern of SPECIFIER_PATTERNS) {
-    pattern.lastIndex = 0;
-    let match;
-    while ((match = pattern.exec(source)) !== null) {
-      const specifier = match[1];
-      if (specifier.startsWith('.') || specifier.startsWith(ALIAS_PREFIX)) out.add(specifier);
-    }
-  }
-  return out;
+function specifiers(source, isCss = false) {
+  const found = isCss
+    ? [...source.replace(CSS_COMMENT, ' ').matchAll(CSS_IMPORT)].map((m) => m[1])
+    : ts.preProcessFile(source, true, true).importedFiles.map((f) => f.fileName);
+
+  return new Set(
+    found.filter((s) => s.startsWith('.') || s.startsWith(ALIAS_PREFIX)),
+  );
 }
 
 /**
@@ -166,7 +167,7 @@ function orphanVeModules(root = SRC, entries = ENTRIES) {
     const current = queue.pop();
     if (reached.has(current)) continue;
     reached.add(current);
-    for (const specifier of specifiers(readFileSync(current, 'utf8'))) {
+    for (const specifier of specifiers(readFileSync(current, 'utf8'), current.endsWith('.css'))) {
       const target = resolveSpecifier(current, specifier, root);
       if (target !== null && production.has(target) && !reached.has(target)) {
         queue.push(target);
@@ -239,7 +240,8 @@ function main() {
 // `import.meta.main` is NOT usable: it needs Node >=22.18/24.2 and CI pins node
 // 20, where it is undefined -- main() would never run and this gate would no-op
 // green. Same note as check-mock-baseline.mjs.
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// `argv[1]` is undefined under `node -e`, where pathToFileURL throws.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }
 

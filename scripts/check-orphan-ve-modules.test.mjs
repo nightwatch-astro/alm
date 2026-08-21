@@ -60,6 +60,10 @@ function orphansOf(files, entries = ['main.tsx']) {
 // used to report zero orphans.
 const found = specifiers(`
 // ./commented.css is only mentioned here
+// import './commented-out.css';
+/* import './block-commented.css'; */
+const quoted = "import './quoted.css'";
+const re = /['"]/;
 import './live.css';
 import { x } from '@/ui/aliased.css';
 export { y } from './reexported.css';
@@ -67,6 +71,21 @@ const lazy = await import('./dynamic.css');
 import react from 'react';
 `);
 assertEqual(found.has('./commented.css'), false, 'a comment mention yields no specifier');
+assertEqual(
+  found.has('./commented-out.css'),
+  false,
+  'a commented-out import yields no specifier',
+);
+assertEqual(
+  found.has('./block-commented.css'),
+  false,
+  'a block-commented import yields no specifier',
+);
+assertEqual(
+  found.has('./quoted.css'),
+  false,
+  'an import written inside a string literal yields no specifier',
+);
 assertEqual(found.has('./live.css'), true, 'side-effect import is a specifier');
 assertEqual(found.has('@/ui/aliased.css'), true, 'aliased import is a specifier');
 assertEqual(found.has('./reexported.css'), true, 're-export is a specifier');
@@ -81,6 +100,25 @@ assertEqual(
   }).join(','),
   'orphan.css.ts',
   'a module named only in a comment is an orphan',
+);
+
+assertEqual(
+  orphansOf({
+    'main.tsx': `// import './orphan.css';\nexport const app = 1;\n`,
+    'orphan.css.ts': 'export const cls = "x";\n',
+  }).join(','),
+  'orphan.css.ts',
+  'a module whose only importer is commented out is an orphan',
+);
+
+assertEqual(
+  orphansOf({
+    'main.tsx': `import './theme.css';\n`,
+    'theme.css': `/* @import './orphan.css'; */\n`,
+    'orphan.css.ts': 'export const cls = "x";\n',
+  }).join(','),
+  'orphan.css.ts',
+  'a commented-out CSS @import does not keep a module alive',
 );
 
 // ── a longer sibling does not mask a shorter module ─────────────────────────
