@@ -13,6 +13,11 @@
 //!   (caller transitions them to `missing` state).
 //! - Files in the DB that are **present** → returned as `Seen` (caller can
 //!   refresh `last_seen_at`).
+//! - Files in the DB that live under a directory the walk could not read →
+//!   returned as `Unknown` (caller transitions nothing).
+//!
+//! Absent and unreadable are distinct: an unreadable subtree is unknown state,
+//! not absent state, so its rows must never be reported as missing.
 //!
 //! The reconciler never modifies the database itself: all state changes are
 //! passed back to the caller so the persistence + audit path is centralised
@@ -33,6 +38,21 @@ pub enum ReconcileOutcome {
     Seen,
     /// File is no longer on disk; transition to `missing`.
     Gone,
+    /// The file's directory could not be read, so presence is undetermined;
+    /// change nothing.
+    Unknown,
+}
+
+/// One directory walk's result: the real files found, plus the directories whose
+/// contents could not be read.
+///
+/// An unreadable directory is skipped rather than aborting the walk, so its
+/// paths are reported separately — `reconcile` needs them to tell an absent file
+/// apart from an unobservable one.
+#[derive(Debug, Default)]
+pub struct DirListing {
+    pub files: Vec<PathBuf>,
+    pub unreadable: Vec<PathBuf>,
 }
 
 /// A new file detected by the reconciliation scan (not yet in the DB).
@@ -52,6 +72,9 @@ pub struct ReconcileReport {
     pub existing: Vec<(RelativePath, ReconcileOutcome)>,
     /// Files found on disk that are not yet in the DB.
     pub new_files: Vec<NewDetection>,
+    /// Directories the walk could not read. The caller surfaces these; every row
+    /// beneath one is reported `Unknown` rather than `Gone`.
+    pub unreadable_dirs: Vec<PathBuf>,
 }
 
 /// Reconcile the output folder at `output_dir` against the set of known paths
@@ -70,10 +93,10 @@ pub fn reconcile<ReadDir, Meta>(
     metadata_fn: &Meta,
 ) -> Result<ReconcileReport, String>
 where
-    ReadDir: Fn(&Path) -> Result<Vec<PathBuf>, String>,
+    ReadDir: Fn(&Path) -> Result<DirListing, String>,
     Meta: Fn(&Path) -> Option<(u64, std::time::SystemTime)>,
 {
-    let on_disk: Vec<PathBuf> = read_dir_fn(output_dir)?;
+    let DirListing { files: on_disk, unreadable } = read_dir_fn(output_dir)?;
 
     // Build a set of file names (lowercased) for fast lookup.
     let on_disk_lower: std::collections::HashSet<String> = on_disk
@@ -92,6 +115,8 @@ where
                 .unwrap_or_default();
             let outcome = if on_disk_lower.contains(&file_name) {
                 ReconcileOutcome::Seen
+            } else if under_unreadable(output_dir, rel, &unreadable) {
+                ReconcileOutcome::Unknown
             } else {
                 ReconcileOutcome::Gone
             };
@@ -121,7 +146,20 @@ where
         })
         .collect();
 
-    Ok(ReconcileReport { existing, new_files })
+    Ok(ReconcileReport { existing, new_files, unreadable_dirs: unreadable })
+}
+
+/// Whether the DB row `rel` resolves to a path inside one of the `unreadable`
+/// directories.
+///
+/// `Path::join` returns `rel` unchanged when it is already absolute, which covers
+/// both the absolute paths the detect phase stores and project-relative rows.
+fn under_unreadable(output_dir: &Path, rel: &str, unreadable: &[PathBuf]) -> bool {
+    if unreadable.is_empty() {
+        return false;
+    }
+    let absolute = output_dir.join(rel);
+    unreadable.iter().any(|dir| absolute.starts_with(dir))
 }
 
 #[cfg(test)]
@@ -133,10 +171,10 @@ mod tests {
         (size, SystemTime::UNIX_EPOCH)
     }
 
-    fn make_read_dir(files: Vec<&str>) -> impl Fn(&Path) -> Result<Vec<PathBuf>, String> {
+    fn make_read_dir(files: Vec<&str>) -> impl Fn(&Path) -> Result<DirListing, String> {
         let dir = PathBuf::from("/output");
         let paths: Vec<PathBuf> = files.into_iter().map(|f| dir.join(f)).collect();
-        move |_| Ok(paths.clone())
+        move |_| Ok(DirListing { files: paths.clone(), unreadable: Vec::new() })
     }
 
     #[test]
@@ -198,6 +236,40 @@ mod tests {
         assert!(matches!(report.existing[0], (_, ReconcileOutcome::Gone)));
         // "other.xisf" is new.
         assert_eq!(report.new_files.len(), 1);
+    }
+
+    #[test]
+    fn row_under_an_unreadable_directory_is_unknown_not_gone() {
+        let locked = PathBuf::from("/output/locked");
+        let read_dir = move |_: &Path| {
+            Ok(DirListing {
+                files: vec![PathBuf::from("/output/visible.xisf")],
+                unreadable: vec![locked.clone()],
+            })
+        };
+        let meta = |_: &Path| Some(fake_meta(512));
+        let known = vec![
+            "/output/locked/result.xisf".to_owned(),
+            "/output/elsewhere/vanished.xisf".to_owned(),
+        ];
+
+        let report = reconcile(
+            Path::new("/output"),
+            &known,
+            crate::watcher::DEFAULT_WATCH_EXTENSIONS,
+            &read_dir,
+            &meta,
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.existing,
+            vec![
+                ("/output/locked/result.xisf".to_owned(), ReconcileOutcome::Unknown),
+                ("/output/elsewhere/vanished.xisf".to_owned(), ReconcileOutcome::Gone),
+            ]
+        );
+        assert_eq!(report.unreadable_dirs, vec![PathBuf::from("/output/locked")]);
     }
 
     #[test]

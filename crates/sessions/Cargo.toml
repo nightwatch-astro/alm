@@ -9,7 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 domain_core = { path = "../domain/core" }
-skymath = "0.7.1"
+skymath = "0.7.2"
 thiserror = { workspace = true }
 time = { workspace = true }
 

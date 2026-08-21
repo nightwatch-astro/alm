@@ -51,10 +51,10 @@ pub async fn execute_plan<C: ExecutorCallbacks>(
 }
 
 #[allow(clippy::too_many_lines)]
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "per-item executor loop with failure taxonomy, cancellation, and retry paths"
-)]
+// `allow` rather than `expect`: the loop crosses the cognitive-complexity
+// threshold only when `test-pacing` compiles the extra branch, so an `expect`
+// goes unfulfilled in the default feature set.
+#[allow(clippy::cognitive_complexity)]
 async fn drive_plan<C: ExecutorCallbacks>(
     items: Vec<ExecutorItem>,
     callbacks: &C,
@@ -77,6 +77,9 @@ async fn drive_plan<C: ExecutorCallbacks>(
             tracing::debug!(item_id = %item.id, state = %item.current_state, "skipping already-terminal item");
             continue;
         }
+
+        #[cfg(feature = "test-pacing")]
+        pacing::gate_item(&item.plan_id).await;
 
         // Check cancellation between items (never mid-item).
         if cancel.is_cancelled() {
@@ -194,6 +197,137 @@ async fn drain_retries<C: ExecutorCallbacks>(
         }
     }
     DrainOutcome::Continue
+}
+
+/// Per-item gate for tests that need the forward pass to still be running when
+/// they act on it.
+///
+/// A test that files a mid-run retry, pause, or cancel has to reach the
+/// executor before the forward pass drains its queue. Without a seam the only
+/// lever is item count, which makes the outcome a race: 30 small
+/// same-directory moves against a warm pool finish inside three awaits often
+/// enough to fail in CI (`astro-plan-ytx7`).
+///
+/// The gate parks the loop at each non-terminal item boundary and publishes the
+/// arrival, so a test waits for an ordering it observes rather than for a
+/// duration it guessed.
+///
+/// Keyed by plan id, because integration tests share one process: an un-scoped
+/// registry lets a concurrent test's executor consume the arrival and release
+/// permits the gating test issued for its own run.
+///
+/// The whole module is behind the `test-pacing` feature, which is off by
+/// default and reachable only through a `[dev-dependencies]` edge, so no
+/// release binary contains a way to stall a real plan apply.
+///
+/// A static rather than a parameter of [`execute_plan`]: the production call
+/// signature carries no test-only handle.
+#[cfg(feature = "test-pacing")]
+pub mod pacing {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+    use std::time::Duration;
+
+    use tokio::sync::Semaphore;
+
+    /// Bounds a wait whose ordering is already supposed to hold. Exceeding it
+    /// means the loop never reached the boundary, which a panic reports as a
+    /// test failure instead of a hang. Never used to establish ordering, so it
+    /// only has to exceed the slowest legitimate arrival.
+    const ARRIVAL_TIMEOUT: Duration = Duration::from_secs(30);
+
+    struct GateState {
+        /// Gains a permit each time the loop parks at an item boundary.
+        arrived: Semaphore,
+        /// Loses a permit each time the loop leaves an item boundary. Closed by
+        /// [`ItemGate`]'s drop, which releases every later boundary at once.
+        release: Semaphore,
+    }
+
+    static GATES: Mutex<Option<HashMap<String, Arc<GateState>>>> = Mutex::new(None);
+
+    /// Recovers from poisoning: a test panicking while the loop is parked must
+    /// still leave the registry usable, and a panicking `Drop` would abort.
+    fn registry() -> MutexGuard<'static, Option<HashMap<String, Arc<GateState>>>> {
+        GATES.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Park the forward pass until the gate installed for `plan_id` releases
+    /// this item.
+    ///
+    /// A no-op when no [`ItemGate`] is installed for this plan, which is every
+    /// run other than the one a gating test drives.
+    pub(crate) async fn gate_item(plan_id: &str) {
+        let Some(gate) = registry().as_ref().and_then(|g| g.get(plan_id).cloned()) else {
+            return;
+        };
+        gate.arrived.add_permits(1);
+        // Bound to a local declared after `gate` so the permit's borrow of it
+        // ends before `gate` itself drops.
+        let released = gate.release.acquire().await;
+        // `Err` only after `ItemGate`'s drop closed the semaphore, which is the
+        // signal to run the rest of the plan ungated.
+        if let Ok(permit) = released {
+            permit.forget();
+        }
+    }
+
+    /// An installed gate. Dropping it releases every remaining boundary,
+    /// including on a panic unwind, so a failed assertion cannot strand a
+    /// spawned executor.
+    pub struct ItemGate {
+        plan_id: String,
+        state: Arc<GateState>,
+    }
+
+    impl ItemGate {
+        /// Gate every item boundary `plan_id`'s run reaches from now on. Runs of
+        /// other plans are unaffected.
+        ///
+        /// # Panics
+        /// If a gate is already installed for `plan_id`.
+        #[must_use]
+        pub fn install(plan_id: &str) -> Self {
+            let state =
+                Arc::new(GateState { arrived: Semaphore::new(0), release: Semaphore::new(0) });
+            let prior = registry()
+                .get_or_insert_with(HashMap::new)
+                .insert(plan_id.to_owned(), Arc::clone(&state));
+            assert!(prior.is_none(), "a gate is already installed for plan {plan_id}");
+            Self { plan_id: plan_id.to_owned(), state }
+        }
+
+        /// Wait until the forward pass parks at an item boundary.
+        ///
+        /// Returning proves a run is inside its forward loop, so its retry
+        /// queue is still open and a mid-run retry, pause, or cancel lands
+        /// there rather than after the run closed it.
+        ///
+        /// # Panics
+        /// If no boundary is reached within 30 seconds, meaning the run never
+        /// started or already ended.
+        pub async fn wait_for_arrival(&self) {
+            tokio::time::timeout(ARRIVAL_TIMEOUT, self.state.arrived.acquire())
+                .await
+                .expect("executor reached no item boundary: the run never started or already ended")
+                .expect("the arrival semaphore is never closed")
+                .forget();
+        }
+
+        /// Let the forward pass leave `n` further item boundaries.
+        pub fn release(&self, n: usize) {
+            self.state.release.add_permits(n);
+        }
+    }
+
+    impl Drop for ItemGate {
+        fn drop(&mut self) {
+            self.state.release.close();
+            if let Some(gates) = registry().as_mut() {
+                gates.remove(&self.plan_id);
+            }
+        }
+    }
 }
 
 /// Outcome of processing a single item through the gate/execute pipeline.

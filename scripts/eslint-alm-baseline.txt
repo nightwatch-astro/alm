@@ -6,7 +6,6 @@
 # rule's own `// eslint-disable-next-line alm/no-user-string -- <reason>`
 # for a genuinely non-user-facing string).
 # Regenerate with: node scripts/check-eslint-baseline.mjs --generate
-src/app/CommandPalette.tsx	216	alm/require-root-testid
 src/app/OperationStatusContext.tsx	46	alm/require-root-testid
 src/app/PageStatusContext.tsx	52	alm/require-root-testid
 src/components/DetailPanel.tsx	134	alm/require-root-testid
@@ -33,7 +32,7 @@ src/features/inbox/InboxDetail.tsx	366	alm/require-root-testid
 src/features/inbox/InboxNeedsReview.tsx	113	alm/require-root-testid
 src/features/inbox/PlanDestructiveControl.tsx	33	alm/require-root-testid
 src/features/onboarding/ChecklistPopover.tsx	110	alm/require-root-testid
-src/features/onboarding/FindSpotlight.tsx	173	alm/require-root-testid
+src/features/onboarding/FindSpotlight.tsx	177	alm/require-root-testid
 src/features/onboarding/OrientationWalk.tsx	161	alm/require-root-testid
 src/features/onboarding/joyrideAdapter.tsx	209	alm/require-root-testid
 src/features/plans/PlanProtectionGate.tsx	116	alm/require-root-testid
@@ -64,7 +63,7 @@ src/features/sessions/SessionNotesSection.tsx	93	alm/require-root-testid
 src/features/settings/AuditLog.tsx	308	alm/require-root-testid
 src/features/settings/CalibrationMatching.tsx	189	alm/require-root-testid
 src/features/settings/Framing.tsx	134	alm/require-root-testid
-src/features/settings/ObservingSites.tsx	293	alm/require-root-testid
+src/features/settings/ObservingSites.tsx	313	alm/require-root-testid
 src/features/settings/PatternChipsEditor.tsx	39	alm/require-root-testid
 src/features/settings/PerTypePatternChipsEditor.tsx	90	alm/require-root-testid
 src/features/settings/ProcessingTools.tsx	181	alm/require-root-testid
@@ -77,10 +76,10 @@ src/features/settings/SourceViewStrategy.tsx	60	alm/require-root-testid
 src/features/settings/SourceViews.tsx	97	alm/require-root-testid
 src/features/setup/SetupPage.tsx	48	alm/require-root-testid
 src/features/setup/SetupWizard.tsx	244	alm/require-root-testid
-src/features/setup/steps/StepCatalogs.tsx	168	alm/require-root-testid
+src/features/setup/steps/StepCatalogs.tsx	171	alm/require-root-testid
 src/features/setup/steps/StepConfirm.tsx	67	alm/require-root-testid
 src/features/setup/steps/StepLanguage.tsx	26	alm/require-root-testid
-src/features/setup/steps/StepSite.tsx	131	alm/require-root-testid
+src/features/setup/steps/StepSite.tsx	145	alm/require-root-testid
 src/features/setup/steps/StepTools.tsx	155	alm/require-root-testid
 src/features/targets/AliasesSection.tsx	41	alm/require-root-testid
 src/features/targets/AltitudeGraph.tsx	105	alm/require-root-testid

@@ -24,6 +24,7 @@
 import { useSyncExternalStore } from 'react';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
+import { updateSettings } from '@/data/settingsWrite';
 import { type ObserverSite, coerceSites } from './observer-site';
 
 /** Settings scope + keys for the observing-site model. */
@@ -152,13 +153,14 @@ export async function saveSites(
     usableAltitudeDeg: current.usableAltitudeDeg,
   };
   writeGen += 1;
-  unwrap(
-    await commands.settingsUpdate(OBSERVING_SCOPE, {
+  await updateSettings({
+    scope: OBSERVING_SCOPE,
+    values: {
       [SITES_KEY]: next.sites,
       [DEFAULT_SITE_ID_KEY]: next.defaultSiteId,
       [ACTIVE_SITE_ID_KEY]: next.activeSiteId,
-    }),
-  );
+    },
+  });
   current = next;
   emit();
 }
@@ -190,11 +192,10 @@ export async function saveUsableAltitude(degrees: number): Promise<void> {
   current = { ...current, usableAltitudeDeg: clamped };
   emit();
   try {
-    unwrap(
-      await commands.settingsUpdate(OBSERVING_SCOPE, {
-        [USABLE_ALTITUDE_KEY]: clamped,
-      }),
-    );
+    await updateSettings({
+      scope: OBSERVING_SCOPE,
+      values: { [USABLE_ALTITUDE_KEY]: clamped },
+    });
   } catch (err) {
     if (writeGen === gen) {
       current = prev;
