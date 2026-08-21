@@ -10,6 +10,8 @@
 )]
 //!
 //! Hard dimensions: `filter`, `binning`, `optic_train`, `gain` (exact, 2026-05-23 decision).
+//! `binning` and `gain` become soft penalties when the user clears their
+//! Settings "match required" toggles; `filter` and `optic_train` stay exact.
 //! Soft dimensions: `rotation` ±0.5° (default), `observing_night_proximity` (±7 nights default).
 //!
 //! Selection reasons prioritize same_session > same_night > compatible_fallback.
@@ -42,13 +44,15 @@ pub fn evaluate(
         _ => return None,
     }
 
-    // ── Hard rule: binning ────────────────────────────────────────────────────
-    match (session.binning.as_deref(), master.binning.as_deref()) {
-        (Some(sb), Some(mb)) if crate::rules::hard_rule_string(Some(sb), Some(mb)) => {
-            matched.push(MatchedDim::exact_string(Dimension::Binning, sb));
-        }
-        _ => return None,
-    }
+    // ── Hard rule: binning (relaxable per config) ─────────────────────────────
+    confidence -= crate::rules::relaxable_string(
+        Dimension::Binning,
+        session.binning.as_deref(),
+        master.binning.as_deref(),
+        config.require_same_binning,
+        &mut matched,
+        &mut mismatched,
+    )?;
 
     // ── Hard rule: optic_train ────────────────────────────────────────────────
     match (session.optic_train.as_deref(), master.optic_train.as_deref()) {
@@ -59,11 +63,14 @@ pub fn evaluate(
     }
 
     // ── Hard rule: gain (exact, no tolerance — 2026-05-23 decision) ───────────
-    if crate::rules::hard_rule_numeric(session.gain, master.gain) {
-        matched.push(MatchedDim::exact(Dimension::Gain));
-    } else {
-        return None;
-    }
+    confidence -= crate::rules::relaxable_numeric(
+        Dimension::Gain,
+        session.gain,
+        master.gain,
+        config.require_same_gain,
+        &mut matched,
+        &mut mismatched,
+    )?;
 
     // ── Soft rule: rotation ───────────────────────────────────────────────────
     let rot_cfg = config.flat_rotation_config();
@@ -412,5 +419,39 @@ mod tests {
             .collect();
         assert!(!all_dims.contains(&"exposure"), "flat should not have exposure dimension");
         assert!(!all_dims.contains(&"temperature"), "flat should not have temperature dimension");
+    }
+
+    #[test]
+    fn require_same_gain_changes_the_match_outcome() {
+        let m = master_flat("Ha", "1x1", "train-a", 200.0, 0.0, "2026-01-15");
+        assert!(
+            evaluate(&session(), &m, &MatchingRuleConfig::default()).is_none(),
+            "a gain mismatch must exclude the flat while the toggle is set"
+        );
+
+        let relaxed = MatchingRuleConfig { require_same_gain: false, ..Default::default() };
+        let r = evaluate(&session(), &m, &relaxed).expect("clearing the toggle keeps the flat");
+        assert!(
+            r.dimensions_mismatched.iter().any(|d| d.dimension == "gain"),
+            "the relaxed gain must be reported as a mismatch"
+        );
+        assert!(r.confidence < 1.0, "a relaxed gain must cost confidence: {}", r.confidence);
+    }
+
+    #[test]
+    fn require_same_binning_changes_the_match_outcome() {
+        let m = master_flat("Ha", "2x2", "train-a", 100.0, 0.0, "2026-01-15");
+        assert!(
+            evaluate(&session(), &m, &MatchingRuleConfig::default()).is_none(),
+            "a binning mismatch must exclude the flat while the toggle is set"
+        );
+
+        let relaxed = MatchingRuleConfig { require_same_binning: false, ..Default::default() };
+        let r = evaluate(&session(), &m, &relaxed).expect("clearing the toggle keeps the flat");
+        assert!(
+            r.dimensions_mismatched.iter().any(|d| d.dimension == "binning"),
+            "the relaxed binning must be reported as a mismatch"
+        );
+        assert!(r.confidence < 1.0, "a relaxed binning must cost confidence: {}", r.confidence);
     }
 }
