@@ -93,7 +93,9 @@ impl Database {
     ///   filesystem-mutation intent commit is followed by a best-effort
     ///   `PRAGMA wal_checkpoint(TRUNCATE)` (see `checkpoint_intent` in
     ///   `persistence_plans::repositories::plan_apply`), whose failure both
-    ///   call sites log and ignore.  The other tier-1 records §V names —
+    ///   call sites discard without logging — the persistence layer has no
+    ///   logging facade, and boot reconciliation is the backstop.  The other
+    ///   tier-1 records §V names —
     ///   frame-to-session attribution, lifecycle choices, user overrides — have
     ///   no such escalation; whether they require one is open
     ///   (astro-plan-53b8).
