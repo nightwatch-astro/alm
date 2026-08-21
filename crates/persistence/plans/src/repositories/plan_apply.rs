@@ -33,7 +33,8 @@ use persistence_core::{DbError, DbResult};
 ///
 /// A failed checkpoint (e.g. a reader holding the WAL open) is not fatal: the
 /// intent is already committed to the WAL, boot reconciliation is the backstop,
-/// and the next automatic checkpoint will sync it. Callers log and proceed.
+/// and the next automatic checkpoint will sync it. Both callers discard the
+/// error without logging and proceed.
 async fn checkpoint_intent(conn: &mut SqliteConnection) -> DbResult<()> {
     sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(conn).await?;
     Ok(())

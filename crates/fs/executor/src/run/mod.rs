@@ -46,6 +46,10 @@ mod loop_;
 mod tests;
 
 pub use loop_::execute_plan;
+/// Test-only forward-pass item gate. Absent unless the `test-pacing` feature is
+/// on.
+#[cfg(feature = "test-pacing")]
+pub use loop_::pacing;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 

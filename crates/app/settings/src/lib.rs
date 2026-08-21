@@ -80,6 +80,7 @@ use domain_core::ids::Timestamp;
 
 mod keys;
 mod read;
+mod repair;
 mod validation;
 mod writes;
 

@@ -4,81 +4,72 @@
 /**
  * CommandPalette devMode gate tests (spec 021 T009).
  *
- * Verifies that:
- * - The "Developer / Contracts" entry is hidden when devMode = false.
- * - The "Developer / Contracts" entry appears when devMode = true.
- * - The dev entry navigates to /dev/contracts.
+ * These import the real `PAGES`, `DEV_PAGES`, and `visiblePagesFor` from
+ * `CommandPalette.tsx`. An earlier version of this file declared local copies of
+ * all three and tested those, which is why it kept passing while production
+ * gated `DEV_PAGES` on the runtime `devMode` setting alone and shipped
+ * `/dev/contracts` into release bundles. The copies had also drifted: they
+ * listed `/review`, `/plans`, and `/audit`, none of which are palette pages.
  *
- * Tests operate on the PAGES/DEV_PAGES constants and the visibility logic,
- * not on the rendered Dialog (which requires ResizeObserver — deferred to
- * Playwright). Pattern mirrors CommandPalette.test.tsx.
+ * The test run bakes `VITE_DEV_TOOLS="false"` into `vitest.config.ts`, so
+ * `DEV_TOOLS_ENABLED` is false here and `DEV_PAGES` is empty — the shape a
+ * release build has. The developer-build shape is covered by passing explicit
+ * dev pages to `visiblePagesFor`.
+ *
+ * The rendered Dialog needs ResizeObserver and is deferred to Playwright.
  */
 
 import { describe, it, expect } from 'vitest';
+import { PAGES, DEV_PAGES, visiblePagesFor } from '@/app/CommandPalette';
+import { DEV_TOOLS_ENABLED } from './devToolsEnabled';
 
-// ── Mirrors of CommandPalette.tsx constants ───────────────────────────────────
-// Keep in sync with apps/desktop/src/app/CommandPalette.tsx.
+const DEV_CONTRACTS_ROUTE = '/dev/contracts';
 
-const PAGES: Array<{ label: string; route: string }> = [
-  { label: 'Sessions', route: '/sessions' },
-  { label: 'Review queue', route: '/review' },
-  { label: 'Calibration', route: '/calibration' },
-  { label: 'Targets', route: '/targets' },
-  { label: 'Projects', route: '/projects' },
-  { label: 'Plans', route: '/plans' },
-  { label: 'Audit log', route: '/audit' },
-  { label: 'Settings', route: '/settings' },
+/** Stand-in for the dev entry a `VITE_DEV_TOOLS="true"` build would compile in. */
+const DEV_PAGES_ENABLED = [
+  { label: () => 'Developer / Contracts', route: DEV_CONTRACTS_ROUTE },
 ];
 
-const DEV_PAGES: Array<{ label: string; route: string }> = [
-  { label: 'Developer / Contracts', route: '/dev/contracts' },
-];
+describe('CommandPalette dev gate — release-shaped build (T009)', () => {
+  it('DEV_TOOLS_ENABLED is false under the test config', () => {
+    expect(DEV_TOOLS_ENABLED).toBe(false);
+  });
 
-/** Mirror of the CommandPalette visibility logic. */
-function visiblePages(
-  devMode: boolean,
-): Array<{ label: string; route: string }> {
-  return devMode ? [...PAGES, ...DEV_PAGES] : PAGES;
-}
+  it('DEV_PAGES is empty, so no dev route exists to leak into the bundle', () => {
+    expect(DEV_PAGES).toEqual([]);
+  });
 
-// ── Tests (T009) ──────────────────────────────────────────────────────────────
+  it('devMode = true cannot surface a dev entry when the build gate is off', () => {
+    const pages = visiblePagesFor(true);
+    expect(pages.find((p) => p.route === DEV_CONTRACTS_ROUTE)).toBeUndefined();
+    expect(pages.map((p) => p.route)).toEqual(PAGES.map((p) => p.route));
+  });
+});
 
-describe('CommandPalette devMode gate (T009)', () => {
+describe('CommandPalette devMode gate — developer build (T009)', () => {
   it('dev entry is absent when devMode = false', () => {
-    const pages = visiblePages(false);
-    const devEntry = pages.find((p) => p.route === '/dev/contracts');
-    expect(devEntry).toBeUndefined();
+    const pages = visiblePagesFor(false, DEV_PAGES_ENABLED);
+    expect(pages.find((p) => p.route === DEV_CONTRACTS_ROUTE)).toBeUndefined();
   });
 
-  it('dev entry is present when devMode = true', () => {
-    const pages = visiblePages(true);
-    const devEntry = pages.find((p) => p.route === '/dev/contracts');
+  it('dev entry is present and routed when devMode = true', () => {
+    const pages = visiblePagesFor(true, DEV_PAGES_ENABLED);
+    const devEntry = pages.find((p) => p.route === DEV_CONTRACTS_ROUTE);
     expect(devEntry).toBeDefined();
-    expect(devEntry?.label).toBe('Developer / Contracts');
-  });
-
-  it('dev entry routes to /dev/contracts', () => {
-    const pages = visiblePages(true);
-    const devEntry = pages.find((p) => p.label === 'Developer / Contracts');
-    expect(devEntry?.route).toBe('/dev/contracts');
+    expect(devEntry?.label()).toBe('Developer / Contracts');
   });
 
   it('standard pages are unchanged regardless of devMode', () => {
-    const pagesOff = visiblePages(false);
-    const pagesOn = visiblePages(true);
-    // Every standard page must appear in both modes.
+    const off = visiblePagesFor(false, DEV_PAGES_ENABLED).map((p) => p.route);
+    const on = visiblePagesFor(true, DEV_PAGES_ENABLED).map((p) => p.route);
     for (const p of PAGES) {
-      expect(pagesOff.some((x) => x.route === p.route)).toBe(true);
-      expect(pagesOn.some((x) => x.route === p.route)).toBe(true);
+      expect(off).toContain(p.route);
+      expect(on).toContain(p.route);
     }
   });
 
-  it('DEV_PAGES is not empty (at least one dev entry defined)', () => {
-    expect(DEV_PAGES.length).toBeGreaterThan(0);
-  });
-
-  it('dev pages do not appear in normal pages list', () => {
-    const devRoutes = new Set(DEV_PAGES.map((p) => p.route));
+  it('no standard page uses a dev route', () => {
+    const devRoutes = new Set(DEV_PAGES_ENABLED.map((p) => p.route));
     for (const p of PAGES) {
       expect(devRoutes.has(p.route)).toBe(false);
     }

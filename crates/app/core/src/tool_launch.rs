@@ -221,6 +221,11 @@ struct ResolvedToolConfig {
 /// Load project and validate tool configuration (profile exists, enabled, path set).
 ///
 /// Returns `Err(ToolLaunchResponse)` for user-facing validation failures.
+// The `Err` variant is the contract response DTO, not an error type: `launch`
+// receives it and returns it as `Ok`. Boxing to satisfy the 128-byte threshold
+// would add an allocation and an unbox at the one call site, on a path that is
+// about to spawn a process, and buy nothing.
+#[allow(clippy::result_large_err)]
 async fn resolve_tool_config(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -262,6 +267,8 @@ async fn resolve_tool_config(
 ///
 /// Returns the canonical working-directory string, or `Err(ToolLaunchResponse)`
 /// when the resolved path falls outside all registered library roots.
+// See `resolve_tool_config` above for why the large `Err` variant stays unboxed.
+#[allow(clippy::result_large_err)]
 async fn resolve_and_check_working_dir(
     pool: &SqlitePool,
     project_path: &str,

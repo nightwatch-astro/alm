@@ -12,6 +12,20 @@
  * (data-model.md §1). Pure data + coercion; no React, no astronomy import.
  */
 
+/**
+ * Inclusive bounds for the range-checked site fields, mirroring the backend
+ * `observingSites` validation in `crates/app/settings/src/descriptors.rs`
+ * (`check_observer_sites`). These must stay equal to the Rust values: a value the
+ * UI accepts but the backend rejects fails the save, and a stored value the
+ * backend rejects makes read-time repair discard the whole site list.
+ */
+export const SITE_LAT_DEG_MIN = -90;
+export const SITE_LAT_DEG_MAX = 90;
+export const SITE_LON_DEG_MIN = -180;
+export const SITE_LON_DEG_MAX = 180;
+export const SITE_MIN_HORIZON_ALT_DEG_MIN = 0;
+export const SITE_MIN_HORIZON_ALT_DEG_MAX = 90;
+
 /** Per-site night definition. `astronomical` = Sun −18°, `nautical` = Sun −12°. */
 export type Twilight = 'astronomical' | 'nautical';
 
@@ -69,13 +83,28 @@ export function coerceSite(value: unknown): ObserverSite | null {
   return {
     id,
     name,
-    latitudeDeg: clampNum(src['latitudeDeg'], -90, 90, 0),
-    longitudeDeg: clampNum(src['longitudeDeg'], -180, 180, 0),
+    latitudeDeg: clampNum(
+      src['latitudeDeg'],
+      SITE_LAT_DEG_MIN,
+      SITE_LAT_DEG_MAX,
+      0,
+    ),
+    longitudeDeg: clampNum(
+      src['longitudeDeg'],
+      SITE_LON_DEG_MIN,
+      SITE_LON_DEG_MAX,
+      0,
+    ),
     elevationM,
     timezone:
       typeof src['timezone'] === 'string' ? (src['timezone'] as string) : 'UTC',
     twilight,
-    minHorizonAltDeg: clampNum(src['minHorizonAltDeg'], 0, 90, 0),
+    minHorizonAltDeg: clampNum(
+      src['minHorizonAltDeg'],
+      SITE_MIN_HORIZON_ALT_DEG_MIN,
+      SITE_MIN_HORIZON_ALT_DEG_MAX,
+      0,
+    ),
   };
 }
 

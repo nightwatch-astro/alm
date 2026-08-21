@@ -224,15 +224,18 @@ pub const TOPIC_SETTINGS_SNAPSHOT: &str = "settings.snapshot";
 /// Payload for the `settings.repair` topic (spec 018, T005).
 ///
 /// Emitted at warn level when a stored settings value fails schema validation
-/// and is reset to its in-code default (T019).
+/// (T019). The repair either resets the key to its in-code default or, for an
+/// array-valued key whose entries are independently valid, keeps the entries
+/// that validate and drops the rest.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsRepair {
-    /// The settings key that was reset.
+    /// The settings key that was repaired.
     pub key: String,
-    /// The invalid stored value that triggered the repair.
+    /// What was discarded: the whole stored value for a full reset, or only the
+    /// dropped entries for a partial repair.
     pub invalid_value: serde_json::Value,
-    /// The default value restored.
+    /// The value now stored: the in-code default, or the kept remainder.
     pub default_value: serde_json::Value,
     /// ISO-8601 timestamp.
     pub at: String,
@@ -480,6 +483,22 @@ pub struct ArtifactMissing {
 }
 
 pub const TOPIC_ARTIFACT_MISSING: &str = "artifact.missing";
+
+/// Payload for the `artifact.scan_incomplete` topic.
+///
+/// Emitted when a reconciliation scan skipped one or more directories it could
+/// not read. Artifacts beneath those paths were neither confirmed present nor
+/// marked missing, so the scan's coverage is partial (constitution II: a skipped
+/// subtree in a custody-relevant walk is recorded, never swallowed).
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactScanIncomplete {
+    pub project_id: String,
+    pub unreadable_paths: Vec<String>,
+    pub at: String,
+}
+
+pub const TOPIC_ARTIFACT_SCAN_INCOMPLETE: &str = "artifact.scan_incomplete";
 
 /// Payload for the `artifact.recovered` topic (spec 012, T007).
 ///
