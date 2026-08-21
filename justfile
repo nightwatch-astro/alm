@@ -28,6 +28,9 @@ lint:
     pnpm -r --if-present lint
     pnpm run lint:tests
     pre-commit run --all-files
+    # A tracked file under .github/ that a gitignore rule also matches stays in
+    # git and disappears from every ignore-respecting scanner. Sealed at zero.
+    bash scripts/check-github-not-ignored.sh
 
 # Build the Rust workspace and package workspaces when present.
 build:
