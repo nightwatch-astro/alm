@@ -12,8 +12,12 @@
 //! or briefly at commit for any write) blocks *every* reader sharing the same
 //! file, including unrelated poller queries on other pooled connections. WAL
 //! mode gives readers a consistent snapshot independent of an in-flight
-//! writer, removing that contention class without weakening durability
-//! (`synchronous` is left at SQLite's default `FULL`).
+//! writer, removing that contention class.
+//!
+//! `Database::connect` pairs WAL with `synchronous = NORMAL`, not SQLite's
+//! compiled-in `FULL` default; see the durability tier policy on
+//! `Database::connect`. `database_connect_reports_synchronous_normal` asserts
+//! the value SQLite reports back on a file-backed connection.
 //!
 //! These tests reproduce the underlying SQLite locking behaviour directly
 //! (via `BEGIN EXCLUSIVE`) rather than racing a real poll loop, so they are
@@ -165,4 +169,21 @@ async fn database_connect_reports_wal_journal_mode() {
         .expect("read journal_mode");
 
     assert_eq!(mode.to_lowercase(), "wal");
+}
+
+/// `Database::connect` reports `synchronous = NORMAL` back from SQLite on a
+/// file-backed database, where the setting has durability consequences (an
+/// in-memory database has none).
+#[tokio::test]
+async fn database_connect_reports_synchronous_normal() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("synchronous-check.db");
+    let url = format!("sqlite://{}?mode=rwc", path.display());
+
+    let db = Database::connect(&url).await.expect("Database::connect");
+    // 0=OFF, 1=NORMAL, 2=FULL, 3=EXTRA.
+    let (level,): (i64,) =
+        sqlx::query_as("PRAGMA synchronous").fetch_one(db.pool()).await.expect("read synchronous");
+
+    assert_eq!(level, 1, "file-backed pool must run synchronous = NORMAL (1)");
 }
