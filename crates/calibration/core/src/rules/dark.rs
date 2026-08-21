@@ -70,7 +70,12 @@ pub fn evaluate(
     let exp_cfg = config.dark_exposure_config();
     match (session.exposure_s, master.exposure_s) {
         (Some(se), Some(me)) => {
-            if me == 0.0 {
+            // An exposure that is zero, negative, or not a number is broken
+            // metadata, not a measurement. The old guard caught only zero, so a
+            // negative master exposure reached `(se - me).abs() / me`, came out
+            // negative, and a negative percentage difference is never greater than
+            // the tolerance — the candidate matched at full confidence.
+            if !se.is_finite() || !me.is_finite() || se <= 0.0 || me <= 0.0 {
                 mismatched.push(MismatchedDim::metadata_missing(Dimension::Exposure));
                 confidence -= exp_cfg.max_penalty;
             } else {
@@ -180,6 +185,36 @@ mod tests {
         let m = m.unwrap();
         assert!((m.confidence - 1.0).abs() < 1e-9, "exact match confidence={}", m.confidence);
         assert!(m.dimensions_mismatched.is_empty());
+    }
+
+    #[test]
+    fn an_unusable_exposure_is_reported_as_missing_metadata_not_scored() {
+        // A negative master exposure used to reach `(se - me).abs() / me`, which
+        // came out negative, and a negative percentage difference never exceeds the
+        // tolerance — a 300s light matched a -300s dark at full confidence.
+        for bad in [-300.0, 0.0, f64::NAN, f64::INFINITY] {
+            let m = evaluate(
+                &session(100.0, 50.0, 300.0, -10.0),
+                &master(100.0, 50.0, bad, -10.0),
+                &MatchingRuleConfig::default(),
+            )
+            .unwrap_or_else(|| panic!("master exposure {bad} should still yield a soft result"));
+            assert!(
+                m.dimensions_mismatched
+                    .iter()
+                    .any(|dim| dim.dimension == Dimension::Exposure.as_str()),
+                "master exposure {bad} was scored as a matching exposure: {m:?}"
+            );
+            assert!(m.confidence < 1.0, "master exposure {bad} kept full confidence");
+        }
+
+        let m = evaluate(
+            &session(100.0, 50.0, -300.0, -10.0),
+            &master(100.0, 50.0, 300.0, -10.0),
+            &MatchingRuleConfig::default(),
+        )
+        .expect("negative session exposure should still yield a soft result");
+        assert!(m.confidence < 1.0, "negative session exposure kept full confidence");
     }
 
     #[test]
