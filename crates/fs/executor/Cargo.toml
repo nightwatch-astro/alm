@@ -31,6 +31,14 @@ hex.workspace = true
 sha2.workspace = true
 uuid = { workspace = true }
 
+[features]
+# Compiles the `run::loop_::pacing` seam, which lets a test slow the forward
+# pass so a mid-run retry, pause, or cancel lands while a run is still draining.
+# Default off, so a release binary has no way to throttle a real plan apply.
+# Enabled through the `[dev-dependencies]` edge of the crate whose tests need it,
+# never from a `[dependencies]` edge.
+test-pacing = ["tokio/time"]
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
 

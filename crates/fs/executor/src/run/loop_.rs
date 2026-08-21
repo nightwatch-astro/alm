@@ -51,10 +51,10 @@ pub async fn execute_plan<C: ExecutorCallbacks>(
 }
 
 #[allow(clippy::too_many_lines)]
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "per-item executor loop with failure taxonomy, cancellation, and retry paths"
-)]
+// `allow` rather than `expect`: the loop crosses the cognitive-complexity
+// threshold only when `test-pacing` compiles the extra branch, so an `expect`
+// goes unfulfilled in the default feature set.
+#[allow(clippy::cognitive_complexity)]
 async fn drive_plan<C: ExecutorCallbacks>(
     items: Vec<ExecutorItem>,
     callbacks: &C,
@@ -71,11 +71,19 @@ async fn drive_plan<C: ExecutorCallbacks>(
     let item_by_id: HashMap<&str, &ExecutorItem> =
         items.iter().map(|i| (i.id.as_str(), i)).collect();
 
+    #[cfg(feature = "test-pacing")]
+    let item_delay = pacing::item_delay();
+
     'items: for item in &items {
         // Skip items that are already in a terminal state (re-apply idempotency).
         if matches!(item.current_state.as_str(), "succeeded" | "skipped" | "cancelled" | "failed") {
             tracing::debug!(item_id = %item.id, state = %item.current_state, "skipping already-terminal item");
             continue;
+        }
+
+        #[cfg(feature = "test-pacing")]
+        if let Some(delay) = item_delay {
+            tokio::time::sleep(delay).await;
         }
 
         // Check cancellation between items (never mid-item).
@@ -194,6 +202,63 @@ async fn drain_retries<C: ExecutorCallbacks>(
         }
     }
     DrainOutcome::Continue
+}
+
+/// Per-item pacing for tests that need the forward pass to still be running
+/// when they act on it.
+///
+/// A test that files a mid-run retry, pause, or cancel has to reach the
+/// executor before the forward pass drains its queue. Without a seam the only
+/// lever is item count, which makes the outcome a race: 30 small
+/// same-directory moves against a warm pool finish inside three awaits often
+/// enough to fail in CI (`astro-plan-ytx7`).
+///
+/// The whole module is behind the `test-pacing` feature, which is off by
+/// default and reachable only through a `[dev-dependencies]` edge, so no
+/// release binary contains a way to throttle a real plan apply.
+///
+/// An atomic rather than an environment variable: `set_var` in a threaded test
+/// binary races every concurrent `var_os` reader — `tempfile`'s `TMPDIR` lookup
+/// among them — which is undefined behaviour on glibc and already banned in
+/// this repo (`apps/desktop/src-tauri/src/data_dir.rs`).
+#[cfg(feature = "test-pacing")]
+pub mod pacing {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
+
+    static ITEM_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+
+    /// Sleep `ms` before each non-terminal item of every subsequent run in this
+    /// process. Zero disables pacing. Process-global, so a test that sets it
+    /// must reset it — see `ItemDelayGuard`.
+    pub fn set_item_delay_ms(ms: u64) {
+        ITEM_DELAY_MS.store(ms, Ordering::Relaxed);
+    }
+
+    /// Resets the pacing delay to zero when dropped, including on panic, so one
+    /// test cannot slow every test that follows it in the same binary.
+    pub struct ItemDelayGuard;
+
+    impl ItemDelayGuard {
+        /// Enable pacing for as long as the returned guard lives.
+        #[must_use]
+        pub fn new(ms: u64) -> Self {
+            set_item_delay_ms(ms);
+            Self
+        }
+    }
+
+    impl Drop for ItemDelayGuard {
+        fn drop(&mut self) {
+            set_item_delay_ms(0);
+        }
+    }
+
+    /// Read once per run, not per item, so a run cannot change pace midway.
+    pub(crate) fn item_delay() -> Option<Duration> {
+        let ms = ITEM_DELAY_MS.load(Ordering::Relaxed);
+        (ms > 0).then(|| Duration::from_millis(ms))
+    }
 }
 
 /// Outcome of processing a single item through the gate/execute pipeline.

@@ -625,12 +625,17 @@ async fn resume_refused_when_plan_not_paused() {
 /// files + the real spawned executor, no seeding shortcuts): pause on a
 /// stale item, resolve the staleness, resume, then retry the pre-pause-failed
 /// item while the resumed run is still draining its other pending items.
-/// Many pending items (as in `cancel_signals_the_executor_restarted_by_resume`
-/// above) widen the race window so the retry reliably lands while the
-/// executor task is still alive, rather than racing its completion.
+/// `fs_executor::run::pacing` paces the resumed executor's forward pass so the
+/// retry lands while that run is still draining. Item count alone does not:
+/// `retry_plan_item` is refused once the run closes its retry queue, and 30
+/// small same-directory moves against a warm pool can finish inside this
+/// test's three awaits (`astro-plan-ytx7`).
 #[tokio::test]
 async fn resume_then_retry_of_pre_pause_failed_item_reaches_terminal_state() {
     const OTHER_PENDING_ITEMS: usize = 30;
+    // 30 items at 20ms bounds the resumed pass at ~600ms, which is longer than
+    // the retry call by orders of magnitude on any runner.
+    const ITEM_DELAY_MS: u64 = 20;
 
     let (db, _repo, bus) = support::setup().await;
     let plan_id = Uuid::new_v4().to_string();
@@ -671,14 +676,17 @@ async fn resume_then_retry_of_pre_pause_failed_item_reaches_terminal_state() {
         .await
         .expect("update_item_fs_snapshot to resolve staleness");
 
+    // Installed after the first apply has already reached a terminal state, so
+    // only the resumed run — the one that has to still be draining when the
+    // retry arrives — is paced. The guard clears the delay on drop, including on
+    // panic unwind, so a failed assertion cannot slow the rest of this binary.
+    let _pacing = fs_executor::run::pacing::ItemDelayGuard::new(ITEM_DELAY_MS);
+
     app_core::plan_apply::resume_plan(db.pool(), &bus, &plan_id, &run_row.id)
         .await
         .expect("resume must succeed once the stale condition is resolved");
 
-    // Retry item 0 (still `failed` from the pre-pause attempt) immediately —
-    // no `.await` yield beyond `resume_plan`'s own, giving the restarted
-    // executor the least possible head start (same rationale as the cancel
-    // test above: the race is what this test exists to exercise).
+    // Retry item 0, still `failed` from the pre-pause attempt.
     app_core::plan_apply::retry_plan_item(db.pool(), &plan_id, &item0_id)
         .await
         .expect("retry must be accepted: plan is applying, item is failed, run is active");
