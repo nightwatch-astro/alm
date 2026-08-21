@@ -71,9 +71,6 @@ async fn drive_plan<C: ExecutorCallbacks>(
     let item_by_id: HashMap<&str, &ExecutorItem> =
         items.iter().map(|i| (i.id.as_str(), i)).collect();
 
-    #[cfg(feature = "test-pacing")]
-    let item_delay = pacing::item_delay();
-
     'items: for item in &items {
         // Skip items that are already in a terminal state (re-apply idempotency).
         if matches!(item.current_state.as_str(), "succeeded" | "skipped" | "cancelled" | "failed") {
@@ -82,9 +79,7 @@ async fn drive_plan<C: ExecutorCallbacks>(
         }
 
         #[cfg(feature = "test-pacing")]
-        if let Some(delay) = item_delay {
-            tokio::time::sleep(delay).await;
-        }
+        pacing::gate_item().await;
 
         // Check cancellation between items (never mid-item).
         if cancel.is_cancelled() {
@@ -204,8 +199,8 @@ async fn drain_retries<C: ExecutorCallbacks>(
     DrainOutcome::Continue
 }
 
-/// Per-item pacing for tests that need the forward pass to still be running
-/// when they act on it.
+/// Per-item gate for tests that need the forward pass to still be running when
+/// they act on it.
 ///
 /// A test that files a mid-run retry, pause, or cancel has to reach the
 /// executor before the forward pass drains its queue. Without a seam the only
@@ -213,51 +208,107 @@ async fn drain_retries<C: ExecutorCallbacks>(
 /// same-directory moves against a warm pool finish inside three awaits often
 /// enough to fail in CI (`astro-plan-ytx7`).
 ///
+/// The gate parks the loop at each non-terminal item boundary and publishes the
+/// arrival, so a test waits for an ordering it observes rather than for a
+/// duration it guessed.
+///
 /// The whole module is behind the `test-pacing` feature, which is off by
 /// default and reachable only through a `[dev-dependencies]` edge, so no
-/// release binary contains a way to throttle a real plan apply.
+/// release binary contains a way to stall a real plan apply.
 ///
-/// An atomic rather than an environment variable: `set_var` in a threaded test
-/// binary races every concurrent `var_os` reader — `tempfile`'s `TMPDIR` lookup
-/// among them — which is undefined behaviour on glibc and already banned in
-/// this repo (`apps/desktop/src-tauri/src/data_dir.rs`).
+/// A static rather than a parameter of [`execute_plan`]: the production call
+/// signature carries no test-only handle.
 #[cfg(feature = "test-pacing")]
 pub mod pacing {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
     use std::time::Duration;
 
-    static ITEM_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+    use tokio::sync::Semaphore;
 
-    /// Sleep `ms` before each non-terminal item of every subsequent run in this
-    /// process. Zero disables pacing. Process-global, so a test that sets it
-    /// must reset it — see `ItemDelayGuard`.
-    pub fn set_item_delay_ms(ms: u64) {
-        ITEM_DELAY_MS.store(ms, Ordering::Relaxed);
+    /// Bounds a wait whose ordering is already supposed to hold. Exceeding it
+    /// means the loop never reached the boundary, which a panic reports as a
+    /// test failure instead of a hang. Never used to establish ordering, so it
+    /// only has to exceed the slowest legitimate arrival.
+    const ARRIVAL_TIMEOUT: Duration = Duration::from_secs(30);
+
+    struct GateState {
+        /// Gains a permit each time the loop parks at an item boundary.
+        arrived: Semaphore,
+        /// Loses a permit each time the loop leaves an item boundary. Closed by
+        /// [`ItemGate`]'s drop, which releases every later boundary at once.
+        release: Semaphore,
     }
 
-    /// Resets the pacing delay to zero when dropped, including on panic, so one
-    /// test cannot slow every test that follows it in the same binary.
-    pub struct ItemDelayGuard;
+    static GATE: Mutex<Option<Arc<GateState>>> = Mutex::new(None);
 
-    impl ItemDelayGuard {
-        /// Enable pacing for as long as the returned guard lives.
+    /// Recovers from poisoning: a test panicking while the loop is parked must
+    /// still leave the slot usable, and a panicking `Drop` would abort.
+    fn slot() -> MutexGuard<'static, Option<Arc<GateState>>> {
+        GATE.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Park the forward pass until an installed gate releases this item.
+    ///
+    /// A no-op when no [`ItemGate`] is installed, which is every run other than
+    /// the one a gating test drives.
+    pub(crate) async fn gate_item() {
+        let Some(gate) = slot().clone() else { return };
+        gate.arrived.add_permits(1);
+        // Bound to a local declared after `gate` so the permit's borrow of it
+        // ends before `gate` itself drops.
+        let released = gate.release.acquire().await;
+        // `Err` only after `ItemGate`'s drop closed the semaphore, which is the
+        // signal to run the rest of the plan ungated.
+        if let Ok(permit) = released {
+            permit.forget();
+        }
+    }
+
+    /// An installed gate. Dropping it releases every remaining boundary,
+    /// including on a panic unwind, so a failed assertion cannot strand a
+    /// spawned executor.
+    pub struct ItemGate(Arc<GateState>);
+
+    impl ItemGate {
+        /// Gate every item boundary reached in this process from now on.
+        ///
+        /// Process-global: at most one gate per test binary at a time.
         #[must_use]
-        pub fn new(ms: u64) -> Self {
-            set_item_delay_ms(ms);
-            Self
+        pub fn install() -> Self {
+            let state =
+                Arc::new(GateState { arrived: Semaphore::new(0), release: Semaphore::new(0) });
+            *slot() = Some(Arc::clone(&state));
+            Self(state)
+        }
+
+        /// Wait until the forward pass parks at an item boundary.
+        ///
+        /// Returning proves a run is inside its forward loop, so its retry
+        /// queue is still open and a mid-run retry, pause, or cancel lands
+        /// there rather than after the run closed it.
+        ///
+        /// # Panics
+        /// If no boundary is reached within 30 seconds, meaning the run never
+        /// started or already ended.
+        pub async fn wait_for_arrival(&self) {
+            tokio::time::timeout(ARRIVAL_TIMEOUT, self.0.arrived.acquire())
+                .await
+                .expect("executor reached no item boundary: the run never started or already ended")
+                .expect("the arrival semaphore is never closed")
+                .forget();
+        }
+
+        /// Let the forward pass leave `n` further item boundaries.
+        pub fn release(&self, n: usize) {
+            self.0.release.add_permits(n);
         }
     }
 
-    impl Drop for ItemDelayGuard {
+    impl Drop for ItemGate {
         fn drop(&mut self) {
-            set_item_delay_ms(0);
+            self.0.release.close();
+            *slot() = None;
         }
-    }
-
-    /// Read once per run, not per item, so a run cannot change pace midway.
-    pub(crate) fn item_delay() -> Option<Duration> {
-        let ms = ITEM_DELAY_MS.load(Ordering::Relaxed);
-        (ms > 0).then(|| Duration::from_millis(ms))
     }
 }
 

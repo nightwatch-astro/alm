@@ -625,17 +625,17 @@ async fn resume_refused_when_plan_not_paused() {
 /// files + the real spawned executor, no seeding shortcuts): pause on a
 /// stale item, resolve the staleness, resume, then retry the pre-pause-failed
 /// item while the resumed run is still draining its other pending items.
-/// `fs_executor::run::pacing` paces the resumed executor's forward pass so the
-/// retry lands while that run is still draining. Item count alone does not:
-/// `retry_plan_item` is refused once the run closes its retry queue, and 30
-/// small same-directory moves against a warm pool can finish inside this
-/// test's three awaits (`astro-plan-ytx7`).
+///
+/// `fs_executor::run::pacing` parks the resumed forward pass at its first item
+/// boundary, and this test files the retry only after observing that arrival, so
+/// "the run is still draining" is an ordering it asserts rather than a duration
+/// it waits out. Item count alone does not establish it: `retry_plan_item` is
+/// refused once the run closes its retry queue, and 30 small same-directory
+/// moves against a warm pool can finish inside this test's three awaits
+/// (`astro-plan-ytx7`).
 #[tokio::test]
 async fn resume_then_retry_of_pre_pause_failed_item_reaches_terminal_state() {
     const OTHER_PENDING_ITEMS: usize = 30;
-    // 30 items at 20ms bounds the resumed pass at ~600ms, which is longer than
-    // the retry call by orders of magnitude on any runner.
-    const ITEM_DELAY_MS: u64 = 20;
 
     let (db, _repo, bus) = support::setup().await;
     let plan_id = Uuid::new_v4().to_string();
@@ -678,18 +678,46 @@ async fn resume_then_retry_of_pre_pause_failed_item_reaches_terminal_state() {
 
     // Installed after the first apply has already reached a terminal state, so
     // only the resumed run — the one that has to still be draining when the
-    // retry arrives — is paced. The guard clears the delay on drop, including on
-    // panic unwind, so a failed assertion cannot slow the rest of this binary.
-    let _pacing = fs_executor::run::pacing::ItemDelayGuard::new(ITEM_DELAY_MS);
+    // retry arrives — is gated. Dropping the gate releases every remaining
+    // boundary, including on panic unwind, so a failed assertion below cannot
+    // strand the spawned executor.
+    let gate = fs_executor::run::pacing::ItemGate::install();
 
     app_core::plan_apply::resume_plan(db.pool(), &bus, &plan_id, &run_row.id)
         .await
         .expect("resume must succeed once the stale condition is resolved");
 
-    // Retry item 0, still `failed` from the pre-pause attempt.
+    // The resumed pass has parked at an item boundary: its retry queue is open
+    // and it has not yet closed the run.
+    gate.wait_for_arrival().await;
+    let gated = plans_repo::get_plan(db.pool(), &plan_id, false).await.expect("get_plan");
+    assert_eq!(gated.state, "applying", "the gated run must still be mid-apply");
+
+    // Retry item 0, still `failed` from the pre-pause attempt. `retry_plan_item`
+    // writes the item row directly (not through the progress buffer), so the
+    // transition is observable here.
     app_core::plan_apply::retry_plan_item(db.pool(), &plan_id, &item0_id)
         .await
         .expect("retry must be accepted: plan is applying, item is failed, run is active");
+    let queued = plans_repo::list_plan_items(db.pool(), &plan_id).await.expect("list_plan_items");
+    let queued0 = queued.iter().find(|i| i.id == item0_id).expect("item 0 row");
+    assert_eq!(
+        queued0.item_state, "applying",
+        "the accepted retry must flip item 0 out of `failed` before the run drains it"
+    );
+    assert!(src0.exists(), "the queued retry must not have executed while the run is gated");
+
+    // Release exactly one item. The loop drains the retry queue after every
+    // item, so the next arrival is strictly after item 0 was re-executed —
+    // making "the retry ran mid-run, not after the queue closed" an assertion
+    // rather than an inference.
+    gate.release(1);
+    gate.wait_for_arrival().await;
+    assert!(!src0.exists(), "the mid-run drain must have re-executed item 0's move");
+    assert!(dst0.exists(), "item 0's destination must exist after the mid-run drain");
+
+    // Release the rest of the run.
+    drop(gate);
 
     // Wait on ITEM 0 specifically, not on the plan. The plan can already hold a
     // terminal state left over from the pre-retry attempt, in which case
