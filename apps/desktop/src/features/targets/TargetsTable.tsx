@@ -110,6 +110,7 @@ import {
 } from './table-model';
 import { COLUMNS, COL_COUNT, ImagingTimeCell } from './TargetsTableColumns';
 import { useTargetsTableRows } from './useTargetsTableRows';
+import * as tt from './targets-table.css';
 
 export type {
   TargetSortCol,
@@ -292,9 +293,9 @@ export function TargetsTable({
 
   if (count === 0 && loading) {
     return (
-      <div className="pv-targets-table__wrap" data-testid="targets-table-wrap">
+      <div className={tt.wrap} data-testid="targets-table-wrap">
         {moonHeader}
-        <div className="pv-targets-table__empty">
+        <div className={tt.empty}>
           <Skeleton variant="block" count={8} label={m.common_loading()} />
         </div>
       </div>
@@ -303,22 +304,18 @@ export function TargetsTable({
 
   if (count === 0 && !loading) {
     return (
-      <div className="pv-targets-table__wrap" data-testid="targets-table-wrap">
+      <div className={tt.wrap} data-testid="targets-table-wrap">
         {moonHeader}
-        <div className="pv-targets-table__empty">{emptyMessage}</div>
+        <div className={tt.empty}>{emptyMessage}</div>
       </div>
     );
   }
 
   return (
-    <div className="pv-targets-table__wrap" data-testid="targets-table-wrap">
+    <div className={tt.wrap} data-testid="targets-table-wrap">
       {moonHeader}
       {!site && (
-        <Banner
-          variant="info"
-          className="pv-targets-table__no-site-banner"
-          data-testid="targets-table-no-site-banner"
-        >
+        <Banner variant="info" data-testid="targets-table-no-site-banner">
           {m.targets_planner_no_site_banner()}{' '}
           <Link
             to="/settings/$pane"
@@ -331,10 +328,10 @@ export function TargetsTable({
       )}
       <div
         ref={scrollRef}
-        className="pv-targets-table__scroll"
+        className={tt.scroll}
         data-testid="targets-table-scroll"
       >
-        <table className="pv-table pv-targets-table">
+        <table className={`pv-table ${tt.table}`}>
           {/* Fixed-layout colgroup: column widths are pinned so the table
               does NOT recompute widths per windowed page as pill text varies
               (e.g. "galaxy" vs "open cluster" would shift all columns).
@@ -342,17 +339,17 @@ export function TargetsTable({
               the right prevent the per-page column-shift bug.
               task #18: star col added first (28 px, wave2 CSS block). */}
           <colgroup>
-            <col className="pv-targets-col--star" />
-            <col className="pv-targets-col--designation" />
-            <col className="pv-targets-col--type" />
-            <col className="pv-targets-col--maxalt" />
-            <col className="pv-targets-col--opposition" />
+            <col className={tt.colStar} />
+            <col className={tt.colDesignation} />
+            <col className={tt.colType} />
+            <col className={tt.colMaxalt} />
+            <col className={tt.colOpposition} />
             {/* task #5: lunardist widened to 80px (wave2 CSS block). */}
-            <col className="pv-targets-col--lunardist" />
-            <col className="pv-targets-col--filters" />
+            <col className={tt.colLunardist} />
+            <col className={tt.colFilters} />
             {/* task #5: imagingtime widened to 100px (wave2 CSS block). */}
-            <col className="pv-targets-col--imagingtime" />
-            <col className="pv-targets-col--sessions" />
+            <col className={tt.colImagingtime} />
+            <col className={tt.colSessions} />
           </colgroup>
           <thead>
             <tr>
@@ -368,11 +365,11 @@ export function TargetsTable({
               ))}
             </tr>
           </thead>
-          <tbody className="pv-targets-table__body">
+          <tbody className={tt.tableBody}>
             {/* Before-spacer: reserve height for virtual rows above the window.
                 Height is dynamic (virtualizer offset), allowed by convention. */}
             {paddingBefore > 0 && (
-              <tr aria-hidden="true" className="pv-targets-table__spacer">
+              <tr aria-hidden="true" className={tt.spacer}>
                 {/* eslint-disable no-restricted-syntax, jsx-a11y/control-has-associated-label -- dynamic: virtualizer before-spacer height; empty presentational cell inside an aria-hidden spacer row (no label needed) */}
                 <td
                   colSpan={COL_COUNT}
@@ -469,8 +466,8 @@ export function TargetsTable({
                   data-testid="targets-table-row"
                   data-index={index}
                   className={
-                    'pv-targets-table__row pv-table__row--clickable' +
-                    (isSelected ? ' pv-targets-table__row--selected' : '')
+                    `${tt.row} pv-table__row--clickable` +
+                    (isSelected ? ` ${tt.rowSelected}` : '')
                   }
                   onClick={() => onSelect(t.id)}
                   onKeyDown={(e) => {
@@ -486,13 +483,10 @@ export function TargetsTable({
                   {/* task #18: favourite star toggle.
                       STUB: stored in localStorage only until task #54 (backend linkage) lands.
                       stopPropagation prevents the row-select click from firing. */}
-                  <td className="pv-targets-cell--center">
+                  <td className={tt.cellCenter}>
                     <button
                       type="button"
-                      className={
-                        'pv-targets-star' +
-                        (isFav ? ' pv-targets-star--active' : '')
-                      }
+                      className={tt.star + (isFav ? ` ${tt.starActive}` : '')}
                       data-testid="targets-star"
                       aria-label={
                         isFav
@@ -520,12 +514,10 @@ export function TargetsTable({
                     </button>
                   </td>
                   <td>
-                    <span className="pv-targets-cell__desig">
-                      <span className="pv-targets-cell__label">
-                        {t.effectiveLabel}
-                      </span>
+                    <span className={tt.desigCell}>
+                      <span className={tt.desigLabel}>{t.effectiveLabel}</span>
                       {showAltDesig && (
-                        <span className="pv-targets-cell__alt">
+                        <span className={tt.desigAlt}>
                           {t.primaryDesignation}
                         </span>
                       )}
@@ -537,7 +529,7 @@ export function TargetsTable({
                   {/* Real peak altitude tonight (spec 044 Track B ephemeris).
                       #757: no catalogued coordinates → the shared unresolved
                       chip, never a fabricated 0°. */}
-                  <td className="pv-targets-cell--num">
+                  <td className={tt.cellNum}>
                     {alt.needsCoordinates ? (
                       <span title={m.targets_table_needs_coordinates_title()}>
                         <UnresolvedChip />
@@ -550,11 +542,11 @@ export function TargetsTable({
                   </td>
                   {/* Real next-opposition date (spec 047 US4). Unknown
                       coordinates / no site → explicit "—", never a date. */}
-                  <td className="pv-targets-cell--opposition">
+                  <td className={tt.cellOpposition}>
                     {moon.nextOppositionDate === null ||
                     moon.daysToOpposition === null ? (
                       <span
-                        className="pv-targets-cell--muted"
+                        className={tt.cellMuted}
                         title={m.targets_opposition_unknown_title()}
                       >
                         —
@@ -582,17 +574,17 @@ export function TargetsTable({
                   </td>
                   {/* Real lunar angular separation (spec 047 US2). Unknown
                       coordinates / no site → explicit "—", never a number. */}
-                  <td className="pv-targets-cell--num">
+                  <td className={tt.cellNum}>
                     {moon.lunarSeparationDeg === null ? (
                       <span
-                        className="pv-targets-cell--muted"
+                        className={tt.cellMuted}
                         title={m.targets_lunar_unknown_title()}
                       >
                         —
                       </span>
                     ) : (
                       <span
-                        className="pv-targets-cell--lunardist"
+                        className={tt.cellLunardist}
                         data-testid="targets-cell-lunardist"
                         title={m.targets_table_lunar_dist_title({
                           deg: Math.round(moon.lunarSeparationDeg),
@@ -604,7 +596,7 @@ export function TargetsTable({
                   </td>
                   {/* Real per-band filter guidance from the Moon-avoidance rule
                       (spec 047 US3): pills + explanation popover. */}
-                  <td className="pv-targets-cell--filters">
+                  <td className={tt.cellFilters}>
                     <GuidanceCell
                       night={night}
                       moon={moon}
@@ -625,18 +617,18 @@ export function TargetsTable({
                       `altMoon` — the per-rendered-row pass that includes Moon
                       geometry — so 'moon' is never inferred from the cheap
                       geometry-free catalogue pass. */}
-                  <td className="pv-targets-cell--num">
+                  <td className={tt.cellNum}>
                     <ImagingTimeCell alt={altMoon} threshold={usableAltDeg} />
                   </td>
                   {/* #622: real linked-session count (`sessionCount`, #877).
                       Zero renders '—' rather than a bare 0 — a target nothing
                       has been shot on has no coverage to report, matching the
                       muted placeholder the row's other unknown cells use. */}
-                  <td className="pv-targets-cell--num">
+                  <td className={tt.cellNum}>
                     {(t.sessionCount ?? 0) > 0 ? (
                       t.sessionCount
                     ) : (
-                      <span className="pv-targets-cell--muted">—</span>
+                      <span className={tt.cellMuted}>—</span>
                     )}
                   </td>
                 </tr>
@@ -646,7 +638,7 @@ export function TargetsTable({
             {/* After-spacer: reserve height for virtual rows below the window.
                 Height is dynamic (virtualizer remainder), allowed by convention. */}
             {paddingAfter > 0 && (
-              <tr aria-hidden="true" className="pv-targets-table__spacer">
+              <tr aria-hidden="true" className={tt.spacer}>
                 {/* eslint-disable no-restricted-syntax, jsx-a11y/control-has-associated-label -- dynamic: virtualizer after-spacer height; empty presentational cell inside an aria-hidden spacer row (no label needed) */}
                 <td
                   colSpan={COL_COUNT}
@@ -658,7 +650,7 @@ export function TargetsTable({
           </tbody>
         </table>
       </div>
-      <div className="pv-targets-table__footer">
+      <div className={tt.footer}>
         {loading ? m.common_loading() : m.targets_table_target_count({ count })}
       </div>
     </div>

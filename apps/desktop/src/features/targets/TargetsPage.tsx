@@ -58,6 +58,7 @@ import {
   useTargetsPageFilters,
   MY_TARGETS_VALUE,
 } from './useTargetsPageFilters';
+import * as tt from './targets-table.css';
 
 // Re-export search helpers so target-search.test.ts import paths stay stable.
 export { normalizeDesig, matchesSearch } from './target-search-helpers';
@@ -273,7 +274,7 @@ export function TargetsPage() {
   );
 
   return (
-    <div className="pv-targets-page" data-testid="targets-page">
+    <div className={tt.page} data-testid="targets-page">
       <AddTargetDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}
