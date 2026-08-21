@@ -31,6 +31,21 @@ hex.workspace = true
 sha2.workspace = true
 uuid = { workspace = true }
 
+[features]
+# Compiles the `run::loop_::pacing` seam, which lets a test slow the forward
+# pass so a mid-run retry, pause, or cancel lands while a run is still draining.
+# Default off, so a release binary has no way to throttle a real plan apply.
+# Enabled through the `[dev-dependencies]` edge of the crate whose tests need it,
+# never from a `[dependencies]` edge.
+test-pacing = ["tokio/time"]
+# Compiles the `ops::trash_op::fake` seam, which diverts OS trash to a plain
+# file removal so headless e2e runs do not block on an interactive Shell trash.
+# Default off, so a release binary carries no way to divert the destructive path
+# of a real plan apply. Reached through `app_core/e2e-trash-fake` (itself reached
+# only from `desktop_shell/e2e`) or a `[dev-dependencies]` edge, never from a
+# release `[dependencies]` edge.
+e2e-trash-fake = []
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
 

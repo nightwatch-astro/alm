@@ -39,6 +39,70 @@ impl Default for TrashResult {
     }
 }
 
+/// Headless OS-trash double for the e2e harness.
+///
+/// The OS Shell trash needs an interactive window-station/desktop; on a
+/// headless CI runner `trash::delete` (`IFileOperation::PerformOperations` on
+/// Windows) blocks forever. A real Recycle-Bin move is unperformable there, so
+/// under this seam [`trash_file`] removes the file deterministically instead.
+/// The observable side effect the real-UI journeys assert — the file leaves the
+/// archive subtree — is identical, and the real OS-trash primitive stays
+/// covered by this module's unit tests and by live use.
+///
+/// The whole module is behind the default-off `e2e-trash-fake` feature, so a
+/// release binary contains no way to divert a real destructive plan apply
+/// (constitution §II).
+///
+/// Two switches because there are two kinds of consumer:
+///
+/// - [`FakeTrashGuard`] for a test that calls the executor in-process. Setting
+///   the environment instead would mean `set_var` in a threaded test binary,
+///   which races every concurrent `var_os` reader — `tempfile`'s `TMPDIR`
+///   lookup among them — undefined behaviour on glibc and already banned in
+///   `apps/desktop/src-tauri/src/data_dir.rs`.
+/// - `PV_E2E_OS_TRASH_FAKE` for the e2e harness, which cannot use the guard: it
+///   drives a separate `desktop_shell` process and sets the variable in that
+///   child's initial environment (`crates/e2e-tests/tests/common/helpers.rs`),
+///   never in its own.
+#[cfg(feature = "e2e-trash-fake")]
+pub mod fake {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static FORCED: AtomicBool = AtomicBool::new(false);
+
+    /// Divert OS trash to a plain file removal for as long as the guard lives.
+    ///
+    /// Process-global: the executor is reached through async plumbing that no
+    /// test can thread a parameter through.
+    pub struct FakeTrashGuard;
+
+    impl FakeTrashGuard {
+        #[must_use]
+        pub fn new() -> Self {
+            FORCED.store(true, Ordering::Relaxed);
+            Self
+        }
+    }
+
+    impl Default for FakeTrashGuard {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    /// Restores real OS trash on drop, including on panic unwind, so one test
+    /// cannot divert the trash path of every test that follows it.
+    impl Drop for FakeTrashGuard {
+        fn drop(&mut self) {
+            FORCED.store(false, Ordering::Relaxed);
+        }
+    }
+
+    pub(super) fn enabled() -> bool {
+        FORCED.load(Ordering::Relaxed) || std::env::var_os("PV_E2E_OS_TRASH_FAKE").is_some()
+    }
+}
+
 /// Send `path` to the OS trash.
 ///
 /// When `fallback_archive_dest` is `Some`, a failed trash attempt falls back
@@ -53,16 +117,8 @@ pub fn trash_file(
     path: &Utf8Path,
     fallback_archive_dest: Option<&Utf8Path>,
 ) -> Result<TrashResult, (PlanItemFailure, TrashResult)> {
-    // E2E boundary double. The OS Shell trash needs an interactive
-    // window-station/desktop; on the headless CI runner `trash::delete`
-    // (`IFileOperation::PerformOperations` on Windows) blocks forever. A real
-    // Recycle-Bin move is unperformable there, so under the e2e harness env we
-    // remove the file deterministically — the observable side effect the
-    // real-UI journeys assert (the file leaves the archive subtree) is
-    // identical, and the real OS-trash primitive stays covered by the Layer-1
-    // unit tests below and by live use. Only the e2e harness sets this var
-    // (`crates/e2e-tests/tests/common/mod.rs`); production/release never does.
-    if std::env::var_os("PV_E2E_OS_TRASH_FAKE").is_some() {
+    #[cfg(feature = "e2e-trash-fake")]
+    if fake::enabled() {
         return match std::fs::remove_file(path) {
             Ok(()) => Ok(TrashResult { destination_used: "trash", ..TrashResult::default() }),
             Err(e) => Err((
