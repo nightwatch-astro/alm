@@ -33,18 +33,43 @@ impl SoftDimConfig {
 
     /// Compute the penalty for a given absolute delta.
     ///
-    /// Returns `None` when `delta > tolerance` (out of tolerance).
-    /// Returns `0.0` when `delta == 0.0` (exact match).
-    /// Scales linearly from 0 to `max_penalty` as delta approaches tolerance.
+    /// Returns `None` when `delta > tolerance` (out of tolerance), and when any
+    /// input is unusable: a delta or tolerance that is NaN, infinite, or negative,
+    /// or a `max_penalty` that is NaN or infinite. The boundary is inclusive, so
+    /// `delta == tolerance` is still a match.
+    ///
+    /// Returns `0.0` when `delta == 0.0` (exact match). Otherwise scales linearly
+    /// from 0 to `max_penalty` as delta approaches tolerance, clamped to 0.0–1.0.
     #[must_use]
     pub fn penalty(&self, delta: f64) -> Option<f64> {
-        if delta > self.tolerance {
-            None
-        } else if self.tolerance == 0.0 {
-            Some(0.0)
-        } else {
-            Some((delta / self.tolerance) * self.max_penalty)
+        // Every comparison against a NaN is false, so the bare `delta >
+        // self.tolerance` below took the match branch — scoring an unrelated
+        // master as a full-confidence match, which is silent corruption of the
+        // user's calibration — for a NaN delta, a NaN tolerance, and a NaN
+        // `max_penalty`. A `+INFINITY` tolerance reached it too, by admitting
+        // every delta there is.
+        //
+        // A negative or `-INFINITY` tolerance was NOT one of these: `delta` is
+        // non-negative past the first guard, so `delta > tolerance` held and the
+        // function already returned `None` for every input. The guard below keeps
+        // that behaviour and states it locally instead of leaving it to a
+        // comparison two branches away.
+        if !delta.is_finite() || delta < 0.0 {
+            return None;
         }
+        if !self.tolerance.is_finite() || self.tolerance < 0.0 {
+            return None;
+        }
+        if !self.max_penalty.is_finite() {
+            return None;
+        }
+        if delta > self.tolerance {
+            return None;
+        }
+        if self.tolerance == 0.0 {
+            return Some(0.0);
+        }
+        Some(((delta / self.tolerance) * self.max_penalty).clamp(0.0, 1.0))
     }
 }
 
@@ -56,6 +81,7 @@ impl SoftDimConfig {
 /// `calibrationDarkOverridePenalty`, `calibrationFlatOverridePenalty`,
 /// `calibrationBiasOverridePenalty`, `calibrationPrefillSuggestion`.
 #[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)] // Distinct orthogonal per-field match-required flags
 pub struct MatchingRuleConfig {
     // ── Dark tolerances ──
     /// Dark exposure soft tolerance (percentage, 0–100). Default 5.0 → ±5%.
@@ -92,6 +118,28 @@ pub struct MatchingRuleConfig {
     /// the candidate. Default: `true` (offset always required, matching the
     /// original strict behaviour).
     pub require_same_offset: bool,
+    /// When true, a master must carry the same GAIN as the light session for
+    /// dark, bias, and flat matching (hard rule). When false, a missing or
+    /// mismatched gain costs
+    /// [`RELAXED_HARD_RULE_PENALTY`](crate::rules::RELAXED_HARD_RULE_PENALTY)
+    /// instead of excluding the candidate. Default: `true`.
+    pub require_same_gain: bool,
+    /// When true, a flat master must carry the same BINNING as the light session
+    /// (hard rule). When false, a missing or mismatched binning costs
+    /// [`RELAXED_HARD_RULE_PENALTY`](crate::rules::RELAXED_HARD_RULE_PENALTY)
+    /// instead of excluding the candidate. Dark and bias matching does not
+    /// compare binning at all, so this flag does not reach them. Default: `true`.
+    pub require_same_binning: bool,
+
+    // ── Age tolerance (dark and bias) ──
+    /// Maximum accepted age gap in days between the light session's observing
+    /// night and the master's. Default 365. A master beyond the limit is kept
+    /// as a candidate and reported as an out-of-tolerance `DateProximity`
+    /// mismatch; the dimension is skipped entirely when either observing night
+    /// is unknown, so a master with no date is never penalised for age.
+    pub age_limit_days: f64,
+    /// Age soft max penalty. Default 0.3.
+    pub age_max_penalty: f64,
 
     // ── UI ──
     /// When true, the assign dialog pre-fills with the top candidate (R-Prefill).
@@ -113,6 +161,10 @@ impl Default for MatchingRuleConfig {
             flat_override_penalty: 0.3,
             bias_override_penalty: 0.3,
             require_same_offset: true,
+            require_same_gain: true,
+            require_same_binning: true,
+            age_limit_days: 365.0,
+            age_max_penalty: 0.3,
             prefill_suggestion: true,
         }
     }
@@ -142,18 +194,39 @@ impl MatchingRuleConfig {
     pub fn flat_night_config(&self) -> SoftDimConfig {
         SoftDimConfig::new(self.flat_night_tolerance_nights, self.flat_night_max_penalty)
     }
+
+    /// `SoftDimConfig` for dark/bias master age tolerance.
+    #[must_use]
+    pub fn age_config(&self) -> SoftDimConfig {
+        SoftDimConfig::new(self.age_limit_days, self.age_max_penalty)
+    }
 }
 
 // ── Ranking ───────────────────────────────────────────────────────────────────
 
+/// Rank a non-finite confidence last.
+///
+/// `partial_cmp(&NaN)` returns `None`, and the `unwrap_or(Ordering::Equal)` that
+/// used to follow it left such a pair in input order, so a NaN confidence could
+/// hold the top slot — and then suppress the ambiguity warning in
+/// [`suggest_status`], because `(NaN - second).abs() < 0.05` is also false. A
+/// confidence that is not a real number cannot be compared, so it is ranked
+/// below every real one instead.
+fn confidence_key(confidence: f64) -> f64 {
+    if confidence.is_finite() {
+        confidence
+    } else {
+        f64::NEG_INFINITY
+    }
+}
+
 /// Sort `CalibrationMatch` list in-place:
-/// 1. Descending confidence.
+/// 1. Descending confidence, with non-finite confidences last.
 /// 2. Ascending `SelectionReason::priority()` (same_session > same_night > compatible_fallback).
 pub fn rank_matches(matches: &mut [CalibrationMatch]) {
     matches.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
+        confidence_key(b.confidence)
+            .total_cmp(&confidence_key(a.confidence))
             .then_with(|| a.selection_reason.priority().cmp(&b.selection_reason.priority()))
     });
 }
@@ -165,11 +238,21 @@ pub fn rank_matches(matches: &mut [CalibrationMatch]) {
 pub fn suggest_status(matches: &[CalibrationMatch]) -> &'static str {
     match matches.len() {
         0 => "no_match",
+        // Same rule as the multi-candidate arm below: a confidence that is not a
+        // real number cannot be shown to be a clear match, and having no runner-up
+        // does not make it one. Without this, a lone NaN-confidence candidate was
+        // reported as a settled match while two of them were reported ambiguous.
+        1 if !matches[0].confidence.is_finite() => "ambiguous",
         1 => "match",
         _ => {
             // Ambiguous when top two are within 0.05 confidence.
             let top = matches[0].confidence;
             let second = matches[1].confidence;
+            if !top.is_finite() || !second.is_finite() {
+                // A confidence that is not a real number cannot be shown to be
+                // clear of its runner-up, so the user decides rather than the app.
+                return "ambiguous";
+            }
             if (top - second).abs() < 0.05 {
                 "ambiguous"
             } else {
@@ -271,14 +354,116 @@ mod tests {
     }
 
     #[test]
+    fn rank_matches_puts_a_nan_confidence_last() {
+        // `CalibrationMatch::new` clamps both infinities into 0.0..=1.0, but
+        // `f64::clamp` returns NaN for a NaN input, so NaN is the one non-finite
+        // confidence that reaches the ranker.
+        let mut v = vec![
+            make_match(f64::NAN, SelectionReason::CompatibleFallback),
+            make_match(0.4, SelectionReason::CompatibleFallback),
+            make_match(0.9, SelectionReason::CompatibleFallback),
+        ];
+        rank_matches(&mut v);
+        assert!((v[0].confidence - 0.9).abs() < 1e-9, "NaN outranked 0.9");
+        assert!((v[1].confidence - 0.4).abs() < 1e-9, "NaN outranked 0.4");
+        assert!(v[2].confidence.is_nan());
+    }
+
+    #[test]
+    fn the_constructor_clamps_an_infinite_confidence_before_ranking_sees_it() {
+        assert!(
+            (make_match(f64::INFINITY, SelectionReason::SameSession).confidence - 1.0).abs() < 1e-9
+        );
+        assert!(
+            make_match(f64::NEG_INFINITY, SelectionReason::SameSession).confidence.abs() < 1e-9
+        );
+    }
+
+    #[test]
     fn suggest_status_no_match() {
         assert_eq!(suggest_status(&[]), "no_match");
+    }
+
+    #[test]
+    fn suggest_status_is_ambiguous_when_a_confidence_is_not_a_number() {
+        // A NaN top used to read as a clear winner: (NaN - 0.1).abs() < 0.05 is
+        // false, so the ambiguity warning never fired.
+        let a = make_match(f64::NAN, SelectionReason::CompatibleFallback);
+        let b = make_match(0.1, SelectionReason::CompatibleFallback);
+        assert_eq!(suggest_status(&[a, b]), "ambiguous");
+
+        let c = make_match(0.9, SelectionReason::CompatibleFallback);
+        let d = make_match(f64::NAN, SelectionReason::CompatibleFallback);
+        assert_eq!(suggest_status(&[c, d]), "ambiguous");
+    }
+
+    #[test]
+    fn penalty_rejects_a_delta_that_is_not_a_usable_number() {
+        let cfg = SoftDimConfig::new(2.0, 0.4);
+        for delta in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.5] {
+            assert_eq!(cfg.penalty(delta), None, "delta {delta} was scored as a match");
+        }
+    }
+
+    #[test]
+    fn penalty_rejects_a_tolerance_that_is_not_a_usable_number() {
+        // NaN and INFINITY used to return Some: `delta > tolerance` is false
+        // against both. The negative cases already returned None and are here to
+        // pin that they still do — the guard moved, the behaviour did not.
+        for tolerance in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
+            let cfg = SoftDimConfig::new(tolerance, 0.4);
+            assert_eq!(cfg.penalty(1.0), None, "tolerance {tolerance} admitted a delta of 1.0");
+        }
+        assert_eq!(SoftDimConfig::new(2.0, f64::NAN).penalty(1.0), None);
+    }
+
+    #[test]
+    fn penalty_boundary_is_inclusive_and_the_result_stays_within_zero_and_one() {
+        let cfg = SoftDimConfig::new(2.0, 0.4);
+        assert_eq!(cfg.penalty(0.0), Some(0.0));
+        assert_eq!(cfg.penalty(1.0), Some(0.2));
+        assert_eq!(cfg.penalty(2.0), Some(0.4));
+        assert_eq!(cfg.penalty(2.000_001), None);
+        // A max_penalty above 1.0 is a misconfiguration; the penalty is still a
+        // confidence delta, so it cannot exceed the whole confidence range.
+        assert_eq!(SoftDimConfig::new(2.0, 5.0).penalty(2.0), Some(1.0));
+        // A zero tolerance means exact-match-only, and reports no penalty.
+        assert_eq!(SoftDimConfig::new(0.0, 0.4).penalty(0.0), Some(0.0));
+        assert_eq!(SoftDimConfig::new(0.0, 0.4).penalty(0.1), None);
     }
 
     #[test]
     fn suggest_status_single_match() {
         let m = make_match(0.9, SelectionReason::CompatibleFallback);
         assert_eq!(suggest_status(&[m]), "match");
+    }
+
+    /// The lone-candidate arm had no finiteness check, so it reported a settled
+    /// match for exactly the confidence the multi-candidate arm calls ambiguous.
+    ///
+    /// NaN only: `CalibrationMatch::new` clamps confidence into `[0.0, 1.0]`, so
+    /// `INFINITY` arrives as `1.0` and `NEG_INFINITY` as `0.0` — both finite, both
+    /// legitimately a match. `f64::clamp` passes a NaN through, which is why that
+    /// one value still reaches here.
+    #[test]
+    fn suggest_status_is_ambiguous_for_a_lone_candidate_with_no_real_confidence() {
+        let m = make_match(f64::NAN, SelectionReason::CompatibleFallback);
+        assert_eq!(suggest_status(&[m]), "ambiguous");
+    }
+
+    /// Pins the clamp this file depends on: if `new` ever stops sanitizing the
+    /// infinities, the guard above needs to cover them too.
+    #[test]
+    fn an_infinite_confidence_is_clamped_before_it_reaches_suggest_status() {
+        for (input, expected) in [(f64::INFINITY, 1.0), (f64::NEG_INFINITY, 0.0)] {
+            let m = make_match(input, SelectionReason::CompatibleFallback);
+            assert!(
+                (m.confidence - expected).abs() < f64::EPSILON,
+                "{input} became {}",
+                m.confidence
+            );
+            assert_eq!(suggest_status(std::slice::from_ref(&m)), "match");
+        }
     }
 
     #[test]

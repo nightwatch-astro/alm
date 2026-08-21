@@ -13,6 +13,7 @@ import type { RowAltitude } from './planner-altitude';
 import type { ZeroImagingReason } from './planner-derive';
 import type { TargetSortCol } from './table-model';
 import { m } from '@/lib/i18n';
+import * as tt from './targets-table.css';
 
 // ── Column model (#85 + spec 044) ──────────────────────────────────────────────
 //
@@ -37,7 +38,7 @@ export const COLUMNS: Array<{
   {
     key: 'star',
     label: () => '★',
-    className: 'pv-targets-cell--center',
+    className: tt.cellCenter,
     title: () => m.targets_col_favourite(),
   },
   {
@@ -50,14 +51,14 @@ export const COLUMNS: Array<{
     key: 'maxAlt',
     label: () => m.targets_col_max_alt(),
     sort: 'maxAlt',
-    className: 'pv-targets-cell--num',
+    className: tt.cellNum,
     title: () => m.targets_table_max_alt_title(),
   },
   {
     key: 'opposition',
     label: () => m.targets_col_opposition(),
     sort: 'opposition',
-    className: 'pv-targets-cell--opposition',
+    className: tt.cellOpposition,
     title: () => m.targets_table_next_opposition(),
   },
   // task #5: abbreviated header "Lunar" fits the widened 80px column without clipping
@@ -65,13 +66,13 @@ export const COLUMNS: Array<{
     key: 'lunarDist',
     label: () => m.targets_col_lunar(),
     sort: 'lunarDist',
-    className: 'pv-targets-cell--num',
+    className: tt.cellNum,
     title: () => m.targets_col_lunar_title(),
   },
   {
     key: 'filters',
     label: () => m.common_filters(),
-    className: 'pv-targets-cell--filters',
+    className: tt.cellFilters,
     title: () => m.targets_col_filters_title(),
   },
   // task #5: abbreviated header "Img time" fits the widened 100px column without clipping
@@ -79,14 +80,14 @@ export const COLUMNS: Array<{
     key: 'imagingTime',
     label: () => m.targets_col_img_time(),
     sort: 'imagingTime',
-    className: 'pv-targets-cell--num',
+    className: tt.cellNum,
     title: () => m.targets_col_img_time_title(),
   },
   {
     key: 'sessions',
     label: () => m.common_sessions(),
     sort: 'sessions',
-    className: 'pv-targets-cell--num',
+    className: tt.cellNum,
     title: () => m.targets_col_sessions_title(),
   },
 ];
@@ -131,10 +132,7 @@ export function ImagingTimeCell({
   // so there is no reason to state — matches the row's other '—' cells.
   if (alt.needsCoordinates || alt.needsSite) {
     return (
-      <span
-        className="pv-targets-cell--muted"
-        title={m.targets_col_img_time_title()}
-      >
+      <span className={tt.cellMuted} title={m.targets_col_img_time_title()}>
         —
       </span>
     );
@@ -159,7 +157,7 @@ export function ImagingTimeCell({
         <span
           role="img"
           aria-label={title}
-          className="pv-imgtime-glyph pv-imgtime-glyph--warn"
+          className={tt.imgtimeGlyphWarn}
           data-testid="imgtime-glyph-warn"
         >
           {ZERO_REASON_GLYPH[reason]}
@@ -181,7 +179,7 @@ export function ImagingTimeCell({
         <span
           role="img"
           aria-label={title}
-          className="pv-imgtime-glyph pv-imgtime-glyph--warn"
+          className={tt.imgtimeGlyphWarn}
           data-testid="imgtime-glyph-warn"
         >
           ☾
@@ -194,10 +192,7 @@ export function ImagingTimeCell({
     // Unreachable once astronomy ran (zero always carries a reason, SC-015),
     // but never render a bare 0.
     return (
-      <span
-        className="pv-targets-cell--muted"
-        title={m.targets_col_img_time_title()}
-      >
+      <span className={tt.cellMuted} title={m.targets_col_img_time_title()}>
         —
       </span>
     );
@@ -224,7 +219,7 @@ export function ImagingTimeCell({
             role="img"
             aria-label={limitedTitle}
             title={limitedTitle}
-            className="pv-imgtime-glyph pv-imgtime-glyph--muted"
+            className={tt.imgtimeGlyphMuted}
           >
             ☾
           </span>

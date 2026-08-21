@@ -10,6 +10,7 @@ test:
     pnpm -r --if-present test
     node scripts/check-eslint-baseline.test.mjs
     node scripts/check-mock-baseline.test.mjs
+    node scripts/check-orphan-ve-modules.test.mjs
 
 # Lint and format. This recipe is the single local definition of the lint set;
 # the root package.json `lint` script delegates here so the two cannot drift.
@@ -28,6 +29,13 @@ lint:
     pnpm -r --if-present lint
     pnpm run lint:tests
     pre-commit run --all-files
+    # A tracked file under .github/ that a gitignore rule also matches stays in
+    # git and disappears from every ignore-respecting scanner. Sealed at zero.
+    bash scripts/check-github-not-ignored.sh
+    # The merge scanner's required-context list against the checked-in branch
+    # protection policy. That comparison is offline; the live-protection
+    # comparison after it skips with a NOTE when there is no network or token.
+    bash scripts/check-required-contexts.sh
 
 # Build the Rust workspace and package workspaces when present.
 build:
@@ -56,6 +64,12 @@ dead-callers:
 # comparisons must use typed ProjectState predicates instead.
 lifecycle-strings:
     bash scripts/check-lifecycle-strings.sh
+
+# Test-target declaration guard — every *.rs at the root of tests/contract/ must
+# have a [[test]] entry. Cargo auto-discovery only covers `<pkg>/tests/*.rs`, so
+# an undeclared file there is compiled never and asserts nothing.
+test-targets:
+    bash scripts/check-test-targets-declared.sh
 
 # Hot-read ratchet — fail if per-operation hot-read call sites in the inbox /
 # plan-apply / watcher paths exceed the checked-in baseline. Shrink-only:
@@ -147,17 +161,24 @@ contracts-build:
 ve-themes-check:
     pnpm --filter @astro-plan/desktop ve:themes:check
 
-# Regenerate Rust-derived JSON contract schemas and the tauri-specta
-# TypeScript bindings, then fail when either is out of sync with the
-# committed tree. Wire this into CI for spec 002 + onward.
+# Regenerate every generated artifact — Rust-derived JSON contract schemas, the
+# tauri-specta TypeScript bindings, and the json-schema-to-typescript
+# declarations — then fail when any is out of sync with the committed tree.
 check-generated:
     cargo run -q -p contracts_core --bin generate-contracts
     cargo test -q -p desktop_shell --features dev-tools --test bindings
-    git diff --exit-code specs/*/contracts/*.generated.json apps/desktop/src/bindings/
+    pnpm --filter @astro-plan/contracts build
+    bash scripts/check-generated-drift.sh
+
+# The declaration half of check-generated, without the cargo steps. For a change
+# that touches the schemas or a spec contract but no Rust.
+check-contracts-ts:
+    pnpm --filter @astro-plan/contracts build
+    bash scripts/check-generated-drift.sh packages/contracts/src/generated/
 
 # Full pre-merge gate: lint + tests + typecheck + generated-artifact drift +
 # DB/dead-caller/hot-read/lifecycle-strings boundary ratchets.
-check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings
+check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings test-targets
 
 # Placeholder fixture check hook.
 fixtures-check:

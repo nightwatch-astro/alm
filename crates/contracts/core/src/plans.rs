@@ -334,6 +334,19 @@ pub struct PlanApproveResponse {
     pub approved_at: String,
 }
 
+/// Response for `plans.reopen` (spec 017 T023).
+///
+/// A successful reopen invalidates the `approvalToken` from the preceding
+/// `plans.approve`; callers holding one must discard it.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanReopenResponse {
+    pub plan_id: String,
+    pub new_state: String,
+    pub prior_state: String,
+    pub reopened_at: String,
+}
+
 /// Response for `plans.discard` (A5).
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, Type)]
 #[serde(rename_all = "camelCase")]

@@ -631,6 +631,18 @@ export const commands = {
 	 */
 	plansApprove: (id: string) => typedError<PlanApproveResponse, ContractError_Serialize>(__TAURI_INVOKE("plans_approve", { id })),
 	/**
+	 *  `plans.reopen` — return a plan to `draft`, invalidating its approval
+	 *  (US3, T023).
+	 * 
+	 *  Any `approvalToken` held from a previous `plans.approve` stops working.
+	 * 
+	 *  # Errors
+	 * 
+	 *  Returns `Err(String)` with `"plan.not_found"` or `"plan.invalid_state"` on
+	 *  failure.
+	 */
+	plansReopen: (id: string) => typedError<PlanReopenResponse, ContractError_Serialize>(__TAURI_INVOKE("plans_reopen", { id })),
+	/**
 	 *  `plans.discard` — soft-delete a plan (US4, T030).
 	 * 
 	 *  # Errors
@@ -7683,6 +7695,19 @@ export type PlanProtectionCheckResponse_Serialize = {
 	protectedItems: ProtectedPlanItem_Serialize[],
 	/**  Counts of items that do NOT require acknowledgement. */
 	nonBlockingSummary: NonBlockingSummary,
+};
+
+/**
+ *  Response for `plans.reopen` (spec 017 T023).
+ * 
+ *  A successful reopen invalidates the `approvalToken` from the preceding
+ *  `plans.approve`; callers holding one must discard it.
+ */
+export type PlanReopenResponse = {
+	planId: string,
+	newState: string,
+	priorState: string,
+	reopenedAt: string,
 };
 
 /**  Response for `plans.resume`. */

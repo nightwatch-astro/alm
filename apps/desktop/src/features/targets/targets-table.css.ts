@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Vanilla-extract styles for TargetsTable — replaces .pv-targets-table*,
- * .pv-filter-badge*, .pv-guidance-*, .pv-moon-*, .pv-planner-*, .pv-imgtime-*
- * in targets.css. Single consumer: src/features/targets/TargetsTable.tsx.
+ * Vanilla-extract styles for TargetsTable — sole owner of the former
+ * .pv-targets-table*, .pv-targets-col--*, .pv-targets-cell*, .pv-targets-star*,
+ * .pv-filter-badge* and .pv-imgtime-glyph--* rules. The .pv-guidance-*,
+ * .pv-moon-* and .pv-planner-* families stay in targets.css.
+ *
+ * Consumers: TargetsTable.tsx, TargetsTableColumns.tsx, TargetsPage.tsx,
+ * FilterBadges.tsx.
  */
 
 import { globalStyle, style, styleVariants } from '@vanilla-extract/css';
@@ -34,6 +38,12 @@ globalStyle(`${row}:hover td`, { background: vars.surface });
 export const rowSelected = style({});
 
 globalStyle(`${rowSelected} td`, { background: vars.accentBg });
+
+export const tableBody = style({ position: 'relative' });
+
+export const spacer = style({});
+
+globalStyle(`${spacer} td`, { padding: 0, border: 'none' });
 
 export const empty = style({
   padding: uvars.sp5,
@@ -77,12 +87,24 @@ globalStyle(`${scroll} ${table} thead th:nth-child(-n + 2)`, {
   position: 'sticky',
 });
 
-globalStyle(`${scroll} ${table} thead th:nth-child(1)`, { left: 0 });
+// `left` goes on the body cells as well as the headers. `position: sticky` with
+// an `auto` inset does not stick at all, so heading-only offsets left the star
+// and designation cells scrolling out from under their own pinned headers
+// whenever the table was narrower than its 1000px minimum.
+globalStyle(
+  `${scroll} ${table} thead th:nth-child(1), ${scroll} ${table} ${row} > td:nth-child(1)`,
+  { left: 0 },
+);
 
-globalStyle(`${scroll} ${table} thead th:nth-child(2)`, {
-  left: 'var(--pv-targets-star-w)',
-  boxShadow: `1px 0 0 ${vars.borderSubtle}`,
-});
+globalStyle(
+  `${scroll} ${table} thead th:nth-child(2), ${scroll} ${table} ${row} > td:nth-child(2)`,
+  {
+    left: 'var(--pv-targets-star-w)',
+    // Seam marking: a box-shadow tracks the sticky cell, where a border-right
+    // detaches from it while scrolling.
+    boxShadow: `1px 0 0 ${vars.borderSubtle}`,
+  },
+);
 
 globalStyle(`${scroll} ${table} ${row} > td:nth-child(-n + 2)`, {
   position: 'sticky',
@@ -104,7 +126,12 @@ globalStyle(`${scroll} ${table} ${rowSelected} > td:nth-child(-n + 2)`, {
 
 export const page = style({ display: 'contents' });
 
-globalStyle(`${page} .pv-listpage__main`, {
+// Keyed on the test id, not a class: ListPageLayout's main column is a
+// vanilla-extract style whose hashed class name is unaddressable from here.
+// This rule establishes the containing block for the absolutely-positioned
+// `wrap` below — without it the table escapes to the viewport and overlays the
+// page top bar.
+globalStyle(`${page} [data-testid='listpage-main']`, {
   overflow: 'hidden',
   position: 'relative',
 });
@@ -189,25 +216,6 @@ export const star = style({
 
 export const starActive = style({ color: vars.accent });
 
-// ── "My Targets" empty state ──────────────────────────────────────────────────
-
-export const myEmpty = style({
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: uvars.sp2,
-  padding: `${uvars.sp5} ${uvars.sp4}`,
-  color: vars.textMuted,
-  fontSize: uvars.textSm,
-  textAlign: 'center',
-});
-
-export const myEmptyIcon = style({
-  fontSize: uvars.text2xl,
-  color: vars.textFaint,
-});
-
 // ── Filter badges ─────────────────────────────────────────────────────────────
 
 export const filterBadges = style({
@@ -217,7 +225,7 @@ export const filterBadges = style({
   alignItems: 'center',
 });
 
-const badgeBase = style({
+export const filterBadge = style({
   display: 'inline-block',
   padding: `0 ${uvars.sp1}`,
   borderRadius: uvars.radiusSm,
@@ -229,47 +237,40 @@ const badgeBase = style({
   whiteSpace: 'nowrap',
 });
 
-export const filterBadgeVariants = styleVariants({
-  broadband: [
-    badgeBase,
-    {
-      background: `color-mix(in srgb, ${vars.accent} 12%, transparent)`,
-      color: vars.accent,
-      borderColor: `color-mix(in srgb, ${vars.accent} 30%, transparent)`,
-    },
-  ],
-  narrowband: [
-    badgeBase,
-    {
-      background: `color-mix(in srgb, ${vars.textMuted} 12%, transparent)`,
-      color: vars.textSecondary,
-      borderColor: `color-mix(in srgb, ${vars.textMuted} 30%, transparent)`,
-    },
-  ],
-  notViable: [
-    badgeBase,
-    {
-      background: 'transparent',
-      color: vars.textMuted,
-      borderColor: vars.rule,
-      opacity: 0.55,
-    },
-  ],
-  viable: [
-    badgeBase,
-    {
-      boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${vars.ok} 25%, transparent)`,
-    },
-  ],
-  unknown: [
-    badgeBase,
-    {
-      background: vars.chip,
-      color: vars.textSecondary,
-      borderColor: vars.rule,
-      padding: `0 ${uvars.sp2}`,
-    },
-  ],
+/**
+ * Broadband/narrowband tier tint. Composed with `filterBadge` plus one of
+ * `filterBadgeViable`/`filterBadgeNotViable`, so these cannot be a
+ * `styleVariants` set covering all five former BEM modifiers.
+ */
+export const filterBadgeTier = styleVariants({
+  broadband: {
+    background: `color-mix(in srgb, ${vars.accent} 12%, transparent)`,
+    color: vars.accent,
+    borderColor: `color-mix(in srgb, ${vars.accent} 30%, transparent)`,
+  },
+  narrowband: {
+    background: `color-mix(in srgb, ${vars.textMuted} 12%, transparent)`,
+    color: vars.textSecondary,
+    borderColor: `color-mix(in srgb, ${vars.textMuted} 30%, transparent)`,
+  },
+});
+
+export const filterBadgeNotViable = style({
+  background: 'transparent',
+  color: vars.textMuted,
+  borderColor: vars.rule,
+  opacity: 0.55,
+});
+
+export const filterBadgeViable = style({
+  boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${vars.ok} 25%, transparent)`,
+});
+
+export const filterBadgeUnknown = style({
+  background: vars.chip,
+  color: vars.textSecondary,
+  borderColor: vars.rule,
+  padding: `0 ${uvars.sp2}`,
 });
 
 // ── Planner widgets ───────────────────────────────────────────────────────────
