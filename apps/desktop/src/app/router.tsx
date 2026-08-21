@@ -24,6 +24,7 @@ import {
   PROJECT_STATES,
   INVENTORY_FRAME_FILTERS,
 } from '@/lib/route-contract';
+import { DEV_TOOLS_ENABLED } from '@/dev/devToolsEnabled';
 
 /** String `selected` redirect for routes where IDs are UUIDs (e.g. sessions). */
 function selectedSearchString(rawId: string): { selected?: string } {
@@ -223,7 +224,6 @@ const settingsPaneRoute = createRoute({
 // Release builds set VITE_DEV_TOOLS="false" (default in vite.config.ts),
 // so this import and the entire @/dev/ContractsPage chunk are tree-shaken
 // out of the production bundle (T072 / FR-031 / SC-009).
-const DEV_TOOLS_ENABLED = import.meta.env.VITE_DEV_TOOLS === 'true';
 
 const devContractsRoute = DEV_TOOLS_ENABLED
   ? createRoute({
