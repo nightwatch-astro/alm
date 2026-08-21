@@ -144,11 +144,8 @@ pub async fn run_apply(pool: &SqlitePool, params: ApplyParams<'_>) -> DbResult<S
         &now,
     )
     .await;
-    if let Err(e) = apply_result {
-        rollback(&mut conn).await;
-        return Err(e);
-    }
-    commit(&mut conn).await?;
+    tx_try!(conn, apply_result);
+    tx_try!(conn, commit(&mut conn).await);
     drop(conn);
 
     // applying state_version is now operation_state_version + 1
