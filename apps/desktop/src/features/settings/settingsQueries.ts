@@ -4,14 +4,10 @@
 /**
  * TanStack Query options for the generic `settings.get` scope reads.
  *
- * `staleTime: Infinity` is safe only because every write path through
- * `updateSettings` / `settingsRestoreDefaults` invalidates
- * `queryKeys.settings.all()`. A writer that calls `commands.settingsUpdate`
- * directly (see `data/theme.ts`, `data/locale.tsx`, `data/persisted-state.ts`,
- * `shared/observing-sites/site-store.ts`, `shared/planner/*-settings.ts`)
- * bypasses that invalidation — those modules own scopes no `useQuery` caller
- * reads, and a new caller for one of their scopes must add invalidation there
- * first.
+ * `staleTime: Infinity` is safe only because every write invalidates the scope
+ * it wrote: `data/settingsWrite.ts` is the one `settings.update` path, and
+ * `settingsRestoreDefaults` invalidates `queryKeys.settings.all()`.
+ * `data/settingsWrite.chokepoint.test.ts` is the gate on that.
  */
 
 import { queryOptions } from '@tanstack/react-query';

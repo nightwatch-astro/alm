@@ -21,6 +21,12 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { m } from '@/lib/i18n';
+import {
+  SITE_LAT_DEG_MAX,
+  SITE_LAT_DEG_MIN,
+  SITE_LON_DEG_MAX,
+  SITE_LON_DEG_MIN,
+} from './observer-site';
 
 // OpenStreetMap tiles — no API key required, same as the prior tile provider.
 const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -36,7 +42,12 @@ const PICKED_ZOOM = 6;
 // (validation happens on blur/submit). Guard here so we never hand invalid
 // coordinates to Leaflet, which silently wraps longitude but clamps latitude.
 function isValidLatLon(lat: number, lon: number): boolean {
-  return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+  return (
+    lat >= SITE_LAT_DEG_MIN &&
+    lat <= SITE_LAT_DEG_MAX &&
+    lon >= SITE_LON_DEG_MIN &&
+    lon <= SITE_LON_DEG_MAX
+  );
 }
 
 // Fix Leaflet's bundled icon paths, which break under Vite's content-hashed

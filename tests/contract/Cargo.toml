@@ -61,6 +61,10 @@ path = "plan_state_sql_parity.rs"
 name = "contract_jsonschema_roundtrip"
 path = "contract_jsonschema_roundtrip.rs"
 
+[[test]]
+name = "spec062_portable_contracts"
+path = "spec062_portable_contracts.rs"
+
 [dev-dependencies]
 audit_types = { path = "../../crates/audit-types" }
 contracts_core = { path = "../../crates/contracts/core" }
