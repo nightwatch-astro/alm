@@ -128,6 +128,14 @@ describe('hydrateThemeFromSettings — reconcile the boot cache from the setting
     expect(document.documentElement.getAttribute('data-theme')).toBe(
       'espresso-dark',
     );
+
+    // Adopting the DB value calls `setThemeChoice`, whose write-through is
+    // fire-and-forget. Settle it here: left in flight it lands in the next
+    // test, after its `mockReset`, and fails that test's assertion instead.
+    await waitForCall(settingsUpdateMock);
+    expect(settingsUpdateMock).toHaveBeenCalledWith('general', {
+      theme: 'espresso-dark',
+    });
   });
 
   it('leaves the cache untouched when the DB already agrees (no redundant write-back)', async () => {

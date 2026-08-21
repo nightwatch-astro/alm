@@ -76,7 +76,7 @@ src/features/settings/SourceViewStrategy.tsx	60	alm/require-root-testid
 src/features/settings/SourceViews.tsx	97	alm/require-root-testid
 src/features/setup/SetupPage.tsx	48	alm/require-root-testid
 src/features/setup/SetupWizard.tsx	244	alm/require-root-testid
-src/features/setup/steps/StepCatalogs.tsx	168	alm/require-root-testid
+src/features/setup/steps/StepCatalogs.tsx	171	alm/require-root-testid
 src/features/setup/steps/StepConfirm.tsx	67	alm/require-root-testid
 src/features/setup/steps/StepLanguage.tsx	26	alm/require-root-testid
 src/features/setup/steps/StepSite.tsx	145	alm/require-root-testid

@@ -19,6 +19,7 @@
 import { useSyncExternalStore } from 'react';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
+import { updateSettings } from '@/data/settingsWrite';
 import {
   BANDS,
   DEFAULT_MOON_AVOIDANCE,
@@ -142,11 +143,10 @@ export async function saveGuidanceParams(
   current = clean;
   emit();
   try {
-    unwrap(
-      await commands.settingsUpdate(PLANNER_SCOPE, {
-        [MOON_AVOIDANCE_KEY]: clean,
-      }),
-    );
+    await updateSettings({
+      scope: PLANNER_SCOPE,
+      values: { [MOON_AVOIDANCE_KEY]: clean },
+    });
   } catch (err) {
     if (writeGen === gen) {
       current = prev;
