@@ -4,7 +4,9 @@
 //! Dark frame matching rule (spec 007 US1, FR-003).
 //!
 //! Hard dimensions: `gain`, `offset` — exact match required.
-//! Soft dimensions: `exposure` ±5% (default), `temperature` ±2°C (default).
+//! Soft dimensions: `exposure` ±5% (default), `temperature` ±2°C (default),
+//! `date_proximity` (master age) ±365 days (default), the last evaluated only
+//! when both the session and the master carry an observing night.
 //!
 //! Missing temperature metadata falls back to gain+offset+exposure matching
 //! with reduced confidence (metadata_missing penalty per spec edge-case).
@@ -128,6 +130,15 @@ pub fn evaluate(
             confidence -= temp_cfg.max_penalty;
         }
     }
+
+    // ── Soft rule: master age (±age_limit_days) ───────────────────────────────
+    confidence -= crate::rules::apply_age_rule(
+        session.observing_night_date.as_deref(),
+        master.observing_night_date.as_deref(),
+        config,
+        &mut matched,
+        &mut mismatched,
+    );
 
     Some(CalibrationMatch::new(
         session.id.clone(),
@@ -404,5 +415,65 @@ mod tests {
         for dim in &["gain", "offset", "exposure", "temperature"] {
             assert!(all_dims.contains(dim), "missing dimension: {dim}");
         }
+    }
+
+    fn dated(night: &str) -> (SessionInfo, MasterInfo) {
+        let mut s = session(100.0, 50.0, 300.0, -10.0);
+        s.observing_night_date = Some("2026-01-01".to_owned());
+        let mut m = master(100.0, 50.0, 300.0, -10.0);
+        m.observing_night_date = Some(night.to_owned());
+        (s, m)
+    }
+
+    fn age_dim_state(r: &CalibrationMatch) -> (bool, bool) {
+        (
+            r.dimensions_matched.iter().any(|d| d.dimension == "date_proximity"),
+            r.dimensions_mismatched.iter().any(|d| d.dimension == "date_proximity"),
+        )
+    }
+
+    #[test]
+    fn aging_limit_days_changes_the_match_outcome() {
+        // ~6 years older than the session's observing night.
+        let (s, m) = dated("2020-01-01");
+
+        let strict = evaluate(&s, &m, &MatchingRuleConfig::default())
+            .expect("an over-age master stays a candidate");
+        assert_eq!(
+            age_dim_state(&strict),
+            (false, true),
+            "default 365-day limit should report the master as out of age tolerance"
+        );
+
+        let relaxed = MatchingRuleConfig { age_limit_days: 3000.0, ..Default::default() };
+        let lenient = evaluate(&s, &m, &relaxed).expect("relaxed limit keeps the candidate");
+        assert_eq!(
+            age_dim_state(&lenient),
+            (true, false),
+            "a limit above the gap should accept the age within tolerance"
+        );
+        assert!(
+            lenient.confidence > strict.confidence,
+            "raising the limit should raise confidence: {} vs {}",
+            lenient.confidence,
+            strict.confidence
+        );
+    }
+
+    #[test]
+    fn an_unknown_observing_night_is_not_penalised_as_age() {
+        // `master()` leaves both observing nights unset.
+        let r = evaluate(
+            &session(100.0, 50.0, 300.0, -10.0),
+            &master(100.0, 50.0, 300.0, -10.0),
+            &MatchingRuleConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            age_dim_state(&r),
+            (false, false),
+            "age must be skipped, not scored, when an observing night is missing"
+        );
+        assert!((r.confidence - 1.0).abs() < 1e-9, "confidence={}", r.confidence);
     }
 }

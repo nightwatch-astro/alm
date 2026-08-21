@@ -118,6 +118,16 @@ pub struct MatchingRuleConfig {
     /// original strict behaviour).
     pub require_same_offset: bool,
 
+    // ── Age tolerance (dark and bias) ──
+    /// Maximum accepted age gap in days between the light session's observing
+    /// night and the master's. Default 365. A master beyond the limit is kept
+    /// as a candidate and reported as an out-of-tolerance `DateProximity`
+    /// mismatch; the dimension is skipped entirely when either observing night
+    /// is unknown, so a master with no date is never penalised for age.
+    pub age_limit_days: f64,
+    /// Age soft max penalty. Default 0.3.
+    pub age_max_penalty: f64,
+
     // ── UI ──
     /// When true, the assign dialog pre-fills with the top candidate (R-Prefill).
     pub prefill_suggestion: bool,
@@ -138,6 +148,8 @@ impl Default for MatchingRuleConfig {
             flat_override_penalty: 0.3,
             bias_override_penalty: 0.3,
             require_same_offset: true,
+            age_limit_days: 365.0,
+            age_max_penalty: 0.3,
             prefill_suggestion: true,
         }
     }
@@ -166,6 +178,12 @@ impl MatchingRuleConfig {
     #[must_use]
     pub fn flat_night_config(&self) -> SoftDimConfig {
         SoftDimConfig::new(self.flat_night_tolerance_nights, self.flat_night_max_penalty)
+    }
+
+    /// `SoftDimConfig` for dark/bias master age tolerance.
+    #[must_use]
+    pub fn age_config(&self) -> SoftDimConfig {
+        SoftDimConfig::new(self.age_limit_days, self.age_max_penalty)
     }
 }
 

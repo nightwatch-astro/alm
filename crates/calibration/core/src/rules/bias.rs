@@ -5,9 +5,12 @@
 #![allow(clippy::collapsible_match, clippy::single_match_else, clippy::must_use_candidate)]
 //!
 //! Hard dimensions: `gain`, `offset` — exact match required.
-//! No soft dimensions: exposure and temperature are explicitly excluded.
+//! Exposure and temperature are explicitly excluded from bias matching.
+//! Soft dimension: `date_proximity` (master age), evaluated only when both the
+//! session and the master carry an observing night.
 //!
-//! `dimensions_matched ∪ dimensions_mismatched` contains only `gain` and `offset`.
+//! `dimensions_matched ∪ dimensions_mismatched` therefore contains `gain` and
+//! `offset`, plus `date_proximity` when both observing nights are known.
 
 use crate::candidate::{CalibrationMatch, MatchedDim, MismatchedDim, SelectionReason};
 use crate::ranking::MatchingRuleConfig;
@@ -61,6 +64,15 @@ pub fn evaluate(
             confidence -= 0.2;
         }
     }
+
+    // ── Soft rule: master age (±age_limit_days) ───────────────────────────────
+    confidence -= crate::rules::apply_age_rule(
+        session.observing_night_date.as_deref(),
+        master.observing_night_date.as_deref(),
+        config,
+        &mut matched,
+        &mut mismatched,
+    );
 
     Some(CalibrationMatch::new(
         session.id.clone(),
@@ -238,5 +250,33 @@ mod tests {
         m.temp_c = Some(50.0);
         let r = evaluate(&session(100.0, 50.0), &m, &MatchingRuleConfig::default());
         assert!(r.is_some(), "exposure/temp differences should not affect bias matching");
+    }
+
+    #[test]
+    fn aging_limit_days_changes_the_match_outcome() {
+        let mut s = session(100.0, 50.0);
+        s.observing_night_date = Some("2026-01-01".to_owned());
+        let mut m = bias_master(100.0, 50.0);
+        m.observing_night_date = Some("2020-01-01".to_owned());
+
+        let strict = evaluate(&s, &m, &MatchingRuleConfig::default())
+            .expect("an over-age bias stays a candidate");
+        assert!(
+            strict.dimensions_mismatched.iter().any(|d| d.dimension == "date_proximity"),
+            "default 365-day limit should report the bias as out of age tolerance"
+        );
+
+        let relaxed = MatchingRuleConfig { age_limit_days: 3000.0, ..Default::default() };
+        let lenient = evaluate(&s, &m, &relaxed).expect("relaxed limit keeps the candidate");
+        assert!(
+            lenient.dimensions_mismatched.is_empty(),
+            "a limit above the gap should leave no mismatched dimension"
+        );
+        assert!(
+            lenient.confidence > strict.confidence,
+            "raising the limit should raise confidence: {} vs {}",
+            lenient.confidence,
+            strict.confidence
+        );
     }
 }

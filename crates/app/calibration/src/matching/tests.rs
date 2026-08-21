@@ -767,3 +767,47 @@ async fn an_out_of_range_persisted_penalty_falls_back_to_the_engine_default() {
         );
     }
 }
+
+/// `aging_limit_days` is the second dead-config field on this row
+/// (astro-plan-rcvr): editable in Settings > Calibration Matching, read by no
+/// rule. Asserting against `MatchingRuleConfig` rather than a round-trip is
+/// what distinguishes "persisted" from "consumed".
+#[tokio::test]
+async fn load_config_reads_aging_limit_days_from_tolerances_table() {
+    let _guard = lock_cache_tests().await;
+    let db = test_db().await;
+
+    // Neither the column default (365) nor any engine default.
+    let mut row =
+        persistence_calibration::repositories::calibration_tolerances::CalibrationTolerancesRow {
+            temperature_tolerance_c: 5.0,
+            exposure_tolerance_s: 2.0,
+            aging_limit_days: 30,
+            require_same_camera: true,
+            require_same_gain: true,
+            require_same_binning: true,
+            require_same_offset: true,
+        };
+    persistence_calibration::repositories::calibration_tolerances::update(db.pool(), &row)
+        .await
+        .unwrap();
+    caches::invalidate_calibration_config();
+    let config = load_config(db.pool()).await;
+    assert!(
+        (config.age_limit_days - 30.0).abs() < f64::EPSILON,
+        "the Settings age limit must reach MatchingRuleConfig; got {}",
+        config.age_limit_days
+    );
+
+    row.aging_limit_days = 0;
+    persistence_calibration::repositories::calibration_tolerances::update(db.pool(), &row)
+        .await
+        .unwrap();
+    caches::invalidate_calibration_config();
+    let config = load_config(db.pool()).await;
+    assert!(
+        (config.age_limit_days - 365.0).abs() < f64::EPSILON,
+        "a zero limit must fall back to the engine default; got {}",
+        config.age_limit_days
+    );
+}

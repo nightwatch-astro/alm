@@ -201,6 +201,21 @@ async fn load_config_from_db(pool: &SqlitePool) -> MatchingRuleConfig {
         if let Some(n) = usable_tolerance(row.temperature_tolerance_c) {
             config.dark_temp_tolerance_c = n;
         }
+
+        // "Dark / bias age tolerance" input. Same dead-config class as the
+        // temperature field above: persisted and editable, read by no rule
+        // (astro-plan-rcvr). Zero and negative limits are rejected rather than
+        // honoured — a zero limit would refuse every master whose observing
+        // night differs at all, which no user picking "0" is asking for.
+        if row.aging_limit_days > 0 {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "day counts are far below f64's exact-integer range"
+            )]
+            {
+                config.age_limit_days = row.aging_limit_days as f64;
+            }
+        }
     }
 
     // Read AFTER the row, so this key still wins where both are set. It is the
