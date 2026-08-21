@@ -57,8 +57,7 @@ specs/052-simbad-caching-dual-lookup-cone-search/
 ├── plan.md              # This file
 ├── research.md          # Phase 0 output (decisions + OQ-1/OQ-2)
 ├── data-model.md        # Phase 1 output
-├── contracts/           # Phase 1 output (operations.md — P3 cone-search)
-└── tasks.md             # Phase 2 output
+└── contracts/           # Phase 1 output (operations.md — P3 cone-search)
 ```
 
 ### Source Code (repository root)
