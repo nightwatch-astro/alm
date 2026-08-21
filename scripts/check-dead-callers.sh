@@ -267,17 +267,6 @@ collect_dead() {
     ' "$corpus" | sort
 }
 
-# doc comment, one called only AFTER an inline test module (guards the
-# brace-scope handling, since skipping to end-of-file instead would report it
-# dead), two out-of-line `#[cfg(test)] mod name;` cases — a flat-file sibling
-# and a `mod.rs`-directory sibling with its own nested submodule (guards
-# collect_test_mod_exclusions, and the directory-form exclusion being swept
-# recursively) — and a `mod.rs`-style split: a single-line `pub use ... as`, a
-# multi-line grouped `pub use { ... };` re-exporting two otherwise-dead names,
-# and a re-export of a genuinely live name — the last guards against the fix
-# over-stripping and hiding a real caller. A detector that reports nothing, or
-# that reports everything — the vacuous-green failure this guard exists to
-# prevent — fails here.
 # Require every NEWLY baselined name to carry a tracking reference in the
 # comment block directly above it.
 #
@@ -494,6 +483,18 @@ FIX
     echo "OK: tracking self-test passed — group blocks carry, grandfathering holds, lost references fail."
 }
 
+# Fixture corpus: a live fn, a doc-comment-only fn, a test-only fn, one called
+# only AFTER an inline test module (guards the
+# brace-scope handling, since skipping to end-of-file instead would report it
+# dead), two out-of-line `#[cfg(test)] mod name;` cases — a flat-file sibling
+# and a `mod.rs`-directory sibling with its own nested submodule (guards
+# collect_test_mod_exclusions, and the directory-form exclusion being swept
+# recursively) — and a `mod.rs`-style split: a single-line `pub use ... as`, a
+# multi-line grouped `pub use { ... };` re-exporting two otherwise-dead names,
+# and a re-export of a genuinely live name — the last guards against the fix
+# over-stripping and hiding a real caller. A detector that reports nothing, or
+# that reports everything — the vacuous-green failure this guard exists to
+# prevent — fails here.
 self_test() {
     local tmp
     tmp="$(mktemp -d)"
@@ -634,6 +635,11 @@ HDR
 
     self_test >/dev/null || {
         echo "FAIL: dead-caller detector self-test failed; results are not trustworthy." >&2
+        exit 1
+    }
+
+    tracking_self_test >/dev/null || {
+        echo "FAIL: tracking self-test failed; the tracking check's results are not trustworthy." >&2
         exit 1
     }
 
