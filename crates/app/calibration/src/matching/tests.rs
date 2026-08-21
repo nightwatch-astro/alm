@@ -811,3 +811,96 @@ async fn load_config_reads_aging_limit_days_from_tolerances_table() {
         config.age_limit_days
     );
 }
+
+/// astro-plan-rcvr: the "Gain match required" and "Binning match required"
+/// toggles must change which masters the engine keeps, not just what the row
+/// stores. Both were persisted and read by no rule.
+///
+/// The assertion runs the rules with the loaded config so a value that reaches
+/// `MatchingRuleConfig` but is ignored by the rules still fails.
+#[tokio::test]
+async fn load_config_relaxes_gain_and_binning_hard_rules_from_tolerances_table() {
+    let _guard = lock_cache_tests().await;
+    let db = test_db().await;
+
+    let row =
+        persistence_calibration::repositories::calibration_tolerances::CalibrationTolerancesRow {
+            temperature_tolerance_c: 5.0,
+            exposure_tolerance_s: 2.0,
+            aging_limit_days: 365,
+            require_same_camera: true,
+            require_same_gain: false,
+            require_same_binning: false,
+            require_same_offset: true,
+        };
+    persistence_calibration::repositories::calibration_tolerances::update(db.pool(), &row)
+        .await
+        .unwrap();
+    caches::invalidate_calibration_config();
+    let config = load_config(db.pool()).await;
+
+    let session = calibration_core::SessionInfo {
+        id: "ses-rcvr".to_owned(),
+        session_type: "light".to_owned(),
+        gain: Some(100.0),
+        offset: Some(50.0),
+        exposure_s: Some(300.0),
+        temp_c: Some(-10.0),
+        filter: Some("Ha".to_owned()),
+        rotation_deg: Some(0.0),
+        binning: Some("1x1".to_owned()),
+        optic_train: Some("train-a".to_owned()),
+        ..Default::default()
+    };
+    let dark = calibration_core::MasterInfo {
+        id: "m-dark-rcvr".to_owned(),
+        kind: calibration_core::CalibrationKind::Dark,
+        gain: Some(200.0),
+        offset: Some(50.0),
+        exposure_s: Some(300.0),
+        temp_c: Some(-10.0),
+        filter: None,
+        rotation_deg: None,
+        binning: None,
+        optic_train: None,
+        source_session_id: None,
+        observing_night_date: None,
+    };
+    let flat = calibration_core::MasterInfo {
+        id: "m-flat-rcvr".to_owned(),
+        kind: calibration_core::CalibrationKind::Flat,
+        gain: Some(100.0),
+        offset: None,
+        exposure_s: None,
+        temp_c: None,
+        filter: Some("Ha".to_owned()),
+        rotation_deg: Some(0.0),
+        binning: Some("2x2".to_owned()),
+        optic_train: Some("train-a".to_owned()),
+        source_session_id: None,
+        observing_night_date: None,
+    };
+
+    let strict = calibration_core::ranking::MatchingRuleConfig::default();
+    assert!(
+        calibration_core::rules::dark::evaluate(&session, &dark, &strict).is_none(),
+        "the gain mismatch must be excluded while the toggle is set"
+    );
+    assert!(
+        calibration_core::rules::dark::evaluate(&session, &dark, &config).is_some(),
+        "clearing Gain match required must keep the mismatched dark"
+    );
+    assert!(
+        calibration_core::rules::flat::evaluate(&session, &flat, &strict).is_none(),
+        "the binning mismatch must be excluded while the toggle is set"
+    );
+    assert!(
+        calibration_core::rules::flat::evaluate(&session, &flat, &config).is_some(),
+        "clearing Binning match required must keep the mismatched flat"
+    );
+
+    // The config cache is process-global: leaving a relaxed config in it makes
+    // any later test that reads `load_config` without priming its own row see
+    // relaxed hard rules (#988).
+    caches::invalidate_calibration_config();
+}

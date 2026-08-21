@@ -3,7 +3,9 @@
 
 //! Dark frame matching rule (spec 007 US1, FR-003).
 //!
-//! Hard dimensions: `gain`, `offset` — exact match required.
+//! Hard dimensions: `gain`, `offset` — exact match required unless the user
+//! clears the corresponding Settings toggle, which turns the dimension into a
+//! soft penalty instead of an exclusion.
 //! Soft dimensions: `exposure` ±5% (default), `temperature` ±2°C (default),
 //! `date_proximity` (master age) ±365 days (default), the last evaluated only
 //! when both the session and the master carry an observing night.
@@ -31,42 +33,23 @@ pub fn evaluate(
     let mut mismatched: Vec<MismatchedDim> = Vec::new();
     let mut confidence = 1.0_f64;
 
-    // ── Hard rule: gain ───────────────────────────────────────────────────────
-    if crate::rules::hard_rule_numeric(session.gain, master.gain) {
-        matched.push(MatchedDim::exact(Dimension::Gain));
-    } else {
-        // Hard rule violation, or missing metadata on either side — exclude.
-        return None;
-    }
-
-    // ── Hard rule: offset (controlled by config.require_same_offset) ─────────
-    //
-    // When `require_same_offset` is true (default) the offset must match
-    // exactly, mirroring the unconditional gain hard-rule above. When false a
-    // missing or mismatched offset is reported as a metadata-missing soft entry
-    // and reduces confidence rather than excluding the candidate entirely.
-    match (session.offset, master.offset) {
-        (Some(so), Some(mo)) => {
-            if (so - mo).abs() < crate::rules::HARD_RULE_EPSILON {
-                matched.push(MatchedDim::exact(Dimension::Offset));
-            } else if config.require_same_offset {
-                return None;
-            } else {
-                // Offset differs but policy allows it — report as soft mismatch.
-                mismatched
-                    .push(MismatchedDim::out_of_tolerance(Dimension::Offset, (so - mo).abs()));
-                confidence -= 0.2; // fixed soft penalty when offset relaxed
-            }
-        }
-        _ => {
-            if config.require_same_offset {
-                return None;
-            }
-            // Missing offset with relaxed policy — soft metadata-missing entry.
-            mismatched.push(MismatchedDim::metadata_missing(Dimension::Offset));
-            confidence -= 0.2;
-        }
-    }
+    // ── Hard rules: gain and offset (relaxable per config) ────────────────────
+    confidence -= crate::rules::relaxable_numeric(
+        Dimension::Gain,
+        session.gain,
+        master.gain,
+        config.require_same_gain,
+        &mut matched,
+        &mut mismatched,
+    )?;
+    confidence -= crate::rules::relaxable_numeric(
+        Dimension::Offset,
+        session.offset,
+        master.offset,
+        config.require_same_offset,
+        &mut matched,
+        &mut mismatched,
+    )?;
 
     // ── Soft rule: exposure (±tolerance%) ─────────────────────────────────────
     let exp_cfg = config.dark_exposure_config();
@@ -458,6 +441,24 @@ mod tests {
             lenient.confidence,
             strict.confidence
         );
+    }
+
+    #[test]
+    fn require_same_gain_changes_the_match_outcome() {
+        let s = session(100.0, 50.0, 300.0, -10.0);
+        let m = master(200.0, 50.0, 300.0, -10.0);
+        assert!(
+            evaluate(&s, &m, &MatchingRuleConfig::default()).is_none(),
+            "a gain mismatch must exclude the master while the toggle is set"
+        );
+
+        let relaxed = MatchingRuleConfig { require_same_gain: false, ..Default::default() };
+        let r = evaluate(&s, &m, &relaxed).expect("clearing the toggle keeps the master");
+        assert!(
+            r.dimensions_mismatched.iter().any(|d| d.dimension == "gain"),
+            "the relaxed gain must be reported as a mismatch"
+        );
+        assert!(r.confidence < 1.0, "a relaxed gain must cost confidence: {}", r.confidence);
     }
 
     #[test]

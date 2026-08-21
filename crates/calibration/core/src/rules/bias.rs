@@ -4,7 +4,9 @@
 //! Bias frame matching rule (spec 007 US3, FR-005).
 #![allow(clippy::collapsible_match, clippy::single_match_else, clippy::must_use_candidate)]
 //!
-//! Hard dimensions: `gain`, `offset` — exact match required.
+//! Hard dimensions: `gain`, `offset` — exact match required unless the user
+//! clears the corresponding Settings toggle, which turns the dimension into a
+//! soft penalty instead of an exclusion.
 //! Exposure and temperature are explicitly excluded from bias matching.
 //! Soft dimension: `date_proximity` (master age), evaluated only when both the
 //! session and the master carry an observing night.
@@ -34,36 +36,23 @@ pub fn evaluate(
     let mut mismatched: Vec<MismatchedDim> = Vec::new();
     let mut confidence = 1.0_f64;
 
-    // ── Hard rule: gain ───────────────────────────────────────────────────────
-    if crate::rules::hard_rule_numeric(session.gain, master.gain) {
-        matched.push(MatchedDim::exact(Dimension::Gain));
-    } else {
-        return None;
-    }
-
-    // ── Hard rule: offset (controlled by config.require_same_offset) ─────────
-    //
-    // Mirrors the dark rule: strict by default, relaxable via policy flag.
-    match (session.offset, master.offset) {
-        (Some(so), Some(mo)) => {
-            if (so - mo).abs() < crate::rules::HARD_RULE_EPSILON {
-                matched.push(MatchedDim::exact(Dimension::Offset));
-            } else if config.require_same_offset {
-                return None;
-            } else {
-                mismatched
-                    .push(MismatchedDim::out_of_tolerance(Dimension::Offset, (so - mo).abs()));
-                confidence -= 0.2;
-            }
-        }
-        _ => {
-            if config.require_same_offset {
-                return None;
-            }
-            mismatched.push(MismatchedDim::metadata_missing(Dimension::Offset));
-            confidence -= 0.2;
-        }
-    }
+    // ── Hard rules: gain and offset (relaxable per config) ────────────────────
+    confidence -= crate::rules::relaxable_numeric(
+        Dimension::Gain,
+        session.gain,
+        master.gain,
+        config.require_same_gain,
+        &mut matched,
+        &mut mismatched,
+    )?;
+    confidence -= crate::rules::relaxable_numeric(
+        Dimension::Offset,
+        session.offset,
+        master.offset,
+        config.require_same_offset,
+        &mut matched,
+        &mut mismatched,
+    )?;
 
     // ── Soft rule: master age (±age_limit_days) ───────────────────────────────
     confidence -= crate::rules::apply_age_rule(
@@ -250,6 +239,24 @@ mod tests {
         m.temp_c = Some(50.0);
         let r = evaluate(&session(100.0, 50.0), &m, &MatchingRuleConfig::default());
         assert!(r.is_some(), "exposure/temp differences should not affect bias matching");
+    }
+
+    #[test]
+    fn require_same_gain_changes_the_match_outcome() {
+        let s = session(100.0, 50.0);
+        let m = bias_master(200.0, 50.0);
+        assert!(
+            evaluate(&s, &m, &MatchingRuleConfig::default()).is_none(),
+            "a gain mismatch must exclude the bias while the toggle is set"
+        );
+
+        let relaxed = MatchingRuleConfig { require_same_gain: false, ..Default::default() };
+        let r = evaluate(&s, &m, &relaxed).expect("clearing the toggle keeps the bias");
+        assert!(
+            r.dimensions_mismatched.iter().any(|d| d.dimension == "gain"),
+            "the relaxed gain must be reported as a mismatch"
+        );
+        assert!(r.confidence < 1.0, "a relaxed gain must cost confidence: {}", r.confidence);
     }
 
     #[test]

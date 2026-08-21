@@ -33,6 +33,74 @@ pub fn hard_rule_string(session_val: Option<&str>, master_val: Option<&str>) -> 
     matches!((session_val, master_val), (Some(s), Some(m)) if s == m)
 }
 
+/// Confidence penalty applied when a relaxed hard rule lets a mismatched or
+/// missing dimension through. Shared by gain, offset, and binning so a relaxed
+/// toggle costs the same wherever it is set.
+pub const RELAXED_HARD_RULE_PENALTY: f64 = 0.2;
+
+/// Numeric hard rule that the user can relax, shared by the gain and offset
+/// comparisons in `bias`/`dark`/`flat`.
+///
+/// Returns `None` to exclude the candidate, or `Some(penalty)` to subtract from
+/// its confidence. With `required` true the dimension behaves as an exact hard
+/// rule; with it false a mismatch becomes an out-of-tolerance entry and a
+/// missing value a metadata-missing entry, each costing
+/// [`RELAXED_HARD_RULE_PENALTY`].
+pub fn relaxable_numeric(
+    dimension: Dimension,
+    session_val: Option<f64>,
+    master_val: Option<f64>,
+    required: bool,
+    matched: &mut Vec<MatchedDim>,
+    mismatched: &mut Vec<MismatchedDim>,
+) -> Option<f64> {
+    match (session_val, master_val) {
+        (Some(s), Some(m)) if (s - m).abs() < HARD_RULE_EPSILON => {
+            matched.push(MatchedDim::exact(dimension));
+            Some(0.0)
+        }
+        _ if required => None,
+        (Some(s), Some(m)) => {
+            mismatched.push(MismatchedDim::out_of_tolerance(dimension, (s - m).abs()));
+            Some(RELAXED_HARD_RULE_PENALTY)
+        }
+        _ => {
+            mismatched.push(MismatchedDim::metadata_missing(dimension));
+            Some(RELAXED_HARD_RULE_PENALTY)
+        }
+    }
+}
+
+/// String hard rule that the user can relax, used by the flat binning
+/// comparison. Filter and optic train stay unconditional.
+///
+/// Mirrors [`relaxable_numeric`]: `None` excludes, `Some(penalty)` keeps the
+/// candidate at reduced confidence.
+pub fn relaxable_string(
+    dimension: Dimension,
+    session_val: Option<&str>,
+    master_val: Option<&str>,
+    required: bool,
+    matched: &mut Vec<MatchedDim>,
+    mismatched: &mut Vec<MismatchedDim>,
+) -> Option<f64> {
+    match (session_val, master_val) {
+        (Some(s), Some(m)) if s == m => {
+            matched.push(MatchedDim::exact_string(dimension, s));
+            Some(0.0)
+        }
+        _ if required => None,
+        (Some(_), Some(_)) => {
+            mismatched.push(MismatchedDim::hard(dimension));
+            Some(RELAXED_HARD_RULE_PENALTY)
+        }
+        _ => {
+            mismatched.push(MismatchedDim::metadata_missing(dimension));
+            Some(RELAXED_HARD_RULE_PENALTY)
+        }
+    }
+}
+
 /// Soft age rule shared by `dark` and `bias`: penalise a master whose observing
 /// night is far from the light session's, bounded by
 /// [`MatchingRuleConfig::age_limit_days`](crate::ranking::MatchingRuleConfig::age_limit_days).

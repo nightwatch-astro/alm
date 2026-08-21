@@ -81,6 +81,7 @@ impl SoftDimConfig {
 /// `calibrationDarkOverridePenalty`, `calibrationFlatOverridePenalty`,
 /// `calibrationBiasOverridePenalty`, `calibrationPrefillSuggestion`.
 #[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)] // Distinct orthogonal per-field match-required flags
 pub struct MatchingRuleConfig {
     // ── Dark tolerances ──
     /// Dark exposure soft tolerance (percentage, 0–100). Default 5.0 → ±5%.
@@ -117,6 +118,18 @@ pub struct MatchingRuleConfig {
     /// the candidate. Default: `true` (offset always required, matching the
     /// original strict behaviour).
     pub require_same_offset: bool,
+    /// When true, a master must carry the same GAIN as the light session for
+    /// dark, bias, and flat matching (hard rule). When false, a missing or
+    /// mismatched gain costs
+    /// [`RELAXED_HARD_RULE_PENALTY`](crate::rules::RELAXED_HARD_RULE_PENALTY)
+    /// instead of excluding the candidate. Default: `true`.
+    pub require_same_gain: bool,
+    /// When true, a flat master must carry the same BINNING as the light session
+    /// (hard rule). When false, a missing or mismatched binning costs
+    /// [`RELAXED_HARD_RULE_PENALTY`](crate::rules::RELAXED_HARD_RULE_PENALTY)
+    /// instead of excluding the candidate. Dark and bias matching does not
+    /// compare binning at all, so this flag does not reach them. Default: `true`.
+    pub require_same_binning: bool,
 
     // ── Age tolerance (dark and bias) ──
     /// Maximum accepted age gap in days between the light session's observing
@@ -148,6 +161,8 @@ impl Default for MatchingRuleConfig {
             flat_override_penalty: 0.3,
             bias_override_penalty: 0.3,
             require_same_offset: true,
+            require_same_gain: true,
+            require_same_binning: true,
             age_limit_days: 365.0,
             age_max_penalty: 0.3,
             prefill_suggestion: true,
