@@ -100,7 +100,9 @@ fn read_header_bytes(mut reader: impl Read) -> io::Result<Vec<u8>> {
         }
 
         let has_end = block
-            .chunks_exact(CARD_SIZE)
+            .as_chunks::<CARD_SIZE>()
+            .0
+            .iter()
             .any(|c| c.starts_with(b"END     ") || c.starts_with(b"END\x00"));
         bytes.extend_from_slice(&block);
         if has_end {

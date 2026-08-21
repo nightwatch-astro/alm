@@ -60,9 +60,10 @@ const SPEC_CONTRACT_ALLOWLIST = [
   // Spec 013 — Target Lookup From FITS OBJECT
   "013-target-lookup-from-fits-object/contracts/target.lookup.json",
   "013-target-lookup-from-fits-object/contracts/target.resolve.json",
-  // Spec 006 — Inventory Lifecycle
-  "006-inventory-library-lifecycle/contracts/inventory.list.json",
-  "006-inventory-library-lifecycle/contracts/inventory.session.review.json",
+  // Spec 006's inventory.list and inventory.session.review contracts are
+  // deliberately absent: `../schemas/` holds the maintained copies of both, and
+  // those are the ones `tests/contract/contract_jsonschema_roundtrip.rs`
+  // validates against.
   // Spec 012 — Processing Artifact Observation
   "012-processing-artifact-observation/contracts/artifact.list.json",
   "012-processing-artifact-observation/contracts/artifact.classify.json",
@@ -72,15 +73,22 @@ const SPEC_CONTRACT_ALLOWLIST = [
   "019-bottom-log-viewer/contracts/log.export.json",
 ];
 
+// A missing allowlist entry means the allowlist is stale, not that this run
+// should emit fewer declaration files. The old version checked only that the
+// parent directory existed and silently dropped the entry, so a renamed spec
+// folder produced a smaller `src/generated` that the drift gate then accepted.
 function findSpecContracts() {
-  return SPEC_CONTRACT_ALLOWLIST.map((rel) => join(specsDir, rel)).filter((path) => {
-    try {
-      readdirSync(join(path, "..")); // ensure parent exists
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  const paths = SPEC_CONTRACT_ALLOWLIST.map((rel) => join(specsDir, rel));
+  const missing = paths.filter((path) => !existsSync(path));
+  if (missing.length > 0) {
+    console.error(
+      `${missing.length} allowlisted spec contract(s) do not exist. Update ` +
+        "SPEC_CONTRACT_ALLOWLIST in this script:\n" +
+        missing.map((m) => `  ${m}`).join("\n"),
+    );
+    process.exit(1);
+  }
+  return paths;
 }
 
 const json2ts = resolveJson2Ts();
@@ -101,9 +109,26 @@ const stagingDir = `${generatedDir}.staging`;
 rmSync(stagingDir, { recursive: true, force: true });
 mkdirSync(stagingDir, { recursive: true });
 
-const failures = [];
+// Two schemas that reduce to the same stem write the same `.d.ts`, and the
+// second silently wins. That is how the paginated `inventory.list` schema came
+// to be overwritten by a spec copy that had never gained the pagination fields.
+const stems = new Map();
 for (const schema of schemas) {
   const stem = basename(schema, ".schema.json").replace(/\.json$/, "");
+  const existing = stems.get(stem);
+  if (existing) {
+    rmSync(stagingDir, { recursive: true, force: true });
+    console.error(
+      `Two schemas both generate ${stem}.d.ts, so one would overwrite the ` +
+        `other:\n  ${existing}\n  ${schema}\nDrop one, or rename its file.`,
+    );
+    process.exit(1);
+  }
+  stems.set(stem, schema);
+}
+
+const failures = [];
+for (const [stem, schema] of stems) {
   const output = join(stagingDir, `${stem}.d.ts`);
   const result = spawnSync(json2ts, ["-i", schema, "-o", output, "--unreachableDefinitions"], {
     stdio: "inherit",

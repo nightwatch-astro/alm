@@ -17,9 +17,10 @@
 
 use audit::bus::EventBus;
 use audit::event_bus::{
-    ArtifactClassified, ArtifactDetected, ArtifactMissing, ArtifactUpdated,
+    ArtifactClassified, ArtifactDetected, ArtifactMissing, ArtifactScanIncomplete, ArtifactUpdated,
     CalibrationMatchSourceMissing, Source, TOPIC_ARTIFACT_CLASSIFIED, TOPIC_ARTIFACT_DETECTED,
-    TOPIC_ARTIFACT_MISSING, TOPIC_ARTIFACT_UPDATED, TOPIC_CALIBRATION_MATCH_SOURCE_MISSING,
+    TOPIC_ARTIFACT_MISSING, TOPIC_ARTIFACT_SCAN_INCOMPLETE, TOPIC_ARTIFACT_UPDATED,
+    TOPIC_CALIBRATION_MATCH_SOURCE_MISSING,
 };
 use domain_core::ids::{new_id, Timestamp};
 use sqlx::SqlitePool;
@@ -115,6 +116,29 @@ pub async fn mark_missing_batch(
 
     publish_all(bus, &events).await;
     Ok(())
+}
+
+/// Record that a reconcile scan could not read `unreadable_paths`, so its
+/// coverage of the project is partial.
+///
+/// Nothing is written to the artifact rows: paths under an unreadable directory
+/// are unknown state, and the audit row is the only record that the scan skipped
+/// them.
+pub async fn report_scan_incomplete(bus: &EventBus, project_id: &str, unreadable_paths: &[String]) {
+    if unreadable_paths.is_empty() {
+        return;
+    }
+    let events: Vec<BatchEvent> = event(
+        TOPIC_ARTIFACT_SCAN_INCOMPLETE,
+        &ArtifactScanIncomplete {
+            project_id: project_id.to_owned(),
+            unreadable_paths: unreadable_paths.to_vec(),
+            at: Timestamp::now_iso(),
+        },
+    )
+    .into_iter()
+    .collect();
+    publish_all(bus, &events).await;
 }
 
 /// A file the reconcile scan found on disk.
