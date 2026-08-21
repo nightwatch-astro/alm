@@ -181,28 +181,59 @@ fn tool_id_from_project_tool(project_tool: &str) -> String {
 /// for project output folders in v1) — neither into a symlinked directory
 /// nor as a symlinked file.
 fn real_read_dir(dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut out = Vec::new();
-    real_read_dir_into(dir, &mut out)?;
-    Ok(out)
+    let (files, skipped) = real_read_dir_reporting(dir)?;
+    if !skipped.is_empty() {
+        tracing::warn!(
+            count = skipped.len(),
+            "artifact watcher: unreadable directories skipped during reconcile: {}",
+            skipped.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+        );
+    }
+    Ok(files)
 }
 
-/// Recursion helper for [`real_read_dir`]; `out` accumulates real file paths
-/// across the whole subtree.
-fn real_read_dir_into(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+/// [`real_read_dir`] plus the subdirectories that could not be read.
+///
+/// `workflow_artifacts::reconcile` takes a `&Path -> Result<Vec<PathBuf>, _>`
+/// lister, so the skipped list cannot travel with the files; [`real_read_dir`]
+/// logs it instead.
+fn real_read_dir_reporting(dir: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>), String> {
+    let mut files = Vec::new();
+    let mut skipped = Vec::new();
     let entries =
         std::fs::read_dir(dir).map_err(|e| format!("read_dir({}) failed: {e}", dir.display()))?;
+    real_read_dir_into(entries, &mut files, &mut skipped);
+    Ok((files, skipped))
+}
+
+/// Recursion helper for [`real_read_dir_reporting`]; `files` accumulates real
+/// file paths across the whole subtree and `skipped` the directories whose
+/// `read_dir` failed.
+///
+/// An unreadable subdirectory is skipped, not propagated: one
+/// permission-denied directory must not abort reconciliation for every
+/// artifact elsewhere under the project root (matches
+/// `fs_pathsafe::real_files_under`).
+fn real_read_dir_into(
+    entries: std::fs::ReadDir,
+    files: &mut Vec<PathBuf>,
+    skipped: &mut Vec<PathBuf>,
+) {
     for entry in entries.flatten() {
         let Ok(file_type) = entry.file_type() else { continue };
         if file_type.is_symlink() {
             continue;
         }
+        let path = entry.path();
         if file_type.is_dir() {
-            real_read_dir_into(&entry.path(), out)?;
+            match std::fs::read_dir(&path) {
+                Ok(child) => real_read_dir_into(child, files, skipped),
+                Err(_) => skipped.push(path),
+            }
         } else if file_type.is_file() {
-            out.push(entry.path());
+            files.push(path);
         }
     }
-    Ok(())
 }
 
 /// Real (size, mtime) probe. Uses `symlink_metadata` and rejects symlinks
@@ -817,5 +848,47 @@ mod tests {
         let found = real_read_dir(dir.path()).unwrap();
 
         assert!(found.is_empty(), "must not descend into a symlinked directory: found {found:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_read_dir_skips_an_unreadable_subdirectory_and_reports_it() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let sibling_dir = dir.path().join("output");
+        std::fs::create_dir_all(&sibling_dir).unwrap();
+        let sibling_file = sibling_dir.join("integration.xisf");
+        std::fs::write(&sibling_file, b"x").unwrap();
+        let top_file = dir.path().join("top.fits");
+        std::fs::write(&top_file, b"x").unwrap();
+        let locked = dir.path().join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::write(locked.join("hidden.fits"), b"x").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        // root (and any CAP_DAC_READ_SEARCH holder) bypasses mode bits, which
+        // would make the assertion vacuous.
+        if std::fs::read_dir(&locked).is_ok() {
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+            eprintln!(
+                "skipping: this environment can read a mode-000 directory (running as root?)"
+            );
+            return;
+        }
+
+        let reported = real_read_dir_reporting(dir.path());
+        let whole_walk = real_read_dir(dir.path());
+
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let (found, skipped) = reported.unwrap();
+        assert!(found.contains(&top_file), "top-level sibling must still be reconciled");
+        assert!(found.contains(&sibling_file), "nested sibling must still be reconciled");
+        assert_eq!(skipped, vec![locked], "the unreadable directory must be reported");
+        assert!(
+            whole_walk.is_ok(),
+            "an unreadable subdirectory must not fail the whole walk: {whole_walk:?}"
+        );
     }
 }
