@@ -45,7 +45,6 @@ function makeTolerances(
     temperatureToleranceC: 5,
     exposureToleranceS: 2,
     agingLimitDays: 365,
-    requireSameCamera: true,
     requireSameGain: true,
     requireSameBinning: true,
     requireSameOffset: true,
@@ -61,15 +60,15 @@ function offsetToggleInput(): HTMLElement {
   return within(row).getByRole('checkbox');
 }
 
-/** The Camera row's toggle checkbox — used as a hydration marker: tests mock
- *  `requireSameCamera: false` (differing from the in-code default `true`) so
+/** The Gain row's toggle checkbox — used as a hydration marker: tests mock
+ *  `requireSameGain: false` (differing from the in-code default `true`) so
  *  waiting for this toggle to become unchecked proves the fetched tolerances
  *  have been applied. Waiting on the Offset toggle alone is racy, because the
  *  in-code default (`requireSameOffset: true`) already satisfies "checked"
  *  before hydration lands. */
-function cameraToggleInput(): HTMLElement {
-  const row = screen.getByText('Camera').closest('tr');
-  if (!row) throw new Error('Camera row not found');
+function gainToggleInput(): HTMLElement {
+  const row = screen.getByText('Gain').closest('tr');
+  if (!row) throw new Error('Gain row not found');
   return within(row).getByRole('checkbox');
 }
 
@@ -96,7 +95,7 @@ describe('CalibrationMatching — offset match-required persistence', () => {
     mockGet.mockResolvedValue({
       status: 'ok',
       data: makeTolerances({
-        requireSameCamera: false,
+        requireSameGain: false,
         requireSameOffset: true,
       }),
     });
@@ -106,9 +105,9 @@ describe('CalibrationMatching — offset match-required persistence', () => {
     });
 
     render(<CalibrationMatching save={vi.fn()} />);
-    // Wait for hydration (camera flips to the fetched non-default value), not
+    // Wait for hydration (gain flips to the fetched non-default value), not
     // just the offset toggle — the in-code default already renders it checked.
-    await waitFor(() => expect(cameraToggleInput()).not.toBeChecked());
+    await waitFor(() => expect(gainToggleInput()).not.toBeChecked());
     expect(offsetToggleInput()).toBeChecked();
 
     fireEvent.click(offsetToggleInput());
@@ -125,27 +124,27 @@ describe('CalibrationMatching — offset match-required persistence', () => {
     mockGet.mockResolvedValue({
       status: 'ok',
       data: makeTolerances({
-        requireSameCamera: false,
+        requireSameGain: false,
         requireSameOffset: true,
       }),
     });
     mockUpdate.mockResolvedValue({ status: 'ok', data: makeTolerances() });
 
     render(<CalibrationMatching save={vi.fn()} />);
-    // Hydration marker: camera arrives as false (non-default). Waiting on the
+    // Hydration marker: gain arrives as false (non-default). Waiting on the
     // offset toggle alone races the fetch — its in-code default is already
-    // checked, so an early click would persist the *default* camera value.
-    await waitFor(() => expect(cameraToggleInput()).not.toBeChecked());
+    // checked, so an early click would persist the *default* gain value.
+    await waitFor(() => expect(gainToggleInput()).not.toBeChecked());
     expect(offsetToggleInput()).toBeChecked();
 
     fireEvent.click(offsetToggleInput());
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
-    // The persisted patch carries the *current* (unrelated) requireSameCamera
+    // The persisted patch carries the *current* (unrelated) requireSameGain
     // state through unchanged — this pane always sends the full DTO.
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        requireSameCamera: false,
+        requireSameGain: false,
         requireSameOffset: false,
       }),
     );
@@ -232,18 +231,18 @@ describe('CalibrationMatching — exposureToleranceS never sent as null (#639)',
       status: 'ok',
       data: makeTolerances({
         exposureToleranceS: 3.5,
-        // Hydration marker — see `cameraToggleInput`.
-        requireSameCamera: false,
+        // Hydration marker — see `gainToggleInput`.
+        requireSameGain: false,
       }),
     });
     mockUpdate.mockResolvedValue({ status: 'ok', data: makeTolerances() });
 
     render(<CalibrationMatching save={vi.fn()} />);
-    // Gate on the Camera toggle, not the Offset one: `requireSameOffset` is
+    // Gate on the Gain toggle, not the Offset one: `requireSameOffset` is
     // `true` in both the in-code default and the mocked payload, so waiting on
     // it cannot prove the fetch landed. The click would then race hydration and
     // send the default `2` instead of the fetched `3.5` (#1213).
-    await waitFor(() => expect(cameraToggleInput()).not.toBeChecked());
+    await waitFor(() => expect(gainToggleInput()).not.toBeChecked());
 
     fireEvent.click(offsetToggleInput());
 

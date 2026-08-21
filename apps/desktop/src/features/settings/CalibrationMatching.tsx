@@ -8,7 +8,6 @@
 // Owned backend keys (CalibrationTolerances / UpdateCalibrationTolerances),
 // persisted to the `calibration_tolerances` singleton table (migration 0008 +
 // 0051) via `calibration.tolerances.get`/`update`:
-//   - requireSameCamera   (boolean) — Camera "Match required" toggle
 //   - requireSameBinning  (boolean) — Binning "Match required" toggle
 //   - requireSameGain     (boolean) — Gain "Match required" toggle
 //   - requireSameOffset   (boolean) — Offset "Match required" toggle. Also
@@ -35,7 +34,6 @@ interface CalibrationMatchingProps {
 
 // Defaults per authoritative mock (platevault-settings-menu.html § calmatch).
 const DEFAULTS = {
-  requireSameCamera: true,
   requireSameBinning: true,
   requireSameGain: true,
   requireSameOffset: true,
@@ -49,9 +47,6 @@ const DEFAULTS = {
 
 export function CalibrationMatching(_props: CalibrationMatchingProps) {
   // ── Hard-required field toggles ────────────────────────────────────────────
-  const [requireCamera, setRequireCamera] = useState(
-    DEFAULTS.requireSameCamera,
-  );
   const [requireBinning, setRequireBinning] = useState(
     DEFAULTS.requireSameBinning,
   );
@@ -89,7 +84,6 @@ export function CalibrationMatching(_props: CalibrationMatchingProps) {
     calibrationTolerancesGet()
       .then((tol) => {
         if (cancelled || editedRef.current) return;
-        setRequireCamera(tol.requireSameCamera);
         setRequireBinning(tol.requireSameBinning);
         setRequireGain(tol.requireSameGain);
         setRequireOffset(tol.requireSameOffset);
@@ -113,7 +107,6 @@ export function CalibrationMatching(_props: CalibrationMatchingProps) {
   function persist(patch: Partial<UpdateCalibrationTolerances>) {
     editedRef.current = true;
     const req: UpdateCalibrationTolerances = {
-      requireSameCamera: requireCamera,
       requireSameBinning: requireBinning,
       requireSameGain: requireGain,
       requireSameOffset: requireOffset,
@@ -130,10 +123,6 @@ export function CalibrationMatching(_props: CalibrationMatchingProps) {
   }
 
   // ── Toggle handlers ────────────────────────────────────────────────────────
-  function handleCameraToggle(val: boolean) {
-    setRequireCamera(val);
-    persist({ requireSameCamera: val });
-  }
   function handleBinningToggle(val: boolean) {
     setRequireBinning(val);
     persist({ requireSameBinning: val });
@@ -167,7 +156,6 @@ export function CalibrationMatching(_props: CalibrationMatchingProps) {
   // `settings.restore-defaults`, which would touch unrelated settings keys.
   const handleRestoreCalibration = async () => {
     editedRef.current = true;
-    setRequireCamera(DEFAULTS.requireSameCamera);
     setRequireBinning(DEFAULTS.requireSameBinning);
     setRequireGain(DEFAULTS.requireSameGain);
     setRequireOffset(DEFAULTS.requireSameOffset);
@@ -175,7 +163,6 @@ export function CalibrationMatching(_props: CalibrationMatchingProps) {
     setAgingLimit(DEFAULTS.agingLimitDays);
     setExposureTolerance(DEFAULTS.exposureToleranceS);
     await calibrationTolerancesUpdate({
-      requireSameCamera: DEFAULTS.requireSameCamera,
       requireSameBinning: DEFAULTS.requireSameBinning,
       requireSameGain: DEFAULTS.requireSameGain,
       requireSameOffset: DEFAULTS.requireSameOffset,
@@ -208,15 +195,6 @@ export function CalibrationMatching(_props: CalibrationMatchingProps) {
           </tr>
         </thead>
         <tbody>
-          {/* Camera — hard toggle, persists to requireSameCamera */}
-          <tr>
-            <td>{m.settings_calmatch_camera()}</td>
-            <td>
-              <Toggle checked={requireCamera} onChange={handleCameraToggle} />
-            </td>
-            <td className="pv-cell--mono">{m.settings_calmatch_exact()}</td>
-          </tr>
-
           {/* Binning — hard toggle, persists to requireSameBinning */}
           <tr>
             <td>{m.settings_calmatch_binning()}</td>

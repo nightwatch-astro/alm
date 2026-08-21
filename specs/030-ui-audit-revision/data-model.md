@@ -154,7 +154,6 @@ New settings (currently hardcoded or absent):
 | temperature_tolerance_c | Float | 5.0 |
 | exposure_tolerance_s | Float | 2.0 |
 | aging_threshold_days | Integer | 365 |
-| require_same_camera | Boolean | true |
 | require_same_gain | Boolean | true |
 | require_same_binning | Boolean | true |
 
