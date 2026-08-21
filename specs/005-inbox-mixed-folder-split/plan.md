@@ -82,10 +82,9 @@ specs/005-inbox-mixed-folder-split/
 ├── plan.md              # This file
 ├── research.md          # Phase 0 output
 ├── data-model.md        # Phase 1 output
-├── contracts/
-│   ├── inbox.classify.json
-│   └── inbox.confirm.json
-└── tasks.md             # Phase 2 output
+└── contracts/
+    ├── inbox.classify.json
+    └── inbox.confirm.json
 ```
 
 ### Source Code (repository root)
