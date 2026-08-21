@@ -585,7 +585,7 @@ fn risky_but_valid_settings_produce_yellow_warnings() {
         mosaic: MosaicThresholds {
             overlap_min_percent: decimal(2.0),
             overlap_max_percent: decimal(30.0),
-            residual_sky_rotation_cap_deg: decimal(90.0),
+            residual_sky_rotation_cap_deg: decimal(10.0),
         },
         dark_thermal: DarkThermalThresholds {
             moderate_deg: decimal(0.5),
@@ -606,6 +606,130 @@ fn risky_but_valid_settings_produce_yellow_warnings() {
     assert!(validation.valid);
     assert!(!validation.issues.is_empty());
     assert!(validation.issues.iter().all(|issue| issue.severity == SettingsSeverity::Yellow));
+}
+
+// Every field at its matching-settings.md default, so only the cap under test can
+// contribute an issue.
+fn settings_with_rotation_cap(cap: FiniteDecimal) -> MatchingSettings {
+    MatchingSettings {
+        revision: 1,
+        same_session: GeometryThresholds {
+            coverage_min_percent: decimal(95.0),
+            center_separation_max_percent: decimal(2.0),
+            rotation_max_deg: decimal(1.0),
+        },
+        sibling: GeometryThresholds {
+            coverage_min_percent: decimal(90.0),
+            center_separation_max_percent: decimal(5.0),
+            rotation_max_deg: decimal(5.0),
+        },
+        mosaic: MosaicThresholds {
+            overlap_min_percent: decimal(5.0),
+            overlap_max_percent: decimal(40.0),
+            residual_sky_rotation_cap_deg: cap,
+        },
+        dark_thermal: DarkThermalThresholds {
+            moderate_deg: decimal(0.5),
+            severe_deg: decimal(2.0),
+        },
+        calibration_age: BoundedList::<CalibrationAgePolicy, 500>::default(),
+        flat_orientation: FlatOrientationThresholds {
+            normal_through_deg: decimal(2.0),
+            red_above_deg: decimal(5.0),
+        },
+        flat_age: FlatAgeThresholds { red_after_nights: 7 },
+        fixed_rules: FixedMatchingRules::default(),
+        updated_at: Rfc3339Timestamp::try_new("2026-07-22T00:00:00Z").unwrap(),
+        updated_by: id(ID),
+    }
+}
+
+#[test]
+fn mosaic_residual_sky_rotation_cap_is_fixed_at_the_spec_value() {
+    // matching-settings.md:17 fixes residualSkyRotationCapDeg at 10. It has no row in
+    // the bounds table, so any other value is a red fixed-rule change, not a warning.
+    let at_spec = settings_with_rotation_cap(decimal(10.0));
+    assert!(at_spec
+        .validate()
+        .issues
+        .iter()
+        .all(|issue| issue.code.as_str() != "settings.fixed_rule_changed"));
+
+    let off_spec = settings_with_rotation_cap(decimal(90.0));
+    let validation = off_spec.validate();
+    assert!(!validation.valid);
+    assert!(validation.issues.iter().any(|issue| {
+        issue.code.as_str() == "settings.fixed_rule_changed"
+            && issue.severity == SettingsSeverity::Red
+            && issue
+                .field_paths
+                .iter()
+                .any(|path| path.as_str() == "mosaic.residualSkyRotationCapDeg")
+    }));
+}
+
+#[test]
+fn every_configured_hard_bound_rejects_the_adjacent_float_outside_it() {
+    // The bounds in matching-settings.md are inclusive, so the nearest representable
+    // value beyond each edge must be red. Probing adjacent floats rather than round
+    // numbers is what distinguishes an inclusive check from an exclusive one.
+    type Case = (&'static str, fn(&mut MatchingSettings, FiniteDecimal), f64, f64);
+    let cases: [Case; 12] = [
+        (
+            "sameSession.coverageMinPercent",
+            |s, v| s.same_session.coverage_min_percent = v,
+            90.0,
+            99.5,
+        ),
+        (
+            "sameSession.centerSeparationMaxPercent",
+            |s, v| s.same_session.center_separation_max_percent = v,
+            0.5,
+            5.0,
+        ),
+        ("sameSession.rotationMaxDeg", |s, v| s.same_session.rotation_max_deg = v, 0.25, 3.0),
+        ("sibling.coverageMinPercent", |s, v| s.sibling.coverage_min_percent = v, 80.0, 95.0),
+        (
+            "sibling.centerSeparationMaxPercent",
+            |s, v| s.sibling.center_separation_max_percent = v,
+            2.0,
+            15.0,
+        ),
+        ("sibling.rotationMaxDeg", |s, v| s.sibling.rotation_max_deg = v, 1.0, 15.0),
+        ("mosaic.overlapMinPercent", |s, v| s.mosaic.overlap_min_percent = v, 1.0, 20.0),
+        ("mosaic.overlapMaxPercent", |s, v| s.mosaic.overlap_max_percent = v, 20.0, 60.0),
+        ("darkThermal.moderateDeg", |s, v| s.dark_thermal.moderate_deg = v, 0.1, 2.0),
+        ("darkThermal.severeDeg", |s, v| s.dark_thermal.severe_deg = v, 0.5, 5.0),
+        (
+            "flatOrientation.normalThroughDeg",
+            |s, v| s.flat_orientation.normal_through_deg = v,
+            0.5,
+            5.0,
+        ),
+        ("flatOrientation.redAboveDeg", |s, v| s.flat_orientation.red_above_deg = v, 0.5, 15.0),
+    ];
+
+    for (field_path, mutate, minimum, maximum) in cases {
+        let outside =
+            [f64::from_bits(minimum.to_bits() - 1), f64::from_bits(maximum.to_bits() + 1)];
+        for value in outside {
+            let mut settings = settings_with_rotation_cap(decimal(10.0));
+            mutate(&mut settings, decimal(value));
+            let validation = settings.validate();
+            assert!(
+                !validation.valid,
+                "{field_path} accepted {value} outside {minimum}..={maximum}"
+            );
+            assert!(
+                validation.issues.iter().any(|issue| {
+                    issue.code.as_str() == "settings.out_of_bounds"
+                        && issue.severity == SettingsSeverity::Red
+                        && issue.field_paths.iter().any(|path| path.as_str() == field_path)
+                }),
+                "{field_path} at {value} produced no out_of_bounds issue for that field"
+            );
+        }
+    }
 }
 
 #[test]

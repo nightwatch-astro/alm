@@ -24,13 +24,7 @@ export type Request =
 export type ContractVersion = "2.0.0";
 export type Uuid = string;
 export type ProjectState =
-  | "setup_incomplete"
-  | "ready"
-  | "prepared"
-  | "processing"
-  | "completed"
-  | "archived"
-  | "blocked";
+  "setup_incomplete" | "ready" | "prepared" | "processing" | "completed" | "archived" | "blocked";
 /**
  * Human-readable label recorded on the audit entry (e.g. 'Unarchived').
  */
@@ -81,13 +75,7 @@ export type Timestamp = string;
  * Any per-family lifecycle state value. Use the family-specific enums in the discriminated Request sub-schemas; this alias exists only for the Response shape where the family is fixed by the corresponding request.
  */
 export type LifecycleState =
-  | ProjectState
-  | PlanState
-  | SessionState
-  | DataSourceState
-  | FileRecordState
-  | PreparedSourceState
-  | ProjectionState;
+  ProjectState | PlanState | SessionState | DataSourceState | FileRecordState | PreparedSourceState | ProjectionState;
 export type ErrorCode =
   | "transition.refused"
   | "entity.not_found"

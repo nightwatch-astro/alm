@@ -33,7 +33,7 @@ pub use attribution::{attribute, reattribute_candidates, LaunchRef, DEFAULT_ATTR
 pub use classifier::{classify, ClassificationResult, ClassificationSource};
 pub use default_rules::all as default_artifact_rules;
 pub use project_mapping::{resolve_project_for_path, ProjectPathRef};
-pub use reconciler::{reconcile, NewDetection, ReconcileOutcome, ReconcileReport};
+pub use reconciler::{reconcile, DirListing, NewDetection, ReconcileOutcome, ReconcileReport};
 pub use rules::{ArtifactKind, ArtifactRule, MatchKind};
 pub use watcher::{
     check_stability, extension_allowed, FileSnapshot, StabilityStatus, WatchEvent, WatchEventKind,

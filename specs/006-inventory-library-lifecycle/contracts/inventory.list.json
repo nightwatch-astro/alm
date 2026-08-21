@@ -90,6 +90,16 @@
         "reviewFilter": {
           "$ref": "#/$defs/ReviewFilter",
           "description": "When set, limits sessions to the given canonical state. 'ignored' sessions are excluded from the default ledger (no filter or filter='all'); use reviewFilter='ignored' to surface them (FR-010 Cmd+K action navigates to /inventory?reviewFilter=ignored)."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum sessions per source root. Server default is 1000 when omitted. Existing callers that omit the field continue to work."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sessions to skip before applying limit (0-based, per source root)."
         }
       }
     },
@@ -170,6 +180,11 @@
         "sessions": {
           "type": "array",
           "items": { "$ref": "#/$defs/InventorySession" }
+        },
+        "hasMore": {
+          "type": "boolean",
+          "default": false,
+          "description": "true when more sessions exist beyond the current offset+limit page. false for an unbounded fetch or when the last session has been returned. Callers that do not paginate can ignore this field."
         }
       }
     },

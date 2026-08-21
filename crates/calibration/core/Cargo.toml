@@ -12,7 +12,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 # Issue #921: circular_distance replaces the hand-rolled `(a - b).abs()` flat
 # rotation delta, which max-penalized correct flats straddling the 0/360 seam.
-skymath = "0.7.1"
+skymath = "0.7.2"
 # spec 042 (T201): ISO-8601 date parsing + Julian-day arithmetic for
 # observing-night proximity (replaces the hand-rolled YMD parse + JDN math).
 time = { workspace = true }

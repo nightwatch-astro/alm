@@ -29,7 +29,7 @@ targeting = { path = "../../../crates/targeting" }
 # target.moon_opposition.batch (#634): geocentric Sun/Moon position
 # (sun_position/moon_position — not re-exported by `targeting`, which only
 # re-exports the coordinate primitives).
-skymath = "0.7.1"
+skymath = "0.7.2"
 contracts_core = { path = "../../../crates/contracts/core" }
 domain_core = { path = "../../../crates/domain/core" }
 fs_inventory = { path = "../../../crates/fs/inventory" }
@@ -90,7 +90,9 @@ dev-tools = ["app_core/dev-tools"]
 # The embedded server listens on 127.0.0.1:4445; the tauri-webdriver CLI
 # (cargo install tauri-webdriver --locked) proxies :4444 → :4445.
 # Release binaries MUST NOT enable this feature (Constitution Principle V).
-e2e = ["dep:tauri-plugin-webdriver"]
+# Also compiles the headless OS-trash double the harness needs, since the Shell
+# trash blocks forever without an interactive window-station.
+e2e = ["dep:tauri-plugin-webdriver", "app_core/e2e-trash-fake"]
 
 [lints]
 workspace = true
