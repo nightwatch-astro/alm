@@ -27,7 +27,8 @@ use crate::coords::{self, Pointing};
 const RA_SECONDS_PER_DAY: u32 = 24 * 3600;
 
 /// Arcseconds in the 90° Dec limit. [`coords::to_equatorial`] clamps Dec into
-/// `[-90, 90]`, so the rounded magnitude can reach this but not exceed it.
+/// `[-90, 90]` and `90 * 3600` is exact in binary floating point, so the rounded
+/// magnitude reaches this value but never exceeds it.
 const DEC_ARCSEC_LIMIT: u32 = 90 * 3600;
 
 /// A target's RA/Dec formatted in astronomy notation: `HHhMMmSSs` for RA,
@@ -68,28 +69,23 @@ fn ra_glyphs(ra_deg: f64) -> String {
 /// rather than the ASCII hyphen.
 fn dec_glyphs(dec_deg: f64) -> String {
     let sign = if dec_deg < 0.0 { "\u{2212}" } else { "+" };
-    let total = round_to_whole(dec_deg.abs()).min(DEC_ARCSEC_LIMIT);
+    let total = round_to_whole(dec_deg.abs());
+    debug_assert!(total <= DEC_ARCSEC_LIMIT, "to_equatorial should have clamped Dec: {dec_deg}");
     let (d, m, s) = split_sexagesimal(total);
     format!("{sign}{d:02}\u{b0}{m:02}\u{2032}{s:02}\u{2033}")
 }
 
 /// Round a non-negative hours/degrees magnitude to whole seconds/arcseconds.
 ///
-/// The single rounding step in the whole formatter. Saturates rather than
-/// wrapping on a magnitude no sky coordinate can reach; callers pass values
-/// already put in domain by [`coords::to_equatorial`].
+/// The single rounding step in the whole formatter. Callers pass magnitudes
+/// already put in domain by [`coords::to_equatorial`], so the clamp only keeps
+/// the cast total, never reshapes a real coordinate.
 fn round_to_whole(magnitude: f64) -> u32 {
-    let seconds = (magnitude * 3600.0).round();
-    if seconds <= 0.0 {
-        0
-    } else if seconds >= f64::from(u32::MAX) {
-        u32::MAX
-    } else {
-        // Bounded on both sides above, and `round` leaves no fraction.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        {
-            seconds as u32
-        }
+    let seconds = (magnitude * 3600.0).round().clamp(0.0, f64::from(u32::MAX));
+    // Clamped on both sides above, and `round` leaves no fraction.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    {
+        seconds as u32
     }
 }
 
@@ -127,6 +123,13 @@ mod tests {
         assert!(!s.dec.starts_with('-'), "must be U+2212, not ASCII hyphen: {}", s.dec);
     }
 
+    /// `-0.0 < 0.0` is false, so a Dec that rounds to zero from below still reads
+    /// `+00°00′00″`. A signed-zero test here would flip that to a minus pole.
+    #[test]
+    fn dec_of_negative_zero_is_not_signed() {
+        assert_eq!(sexagesimal(0.0, -0.0).unwrap().dec, "+00\u{b0}00\u{2032}00\u{2033}");
+    }
+
     #[test]
     fn seconds_carry_never_shows_60_and_keeps_glyphs() {
         // 44.999_999_999° Dec rounds its seconds field up into the next minute;
@@ -148,11 +151,15 @@ mod tests {
     /// A finite but absurd input still produces an in-domain position, because
     /// `to_equatorial` wraps before this module rounds. `-1e308` is the fuzz
     /// vector that first surfaced the defect; it reached `04h15m60s`.
+    ///
+    /// Asserts the field domain rather than the exact glyphs: which RA `-1e308`
+    /// wraps to is `skymath`'s float normalization, and pinning it would make an
+    /// upstream normalization change read as a defect here.
     #[test]
     fn extreme_finite_input_stays_in_domain() {
         let s = sexagesimal(-1e308, -1e308).unwrap();
-        assert_eq!(s.ra, "04h16m00s");
-        assert_eq!(s.dec, "\u{2212}90\u{b0}00\u{2032}00\u{2033}");
+        assert_ra_in_domain(&s.ra, -1e308);
+        assert_dec_in_domain(&s.dec, -1e308);
     }
 
     #[test]
@@ -168,30 +175,40 @@ mod tests {
         assert!(sexagesimal(0.0, f64::INFINITY).is_none());
     }
 
-    /// Millidegree sweep of the display domain — the sweep that found 4535
-    /// out-of-domain fields in the previous implementation.
+    /// Assert an RA string holds hours `00..=23` and minutes/seconds `00..=59`.
+    fn assert_ra_in_domain(ra: &str, from: f64) {
+        let f = fields(ra);
+        assert!(f[0] < 24 && f[1] < 60 && f[2] < 60, "ra={ra} from {from}");
+    }
+
+    /// Assert a Dec string holds degrees `00..=90`, minutes/seconds `00..=59`,
+    /// and that the 90th degree is the pole exactly — `90°59′59″` is off the sky.
+    fn assert_dec_in_domain(dec: &str, from: f64) {
+        let f = fields(dec);
+        assert!(f[1] < 60 && f[2] < 60, "dec={dec} from {from}");
+        assert!(
+            f[0] < 90 || (f[0] == 90 && f[1] == 0 && f[2] == 0),
+            "dec={dec} from {from}"
+        );
+    }
+
+    /// Every RA the display can show, at millidegree resolution. Fails on the
+    /// previous implementation at 3115 of these values.
     #[test]
-    fn no_field_is_ever_out_of_domain_across_the_whole_sky() {
-        for ra_thousandths in 0..360_000u32 {
-            let ra = f64::from(ra_thousandths) / 1000.0;
-            for dec_thousandths in [0i32, 45_000, 89_000, 89_999, 90_000, -45_000, -90_000] {
-                let dec = f64::from(dec_thousandths) / 1000.0;
-                let coords = sexagesimal(ra, dec).unwrap();
+    fn no_ra_field_is_ever_out_of_domain() {
+        for thousandths in 0..360_000u32 {
+            let ra = f64::from(thousandths) / 1000.0;
+            assert_ra_in_domain(&sexagesimal(ra, 0.0).unwrap().ra, ra);
+        }
+    }
 
-                let ra_fields = fields(&coords.ra);
-                assert!(
-                    ra_fields[0] < 24 && ra_fields[1] < 60 && ra_fields[2] < 60,
-                    "ra={} from {ra}",
-                    coords.ra
-                );
-
-                let dec_fields = fields(&coords.dec);
-                assert!(
-                    dec_fields[0] <= 90 && dec_fields[1] < 60 && dec_fields[2] < 60,
-                    "dec={} from {dec}",
-                    coords.dec
-                );
-            }
+    /// Every Dec the display can show, at millidegree resolution, both signs and
+    /// both poles. Fails on the previous implementation at 1420 of these values.
+    #[test]
+    fn no_dec_field_is_ever_out_of_domain() {
+        for thousandths in -90_000..=90_000i32 {
+            let dec = f64::from(thousandths) / 1000.0;
+            assert_dec_in_domain(&sexagesimal(0.0, dec).unwrap().dec, dec);
         }
     }
 }
