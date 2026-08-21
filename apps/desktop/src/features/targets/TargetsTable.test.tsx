@@ -377,7 +377,9 @@ describe('TargetsTable — no-site prompt (US6/T015/T018)', () => {
       // time: the cell shows an "Nh"/"NhMm" value and NO warning glyph
       // (FR-030 only marks zero values; not the needsSite degrade state).
       expect(screen.getAllByText(/^\d+h(\d+m)?$/).length).toBeGreaterThan(0);
-      expect(document.querySelector('.pv-imgtime-glyph--warn')).toBeNull();
+      expect(
+        document.querySelector('[data-testid="imgtime-glyph-warn"]'),
+      ).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -395,7 +397,9 @@ describe('TargetsTable — no-site prompt (US6/T015/T018)', () => {
     vi.setSystemTime(new Date('2026-06-20T22:00:00Z'));
     try {
       renderTable();
-      const glyphs = document.querySelectorAll('.pv-imgtime-glyph--warn');
+      const glyphs = document.querySelectorAll(
+        '[data-testid="imgtime-glyph-warn"]',
+      );
       expect(glyphs.length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('☀').length).toBeGreaterThanOrEqual(1);
       // The glyph exposes the reason as its accessible name + tooltip.
@@ -747,12 +751,12 @@ describe('TargetsTable — no-dark-window summer night (#579, glyph model)', () 
         .getByText('NEVER')
         .closest('tr') as HTMLTableRowElement;
       // Both zero imaging-time cells expose the darkness reason (SC-015)…
-      expect(zenithRow.querySelectorAll('.pv-imgtime-glyph--warn').length).toBe(
-        1,
-      );
-      expect(neverRow.querySelectorAll('.pv-imgtime-glyph--warn').length).toBe(
-        1,
-      );
+      expect(
+        zenithRow.querySelectorAll('[data-testid="imgtime-glyph-warn"]').length,
+      ).toBe(1);
+      expect(
+        neverRow.querySelectorAll('[data-testid="imgtime-glyph-warn"]').length,
+      ).toBe(1);
       // …while Max alt keeps the two extremes visibly different: the zenith
       // target renders a large real altitude, the never-riser does not.
       expect(within(zenithRow).getByText(/^(8[5-9]|90)°$/)).toBeInTheDocument();
@@ -772,7 +776,9 @@ describe('TargetsTable — no-dark-window summer night (#579, glyph model)', () 
         .getByText('HIGH')
         .closest('tr') as HTMLTableRowElement;
       expect(within(row).getByText(/^\d+h(\d+m)?$/)).toBeInTheDocument();
-      expect(row.querySelector('.pv-imgtime-glyph--warn')).toBeNull();
+      expect(
+        row.querySelector('[data-testid="imgtime-glyph-warn"]'),
+      ).toBeNull();
     } finally {
       vi.useRealTimers();
     }
