@@ -27,9 +27,9 @@
     "scenario": "reconcile_root_frames",
     "size_backfilled": 0,
     "sqlx_stmts": 9,
-    "wall_ms": 7780,
+    "wall_ms": 692,
     "stmts_budget": 9,
-    "wall_ms_budget": 7780
+    "wall_ms_budget": 692
   },
   {
     "first_event_ms": 42,
