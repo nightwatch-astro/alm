@@ -342,14 +342,15 @@ tracking_violations() {
 # Merge base of HEAD and the base ref, echoed on stdout. Empty means no merge
 # base could be reached, which the caller treats as a hard failure under CI.
 #
-# Why this fetches: the PR and merge-queue job uses the default shallow
-# `actions/checkout@v4` (.github/workflows/ci.yml:280), which populates the event
-# ref only -- `origin/main` does not exist there, so a bare `git show
-# origin/main:...` fails and the gate skipped itself on every PR. On the
-# post-merge main canary (:866) `origin/main` IS present but points at the commit
-# just pushed, so the baseline would be compared with itself and nothing ever
-# reads as added; the HEAD~1 fallback below makes that run check the commit's own
-# additions instead.
+# Why this fetches: the `integration` job in .github/workflows/ci.yml -- the one
+# whose `Dead-caller ratchet` step runs this script on PRs and in the merge queue
+# -- checks out at the `actions/checkout@v4` default depth, which populates the
+# event ref only. `origin/main` does not exist there, so a bare `git show
+# origin/main:...` fails and the gate skipped itself on every PR. In the
+# `dead-caller-main` job `origin/main` IS present but points at the commit just
+# pushed, so the baseline would be compared with itself and nothing ever reads as
+# added; the HEAD~1 fallback below makes that run check the commit's own additions
+# instead.
 #
 # Why it deepens rather than falling back to the ref tip: the tip is not the
 # branch point. Every name main DELETED from the baseline after the branch point
