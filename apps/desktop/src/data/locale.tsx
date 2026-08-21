@@ -168,15 +168,11 @@ function persistLocaleToSettings(locale: string): void {
       const { isTauri } = await importTauriCore();
       if (!isTauri()) return;
 
-      const [{ commands }, { unwrap }] = await Promise.all([
-        importBindings(),
-        importIpc(),
-      ]);
-      unwrap(
-        await commands.settingsUpdate(SETTINGS_SCOPE, {
-          [SETTINGS_KEY]: locale,
-        }),
-      );
+      const { updateSettings } = await import('@/data/settingsWrite');
+      await updateSettings({
+        scope: SETTINGS_SCOPE,
+        values: { [SETTINGS_KEY]: locale },
+      });
     } catch {
       // Best-effort — a DB write failure never blocks or reverts the UI change.
     }
