@@ -52,6 +52,14 @@ import type {
   Twilight,
 } from '@/shared/observing-sites/observer-site';
 import {
+  SITE_LAT_DEG_MAX,
+  SITE_LAT_DEG_MIN,
+  SITE_LON_DEG_MAX,
+  SITE_LON_DEG_MIN,
+  SITE_MIN_HORIZON_ALT_DEG_MAX,
+  SITE_MIN_HORIZON_ALT_DEG_MIN,
+} from '@/shared/observing-sites/observer-site';
+import {
   ianaTimezones,
   localTimezone,
 } from '@/shared/observing-sites/iana-timezones';
@@ -155,12 +163,20 @@ export function ObservingSites() {
       setFormError(m.settings_observing_sites_error_name());
       return;
     }
-    const latitudeDeg = parseRange(form.latitudeDegText, -90, 90);
+    const latitudeDeg = parseRange(
+      form.latitudeDegText,
+      SITE_LAT_DEG_MIN,
+      SITE_LAT_DEG_MAX,
+    );
     if (latitudeDeg === null) {
       setFormError(m.settings_observing_sites_error_latitude());
       return;
     }
-    const longitudeDeg = parseRange(form.longitudeDegText, -180, 180);
+    const longitudeDeg = parseRange(
+      form.longitudeDegText,
+      SITE_LON_DEG_MIN,
+      SITE_LON_DEG_MAX,
+    );
     if (longitudeDeg === null) {
       setFormError(m.settings_observing_sites_error_longitude());
       return;
@@ -175,7 +191,11 @@ export function ObservingSites() {
       }
       elevationM = n;
     }
-    const minHorizonAltDeg = parseRange(form.minHorizonAltDegText, 0, 90);
+    const minHorizonAltDeg = parseRange(
+      form.minHorizonAltDegText,
+      SITE_MIN_HORIZON_ALT_DEG_MIN,
+      SITE_MIN_HORIZON_ALT_DEG_MAX,
+    );
     if (minHorizonAltDeg === null) {
       setFormError(m.settings_observing_sites_error_horizon());
       return;
