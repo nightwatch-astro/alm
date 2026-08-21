@@ -272,7 +272,7 @@ collect_dead() {
 #
 # Why: an entry here means "implemented, tested, and never called by shipped
 # code". That is a debt item, but the file was being used as a suppression list
-# -- 134 of 148 entries carried no bead or issue reference when this check was
+# -- 131 of 148 entries carried no bead or issue reference when this check was
 # added, so nothing connected them back to work that would remove them. An
 # untracked entry reads as settled, and a feature that never runs can then sit
 # indefinitely while specs report it as shipped. That is exactly how
@@ -281,7 +281,7 @@ collect_dead() {
 # astro-plan-68c7.
 #
 # Deliberately grandfathered: existing entries are NOT retro-required to carry a
-# reference. Demanding 134 back-annotations at once would either block unrelated
+# reference. Demanding 131 back-annotations at once would either block unrelated
 # work or get satisfied with a copy-pasted placeholder, which is worse than
 # silence because it looks like tracking. New entries only, so the file shrinks
 # toward being fully tracked as it turns over.
@@ -339,8 +339,8 @@ tracking_violations() {
         | sed 's/^/regressed\t/'
 }
 
-# Revision to compare the baseline against, echoed on stdout. Empty means the
-# base is unavailable.
+# Merge base of HEAD and the base ref, echoed on stdout. Empty means no merge
+# base could be reached, which the caller treats as a hard failure under CI.
 #
 # Why this fetches: the PR and merge-queue job uses the default shallow
 # `actions/checkout@v4` (.github/workflows/ci.yml:280), which populates the event
@@ -348,8 +348,15 @@ tracking_violations() {
 # origin/main:...` fails and the gate skipped itself on every PR. On the
 # post-merge main canary (:866) `origin/main` IS present but points at the commit
 # just pushed, so the baseline would be compared with itself and nothing ever
-# reads as added; the HEAD^ fallback below makes that run check the commit's own
+# reads as added; the HEAD~1 fallback below makes that run check the commit's own
 # additions instead.
+#
+# Why it deepens rather than falling back to the ref tip: the tip is not the
+# branch point. Every name main DELETED from the baseline after the branch point
+# is absent from the tip and present on the branch, so it reads as a name this
+# branch added -- on the last six baseline-touching commits that is 39 names, and
+# a branch that never opens the file fails the gate. A depth-1 checkout has no
+# common ancestor to find, so the history is deepened until one exists.
 resolve_base_commit() {
     local ref="${DEAD_CALLERS_BASE_REF:-origin/main}"
     if ! git -C "$ROOT" rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1; then
@@ -358,10 +365,19 @@ resolve_base_commit() {
         git -C "$ROOT" rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || return 0
     fi
 
-    # A shallow fetch can leave no common ancestor, so fall back to the ref tip.
-    local base
-    base="$(git -C "$ROOT" merge-base HEAD "$ref" 2>/dev/null \
-        || git -C "$ROOT" rev-parse "$ref^{commit}")"
+    # `--deepen` alone often suffices and avoids a full history fetch, but it only
+    # extends refs under the remote's refspec: the checked-out branch keeps its own
+    # shallow graft, and merge-base cannot walk past it. `--unshallow` recomputes
+    # every graft, so it is the rung that always resolves.
+    local base attempt
+    base="$(git -C "$ROOT" merge-base HEAD "$ref" 2>/dev/null)" || base=""
+    for attempt in --deepen=50 --unshallow; do
+        [ -z "$base" ] || break
+        [ "$(git -C "$ROOT" rev-parse --is-shallow-repository)" = true ] || break
+        git -C "$ROOT" fetch --quiet "$attempt" origin >/dev/null 2>&1 || break
+        base="$(git -C "$ROOT" merge-base HEAD "$ref" 2>/dev/null)" || base=""
+    done
+    [ -n "$base" ] || return 0
 
     if [ "$base" = "$(git -C "$ROOT" rev-parse HEAD)" ]; then
         git -C "$ROOT" rev-parse --verify --quiet 'HEAD~1^{commit}' >/dev/null 2>&1 || return 0
@@ -377,11 +393,11 @@ check_tracking_references() {
         # Failing closed in CI: a skip here is what let the check pass on every
         # PR while reading as enforced.
         if [ -n "${CI:-}" ]; then
-            echo "FAIL: cannot resolve a base revision for the tracking check (tried ${DEAD_CALLERS_BASE_REF:-origin/main})." >&2
-            echo "Fetch the base branch in the workflow, or set DEAD_CALLERS_BASE_REF." >&2
+            echo "FAIL: no merge base between HEAD and ${DEAD_CALLERS_BASE_REF:-origin/main} for the tracking check." >&2
+            echo "Deepen the checkout (fetch-depth) in the workflow, or set DEAD_CALLERS_BASE_REF." >&2
             return 1
         fi
-        echo "NOTE: no base revision available locally; skipping the tracking check."
+        echo "NOTE: no merge base available locally; skipping the tracking check."
         return 0
     fi
 
@@ -481,6 +497,69 @@ FIX
         return 1
     fi
     echo "OK: tracking self-test passed — group blocks carry, grandfathering holds, lost references fail."
+}
+
+# Prove the tracking check compares against the branch point and not the base-ref
+# tip, on a depth-1 checkout shaped like the PR job.
+#
+# Needed because a wrong base raises no error of its own: names main deleted from
+# the baseline after the branch point are absent from the tip and present on the
+# branch, so they print in the same "added:" list as a genuine violation. The
+# fixture main deletes `deleted_on_main` on a commit the branch never has, which
+# is the exact shape that reported 39 names on branches that never opened the
+# file.
+base_resolution_self_test() {
+    local tmp up work branch_point resolved out rc=0
+    tmp="$(mktemp -d)"
+    # shellcheck disable=SC2064  # expand $tmp now, not at trap time
+    trap "rm -rf '$tmp'" RETURN
+    up="$tmp/up"
+    work="$tmp/work"
+
+    git init --quiet -b main "$up" >/dev/null 2>&1
+    git -C "$up" config user.email dead-callers@example.invalid
+    git -C "$up" config user.name dead-callers-self-test
+    git -C "$up" config commit.gpgsign false
+    mkdir -p "$up/scripts"
+    printf '# tracked by astro-plan-aaaa\nkept\n\ndeleted_on_main\n' \
+        >"$up/scripts/dead-callers-baseline.txt"
+    git -C "$up" add -A
+    git -C "$up" commit --quiet -m 'branch point'
+    branch_point="$(git -C "$up" rev-parse HEAD)"
+
+    git -C "$up" checkout --quiet -b feature
+    printf 'untouched baseline\n' >"$up/unrelated.txt"
+    git -C "$up" add -A
+    git -C "$up" commit --quiet -m 'branch work that never opens the baseline'
+
+    git -C "$up" checkout --quiet main
+    printf '# tracked by astro-plan-aaaa\nkept\n' >"$up/scripts/dead-callers-baseline.txt"
+    git -C "$up" add -A
+    git -C "$up" commit --quiet -m 'main drops deleted_on_main'
+
+    git clone --quiet --depth=1 "file://$up" "$work" >/dev/null 2>&1
+    git -C "$work" fetch --quiet --depth=1 origin \
+        '+refs/heads/feature:refs/remotes/origin/feature' >/dev/null 2>&1
+    git -C "$work" checkout --quiet --detach origin/feature >/dev/null 2>&1
+
+    resolved="$(ROOT="$work" DEAD_CALLERS_BASE_REF=origin/main resolve_base_commit)"
+    if [ "$resolved" != "$branch_point" ]; then
+        echo "FAIL: base-resolution self-test: base is not the branch point." >&2
+        echo "  expected: [$branch_point]" >&2
+        echo "  actual:   [$resolved]" >&2
+        return 1
+    fi
+
+    out="$(ROOT="$work" SCRIPT_DIR="$work/scripts" \
+        BASELINE="$work/scripts/dead-callers-baseline.txt" \
+        DEAD_CALLERS_BASE_REF=origin/main CI=1 check_tracking_references 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "FAIL: base-resolution self-test: a branch that never edits the baseline was rejected." >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    echo "OK: base-resolution self-test passed — the base is the branch point, not the ref tip."
 }
 
 # Fixture corpus: a live fn, a doc-comment-only fn, a test-only fn, one called
@@ -604,6 +683,7 @@ main() {
         --self-test)
             self_test
             tracking_self_test
+            base_resolution_self_test
             return
             ;;
     esac
@@ -640,6 +720,11 @@ HDR
 
     tracking_self_test >/dev/null || {
         echo "FAIL: tracking self-test failed; the tracking check's results are not trustworthy." >&2
+        exit 1
+    }
+
+    base_resolution_self_test >/dev/null || {
+        echo "FAIL: base-resolution self-test failed; the tracking check's base is not trustworthy." >&2
         exit 1
     }
 
