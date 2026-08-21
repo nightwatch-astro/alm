@@ -681,8 +681,8 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         pool.clone(),
     ));
     drop(spawn_stale_dependent_propagator(pool.clone(), &bus));
-    // spec 051 US8: OS notifications for plan-apply and workflow-run manifest
-    // completions, both of which already publish a terminal event here.
+    // spec 051 US8: OS notifications for the `plan.applying.completed` and
+    // `workflow.run_completed` topics, both already published on this bus.
     drop(crate::bootstrap::notify::spawn_completion_notifier(app.clone(), &bus));
     // spec 056 (R5): backend-authoritative onboarding tick subscriber →
     // persists auto-ticks from domain-completion topics and emits
