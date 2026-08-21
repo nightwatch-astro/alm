@@ -28,6 +28,13 @@ lint:
     pnpm -r --if-present lint
     pnpm run lint:tests
     pre-commit run --all-files
+    # A tracked file under .github/ that a gitignore rule also matches stays in
+    # git and disappears from every ignore-respecting scanner. Sealed at zero.
+    bash scripts/check-github-not-ignored.sh
+    # The merge scanner's required-context list against the checked-in branch
+    # protection policy. That comparison is offline; the live-protection
+    # comparison after it skips with a NOTE when there is no network or token.
+    bash scripts/check-required-contexts.sh
 
 # Build the Rust workspace and package workspaces when present.
 build:
@@ -153,13 +160,20 @@ contracts-build:
 ve-themes-check:
     pnpm --filter @astro-plan/desktop ve:themes:check
 
-# Regenerate Rust-derived JSON contract schemas and the tauri-specta
-# TypeScript bindings, then fail when either is out of sync with the
-# committed tree. Wire this into CI for spec 002 + onward.
+# Regenerate every generated artifact — Rust-derived JSON contract schemas, the
+# tauri-specta TypeScript bindings, and the json-schema-to-typescript
+# declarations — then fail when any is out of sync with the committed tree.
 check-generated:
     cargo run -q -p contracts_core --bin generate-contracts
     cargo test -q -p desktop_shell --features dev-tools --test bindings
-    git diff --exit-code specs/*/contracts/*.generated.json apps/desktop/src/bindings/
+    pnpm --filter @astro-plan/contracts build
+    bash scripts/check-generated-drift.sh
+
+# The declaration half of check-generated, without the cargo steps. For a change
+# that touches the schemas or a spec contract but no Rust.
+check-contracts-ts:
+    pnpm --filter @astro-plan/contracts build
+    bash scripts/check-generated-drift.sh packages/contracts/src/generated/
 
 # Full pre-merge gate: lint + tests + typecheck + generated-artifact drift +
 # DB/dead-caller/hot-read/lifecycle-strings boundary ratchets.

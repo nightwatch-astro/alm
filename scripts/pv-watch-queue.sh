@@ -45,8 +45,8 @@ jq -e '
    "Unit + integration (L1+L2) — ubuntu-latest",
    "Unit + integration (L1+L2) — windows-latest",
    "UI mock-mode (Playwright)",
-   "Real-UI journeys (L3) — ubuntu-latest",
-   "Real-UI journeys (L3) — windows-latest"] as $required
+   "Real-UI smoke (L3) — ubuntu-latest",
+   "Supply chain (cargo-deny)"] as $required
   | [ .[]
       | . as $pr
       | ($pr.statusCheckRollup // []) as $rollup
@@ -64,7 +64,6 @@ jq -e '
       | (($release | not)
           and ($pr.isDraft | not)
           and $pr.mergeStateStatus == "CLEAN"
-          and ($checks | length) == 6
           and ($checks | all(. == "OK"))) as $ready
       | {
           number: $pr.number,
@@ -74,6 +73,7 @@ jq -e '
           mergeState: $pr.mergeStateStatus,
           checks: $checks,
           done: ($checks | map(select(. == "OK")) | length),
+          total: ($required | length),
           ready: $ready,
           bucket:
             (if $release or $pr.isDraft then "HELD"
@@ -98,7 +98,7 @@ jq -r '
   | .[]
   | "-- \(.[0].bucket)  (\(length)) --",
     (sort_by(.number) | reverse | .[]
-      | "   #\(.number)\(if .release then " [RELEASE - never merge]" elif .draft then " [draft - never merge]" else "" end)  \(.done)/6  \(.title)")
+      | "   #\(.number)\(if .release then " [RELEASE - never merge]" elif .draft then " [draft - never merge]" else "" end)  \(.done)/\(.total)  \(.title)")
 ' "$classified_json"
 
 printf '%s\n' \

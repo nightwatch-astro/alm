@@ -9,6 +9,11 @@
 //! over to an invalid `"...:60"` field the way a naive `seconds.toFixed(0)`
 //! on the raw remainder can.
 //!
+//! That carry-safety holds from skymath 0.7.2. At 0.7.1 and earlier the crate
+//! rounded in value units and re-split, emitting a `60` seconds field for 3115
+//! RA and 1420 Dec millidegree values; `seconds_carry_never_shows_60` pins the
+//! inputs that regressed, so a downgrade or lock refresh fails here.
+//!
 //! skymath exposes no h/m/s (or d/m/s) component accessors — only the fully
 //! formatted colon/space-separated string — so the astronomy-notation display
 //! (`HHhMMmSSs` / `±DD°MM′SS″`, matching the deleted TS `fmtRa`/`fmtDec`) is
@@ -94,6 +99,23 @@ mod tests {
         let s = sexagesimal(0.0, 44.999_999_999).unwrap();
         assert_eq!(s.dec, "+45\u{b0}00\u{2032}00\u{2033}");
         assert!(!s.dec.contains("60\u{2033}"), "dec={}", s.dec);
+    }
+
+    /// Inputs that skymath 0.7.1 printed with an out-of-domain `60` field.
+    /// Each expectation is the carried value, so a regression that reinstates
+    /// value-unit rounding fails on the string rather than on a `60` substring.
+    #[test]
+    fn seconds_carry_never_shows_60() {
+        const CASES: [(f64, f64, &str, &str); 3] = [
+            (15.248, -89.85, "01h01m00s", "\u{2212}89\u{b0}51\u{2032}00\u{2033}"),
+            (16.0, 0.0, "01h04m00s", "+00\u{b0}00\u{2032}00\u{2033}"),
+            (15.25, 0.0, "01h01m00s", "+00\u{b0}00\u{2032}00\u{2033}"),
+        ];
+        for (ra_deg, dec_deg, want_ra, want_dec) in CASES {
+            let s = sexagesimal(ra_deg, dec_deg).unwrap();
+            assert_eq!(s.ra, want_ra, "ra for ({ra_deg}, {dec_deg})");
+            assert_eq!(s.dec, want_dec, "dec for ({ra_deg}, {dec_deg})");
+        }
     }
 
     #[test]

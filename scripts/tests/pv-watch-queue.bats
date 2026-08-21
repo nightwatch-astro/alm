@@ -94,8 +94,8 @@ write_pr() {
     "Unit + integration (L1+L2) — ubuntu-latest",
     "Unit + integration (L1+L2) — windows-latest",
     "UI mock-mode (Playwright)",
-    "Real-UI journeys (L3) — ubuntu-latest",
-    "Real-UI journeys (L3) — windows-latest"
+    "Real-UI smoke (L3) — ubuntu-latest",
+    "Supply chain (cargo-deny)"
   ] | map({name: ., status: "COMPLETED", conclusion: "SUCCESS"})')
 
   case "$mode" in
