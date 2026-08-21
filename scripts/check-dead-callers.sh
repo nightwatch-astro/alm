@@ -393,8 +393,8 @@ check_tracking_references() {
         # Failing closed in CI: a skip here is what let the check pass on every
         # PR while reading as enforced.
         if [ -n "${CI:-}" ]; then
-            echo "FAIL: no merge base between HEAD and ${DEAD_CALLERS_BASE_REF:-origin/main} for the tracking check." >&2
-            echo "Deepen the checkout (fetch-depth) in the workflow, or set DEAD_CALLERS_BASE_REF." >&2
+            echo "FAIL: cannot resolve a base to compare the baseline against (base ref ${DEAD_CALLERS_BASE_REF:-origin/main})." >&2
+            echo "This checkout has no merge base with that ref and no HEAD~1. Deepen it (fetch-depth) in the workflow, or set DEAD_CALLERS_BASE_REF." >&2
             return 1
         fi
         echo "NOTE: no merge base available locally; skipping the tracking check."
