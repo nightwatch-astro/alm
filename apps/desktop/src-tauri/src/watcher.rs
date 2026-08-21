@@ -180,30 +180,12 @@ fn tool_id_from_project_tool(project_tool: &str) -> String {
 /// Constitution: never follows symlinks/junctions (no per-root opt-in exists
 /// for project output folders in v1) — neither into a symlinked directory
 /// nor as a symlinked file.
-fn real_read_dir(dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let (files, skipped) = real_read_dir_reporting(dir)?;
-    if !skipped.is_empty() {
-        tracing::warn!(
-            count = skipped.len(),
-            "artifact watcher: unreadable directories skipped during reconcile: {}",
-            skipped.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
-        );
-    }
-    Ok(files)
-}
-
-/// [`real_read_dir`] plus the subdirectories that could not be read.
-///
-/// `workflow_artifacts::reconcile` takes a `&Path -> Result<Vec<PathBuf>, _>`
-/// lister, so the skipped list cannot travel with the files; [`real_read_dir`]
-/// logs it instead.
-fn real_read_dir_reporting(dir: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>), String> {
-    let mut files = Vec::new();
-    let mut skipped = Vec::new();
+fn real_read_dir(dir: &Path) -> Result<workflow_artifacts::DirListing, String> {
+    let mut listing = workflow_artifacts::DirListing::default();
     let entries =
         std::fs::read_dir(dir).map_err(|e| format!("read_dir({}) failed: {e}", dir.display()))?;
-    real_read_dir_into(entries, &mut files, &mut skipped);
-    Ok((files, skipped))
+    real_read_dir_into(entries, &mut listing.files, &mut listing.unreadable);
+    Ok(listing)
 }
 
 /// Recursion helper for [`real_read_dir_reporting`]; `files` accumulates real
@@ -213,7 +195,8 @@ fn real_read_dir_reporting(dir: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>), S
 /// An unreadable subdirectory is skipped, not propagated: one
 /// permission-denied directory must not abort reconciliation for every
 /// artifact elsewhere under the project root (matches
-/// `fs_pathsafe::real_files_under`).
+/// `fs_pathsafe::real_files_under`). Callers must treat `skipped` as unknown
+/// state, never as absence.
 fn real_read_dir_into(
     entries: std::fs::ReadDir,
     files: &mut Vec<PathBuf>,
@@ -379,6 +362,16 @@ async fn run_attach_reconciliation(
     )
     .map_err(|e| format!("reconcile failed: {e}"))?;
 
+    let unreadable: Vec<String> =
+        report.unreadable_dirs.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+    if !unreadable.is_empty() {
+        tracing::warn!(
+            count = unreadable.len(),
+            "artifact watcher: unreadable directories skipped during reconcile: {}",
+            unreadable.join(", ")
+        );
+    }
+
     let mut seen_ids: Vec<String> = Vec::new();
     let mut gone: Vec<app_core::artifact::GoneArtifact> = Vec::new();
     for (rel_path, outcome) in report.existing {
@@ -391,6 +384,7 @@ async fn run_attach_reconciliation(
                 });
             }
             workflow_artifacts::ReconcileOutcome::Seen => seen_ids.push(row.id.clone()),
+            workflow_artifacts::ReconcileOutcome::Unknown => {}
         }
     }
 
@@ -414,6 +408,7 @@ async fn run_attach_reconciliation(
     // otherwise pays one commit per row on every drawer open. A failed phase is
     // logged, not propagated — the remaining phases still run, matching the old
     // per-row loops' tolerance of individual failures.
+    app_core::artifact::report_scan_incomplete(bus, project_id, &unreadable).await;
     if let Err(e) = app_core::artifact::touch_seen(pool, &seen_ids).await {
         tracing::warn!(count = seen_ids.len(), "artifact watcher: seen phase failed: {e}");
     }
@@ -813,7 +808,7 @@ mod tests {
         std::fs::write(&top_file, b"x").unwrap();
         std::fs::write(&nested_file, b"x").unwrap();
 
-        let found = real_read_dir(dir.path()).unwrap();
+        let found = real_read_dir(dir.path()).unwrap().files;
 
         assert!(found.contains(&top_file), "top-level file must be found");
         assert!(found.contains(&nested_file), "file nested under a subfolder must be found");
@@ -827,7 +822,7 @@ mod tests {
         let deep_file = deep_dir.join("integration.xisf");
         std::fs::write(&deep_file, b"x").unwrap();
 
-        let found = real_read_dir(dir.path()).unwrap();
+        let found = real_read_dir(dir.path()).unwrap().files;
 
         assert!(found.contains(&deep_file), "file nested two levels deep must be found");
     }
@@ -845,7 +840,7 @@ mod tests {
         let link_path = dir.path().join("linked_output");
         std::os::unix::fs::symlink(real_target.path(), &link_path).unwrap();
 
-        let found = real_read_dir(dir.path()).unwrap();
+        let found = real_read_dir(dir.path()).unwrap().files;
 
         assert!(found.is_empty(), "must not descend into a symlinked directory: found {found:?}");
     }
@@ -877,18 +872,13 @@ mod tests {
             return;
         }
 
-        let reported = real_read_dir_reporting(dir.path());
         let whole_walk = real_read_dir(dir.path());
 
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        let (found, skipped) = reported.unwrap();
-        assert!(found.contains(&top_file), "top-level sibling must still be reconciled");
-        assert!(found.contains(&sibling_file), "nested sibling must still be reconciled");
-        assert_eq!(skipped, vec![locked], "the unreadable directory must be reported");
-        assert!(
-            whole_walk.is_ok(),
-            "an unreadable subdirectory must not fail the whole walk: {whole_walk:?}"
-        );
+        let listing = whole_walk.expect("an unreadable subdirectory must not fail the whole walk");
+        assert!(listing.files.contains(&top_file), "top-level sibling must still be reconciled");
+        assert!(listing.files.contains(&sibling_file), "nested sibling must still be reconciled");
+        assert_eq!(listing.unreadable, vec![locked], "the unreadable directory must be reported");
     }
 }
