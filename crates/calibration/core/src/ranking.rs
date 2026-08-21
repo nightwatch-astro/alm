@@ -43,11 +43,17 @@ impl SoftDimConfig {
     #[must_use]
     pub fn penalty(&self, delta: f64) -> Option<f64> {
         // Every comparison against a NaN is false, so the bare `delta >
-        // self.tolerance` below took the match branch for a NaN delta, a NaN
-        // tolerance, a negative tolerance, and an infinite tolerance — four ways
-        // for an unrelated master to be scored as a full-confidence match, which
-        // is silent corruption of the user's calibration. Reject the inputs
-        // rather than score them.
+        // self.tolerance` below took the match branch — scoring an unrelated
+        // master as a full-confidence match, which is silent corruption of the
+        // user's calibration — for a NaN delta, a NaN tolerance, and a NaN
+        // `max_penalty`. A `+INFINITY` tolerance reached it too, by admitting
+        // every delta there is.
+        //
+        // A negative or `-INFINITY` tolerance was NOT one of these: `delta` is
+        // non-negative past the first guard, so `delta > tolerance` held and the
+        // function already returned `None` for every input. The guard below keeps
+        // that behaviour and states it locally instead of leaving it to a
+        // comparison two branches away.
         if !delta.is_finite() || delta < 0.0 {
             return None;
         }
@@ -199,6 +205,11 @@ pub fn rank_matches(matches: &mut [CalibrationMatch]) {
 pub fn suggest_status(matches: &[CalibrationMatch]) -> &'static str {
     match matches.len() {
         0 => "no_match",
+        // Same rule as the multi-candidate arm below: a confidence that is not a
+        // real number cannot be shown to be a clear match, and having no runner-up
+        // does not make it one. Without this, a lone NaN-confidence candidate was
+        // reported as a settled match while two of them were reported ambiguous.
+        1 if !matches[0].confidence.is_finite() => "ambiguous",
         1 => "match",
         _ => {
             // Ambiguous when top two are within 0.05 confidence.
@@ -363,8 +374,9 @@ mod tests {
 
     #[test]
     fn penalty_rejects_a_tolerance_that_is_not_a_usable_number() {
-        // Each of these used to return Some: `delta > tolerance` is false against a
-        // NaN, against INFINITY, and against a negative tolerance.
+        // NaN and INFINITY used to return Some: `delta > tolerance` is false
+        // against both. The negative cases already returned None and are here to
+        // pin that they still do — the guard moved, the behaviour did not.
         for tolerance in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
             let cfg = SoftDimConfig::new(tolerance, 0.4);
             assert_eq!(cfg.penalty(1.0), None, "tolerance {tolerance} admitted a delta of 1.0");
@@ -391,6 +403,34 @@ mod tests {
     fn suggest_status_single_match() {
         let m = make_match(0.9, SelectionReason::CompatibleFallback);
         assert_eq!(suggest_status(&[m]), "match");
+    }
+
+    /// The lone-candidate arm had no finiteness check, so it reported a settled
+    /// match for exactly the confidence the multi-candidate arm calls ambiguous.
+    ///
+    /// NaN only: `CalibrationMatch::new` clamps confidence into `[0.0, 1.0]`, so
+    /// `INFINITY` arrives as `1.0` and `NEG_INFINITY` as `0.0` — both finite, both
+    /// legitimately a match. `f64::clamp` passes a NaN through, which is why that
+    /// one value still reaches here.
+    #[test]
+    fn suggest_status_is_ambiguous_for_a_lone_candidate_with_no_real_confidence() {
+        let m = make_match(f64::NAN, SelectionReason::CompatibleFallback);
+        assert_eq!(suggest_status(&[m]), "ambiguous");
+    }
+
+    /// Pins the clamp this file depends on: if `new` ever stops sanitizing the
+    /// infinities, the guard above needs to cover them too.
+    #[test]
+    fn an_infinite_confidence_is_clamped_before_it_reaches_suggest_status() {
+        for (input, expected) in [(f64::INFINITY, 1.0), (f64::NEG_INFINITY, 0.0)] {
+            let m = make_match(input, SelectionReason::CompatibleFallback);
+            assert!(
+                (m.confidence - expected).abs() < f64::EPSILON,
+                "{input} became {}",
+                m.confidence
+            );
+            assert_eq!(suggest_status(std::slice::from_ref(&m)), "match");
+        }
     }
 
     #[test]
