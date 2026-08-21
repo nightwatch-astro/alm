@@ -659,6 +659,15 @@ fn parse_entity_type(s: &str) -> EntityType {
 #[derive(Default)]
 pub struct InMemoryLifecycleRepository;
 
+// `async` here is the trait's contract, not this stub's need: the sqlx
+// implementation awaits, a stub that returns a constant has nothing to await.
+// Returning `std::future::ready` instead, as the lint suggests, would run each
+// body at call time rather than at poll time.
+//
+// `allow` rather than `expect`, and paired with `unknown_lints`, because clippy
+// added `unused_async_trait_impl` in 1.98: an expectation would go unfulfilled on
+// older toolchains, and naming the lint at all is itself unknown to them.
+#[allow(unknown_lints, clippy::unused_async_trait_impl)]
 impl LifecycleRepository for InMemoryLifecycleRepository {
     async fn load_asset_detail(
         &self,

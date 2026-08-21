@@ -304,6 +304,7 @@ dependencies = [
  "sqlx",
  "thiserror 2.0.19",
  "tokio",
+ "tracing",
  "uuid",
  "workflow_profiles",
 ]

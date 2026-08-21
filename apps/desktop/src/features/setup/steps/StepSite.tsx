@@ -18,6 +18,12 @@ import {
   ianaTimezones,
 } from '@/shared/observing-sites/iana-timezones';
 import type { Twilight } from '@/shared/observing-sites/observer-site';
+import {
+  SITE_LAT_DEG_MAX,
+  SITE_LAT_DEG_MIN,
+  SITE_LON_DEG_MAX,
+  SITE_LON_DEG_MIN,
+} from '@/shared/observing-sites/observer-site';
 import { selectBase } from '@/styles/select.css';
 
 // Leaflet is ~240 KB raw. Lazy-load so it splits to its own chunk and does
@@ -82,11 +88,19 @@ export function siteStepErrors(state: SiteStepState): SiteStepErrors {
   }
   if (!coordsFilled) return errors;
   const lat = Number(state.latitudeDegText.trim());
-  if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+  if (
+    !Number.isFinite(lat) ||
+    lat < SITE_LAT_DEG_MIN ||
+    lat > SITE_LAT_DEG_MAX
+  ) {
     errors.latitude = m.settings_observing_sites_error_latitude();
   }
   const lon = Number(state.longitudeDegText.trim());
-  if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+  if (
+    !Number.isFinite(lon) ||
+    lon < SITE_LON_DEG_MIN ||
+    lon > SITE_LON_DEG_MAX
+  ) {
     errors.longitude = m.settings_observing_sites_error_longitude();
   }
   const elevRaw = state.elevationMText.trim();

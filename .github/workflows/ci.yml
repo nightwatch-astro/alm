@@ -250,6 +250,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "changes: rust=$rust frontend=$frontend frontend_full=$frontend_full docs_only=$docs_only scripts=${{ steps.filter.outputs.scripts }}"
 
+      # This job is the only one with no gate, which is what the guard needs: a
+      # PR that reintroduces an ignore rule for `.github/` may touch nothing
+      # else, and every other job would skip it. The check is a `git ls-files`
+      # plus one `git check-ignore`, so it costs nothing here.
+      - name: Workflows visible to ignore-respecting scanners
+        run: bash scripts/check-github-not-ignored.sh
+
   # Three lanes share this matrix (Rust, frontend, scripts), each with its own
   # step-level gate, so it is NOT split into separate jobs. The job-level gate
   # below fires only when ALL lanes are idle -- the case where the job had
@@ -444,6 +451,14 @@ jobs:
         if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
         run: just lifecycle-strings
 
+      # Test-target declaration guard: every *.rs at the root of tests/contract/
+      # must have a [[test]] entry. Cargo auto-discovery only reaches
+      # `<pkg>/tests/*.rs`, so an undeclared file there compiles never and
+      # asserts nothing — three sat that way for two months.
+      - name: Test-target declaration guard
+        if: runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true')
+        run: just test-targets
+
       # .pv-* selector ratchet: sealed at zero class selectors in e2e test
       # files (Playwright TS under tests/e2e/ and Rust journeys under
       # crates/e2e-tests/), which the eslint alm/require-root-testid rule
@@ -515,6 +530,10 @@ jobs:
             # zero runnable tests (e.g. an e2e_tests-only change — all its
             # tests are #[ignore]d for the Layer-2 e2e.yml job), and nextest
             # otherwise exits 4 ("no tests to run", run 28751553778).
+            #
+            # $args is a word list of `-p <crate>` flags and has to split, so the
+            # SC2086 quote would collapse it into one bad argument.
+            # shellcheck disable=SC2086
             cargo nextest run --profile ci --no-tests=pass $args
           fi
 

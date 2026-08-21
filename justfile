@@ -28,6 +28,9 @@ lint:
     pnpm -r --if-present lint
     pnpm run lint:tests
     pre-commit run --all-files
+    # A tracked file under .github/ that a gitignore rule also matches stays in
+    # git and disappears from every ignore-respecting scanner. Sealed at zero.
+    bash scripts/check-github-not-ignored.sh
     # The merge scanner's required-context list against the checked-in branch
     # protection policy. That comparison is offline; the live-protection
     # comparison after it skips with a NOTE when there is no network or token.
@@ -60,6 +63,12 @@ dead-callers:
 # comparisons must use typed ProjectState predicates instead.
 lifecycle-strings:
     bash scripts/check-lifecycle-strings.sh
+
+# Test-target declaration guard — every *.rs at the root of tests/contract/ must
+# have a [[test]] entry. Cargo auto-discovery only covers `<pkg>/tests/*.rs`, so
+# an undeclared file there is compiled never and asserts nothing.
+test-targets:
+    bash scripts/check-test-targets-declared.sh
 
 # Hot-read ratchet — fail if per-operation hot-read call sites in the inbox /
 # plan-apply / watcher paths exceed the checked-in baseline. Shrink-only:
@@ -161,7 +170,7 @@ check-generated:
 
 # Full pre-merge gate: lint + tests + typecheck + generated-artifact drift +
 # DB/dead-caller/hot-read/lifecycle-strings boundary ratchets.
-check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings
+check: lint test typecheck check-generated db-boundary dead-callers hot-read lifecycle-strings test-targets
 
 # Placeholder fixture check hook.
 fixtures-check:

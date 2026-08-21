@@ -136,6 +136,15 @@ pub struct InMemoryOperationStateRepository {
     states: std::collections::BTreeMap<String, OperationState>,
 }
 
+// `async` here is the trait's contract, not this double's need: the real SQLite
+// implementation awaits, a `BTreeMap` has nothing to await. Returning
+// `std::future::ready` instead, as the lint suggests, would run each body at call
+// time rather than at poll time, which is a behaviour change for a test double.
+//
+// `allow` rather than `expect`, and paired with `unknown_lints`, because clippy
+// added `unused_async_trait_impl` in 1.98: an expectation would go unfulfilled on
+// older toolchains, and naming the lint at all is itself unknown to them.
+#[allow(unknown_lints, clippy::unused_async_trait_impl)]
 impl OperationStateRepository for InMemoryOperationStateRepository {
     async fn insert_operation_state(&mut self, state: &OperationState) -> DbResult<()> {
         self.states.insert(state.id.clone(), state.clone());

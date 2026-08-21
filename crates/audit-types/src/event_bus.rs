@@ -224,15 +224,18 @@ pub const TOPIC_SETTINGS_SNAPSHOT: &str = "settings.snapshot";
 /// Payload for the `settings.repair` topic (spec 018, T005).
 ///
 /// Emitted at warn level when a stored settings value fails schema validation
-/// and is reset to its in-code default (T019).
+/// (T019). The repair either resets the key to its in-code default or, for an
+/// array-valued key whose entries are independently valid, keeps the entries
+/// that validate and drops the rest.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsRepair {
-    /// The settings key that was reset.
+    /// The settings key that was repaired.
     pub key: String,
-    /// The invalid stored value that triggered the repair.
+    /// What was discarded: the whole stored value for a full reset, or only the
+    /// dropped entries for a partial repair.
     pub invalid_value: serde_json::Value,
-    /// The default value restored.
+    /// The value now stored: the in-code default, or the kept remainder.
     pub default_value: serde_json::Value,
     /// ISO-8601 timestamp.
     pub at: String,
