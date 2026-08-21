@@ -866,7 +866,8 @@ async fn an_accepted_but_unexecuted_retry_is_restored_to_failed_not_cancelled() 
     insert_approved_plan_with_items(&db, "p-orphan", 1).await;
     // A real run row: the audit event's `run_id` is a foreign key, so a fake id
     // would make the append silently fail and the reason never be recorded.
-    plans_repo::update_plan_state(db.pool(), "p-orphan", "approved").await.unwrap();
+    plans_repo::update_plan_state(db.pool(), "p-orphan", "ready_for_review").await.unwrap();
+    plans_repo::set_approved(db.pool(), "p-orphan", "2026-06-01T00:00:00Z", "tok").await.unwrap();
     apply_repo::cas_approved_to_applying(db.pool(), "p-orphan", "run-orphan", "tok", 1, 1)
         .await
         .unwrap();
