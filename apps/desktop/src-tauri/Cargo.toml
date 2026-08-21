@@ -88,7 +88,9 @@ dev-tools = ["app_core/dev-tools"]
 # The embedded server listens on 127.0.0.1:4445; the tauri-webdriver CLI
 # (cargo install tauri-webdriver --locked) proxies :4444 → :4445.
 # Release binaries MUST NOT enable this feature (Constitution Principle V).
-e2e = ["dep:tauri-plugin-webdriver"]
+# Also compiles the headless OS-trash double the harness needs, since the Shell
+# trash blocks forever without an interactive window-station.
+e2e = ["dep:tauri-plugin-webdriver", "app_core/e2e-trash-fake"]
 
 [lints]
 workspace = true

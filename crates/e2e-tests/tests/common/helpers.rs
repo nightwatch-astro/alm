@@ -259,8 +259,11 @@ pub(super) fn spawn_tauri_webdriver(
         // only the headless session hangs. A real Recycle-Bin move is
         // unperformable here, so the app does a deterministic filesystem
         // removal instead (see `fs_executor::ops::trash_op`), matching the
-        // FakeSpawner/FakeResolver boundary pattern. Production/live never sets
-        // this and always uses real OS trash.
+        // FakeSpawner/FakeResolver boundary pattern. A release binary ignores
+        // this variable: the read is compiled only under `desktop_shell/e2e`
+        // (which forwards to `fs_executor/e2e-trash-fake`), so the app under
+        // test must be the e2e-feature build, and production always uses real
+        // OS trash.
         .env("PV_E2E_OS_TRASH_FAKE", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
