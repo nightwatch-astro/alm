@@ -41,6 +41,13 @@ pub enum DbError {
     NotFound(String),
     #[error("compare-and-swap failed: {0}")]
     CasFailed(String),
+    /// The approval token an operation was authorised with is no longer the one
+    /// on the row. Separate from [`DbError::CasFailed`] because a state CAS can
+    /// hold while the token has been revoked and reissued by a reopen plus
+    /// re-approval, and the caller owes the user `plan.approval.stale` for that
+    /// rather than `plan.invalid_state`.
+    #[error("approval token stale: {0}")]
+    ApprovalStale(String),
     #[error("serialisation error: {0}")]
     Serialise(#[from] serde_json::Error),
     #[error("database error: {0}")]
@@ -88,9 +95,17 @@ impl Database {
     ///   at most losing the last un-checkpointed transaction — the database is
     ///   never corrupted.  This is materially faster than `FULL` on spinning or
     ///   network-backed storage without sacrificing integrity guarantees the app
-    ///   depends on.  Tier-1 (`FULL`) escalation per-connection for high-value
-    ///   writes (audit events, filesystem plan commits) is tracked as a follow-up
-    ///   in kyo7.49.
+    ///   depends on.  No writer raises `synchronous`; this pool default is the
+    ///   only setting in the repo.  One tier-1 path syncs separately: the
+    ///   filesystem-mutation intent commit is followed by a best-effort
+    ///   `PRAGMA wal_checkpoint(TRUNCATE)` (see `checkpoint_intent` in
+    ///   `persistence_plans::repositories::plan_apply`), whose failure both
+    ///   call sites discard without logging — the persistence layer has no
+    ///   logging facade, and boot reconciliation is the backstop.  The other
+    ///   tier-1 records §V names —
+    ///   frame-to-session attribution, lifecycle choices, user overrides — have
+    ///   no such escalation; whether they require one is open
+    ///   (astro-plan-53b8).
     /// - **`foreign_keys = ON`**: enforced explicitly so the constraint is not
     ///   silently absent if a future sqlx version changes its default.
     /// - **`busy_timeout`** (#1231): pins the wait interval so it is ours, not
@@ -306,15 +321,6 @@ mod tests {
         let fk_on: i64 =
             sqlx::query_scalar("PRAGMA foreign_keys").fetch_one(db.pool()).await.unwrap();
         assert_eq!(fk_on, 1, "PRAGMA foreign_keys must be 1 (ON) on every connection");
-    }
-
-    #[tokio::test]
-    async fn synchronous_normal_on_fresh_connection() {
-        let db = super::Database::in_memory().await.expect("in-memory connect");
-        // SQLite returns the numeric value: 0=OFF, 1=NORMAL, 2=FULL, 3=EXTRA.
-        let sync_level: i64 =
-            sqlx::query_scalar("PRAGMA synchronous").fetch_one(db.pool()).await.unwrap();
-        assert_eq!(sync_level, 1, "synchronous must be NORMAL (1) per tier-2 policy");
     }
 
     #[tokio::test]

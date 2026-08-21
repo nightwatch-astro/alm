@@ -30,6 +30,7 @@ const {
   mockPlansGet,
   mockPlansApprove,
   mockPlansDiscard,
+  mockPlansReopen,
   mockPlansRetry,
   mockPlansResume,
   mockPlansApplyStatus,
@@ -43,6 +44,7 @@ const {
   mockPlansGet: vi.fn(),
   mockPlansApprove: vi.fn(),
   mockPlansDiscard: vi.fn(),
+  mockPlansReopen: vi.fn(),
   mockPlansRetry: vi.fn(),
   mockPlansResume: vi.fn(),
   mockPlansApplyStatus: vi.fn(),
@@ -59,6 +61,7 @@ vi.mock('@/bindings/index', () => ({
     plansGet: mockPlansGet,
     plansApprove: mockPlansApprove,
     plansDiscard: mockPlansDiscard,
+    plansReopen: mockPlansReopen,
     plansRetry: mockPlansRetry,
     plansResume: mockPlansResume,
     plansApplyStatus: mockPlansApplyStatus,
@@ -915,5 +918,39 @@ describe('PlanReviewOverlay (spec 017 WP-E)', () => {
       expect(mockPlansRetry).toHaveBeenCalledWith('plan-1', 'cancelled'),
     );
     await waitFor(() => expect(onRetryCreated).toHaveBeenCalledWith('plan-2'));
+  });
+  it('offers reopen on an approved plan and calls plans.reopen (T023)', async () => {
+    mockPlansGet.mockResolvedValue(ok(plan({ state: 'approved' })));
+    mockPlansReopen.mockResolvedValue(
+      ok({
+        planId: 'plan-1',
+        newState: 'draft',
+        priorState: 'approved',
+        reopenedAt: '2026-07-01T00:00:00Z',
+      }),
+    );
+    renderOverlay();
+
+    fireEvent.click(await screen.findByTestId('plan-review-reopen'));
+    await waitFor(() => expect(mockPlansReopen).toHaveBeenCalledWith('plan-1'));
+  });
+
+  it('hides reopen on a plan that has not been approved (T023)', async () => {
+    mockPlansGet.mockResolvedValue(ok(plan({ state: 'ready_for_review' })));
+    renderOverlay();
+
+    await screen.findByTestId('plan-review-approve-apply');
+    expect(screen.queryByTestId('plan-review-reopen')).toBeNull();
+  });
+
+  it('hides reopen on an applied plan whose filesystem actions happened (T023)', async () => {
+    mockPlansGet.mockResolvedValue(ok(plan({ state: 'applied' })));
+    renderOverlay();
+
+    // Wait for the plan to load, so the absent reopen button is a real
+    // rendering decision rather than an unresolved query.
+    await screen.findByTestId('plan-review-item-0');
+    expect(screen.queryByTestId('plan-review-approve-apply')).toBeNull();
+    expect(screen.queryByTestId('plan-review-reopen')).toBeNull();
   });
 });

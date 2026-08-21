@@ -393,6 +393,27 @@ def trailer_ids(body: str, name: str) -> list[str]:
     return ids
 
 
+def metadata_ids(value: Any) -> set[str] | None:
+    """Bead ids held by a metadata list value, None when the value is not a list of ids.
+
+    `bd update --set-metadata key=value` stringifies every value, so a list
+    written that way reads back as the JSON text ``["id"]`` rather than a list.
+    An unparsable string, or one decoding to anything but a list of strings,
+    yields None so the caller reports a mismatch instead of comparing a shape it
+    cannot interpret.
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    if isinstance(value, (list, tuple)) and all(
+        isinstance(item, str) for item in value
+    ):
+        return set(value)
+    return None
+
+
 MISS_MESSAGE = re.compile(
     r"no issue(s)? found|not found|no such|does not exist|unknown (bead|issue)", re.I
 )
@@ -549,7 +570,7 @@ def validate(invocation: list[str], cwd: Path) -> str | None:
                 f"Closes-Bead '{bead_id}' must already depend on Merge-Bead "
                 f"'{merge_id}' before PR creation."
             )
-    if set(metadata.get("tracks_beads", [])) != set(tracks) or set(
+    if metadata_ids(metadata.get("tracks_beads", [])) != set(tracks) or metadata_ids(
         metadata.get("closes_beads", [])
     ) != set(closes):
         return (

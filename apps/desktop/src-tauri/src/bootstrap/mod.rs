@@ -13,6 +13,7 @@
 
 pub mod background;
 pub mod menu;
+pub mod notify;
 pub mod window;
 
 /// Whether `build_app` registers the single-instance guard (spec 051 US1).
