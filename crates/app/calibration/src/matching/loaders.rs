@@ -154,6 +154,26 @@ pub(super) async fn load_config(pool: &SqlitePool) -> MatchingRuleConfig {
     config
 }
 
+/// Accept a persisted tolerance only when it is a usable measurement.
+///
+/// Nothing validates these values on the way in: `calibration_tolerances::update`
+/// binds whatever the caller passed, and the settings store holds raw JSON. A NaN,
+/// an infinity, or a negative tolerance now makes its dimension refuse every
+/// candidate rather than score one, so a garbage value would silently disable a
+/// matching dimension. Fall back to the engine default instead.
+fn usable_tolerance(value: f64) -> Option<f64> {
+    (value.is_finite() && value >= 0.0).then_some(value)
+}
+
+/// Accept a persisted penalty only when it lands inside the confidence range.
+///
+/// A penalty is subtracted from a confidence, so a value outside `0.0..=1.0` is a
+/// misconfiguration whichever way it points: negative raises confidence above 1.0,
+/// and above 1.0 drives it below zero.
+fn usable_penalty(value: f64) -> Option<f64> {
+    (value.is_finite() && (0.0..=1.0).contains(&value)).then_some(value)
+}
+
 /// Load `MatchingRuleConfig` from persisted settings keys, falling back to defaults.
 async fn load_config_from_db(pool: &SqlitePool) -> MatchingRuleConfig {
     let mut config = MatchingRuleConfig::default();
@@ -178,7 +198,9 @@ async fn load_config_from_db(pool: &SqlitePool) -> MatchingRuleConfig {
         // present; there is no "unset" case to fall back from. That is also why
         // the mismatch was invisible: the engine kept its own 2.0 default while
         // the row said 5.0, and nothing ever compared them.
-        config.dark_temp_tolerance_c = row.temperature_tolerance_c;
+        if let Some(n) = usable_tolerance(row.temperature_tolerance_c) {
+            config.dark_temp_tolerance_c = n;
+        }
     }
 
     // Read AFTER the row, so this key still wins where both are set. It is the
@@ -188,28 +210,28 @@ async fn load_config_from_db(pool: &SqlitePool) -> MatchingRuleConfig {
     if let Ok(Some(v)) =
         persistence_lifecycle::repositories::settings::get_raw(pool, KEY_DARK_TEMP).await
     {
-        if let Some(n) = v.as_f64() {
+        if let Some(n) = v.as_f64().and_then(usable_tolerance) {
             config.dark_temp_tolerance_c = n;
         }
     }
     if let Ok(Some(v)) =
         persistence_lifecycle::repositories::settings::get_raw(pool, KEY_DARK_OVERRIDE).await
     {
-        if let Some(n) = v.as_f64() {
+        if let Some(n) = v.as_f64().and_then(usable_penalty) {
             config.dark_override_penalty = n;
         }
     }
     if let Ok(Some(v)) =
         persistence_lifecycle::repositories::settings::get_raw(pool, KEY_FLAT_OVERRIDE).await
     {
-        if let Some(n) = v.as_f64() {
+        if let Some(n) = v.as_f64().and_then(usable_penalty) {
             config.flat_override_penalty = n;
         }
     }
     if let Ok(Some(v)) =
         persistence_lifecycle::repositories::settings::get_raw(pool, KEY_BIAS_OVERRIDE).await
     {
-        if let Some(n) = v.as_f64() {
+        if let Some(n) = v.as_f64().and_then(usable_penalty) {
             config.bias_override_penalty = n;
         }
     }

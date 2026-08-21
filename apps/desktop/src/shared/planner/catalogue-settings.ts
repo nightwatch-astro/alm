@@ -16,6 +16,7 @@
 
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
+import { updateSettings } from '@/data/settingsWrite';
 import {
   PLANNER_CATALOGS,
   type CatalogueId,
@@ -72,7 +73,8 @@ export async function loadDefaultCatalogues(): Promise<CatalogueId[]> {
 export async function saveDefaultCatalogues(
   enabled: readonly CatalogueId[],
 ): Promise<void> {
-  unwrap(
-    await commands.settingsUpdate(CATALOGUES_SCOPE, { enabled: [...enabled] }),
-  );
+  await updateSettings({
+    scope: CATALOGUES_SCOPE,
+    values: { enabled: [...enabled] },
+  });
 }

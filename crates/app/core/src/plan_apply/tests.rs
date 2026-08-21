@@ -1082,29 +1082,19 @@ async fn confirm_then_apply_executes_previously_refused_delete_item() {
     assert!(audit_count > 0, "apply_plan must write at least one durable audit_log_entry row");
 }
 
-/// Removes `PV_E2E_OS_TRASH_FAKE` on drop (including panic unwind) so a
-/// failed assertion in the test body can never leak the var into other
-/// tests in this binary (this crate has no other test that exercises the
-/// `Trash` executor action, so the var is otherwise untouched here).
-struct EnvVarGuard(&'static str);
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        std::env::remove_var(self.0);
-    }
-}
-
 /// Regression for the "trash destination is dead code" finding: both
 /// `cleanup_generator` and `archive_generator` always store
 /// `action = "archive"` for a destructive-but-reversible item; the
 /// user's plan-level "System trash" choice (`plans.destructive_destination`)
 /// was never consulted at apply time, so it silently archived into
 /// `.astro-plan-archive` regardless of what the user picked in review.
-/// `PV_E2E_OS_TRASH_FAKE` (headless-safe OS-trash double, added for the
-/// e2e harness) makes the OS-trash outcome deterministic here too.
+/// `fs_executor::ops::trash_op::fake` (headless-safe OS-trash double, added for
+/// the e2e harness) makes the OS-trash outcome deterministic here too.
 #[tokio::test]
 async fn archive_action_item_with_trash_destination_really_trashes() {
-    std::env::set_var("PV_E2E_OS_TRASH_FAKE", "1");
-    let _env_guard = EnvVarGuard("PV_E2E_OS_TRASH_FAKE");
+    // Restores real OS trash on drop, including on panic unwind, so a failed
+    // assertion below cannot divert the trash path of the rest of this binary.
+    let _fake_trash = fs_executor::ops::trash_op::fake::FakeTrashGuard::new();
 
     let dir = tempfile::tempdir().unwrap();
     let file_path = dir.path().join("intermediate.fits");

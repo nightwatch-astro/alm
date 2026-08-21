@@ -188,15 +188,7 @@ export async function getSettingsTyped<T extends Record<string, unknown>>(
   return parseSettingsValues(data.values, schema);
 }
 
-export async function updateSettings(args: {
-  scope: string;
-  values: Record<string, unknown>;
-}): Promise<void> {
-  unwrap(await commands.settingsUpdate(args.scope, args.values));
-  await queryClient.invalidateQueries({
-    queryKey: queryKeys.settings.scope(args.scope),
-  });
-}
+export { updateSettings } from '@/data/settingsWrite';
 
 /**
  * `settings.restore-defaults` — restore named keys (or all keys when `keys`
