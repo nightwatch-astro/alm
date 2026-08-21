@@ -31,6 +31,10 @@ lint:
     # A tracked file under .github/ that a gitignore rule also matches stays in
     # git and disappears from every ignore-respecting scanner. Sealed at zero.
     bash scripts/check-github-not-ignored.sh
+    # The merge scanner's required-context list against the checked-in branch
+    # protection policy. That comparison is offline; the live-protection
+    # comparison after it skips with a NOTE when there is no network or token.
+    bash scripts/check-required-contexts.sh
 
 # Build the Rust workspace and package workspaces when present.
 build:
