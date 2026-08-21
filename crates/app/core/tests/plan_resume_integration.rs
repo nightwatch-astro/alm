@@ -676,12 +676,14 @@ async fn resume_then_retry_of_pre_pause_failed_item_reaches_terminal_state() {
         .await
         .expect("update_item_fs_snapshot to resolve staleness");
 
-    // Installed after the first apply has already reached a terminal state, so
-    // only the resumed run — the one that has to still be draining when the
-    // retry arrives — is gated. Dropping the gate releases every remaining
-    // boundary, including on panic unwind, so a failed assertion below cannot
-    // strand the spawned executor.
-    let gate = fs_executor::run::pacing::ItemGate::install();
+    // Scoped to this plan, so a test running concurrently in the same binary
+    // cannot consume this gate's arrival or release permits. Installed after the
+    // first apply has already reached a terminal state, so only the resumed run
+    // — the one that has to still be draining when the retry arrives — is
+    // gated. Dropping the gate releases every remaining boundary, including on
+    // panic unwind, so a failed assertion below cannot strand the spawned
+    // executor.
+    let gate = fs_executor::run::pacing::ItemGate::install(&plan_id);
 
     app_core::plan_apply::resume_plan(db.pool(), &bus, &plan_id, &run_row.id)
         .await

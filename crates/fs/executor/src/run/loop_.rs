@@ -79,7 +79,7 @@ async fn drive_plan<C: ExecutorCallbacks>(
         }
 
         #[cfg(feature = "test-pacing")]
-        pacing::gate_item().await;
+        pacing::gate_item(&item.plan_id).await;
 
         // Check cancellation between items (never mid-item).
         if cancel.is_cancelled() {
@@ -212,6 +212,10 @@ async fn drain_retries<C: ExecutorCallbacks>(
 /// arrival, so a test waits for an ordering it observes rather than for a
 /// duration it guessed.
 ///
+/// Keyed by plan id, because integration tests share one process: an un-scoped
+/// registry lets a concurrent test's executor consume the arrival and release
+/// permits the gating test issued for its own run.
+///
 /// The whole module is behind the `test-pacing` feature, which is off by
 /// default and reachable only through a `[dev-dependencies]` edge, so no
 /// release binary contains a way to stall a real plan apply.
@@ -220,6 +224,7 @@ async fn drain_retries<C: ExecutorCallbacks>(
 /// signature carries no test-only handle.
 #[cfg(feature = "test-pacing")]
 pub mod pacing {
+    use std::collections::HashMap;
     use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
     use std::time::Duration;
 
@@ -239,20 +244,23 @@ pub mod pacing {
         release: Semaphore,
     }
 
-    static GATE: Mutex<Option<Arc<GateState>>> = Mutex::new(None);
+    static GATES: Mutex<Option<HashMap<String, Arc<GateState>>>> = Mutex::new(None);
 
     /// Recovers from poisoning: a test panicking while the loop is parked must
-    /// still leave the slot usable, and a panicking `Drop` would abort.
-    fn slot() -> MutexGuard<'static, Option<Arc<GateState>>> {
-        GATE.lock().unwrap_or_else(PoisonError::into_inner)
+    /// still leave the registry usable, and a panicking `Drop` would abort.
+    fn registry() -> MutexGuard<'static, Option<HashMap<String, Arc<GateState>>>> {
+        GATES.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Park the forward pass until an installed gate releases this item.
+    /// Park the forward pass until the gate installed for `plan_id` releases
+    /// this item.
     ///
-    /// A no-op when no [`ItemGate`] is installed, which is every run other than
-    /// the one a gating test drives.
-    pub(crate) async fn gate_item() {
-        let Some(gate) = slot().clone() else { return };
+    /// A no-op when no [`ItemGate`] is installed for this plan, which is every
+    /// run other than the one a gating test drives.
+    pub(crate) async fn gate_item(plan_id: &str) {
+        let Some(gate) = registry().as_ref().and_then(|g| g.get(plan_id).cloned()) else {
+            return;
+        };
         gate.arrived.add_permits(1);
         // Bound to a local declared after `gate` so the permit's borrow of it
         // ends before `gate` itself drops.
@@ -267,18 +275,26 @@ pub mod pacing {
     /// An installed gate. Dropping it releases every remaining boundary,
     /// including on a panic unwind, so a failed assertion cannot strand a
     /// spawned executor.
-    pub struct ItemGate(Arc<GateState>);
+    pub struct ItemGate {
+        plan_id: String,
+        state: Arc<GateState>,
+    }
 
     impl ItemGate {
-        /// Gate every item boundary reached in this process from now on.
+        /// Gate every item boundary `plan_id`'s run reaches from now on. Runs of
+        /// other plans are unaffected.
         ///
-        /// Process-global: at most one gate per test binary at a time.
+        /// # Panics
+        /// If a gate is already installed for `plan_id`.
         #[must_use]
-        pub fn install() -> Self {
+        pub fn install(plan_id: &str) -> Self {
             let state =
                 Arc::new(GateState { arrived: Semaphore::new(0), release: Semaphore::new(0) });
-            *slot() = Some(Arc::clone(&state));
-            Self(state)
+            let prior = registry()
+                .get_or_insert_with(HashMap::new)
+                .insert(plan_id.to_owned(), Arc::clone(&state));
+            assert!(prior.is_none(), "a gate is already installed for plan {plan_id}");
+            Self { plan_id: plan_id.to_owned(), state }
         }
 
         /// Wait until the forward pass parks at an item boundary.
@@ -291,7 +307,7 @@ pub mod pacing {
         /// If no boundary is reached within 30 seconds, meaning the run never
         /// started or already ended.
         pub async fn wait_for_arrival(&self) {
-            tokio::time::timeout(ARRIVAL_TIMEOUT, self.0.arrived.acquire())
+            tokio::time::timeout(ARRIVAL_TIMEOUT, self.state.arrived.acquire())
                 .await
                 .expect("executor reached no item boundary: the run never started or already ended")
                 .expect("the arrival semaphore is never closed")
@@ -300,14 +316,16 @@ pub mod pacing {
 
         /// Let the forward pass leave `n` further item boundaries.
         pub fn release(&self, n: usize) {
-            self.0.release.add_permits(n);
+            self.state.release.add_permits(n);
         }
     }
 
     impl Drop for ItemGate {
         fn drop(&mut self) {
-            self.0.release.close();
-            *slot() = None;
+            self.state.release.close();
+            if let Some(gates) = registry().as_mut() {
+                gates.remove(&self.plan_id);
+            }
         }
     }
 }
