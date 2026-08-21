@@ -58,6 +58,11 @@ uuid = { version = "1", features = ["serde", "v4", "v5"] }
 
 [dev-dependencies]
 app_core_cache = { path = "../cache" }
+# plan_resume_integration.rs paces the executor's forward pass so its retry lands
+# while the resumed run is still draining. The feature is off on the
+# `[dependencies]` edge above, so the seam is absent from every binary built from
+# this crate.
+fs_executor = { path = "../../fs/executor", features = ["test-pacing"] }
 tempfile = { workspace = true }
 # spec 048 T010: forces two fixture frames to a single mtime so the
 # moved-vs-catalogued `file_record` comparison tests the writer, not the clock.
