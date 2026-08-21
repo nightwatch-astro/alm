@@ -98,7 +98,7 @@ use crate::commands::plan_apply::{
 use crate::commands::plans::{
     archive_list, archive_permanently_delete, archive_plan_generate, archive_plan_generate_restore,
     archive_send_to_trash, plans_approve, plans_discard, plans_free_space_estimate, plans_get,
-    plans_list, plans_retry,
+    plans_list, plans_reopen, plans_retry,
 };
 use crate::commands::preferences::{preferences_get, preferences_set};
 use crate::commands::prepared_views::{
@@ -282,6 +282,7 @@ macro_rules! app_commands {
             plans_get,
             plans_free_space_estimate,
             plans_approve,
+            plans_reopen,
             plans_discard,
             plans_retry,
             archive_send_to_trash,

@@ -54,6 +54,14 @@ export interface InventoryFilters {
    * When set, limits sessions to the given canonical state. 'ignored' sessions are excluded from the default ledger (no filter or filter='all'); use reviewFilter='ignored' to surface them (FR-010 Cmd+K action navigates to /inventory?reviewFilter=ignored).
    */
   reviewFilter?: "all" | "discovered" | "candidate" | "needs_review" | "confirmed" | "rejected" | "ignored";
+  /**
+   * Maximum sessions per source root. Server default is 1000 when omitted. Existing callers that omit the field continue to work.
+   */
+  limit?: number;
+  /**
+   * Sessions to skip before applying limit (0-based, per source root).
+   */
+  offset?: number;
 }
 export interface InventorySource {
   id: Uuid;
@@ -61,6 +69,10 @@ export interface InventorySource {
   kind: SourceKind;
   state: SourceState;
   sessions: InventorySession[];
+  /**
+   * true when more sessions exist beyond the current offset+limit page. false for an unbounded fetch or when the last session has been returned. Callers that do not paginate can ignore this field.
+   */
+  hasMore?: boolean;
 }
 export interface InventorySession {
   id: Uuid;

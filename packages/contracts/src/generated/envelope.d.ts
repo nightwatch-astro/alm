@@ -9,12 +9,7 @@
  * Transport-neutral operation envelopes, operation events, handles, and error DTOs.
  */
 export type AstroLibraryManagerContractEnvelopes =
-  | RequestEnvelope
-  | OkResponseEnvelope
-  | ErrorResponseEnvelope
-  | OperationHandle
-  | OperationEvent
-  | ContractError;
+  RequestEnvelope | OkResponseEnvelope | ErrorResponseEnvelope | OperationHandle | OperationEvent | ContractError;
 export type ContractVersion = "1.0.0";
 export type OperationName = string;
 export type RequestId = string;

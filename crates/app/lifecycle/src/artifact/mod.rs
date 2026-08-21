@@ -66,7 +66,8 @@ pub use launches::{complete_run, reattribute, sweep_stale_launches};
 pub use list::list;
 pub use missing_recovered::{mark_recovered, mark_resolved};
 pub use reconcile_batch::{
-    detect_batch, mark_missing_batch, touch_seen, DetectedFile, GoneArtifact,
+    detect_batch, mark_missing_batch, report_scan_incomplete, touch_seen, DetectedFile,
+    GoneArtifact,
 };
 
 // ── Shared helpers ───────────────────────────────────────────────────────────

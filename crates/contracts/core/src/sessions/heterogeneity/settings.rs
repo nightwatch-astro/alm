@@ -275,7 +275,7 @@ impl MatchingSettings {
         for &(field, idx, min, max, warning) in RANGE_CHECKS {
             check_range(&mut issues, field, values[idx], min, max, warning);
         }
-        if (self.mosaic.residual_sky_rotation_cap_deg.get() - 90.0).abs() > f64::EPSILON {
+        if (self.mosaic.residual_sky_rotation_cap_deg.get() - 10.0).abs() > f64::EPSILON {
             issues.push(issue(
                 "settings.fixed_rule_changed",
                 SettingsSeverity::Red,

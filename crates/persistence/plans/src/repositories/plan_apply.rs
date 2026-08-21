@@ -33,7 +33,8 @@ use persistence_core::{DbError, DbResult};
 ///
 /// A failed checkpoint (e.g. a reader holding the WAL open) is not fatal: the
 /// intent is already committed to the WAL, boot reconciliation is the backstop,
-/// and the next automatic checkpoint will sync it. Callers log and proceed.
+/// and the next automatic checkpoint will sync it. Both callers discard the
+/// error without logging and proceed.
 async fn checkpoint_intent(conn: &mut SqliteConnection) -> DbResult<()> {
     sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(conn).await?;
     Ok(())
@@ -102,8 +103,19 @@ pub struct EventRollback<'a> {
 ///
 /// # Errors
 ///
+/// `approval_token` is part of the CAS predicate, not just the run row. The
+/// caller checks the token before loading items and resolving paths; predicating
+/// only on state left a window where the plan was reopened, edited and
+/// re-approved in between, and the old request then applied the edited plan
+/// under a token the reopen had already revoked (constitution II: the applied
+/// actions would not be the reviewed ones).
+///
+/// # Errors
+///
 /// - `DbError::CasFailed` if the plan state was not `approved` at transition
 ///   time (concurrent apply race or invalid state).
+/// - `DbError::ApprovalStale` if the plan is `approved` under a different token
+///   than the one this request holds.
 /// - `DbError::NotFound` if the plan does not exist.
 /// - `DbError::Database` on connection failure.
 pub async fn cas_approved_to_applying(
@@ -119,25 +131,31 @@ pub async fn cas_approved_to_applying(
     // Use a transaction so the CAS + run row insertion are atomic.
     let mut tx = pool.begin().await?;
 
-    // Attempt atomic CAS: only update if current state is 'approved'.
+    // Attempt atomic CAS: update only while the plan is still 'approved' under
+    // the token this request was authorised with.
     let rows = sqlx::query(
         "UPDATE plans SET state = 'applying' \
-         WHERE id = ? AND state = 'approved'",
+         WHERE id = ? AND state = 'approved' AND approval_token = ?",
     )
     .bind(plan_id)
+    .bind(approval_token)
     .execute(&mut *tx)
     .await?;
 
     if rows.rows_affected() == 0 {
-        // Either not found or not in approved state. Check which.
-        let exists: Option<String> = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
-            .bind(plan_id)
-            .fetch_optional(&mut *tx)
-            .await?;
-        return match exists {
+        // Not found, not approved, or approved under another token. Check which.
+        let row: Option<(String, Option<String>)> =
+            sqlx::query_as("SELECT state, approval_token FROM plans WHERE id = ?")
+                .bind(plan_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        return match row {
             None => Err(DbError::NotFound(format!("plan {plan_id}"))),
-            Some(state) => Err(DbError::CasFailed(format!(
+            Some((state, _)) if state != "approved" => Err(DbError::CasFailed(format!(
                 "plan {plan_id} expected state 'approved', found '{state}'"
+            ))),
+            Some(_) => Err(DbError::ApprovalStale(format!(
+                "plan {plan_id} was re-approved after this apply was authorised"
             ))),
         };
     }
@@ -1058,6 +1076,56 @@ mod tests {
         assert_eq!(run.items_total, 2);
     }
 
+    /// The apply CAS is bound to the token the request was authorised with, not
+    /// just to `state = 'approved'`.
+    ///
+    /// `apply_plan` checks the token, then loads items and resolves paths. A
+    /// reopen plus re-approval inside that window leaves the plan `approved`
+    /// again under a new token, so a state-only CAS let the older request apply
+    /// the edited plan under the revoked one.
+    #[tokio::test]
+    async fn cas_rejects_a_token_revoked_by_a_reopen() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        setup_with_approved_plan(&db, "p-revoked", 1).await;
+
+        // The plan is reopened, edited, and approved again under a new token.
+        plans_repo::set_reopened(db.pool(), "p-revoked").await.unwrap();
+        plans_repo::update_plan_state(db.pool(), "p-revoked", "ready_for_review").await.unwrap();
+        plans_repo::set_approved(db.pool(), "p-revoked", "2026-06-02T00:00:00Z", "token-2")
+            .await
+            .unwrap();
+
+        let err = cas_approved_to_applying(db.pool(), "p-revoked", "run-old", "test-token", 1, 1)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DbError::ApprovalStale(_)), "got {err:?}");
+
+        // The plan is untouched: still awaiting an apply under the live token.
+        let plan = plans_repo::get_plan(db.pool(), "p-revoked", false).await.unwrap();
+        assert_eq!(plan.state, "approved");
+        assert!(get_active_run(db.pool(), "p-revoked").await.unwrap().is_none());
+
+        // And the live token still works.
+        cas_approved_to_applying(db.pool(), "p-revoked", "run-new", "token-2", 1, 1).await.unwrap();
+    }
+
+    /// A wrong state is still reported as a lost CAS, not as a stale token: the
+    /// two map to different contract codes, and only the state case is retryable
+    /// by re-reading the plan.
+    #[tokio::test]
+    async fn cas_reports_a_wrong_state_separately_from_a_stale_token() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        setup_with_approved_plan(&db, "p-state", 1).await;
+        plans_repo::update_plan_state(db.pool(), "p-state", "applying").await.unwrap();
+
+        let err = cas_approved_to_applying(db.pool(), "p-state", "run-s", "test-token", 1, 1)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DbError::CasFailed(_)), "got {err:?}");
+    }
+
     /// Spec 025 T025: a rollback attempt is durably recorded on the
     /// `plan_apply_events` row, not just reported in memory.
     ///
@@ -1177,8 +1245,9 @@ mod tests {
         .await
         .unwrap();
 
-        let err =
-            cas_approved_to_applying(db.pool(), "p2", "run-x", "tok", 0, 0).await.unwrap_err();
+        let err = cas_approved_to_applying(db.pool(), "p2", "run-x", "test-token", 0, 0)
+            .await
+            .unwrap_err();
         assert!(matches!(err, DbError::CasFailed(_)), "expected CasFailed, got {err:?}");
     }
 
@@ -1187,7 +1256,7 @@ mod tests {
         let db = Database::in_memory().await.unwrap();
         db.migrate().await.unwrap();
         setup_with_approved_plan(&db, "p3", 1).await;
-        cas_approved_to_applying(db.pool(), "p3", "run-3", "tok", 1, 1).await.unwrap();
+        cas_approved_to_applying(db.pool(), "p3", "run-3", "test-token", 1, 1).await.unwrap();
 
         // Batch path: pending → succeeded in one flush (no applying intermediate).
         let mut conn = db.pool().acquire().await.unwrap();
@@ -1219,7 +1288,7 @@ mod tests {
         let db = Database::in_memory().await.unwrap();
         db.migrate().await.unwrap();
         setup_with_approved_plan(&db, "p4", 3).await;
-        cas_approved_to_applying(db.pool(), "p4", "run-4", "tok", 3, 3).await.unwrap();
+        cas_approved_to_applying(db.pool(), "p4", "run-4", "test-token", 3, 3).await.unwrap();
 
         // Apply first item via batch path.
         let mut conn = db.pool().acquire().await.unwrap();
@@ -1255,7 +1324,7 @@ mod tests {
         setup_with_approved_plan(&db, "pc1", 2).await;
 
         // Drive into 'applying' (crash simulation: no executor runs).
-        cas_approved_to_applying(db.pool(), "pc1", "run-c1", "tok", 2, 2).await.unwrap();
+        cas_approved_to_applying(db.pool(), "pc1", "run-c1", "test-token", 2, 2).await.unwrap();
         let plan = plans_repo::get_plan(db.pool(), "pc1", false).await.unwrap();
         assert_eq!(plan.state, "applying");
 
@@ -1276,7 +1345,7 @@ mod tests {
         db.migrate().await.unwrap();
         // A plan in 'paused' state should not be affected.
         setup_with_approved_plan(&db, "pp1", 1).await;
-        cas_approved_to_applying(db.pool(), "pp1", "run-pp1", "tok", 1, 1).await.unwrap();
+        cas_approved_to_applying(db.pool(), "pp1", "run-pp1", "test-token", 1, 1).await.unwrap();
         pause_run(db.pool(), "pp1", "run-pp1", "item.stale", 0, 1, 0, 0, 0).await.unwrap();
 
         let affected = sweep_crashed_applying_plans(db.pool()).await.unwrap();
@@ -1294,7 +1363,7 @@ mod tests {
         let db = Database::in_memory().await.unwrap();
         db.migrate().await.unwrap();
         setup_with_approved_plan(&db, "p6", 2).await;
-        cas_approved_to_applying(db.pool(), "p6", "run-6", "tok", 2, 2).await.unwrap();
+        cas_approved_to_applying(db.pool(), "p6", "run-6", "test-token", 2, 2).await.unwrap();
 
         complete_run(db.pool(), "p6", "run-6", "applied", 2, 0, 0, 0).await.unwrap();
 
@@ -1317,7 +1386,7 @@ mod tests {
         let db = Database::in_memory().await.unwrap();
         db.migrate().await.unwrap();
         setup_with_approved_plan(&db, "ps1", 2).await;
-        cas_approved_to_applying(db.pool(), "ps1", "run-ps1", "tok", 2, 2).await.unwrap();
+        cas_approved_to_applying(db.pool(), "ps1", "run-ps1", "test-token", 2, 2).await.unwrap();
 
         let mut conn = db.pool().acquire().await.unwrap();
         batch_flush_item_states(
@@ -1369,7 +1438,7 @@ mod tests {
         let db = Database::in_memory().await.unwrap();
         db.migrate().await.unwrap();
         setup_with_approved_plan(&db, "pr1", 3).await;
-        cas_approved_to_applying(db.pool(), "pr1", "run-r1", "tok", 3, 3).await.unwrap();
+        cas_approved_to_applying(db.pool(), "pr1", "run-r1", "test-token", 3, 3).await.unwrap();
 
         // Flush one item to a terminal state; two remain pending.
         let mut conn = db.pool().acquire().await.unwrap();
@@ -1406,7 +1475,7 @@ mod tests {
         let db = Database::in_memory().await.unwrap();
         db.migrate().await.unwrap();
         setup_with_approved_plan(&db, "pr2", 2).await;
-        cas_approved_to_applying(db.pool(), "pr2", "run-r2", "tok", 2, 2).await.unwrap();
+        cas_approved_to_applying(db.pool(), "pr2", "run-r2", "test-token", 2, 2).await.unwrap();
         sweep_crashed_applying_plans(db.pool()).await.unwrap();
 
         let items = list_unreconciled_items(db.pool(), &["pr2".to_owned()]).await.unwrap();
@@ -1489,8 +1558,8 @@ mod tests {
         // pc: crashed mid-apply. pn: paused for a non-crash reason.
         setup_with_approved_plan(&db, "pc", 1).await;
         setup_with_approved_plan(&db, "pn", 1).await;
-        cas_approved_to_applying(db.pool(), "pc", "run-pc", "tok", 1, 1).await.unwrap();
-        cas_approved_to_applying(db.pool(), "pn", "run-pn", "tok", 1, 1).await.unwrap();
+        cas_approved_to_applying(db.pool(), "pc", "run-pc", "test-token", 1, 1).await.unwrap();
+        cas_approved_to_applying(db.pool(), "pn", "run-pn", "test-token", 1, 1).await.unwrap();
         pause_run(db.pool(), "pn", "run-pn", "item.stale", 0, 1, 0, 0, 0).await.unwrap();
 
         // Before the sweep: pc is still 'applying'.

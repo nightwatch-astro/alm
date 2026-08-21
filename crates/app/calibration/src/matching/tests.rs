@@ -675,3 +675,232 @@ async fn load_config_reads_temperature_tolerance_from_tolerances_table() {
         config.dark_temp_tolerance_c
     );
 }
+
+/// astro-plan-vj6x: a persisted tolerance that is not a usable measurement must
+/// not reach the engine.
+///
+/// `calibration_tolerances::update` binds whatever the caller passed, so a
+/// negative or infinite value persists and used to land in `MatchingRuleConfig`
+/// unexamined. With `SoftDimConfig::penalty` now rejecting such a tolerance,
+/// keeping the value would have quietly turned the temperature dimension into a
+/// reject-everything rule, so the loader falls back to the engine default instead.
+///
+/// A NaN is not in this list: the column is `REAL NOT NULL`, SQLite stores a NaN
+/// bind as NULL, and the insert fails on the NOT NULL constraint. That one value
+/// cannot reach the loader through this path.
+#[tokio::test]
+async fn an_unusable_persisted_tolerance_falls_back_to_the_engine_default() {
+    for bad in [-3.0, f64::INFINITY, f64::NEG_INFINITY] {
+        let _guard = lock_cache_tests().await;
+        caches::invalidate_calibration_config();
+        let db = test_db().await;
+
+        let row = persistence_calibration::repositories::calibration_tolerances::CalibrationTolerancesRow {
+            temperature_tolerance_c: bad,
+            exposure_tolerance_s: 2.0,
+            aging_limit_days: 365,
+            require_same_camera: true,
+            require_same_gain: true,
+            require_same_binning: true,
+            require_same_offset: true,
+        };
+        persistence_calibration::repositories::calibration_tolerances::update(db.pool(), &row)
+            .await
+            .unwrap();
+
+        let config = load_config(db.pool()).await;
+        assert!(
+            (config.dark_temp_tolerance_c - 2.0).abs() < f64::EPSILON,
+            "tolerance {bad} reached the engine; got {}",
+            config.dark_temp_tolerance_c
+        );
+    }
+}
+
+/// astro-plan-vj6x: an out-of-range override penalty must not reach the engine.
+///
+/// A penalty is subtracted from a confidence. JSON cannot carry a NaN, so the
+/// settings store can only hold a finite number, but nothing stopped it holding
+/// `5.0` (confidence below zero) or `-1.0` (confidence above one).
+#[tokio::test]
+async fn an_out_of_range_persisted_penalty_falls_back_to_the_engine_default() {
+    for bad in [-1.0_f64, 5.0] {
+        let _guard = lock_cache_tests().await;
+        caches::invalidate_calibration_config();
+        let db = test_db().await;
+
+        for key in [KEY_DARK_OVERRIDE, KEY_FLAT_OVERRIDE, KEY_BIAS_OVERRIDE] {
+            persistence_lifecycle::repositories::settings::set_raw(
+                db.pool(),
+                key,
+                &serde_json::json!(bad),
+            )
+            .await
+            .unwrap();
+        }
+        persistence_lifecycle::repositories::settings::set_raw(
+            db.pool(),
+            KEY_DARK_TEMP,
+            &serde_json::json!(-1.0),
+        )
+        .await
+        .unwrap();
+
+        let config = load_config(db.pool()).await;
+        for (name, got) in [
+            ("dark", config.dark_override_penalty),
+            ("flat", config.flat_override_penalty),
+            ("bias", config.bias_override_penalty),
+        ] {
+            assert!(
+                (got - 0.3).abs() < f64::EPSILON,
+                "{name} override penalty {bad} reached the engine; got {got}"
+            );
+        }
+        // 5.0, not the engine's 2.0: the `calibration_tolerances` singleton row
+        // always exists, its column default is 5.0, and it is read before this
+        // key. Rejecting the key leaves the row value standing.
+        assert!(
+            (config.dark_temp_tolerance_c - 5.0).abs() < f64::EPSILON,
+            "a negative settings-key tolerance reached the engine; got {}",
+            config.dark_temp_tolerance_c
+        );
+    }
+}
+
+/// `aging_limit_days` is the second dead-config field on this row
+/// (astro-plan-rcvr): editable in Settings > Calibration Matching, read by no
+/// rule. Asserting against `MatchingRuleConfig` rather than a round-trip is
+/// what distinguishes "persisted" from "consumed".
+#[tokio::test]
+async fn load_config_reads_aging_limit_days_from_tolerances_table() {
+    let _guard = lock_cache_tests().await;
+    let db = test_db().await;
+
+    // Neither the column default (365) nor any engine default.
+    let mut row =
+        persistence_calibration::repositories::calibration_tolerances::CalibrationTolerancesRow {
+            temperature_tolerance_c: 5.0,
+            exposure_tolerance_s: 2.0,
+            aging_limit_days: 30,
+            require_same_camera: true,
+            require_same_gain: true,
+            require_same_binning: true,
+            require_same_offset: true,
+        };
+    persistence_calibration::repositories::calibration_tolerances::update(db.pool(), &row)
+        .await
+        .unwrap();
+    caches::invalidate_calibration_config();
+    let config = load_config(db.pool()).await;
+    assert!(
+        (config.age_limit_days - 30.0).abs() < f64::EPSILON,
+        "the Settings age limit must reach MatchingRuleConfig; got {}",
+        config.age_limit_days
+    );
+
+    row.aging_limit_days = 0;
+    persistence_calibration::repositories::calibration_tolerances::update(db.pool(), &row)
+        .await
+        .unwrap();
+    caches::invalidate_calibration_config();
+    let config = load_config(db.pool()).await;
+    assert!(
+        (config.age_limit_days - 365.0).abs() < f64::EPSILON,
+        "a zero limit must fall back to the engine default; got {}",
+        config.age_limit_days
+    );
+}
+
+/// astro-plan-rcvr: the "Gain match required" and "Binning match required"
+/// toggles must change which masters the engine keeps, not just what the row
+/// stores. Both were persisted and read by no rule.
+///
+/// The assertion runs the rules with the loaded config so a value that reaches
+/// `MatchingRuleConfig` but is ignored by the rules still fails.
+#[tokio::test]
+async fn load_config_relaxes_gain_and_binning_hard_rules_from_tolerances_table() {
+    let _guard = lock_cache_tests().await;
+    let db = test_db().await;
+
+    let row =
+        persistence_calibration::repositories::calibration_tolerances::CalibrationTolerancesRow {
+            temperature_tolerance_c: 5.0,
+            exposure_tolerance_s: 2.0,
+            aging_limit_days: 365,
+            require_same_camera: true,
+            require_same_gain: false,
+            require_same_binning: false,
+            require_same_offset: true,
+        };
+    persistence_calibration::repositories::calibration_tolerances::update(db.pool(), &row)
+        .await
+        .unwrap();
+    caches::invalidate_calibration_config();
+    let config = load_config(db.pool()).await;
+
+    let session = calibration_core::SessionInfo {
+        id: "ses-rcvr".to_owned(),
+        session_type: "light".to_owned(),
+        gain: Some(100.0),
+        offset: Some(50.0),
+        exposure_s: Some(300.0),
+        temp_c: Some(-10.0),
+        filter: Some("Ha".to_owned()),
+        rotation_deg: Some(0.0),
+        binning: Some("1x1".to_owned()),
+        optic_train: Some("train-a".to_owned()),
+        ..Default::default()
+    };
+    let dark = calibration_core::MasterInfo {
+        id: "m-dark-rcvr".to_owned(),
+        kind: calibration_core::CalibrationKind::Dark,
+        gain: Some(200.0),
+        offset: Some(50.0),
+        exposure_s: Some(300.0),
+        temp_c: Some(-10.0),
+        filter: None,
+        rotation_deg: None,
+        binning: None,
+        optic_train: None,
+        source_session_id: None,
+        observing_night_date: None,
+    };
+    let flat = calibration_core::MasterInfo {
+        id: "m-flat-rcvr".to_owned(),
+        kind: calibration_core::CalibrationKind::Flat,
+        gain: Some(100.0),
+        offset: None,
+        exposure_s: None,
+        temp_c: None,
+        filter: Some("Ha".to_owned()),
+        rotation_deg: Some(0.0),
+        binning: Some("2x2".to_owned()),
+        optic_train: Some("train-a".to_owned()),
+        source_session_id: None,
+        observing_night_date: None,
+    };
+
+    let strict = calibration_core::ranking::MatchingRuleConfig::default();
+    assert!(
+        calibration_core::rules::dark::evaluate(&session, &dark, &strict).is_none(),
+        "the gain mismatch must be excluded while the toggle is set"
+    );
+    assert!(
+        calibration_core::rules::dark::evaluate(&session, &dark, &config).is_some(),
+        "clearing Gain match required must keep the mismatched dark"
+    );
+    assert!(
+        calibration_core::rules::flat::evaluate(&session, &flat, &strict).is_none(),
+        "the binning mismatch must be excluded while the toggle is set"
+    );
+    assert!(
+        calibration_core::rules::flat::evaluate(&session, &flat, &config).is_some(),
+        "clearing Binning match required must keep the mismatched flat"
+    );
+
+    // The config cache is process-global: leaving a relaxed config in it makes
+    // any later test that reads `load_config` without priming its own row see
+    // relaxed hard rules (#988).
+    caches::invalidate_calibration_config();
+}

@@ -20,8 +20,8 @@ use app_core::archive_generator::{
 };
 use app_core::plan_free_space::estimate_free_space;
 use app_core::plans::{
-    approve_plan, discard_plan, get_plan, list_plans, permanently_delete_archive, retry_plan,
-    send_archive_to_trash,
+    approve_plan, discard_plan, get_plan, list_plans, permanently_delete_archive, reopen_plan,
+    retry_plan, send_archive_to_trash,
 };
 use contracts_core::archive::{
     ArchiveListResponse, GenerateArchivePlanResult, GenerateRestorePlanResult,
@@ -29,7 +29,7 @@ use contracts_core::archive::{
 use contracts_core::plans::{
     ArchivePermanentlyDeleteResponse, ArchiveSendToTrashResponse, PlanApproveResponse, PlanDetail,
     PlanDiscardResponse, PlanFreeSpaceEstimate, PlanListRequest, PlanListResponse,
-    PlanRetryResponse, RetryItemsFilter,
+    PlanReopenResponse, PlanRetryResponse, RetryItemsFilter,
 };
 use tauri::State;
 
@@ -105,6 +105,26 @@ pub async fn plans_approve(
     id: String,
 ) -> Result<PlanApproveResponse, ContractError> {
     approve_plan(state.repo.pool(), &state.bus, &id, "user").await
+}
+
+// ── plans.reopen ──────────────────────────────────────────────────────────────
+
+/// `plans.reopen` — return a plan to `draft`, invalidating its approval
+/// (US3, T023).
+///
+/// Any `approvalToken` held from a previous `plans.approve` stops working.
+///
+/// # Errors
+///
+/// Returns `Err(String)` with `"plan.not_found"` or `"plan.invalid_state"` on
+/// failure.
+#[tauri::command]
+#[specta::specta]
+pub async fn plans_reopen(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<PlanReopenResponse, ContractError> {
+    reopen_plan(state.repo.pool(), &state.bus, &id, "user").await
 }
 
 // ── plans.apply (superseded by spec 025) ─────────────────────────────────────

@@ -34,7 +34,11 @@ pub fn spawn_stale_dependent_propagator(
 /// dropped/lagged broadcast event, an app crash mid-resolution, or a resolver
 /// that was offline when the plan applied — within a bounded interval.
 /// Failures are logged, never fatal — the next pass retries.
+///
+/// A pass that resolved at least one queued target raises an OS notification
+/// (spec 051 US8); the common empty tick stays silent.
 pub fn spawn_ingest_resolution_drain(
+    app: tauri::AppHandle,
     pool: SqlitePool,
     bus: EventBus,
     resolve_cache: targeting_resolver::simbad::ResolveCache,
@@ -43,7 +47,10 @@ pub fn spawn_ingest_resolution_drain(
         let interval = std::time::Duration::from_secs(30);
         loop {
             tokio::time::sleep(interval).await;
-            app_core::ingest_resolution::drain_and_backfill_once(&pool, &bus, &resolve_cache).await;
+            let summary =
+                app_core::ingest_resolution::drain_and_backfill_once(&pool, &bus, &resolve_cache)
+                    .await;
+            crate::bootstrap::notify::ingest_drain_completed(&app, &summary);
         }
     });
 }

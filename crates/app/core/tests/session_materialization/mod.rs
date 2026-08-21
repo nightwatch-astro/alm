@@ -13,9 +13,12 @@
 //!    existing result without duplicating rows.
 //! 4. Cancel before commit: no session rows are written; operation reaches
 //!    `cancelled`.
+//! 5. A mid-transaction failure releases the write lock, so later writes still
+//!    work.
 //!
 //! These tests use the real in-memory SQLite database via
-//! `persistence_core::test_support::setup_db`.
+//! `persistence_core::test_support::setup_db`. Case 5 is the exception and opens
+//! a file-backed database; its doc comment says why.
 
 mod support;
 
@@ -337,4 +340,79 @@ async fn cancel_before_commit_produces_no_sessions() {
             .await
             .unwrap();
     assert_eq!(session_count.0, 0, "cancelled apply must write zero sessions");
+}
+
+// ── 5. A failure mid-transaction leaves the database writable ────────────
+
+/// Fail an apply after it has written rows inside its per-session transaction,
+/// then write again on the same pool.
+///
+/// A light session without a canonical target is rejected after `insert_session`,
+/// the visibility row, and every frame membership have already been written, so
+/// the error leaves an open `BEGIN IMMEDIATE` behind. SQLite does not roll that
+/// back when the connection returns to the pool, and this pool sets no
+/// `after_release` reset, so the transaction stays open on an idle connection.
+/// Both assertions below catch that, because it surfaces two ways: the pool hands
+/// the poisoned connection back and `BEGIN IMMEDIATE` fails with `cannot start a
+/// transaction within a transaction`, or it hands back a different connection and
+/// the write fails with `database is locked` once the busy timeout expires.
+///
+/// The row-count assertion alone does not cover this. An abandoned transaction
+/// is never committed, so its rows are invisible either way.
+///
+/// This test is the one case in this file that does not use `setup_db`. That
+/// helper opens a shared-cache in-memory database, where the same failure does
+/// not reproduce: with the rollback deleted, every test here still passes. A
+/// file-backed database is what production uses, and it does reproduce.
+#[tokio::test]
+async fn a_failed_apply_leaves_the_database_writable() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let url = format!("sqlite://{}?mode=rwc", dir.path().join("apply.db").display());
+    let db = persistence_core::Database::connect(&url).await.expect("open a file-backed database");
+    db.migrate().await.expect("migrate");
+    let pool = db.pool();
+
+    let (op_row_id, state_version) = seed_minimal_apply_context(pool, "target-e", 9, 5).await;
+
+    let progress =
+        app_core_inbox::session_materialization::progress::MaterializationProgress::new(1, 2);
+    let result = app_core_inbox::session_materialization::apply::run_apply(
+        pool,
+        app_core_inbox::session_materialization::apply::ApplyParams {
+            operation_row_id: op_row_id,
+            operation_state_version: state_version,
+            approved_plan_digest: "test-digest",
+            actor_public_id: "actor-001",
+            // The proposed session is a light session, so the apply loop demands
+            // a canonical target and fails without one.
+            canonical_target_public_id: None,
+            progress,
+        },
+    )
+    .await;
+
+    assert!(result.is_err(), "a light session without a canonical target must fail");
+
+    let session_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM session WHERE materialization_operation_row_id = ?")
+            .bind(op_row_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(session_count.0, 0, "a failed apply must leave no session rows");
+
+    let mut conn = pool.acquire().await.expect("acquire a second connection");
+    let begin = sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await;
+    assert!(begin.is_ok(), "the failed apply must release the write lock, not hold it: {begin:?}");
+
+    // Writing a row proves the lock is actually free. `BEGIN IMMEDIATE` alone is
+    // not enough of an assertion under every SQLite locking mode.
+    let write =
+        sqlx::query("INSERT INTO repository_change(command_row_id, created_at) VALUES (NULL, ?)")
+            .bind("2026-07-22T00:00:01.000000Z")
+            .execute(&mut *conn)
+            .await;
+    assert!(write.is_ok(), "a write must succeed after a failed apply: {write:?}");
+
+    sqlx::query("ROLLBACK").execute(&mut *conn).await.expect("release the test's own lock");
 }

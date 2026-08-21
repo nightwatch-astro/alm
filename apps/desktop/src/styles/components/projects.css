@@ -1,70 +1,9 @@
 /* PlateVault — Projects feature styles
  *
- * Owns the Projects page: the sortable table, lifecycle stepper, detail
- * sections wrapper, the dual-panel ListPageLayout variant, and the
- * ProjectBottomDetail grid. Consolidated from .cssblocks/projects-*.css and
- * projects-redesign.css (spec-043 merges).
+ * Owns the Projects page lifecycle stepper, detail sections wrapper, the
+ * dual-panel ListPageLayout variant, and the ProjectBottomDetail grid. The sortable table lives in
+ * features/projects/projects-table.css.ts.
  */
-
-/* ── Projects dense sortable table ─────────────────────────────────────────── */
-.pv-projects-table {
-  table-layout: auto;
-}
-.pv-projects-table th { user-select: none; }
-.pv-projects-table td,
-.pv-projects-table th {
-  padding: var(--pv-sp-1) var(--pv-sp-3);
-}
-
-/* Selectable project rows. */
-.pv-projects-table__row { cursor: pointer; }
-.pv-projects-table__row:hover td { background: var(--pv-surface); }
-.pv-projects-table__row--selected td {
-  background: var(--pv-accent-bg);
-}
-
-/* Name cell: primary identity + optional blocked icon + drift badge. */
-.pv-projects-table__name {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--pv-sp-1);
-  font-weight: var(--pv-weight-medium);
-  color: var(--pv-text);
-}
-.pv-projects-table__blocked-icon {
-  color: var(--pv-danger);
-  flex-shrink: 0;
-}
-.pv-projects-table__drift-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--pv-sp-0);
-  margin-left: var(--pv-sp-1);
-  font-size: var(--pv-text-xs);
-  font-weight: var(--pv-weight-normal);
-  color: var(--pv-warn);
-}
-
-/* Cell helpers. */
-.pv-projects-table__cell--muted { color: var(--pv-text-muted); }
-.pv-projects-table__cell--num {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.pv-projects-table__cell--mono {
-  font-family: var(--pv-font-mono);
-  font-size: var(--pv-text-xs);
-  color: var(--pv-text-secondary);
-}
-.pv-projects-table__dash { color: var(--pv-text-muted); }
-
-/* Empty state. */
-.pv-projects-table__empty {
-  padding: var(--pv-sp-5);
-  text-align: center;
-  color: var(--pv-text-muted);
-  font-size: var(--pv-text-sm);
-}
 
 /* ── Lifecycle stepper (#74) ──────────────────────────────────────────────── */
 /* Compact horizontal chip track; current chip highlighted, prior chips done,

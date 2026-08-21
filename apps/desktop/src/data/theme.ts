@@ -216,15 +216,11 @@ function persistThemeToSettings(choice: ThemeChoice): void {
       const { isTauri } = await importTauriCore();
       if (!isTauri()) return;
 
-      const [{ commands }, { unwrap }] = await Promise.all([
-        import('@/bindings/index'),
-        import('@/api/ipc'),
-      ]);
-      unwrap(
-        await commands.settingsUpdate(SETTINGS_SCOPE, {
-          [SETTINGS_KEY]: choice,
-        }),
-      );
+      const { updateSettings } = await import('@/data/settingsWrite');
+      await updateSettings({
+        scope: SETTINGS_SCOPE,
+        values: { [SETTINGS_KEY]: choice },
+      });
     } catch {
       // Best-effort — a DB write failure never blocks or reverts the UI change.
     }
@@ -442,15 +438,11 @@ function persistFontSizeToSettings(choice: FontSizeChoice): void {
       const { isTauri } = await importTauriCore();
       if (!isTauri()) return;
 
-      const [{ commands }, { unwrap }] = await Promise.all([
-        import('@/bindings/index'),
-        import('@/api/ipc'),
-      ]);
-      unwrap(
-        await commands.settingsUpdate(SETTINGS_SCOPE, {
-          [FONT_SIZE_SETTINGS_KEY]: choice,
-        }),
-      );
+      const { updateSettings } = await import('@/data/settingsWrite');
+      await updateSettings({
+        scope: SETTINGS_SCOPE,
+        values: { [FONT_SIZE_SETTINGS_KEY]: choice },
+      });
     } catch {
       // Best-effort — a DB write failure never blocks or reverts the UI change.
     }
@@ -552,15 +544,11 @@ function persistZoomToSettings(percent: ZoomPercent): void {
       const { isTauri } = await importTauriCore();
       if (!isTauri()) return;
 
-      const [{ commands }, { unwrap }] = await Promise.all([
-        import('@/bindings/index'),
-        import('@/api/ipc'),
-      ]);
-      unwrap(
-        await commands.settingsUpdate(SETTINGS_SCOPE, {
-          [ZOOM_SETTINGS_KEY]: percent,
-        }),
-      );
+      const { updateSettings } = await import('@/data/settingsWrite');
+      await updateSettings({
+        scope: SETTINGS_SCOPE,
+        values: { [ZOOM_SETTINGS_KEY]: percent },
+      });
     } catch {
       // Best-effort — a DB write failure never blocks or reverts the UI change.
     }

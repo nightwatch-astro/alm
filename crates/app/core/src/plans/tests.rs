@@ -796,3 +796,147 @@ async fn auto_apply_failure_leaves_plan_reviewable() {
     // The blocking file was not overwritten.
     assert_eq!(std::fs::read(&blocker).unwrap(), b"file in the way");
 }
+
+// ── reopen_plan (T023) ────────────────────────────────────────────────────────
+
+async fn approved_plan(db: &Database, bus: &EventBus, id: &str) -> String {
+    insert_draft(db, id).await;
+    add_item(db, id, &format!("{id}-item-1"), "move").await;
+    repo::update_plan_state(db.pool(), id, "ready_for_review").await.unwrap();
+    approve_plan(db.pool(), bus, id, "tester").await.unwrap().approval_token
+}
+
+/// T023: `approved → draft` clears the state and the stored approval.
+#[tokio::test]
+async fn reopen_plan_returns_approved_plan_to_draft() {
+    let (db, bus) = setup().await;
+    approved_plan(&db, &bus, "p-reopen").await;
+
+    let resp = reopen_plan(db.pool(), &bus, "p-reopen", "tester").await.unwrap();
+    assert_eq!(resp.new_state, "draft");
+    assert_eq!(resp.prior_state, "approved");
+
+    let row = repo::get_plan(db.pool(), "p-reopen", false).await.unwrap();
+    assert_eq!(row.state, "draft");
+    assert_eq!(row.approval_token, None, "the approval token must not survive a reopen");
+    assert_eq!(row.approved_at, None);
+}
+
+/// T023 mutation guard: the token issued before the reopen must not authorise
+/// an apply. `apply_plan` rejects a non-`approved` state before it reads the
+/// token, so the plan is driven back to `approved` by a bare state write — the
+/// one path that does not re-mint — leaving the cleared stored token as the only
+/// thing between the stale token and a filesystem mutation.
+#[tokio::test]
+async fn reopen_plan_invalidates_the_approval_token_for_apply() {
+    let (db, bus) = setup().await;
+    let stale_token = approved_plan(&db, &bus, "p-stale").await;
+
+    reopen_plan(db.pool(), &bus, "p-stale", "tester").await.unwrap();
+    repo::update_plan_state(db.pool(), "p-stale", "approved").await.unwrap();
+
+    let err = crate::plan_apply::apply_plan(db.pool(), &bus, "p-stale", &stale_token, None)
+        .await
+        .expect_err("the pre-reopen token must be refused");
+    assert_eq!(err.code, ErrorCode::PlanApprovalStale);
+}
+
+/// T023: reopening records the reversed user decision (constitution V Tier 1).
+#[tokio::test]
+async fn reopen_plan_emits_an_audit_event() {
+    let (db, bus) = setup().await;
+    approved_plan(&db, &bus, "p-audit").await;
+
+    reopen_plan(db.pool(), &bus, "p-audit", "tester").await.unwrap();
+
+    let events = persistence_lifecycle::repositories::events::list_since_by_topic(
+        db.pool(),
+        0,
+        audit::event_bus::TOPIC_PLAN_REOPENED,
+    )
+    .await
+    .unwrap();
+    assert_eq!(events.len(), 1);
+    assert!(events[0].payload.contains("p-audit"));
+    assert!(events[0].payload.contains("approved"), "prior state is recorded");
+}
+
+/// T023 / constitution II: an applied plan's filesystem actions have happened,
+/// so the approval cannot be withdrawn.
+#[tokio::test]
+async fn reopen_plan_refuses_an_applied_plan() {
+    let (db, bus) = setup().await;
+    approved_plan(&db, &bus, "p-applied").await;
+    repo::update_plan_state(db.pool(), "p-applied", "applying").await.unwrap();
+    repo::update_plan_state(db.pool(), "p-applied", "applied").await.unwrap();
+
+    let err = reopen_plan(db.pool(), &bus, "p-applied", "tester")
+        .await
+        .expect_err("an applied plan is not reopenable");
+    assert_eq!(err.code, ErrorCode::PlanInvalidState);
+
+    let row = repo::get_plan(db.pool(), "p-applied", false).await.unwrap();
+    assert_eq!(row.state, "applied", "the refusal must not mutate state");
+    assert!(row.approval_token.is_some(), "the refusal must not clear the token");
+}
+
+/// T023 / constitution II: a mid-apply plan has filesystem work in flight.
+#[tokio::test]
+async fn reopen_plan_refuses_a_mid_apply_plan() {
+    let (db, bus) = setup().await;
+    approved_plan(&db, &bus, "p-applying").await;
+    repo::update_plan_state(db.pool(), "p-applying", "applying").await.unwrap();
+
+    let err = reopen_plan(db.pool(), &bus, "p-applying", "tester")
+        .await
+        .expect_err("a mid-apply plan is not reopenable");
+    assert_eq!(err.code, ErrorCode::PlanInvalidState);
+
+    let row = repo::get_plan(db.pool(), "p-applying", false).await.unwrap();
+    assert_eq!(row.state, "applying");
+    assert!(row.approval_token.is_some());
+}
+
+/// T023: `ready_for_review → draft` is the other edge with a `→ draft`
+/// transition; it carries no approval to invalidate.
+#[tokio::test]
+async fn reopen_plan_returns_a_review_plan_to_draft() {
+    let (db, bus) = setup().await;
+    insert_draft(&db, "p-review").await;
+    add_item(&db, "p-review", "p-review-item-1", "move").await;
+    repo::update_plan_state(db.pool(), "p-review", "ready_for_review").await.unwrap();
+
+    let resp = reopen_plan(db.pool(), &bus, "p-review", "tester").await.unwrap();
+    assert_eq!(resp.new_state, "draft");
+    assert_eq!(resp.prior_state, "ready_for_review");
+}
+
+/// T023: reopening a draft is a no-op rather than an error.
+#[tokio::test]
+async fn reopen_plan_is_idempotent_on_a_draft() {
+    let (db, bus) = setup().await;
+    insert_draft(&db, "p-draft").await;
+
+    let resp = reopen_plan(db.pool(), &bus, "p-draft", "tester").await.unwrap();
+    assert_eq!(resp.new_state, "draft");
+}
+
+/// A lost state CAS is `plan.invalid_state`, not a retryable database fault.
+///
+/// `approve_plan` and `reopen_plan` both read the state, then run a guarded
+/// UPDATE. When another transition wins in between, the repository returns
+/// `CasFailed`; routed through the generic arm it surfaced as
+/// `internal.database` with `retryable: true`, offering the user a retry for a
+/// request that cannot succeed.
+#[test]
+fn a_lost_state_cas_maps_to_plan_invalid_state() {
+    let err = db_err(persistence_core::DbError::CasFailed(
+        "plan p1 expected state 'ready_for_review', found 'draft'".to_owned(),
+    ));
+    assert_eq!(err.code, ErrorCode::PlanInvalidState);
+    assert!(!err.retryable);
+
+    // A genuinely missing plan still maps to plan.not_found.
+    let err = db_err(persistence_core::DbError::NotFound("plan p1".to_owned()));
+    assert_eq!(err.code, ErrorCode::PlanNotFound);
+}

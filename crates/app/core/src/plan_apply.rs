@@ -182,6 +182,12 @@ fn db_err(e: DbError) -> ContractError {
         DbError::CasFailed(msg) => {
             ContractError::new(ErrorCode::PlanInvalidState, msg, ErrorSeverity::Blocking, false)
         }
+        // Raised when the plan was reopened and re-approved between the
+        // pre-flight token check and the apply CAS. Same contract code as the
+        // pre-flight mismatch, so one cause has one failure.
+        DbError::ApprovalStale(msg) => {
+            ContractError::new(ErrorCode::PlanApprovalStale, msg, ErrorSeverity::Blocking, false)
+        }
         other => crate::errors::db_err(other),
     }
 }

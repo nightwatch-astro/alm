@@ -17,7 +17,7 @@ import { m } from '@/lib/i18n';
 import type { Density } from '@/bindings/types';
 import { commands } from '@/bindings/index';
 import { unwrap } from '@/api/ipc';
-import { updateSettings } from '@/features/settings/settingsIpc';
+import { updateSettings } from '@/data/settingsWrite';
 import { selectBase } from '@/styles/select.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -86,10 +86,8 @@ function DefaultProtectionControl() {
     // above) — from here on the user owns it for this session.
     chosenRef.current = true;
     setValue(v);
-    // Routed through `updateSettings` rather than `commands.settingsUpdate`
-    // because `Cleanup.tsx` reads the `cleanup` scope with
-    // `staleTime: Infinity`; a direct write leaves the Cleanup pane showing the
-    // protection level the user just replaced.
+    // The Cleanup settings pane reads the `cleanup` scope with
+    // `staleTime: Infinity`, so this must invalidate.
     void updateSettings({
       scope: 'cleanup',
       values: { defaultProtection: v },

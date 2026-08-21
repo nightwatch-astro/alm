@@ -30,9 +30,14 @@ use tracing_subscriber::layer::SubscriberExt as _;
 const N: usize = 60;
 const PROJECT_ID: &str = "proj-batch";
 
-/// Counts tracing events emitted under the `sqlx` target (one per statement
-/// execution). `max_level_hint` must claim DEBUG or the registry drops sqlx
-/// events before this layer sees them.
+/// Counts tracing events emitted under the `sqlx::query` target (one per
+/// statement execution). `max_level_hint` must claim DEBUG or the registry drops
+/// sqlx events before this layer sees them.
+///
+/// The target match is exact. A `starts_with("sqlx")` prefix also catches
+/// `sqlx::pool::acquire`, which fires only when a connection acquire exceeds
+/// `acquire_slow_threshold` and so adds a phantom statement under load
+/// (astro-plan-hgh6).
 struct SqlxCounterLayer(Arc<AtomicU64>);
 
 impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for SqlxCounterLayer {
@@ -45,7 +50,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for SqlxCounterLayer {
         event: &tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        if event.metadata().target().starts_with("sqlx") {
+        if event.metadata().target() == "sqlx::query" {
             self.0.fetch_add(1, Ordering::Relaxed);
         }
     }

@@ -5,6 +5,15 @@
 # size → same query plan every run). Wall time is noisy on CI runners and only
 # used as a WARN-only budget.
 #
+# That invariant depends on the counter counting statements and nothing else.
+# perf-bench matches the tracing target `sqlx::query` exactly; a
+# `starts_with("sqlx")` prefix also catches `sqlx::pool::acquire`, which fires
+# only when a connection acquire is slow and therefore only under load. That is
+# how `calibration_suggest_1k_masters` once read 11 on CI and 10 on a rerun of
+# the same commit, hard-failing an unrelated PR (astro-plan-hgh6). If this gate
+# starts flaking again, suspect a newly counted non-statement event before
+# suspecting the diff.
+#
 # Exception: a scenario whose write batching is time-bounded cannot honour that
 # invariant, because a slower runner flushes more often and issues more
 # statements for identical work. `plan_apply_progress` is the case in point —

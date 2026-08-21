@@ -20,12 +20,7 @@ export interface NativeReveal {
      * Optional context tag for audit-log correlation.
      */
     entityKind?:
-      | "inbox_item"
-      | "inventory_row"
-      | "project_manifest"
-      | "master_calibration"
-      | "registered_source"
-      | "other";
+      "inbox_item" | "inventory_row" | "project_manifest" | "master_calibration" | "registered_source" | "other";
     entityId?: string;
   };
   response:
