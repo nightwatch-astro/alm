@@ -15,6 +15,8 @@
  * 7. Save button calls saveNote and closes editing.
  * 8. Content too large shows field error.
  * 9. Byte counter reflects current content size.
+ * 11-15. Debounced autosave (NOTE_DEBOUNCE_MS): timing, coalescing, and the
+ *    three error mappings reachable only through the debounced path.
  */
 
 import {
@@ -24,13 +26,14 @@ import {
   waitFor,
   act,
 } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-const { mockSaveNote, mockGetProjectNote } = vi.hoisted(() => ({
+const { mockSaveNote, mockGetProjectNote, mockAddToast } = vi.hoisted(() => ({
   mockSaveNote: vi.fn(),
   mockGetProjectNote: vi.fn(),
+  mockAddToast: vi.fn(),
 }));
 
 vi.mock('./manifests', async (importOriginal) => {
@@ -43,14 +46,15 @@ vi.mock('./manifests', async (importOriginal) => {
 });
 
 vi.mock('@/shared/toast', () => ({
-  addToast: vi.fn(),
+  addToast: mockAddToast,
   useToasts: () => ({ toasts: [], dismiss: vi.fn(), add: vi.fn() }),
 }));
 
 // ── Import under test ─────────────────────────────────────────────────────────
 
 import { ProjectNotesSection } from './ProjectNotesSection';
-import { MAX_NOTE_BYTES } from './manifests';
+import { MAX_NOTE_BYTES, NOTE_DEBOUNCE_MS } from './manifests';
+import { m } from '@/lib/i18n';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +77,7 @@ function renderNotes(
 describe('ProjectNotesSection', () => {
   beforeEach(() => {
     mockSaveNote.mockReset();
+    mockAddToast.mockReset();
     mockGetProjectNote.mockReset();
     mockGetProjectNote.mockResolvedValue({
       projectId: 'proj-test',
@@ -180,5 +185,117 @@ describe('ProjectNotesSection', () => {
     const textarea = screen.getByTestId('notes-textarea');
     fireEvent.change(textarea, { target: { value: 'abc' } });
     expect(screen.getByTestId('notes-byte-counter')).toHaveTextContent('3');
+  });
+
+  // ── Debounced autosave ──────────────────────────────────────────────────────
+
+  // Uses the REAL use-debounce under fake timers, mirroring
+  // SessionNotesSection.test.tsx: a synchronous debounce mock would let a
+  // component with no debounce at all pass these tests.
+  describe('debounced autosave', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function elapse(ms: number) {
+      await act(() => vi.advanceTimersByTimeAsync(ms));
+    }
+
+    /** Opens the editor; `initialContent` is passed so no mount fetch runs. */
+    async function openEditor(
+      props: Partial<React.ComponentProps<typeof ProjectNotesSection>> = {},
+    ) {
+      renderNotes({ initialContent: '', ...props });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit/i }));
+      });
+      return screen.getByTestId('notes-textarea');
+    }
+
+    it('11. does not save before the debounce interval elapses', async () => {
+      mockSaveNote.mockResolvedValue({ updatedAt: '2026-06-01T12:00:00Z' });
+      const textarea = await openEditor();
+      fireEvent.change(textarea, { target: { value: 'Seeing was poor' } });
+
+      await elapse(NOTE_DEBOUNCE_MS - 1);
+      expect(mockSaveNote).not.toHaveBeenCalled();
+
+      await elapse(1);
+      expect(mockSaveNote).toHaveBeenCalledExactlyOnceWith(
+        'proj-test',
+        'Seeing was poor',
+      );
+      expect(mockAddToast).not.toHaveBeenCalled();
+
+      // The saved signal renders only in the collapsed view, so leaving the
+      // editor is what surfaces the autosave's recorded `updatedAt`.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+      });
+      expect(screen.getByTestId('notes-saved-indicator')).toBeInTheDocument();
+    });
+
+    it('12. coalesces rapid successive edits into a single save', async () => {
+      mockSaveNote.mockResolvedValue({ updatedAt: '2026-06-01T12:00:00Z' });
+      const textarea = await openEditor();
+
+      for (const value of ['S', 'Se', 'Sei', 'Seei']) {
+        fireEvent.change(textarea, { target: { value } });
+        await elapse(NOTE_DEBOUNCE_MS - 1);
+      }
+      expect(mockSaveNote).not.toHaveBeenCalled();
+
+      await elapse(NOTE_DEBOUNCE_MS);
+      expect(mockSaveNote).toHaveBeenCalledExactlyOnceWith('proj-test', 'Seei');
+    });
+
+    it('13. maps note.content_too_large to the inline field error', async () => {
+      mockSaveNote.mockResolvedValue({ error: 'note.content_too_large' });
+      const textarea = await openEditor();
+      fireEvent.change(textarea, {
+        target: { value: 'Within the client cap' },
+      });
+
+      await elapse(NOTE_DEBOUNCE_MS);
+
+      expect(screen.getByTestId('notes-field-error')).toHaveTextContent(
+        m.projects_notes_byte_limit_exceeded({
+          max: MAX_NOTE_BYTES.toLocaleString(),
+        }),
+      );
+      expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
+    it('14. maps project.read_only to the archived toast', async () => {
+      mockSaveNote.mockResolvedValue({ error: 'project.read_only' });
+      const textarea = await openEditor();
+      fireEvent.change(textarea, { target: { value: 'Edited after archive' } });
+
+      await elapse(NOTE_DEBOUNCE_MS);
+
+      expect(mockAddToast).toHaveBeenCalledExactlyOnceWith({
+        message: m.projects_toast_archived_readonly(),
+        variant: 'error',
+      });
+      expect(screen.queryByTestId('notes-field-error')).not.toBeInTheDocument();
+    });
+
+    it('15. maps an unrecognised error to the generic save-failed toast', async () => {
+      mockSaveNote.mockResolvedValue({ error: 'db.locked' });
+      const textarea = await openEditor();
+      fireEvent.change(textarea, { target: { value: 'Anything' } });
+
+      await elapse(NOTE_DEBOUNCE_MS);
+
+      expect(mockAddToast).toHaveBeenCalledExactlyOnceWith({
+        message: m.projects_toast_save_notes_failed({ error: 'db.locked' }),
+        variant: 'error',
+      });
+      expect(screen.queryByTestId('notes-field-error')).not.toBeInTheDocument();
+    });
   });
 });
