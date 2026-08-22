@@ -227,10 +227,17 @@ fn pid_is_alive_impl(_pid: u32) -> bool {
 
 // ── Verify working-dir containment ────────────────────────────────────────────
 
-/// Verify that `working_dir` is a prefix-descendant of at least one registered
-/// library root (R-CwdContain, FR-010).
+/// Verify that `working_dir` resolves inside at least one registered library
+/// root (R-CwdContain, FR-010).
 ///
-/// Returns `Ok(())` when at least one root contains `working_dir`.
+/// The comparison normalizes both sides. A bare `Path::starts_with` compares
+/// unnormalized text, which accepted `/mnt/library/../../a` as inside
+/// `/mnt/library` whenever the caller's `canonicalize` had failed, as it does
+/// for a directory that does not exist yet (astro-plan-3v3r.13.26).
+///
+/// An empty `library_roots` is refused: with nothing registered there is no root
+/// for the working directory to be inside of, and reporting containment made the
+/// check depend on configuration.
 ///
 /// # Errors
 ///
@@ -239,17 +246,11 @@ pub fn verify_cwd_containment(
     working_dir: &Path,
     library_roots: &[&Path],
 ) -> Result<(), &'static str> {
-    if library_roots.is_empty() {
-        // No roots registered — treat as contained to avoid blocking users with
-        // zero-root setups; the UI will guide them to register roots separately.
-        return Ok(());
+    if fs_pathsafe::contain::contained_in_any(working_dir, library_roots) {
+        Ok(())
+    } else {
+        Err("cwd.outside_library_root")
     }
-    for root in library_roots {
-        if working_dir.starts_with(root) {
-            return Ok(());
-        }
-    }
-    Err("cwd.outside_library_root")
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -320,9 +321,29 @@ mod tests {
     }
 
     #[test]
-    fn cwd_containment_passes_with_no_roots() {
+    fn cwd_containment_fails_with_no_roots() {
         let cwd = PathBuf::from("/anywhere");
-        assert!(verify_cwd_containment(&cwd, &[]).is_ok());
+        assert_eq!(verify_cwd_containment(&cwd, &[]), Err("cwd.outside_library_root"));
+    }
+
+    /// astro-plan-3v3r.13.26: the text prefix matches, the resolved path does not.
+    #[test]
+    fn cwd_containment_fails_for_a_path_that_traverses_out_of_a_root() {
+        let root = PathBuf::from("/mnt/library");
+        let cwd = PathBuf::from("/mnt/library/../../a");
+        assert_eq!(
+            verify_cwd_containment(&cwd, &[root.as_path()]),
+            Err("cwd.outside_library_root")
+        );
+    }
+
+    /// A working directory the app is about to create is not yet on disk, which
+    /// is when the caller's `canonicalize` fails and the raw path arrives here.
+    #[test]
+    fn cwd_containment_passes_for_a_directory_that_does_not_exist_yet() {
+        let root = PathBuf::from("/mnt/library");
+        let cwd = PathBuf::from("/mnt/library/project/_source_view");
+        assert!(verify_cwd_containment(&cwd, &[root.as_path()]).is_ok());
     }
 
     #[test]

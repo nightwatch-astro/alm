@@ -16,6 +16,7 @@ name = "spawn-stub"
 path = "src/bin/spawn-stub.rs"
 
 [dependencies]
+fs_pathsafe = { path = "../../fs/pathsafe" }
 # spec 042 (T203): first-wins dedup of discovery results by tool id
 # (replaces the hand-rolled `HashSet`-insert filter).
 itertools = { workspace = true }

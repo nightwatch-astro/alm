@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 domain_core = { path = "../../domain/core" }
+fs_pathsafe = { path = "../../fs/pathsafe" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }

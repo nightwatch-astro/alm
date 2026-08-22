@@ -276,7 +276,8 @@ async fn resolve_and_check_working_dir(
 ) -> Result<String, ToolLaunchResponse> {
     let project_root = std::path::PathBuf::from(project_path);
     let active_source_view = resolve_active_source_view_folder(pool, project_id).await;
-    let working_dir_path = resolve_working_folder(&project_root, active_source_view.as_deref());
+    let working_dir_path = resolve_working_folder(&project_root, active_source_view.as_deref())
+        .map_err(|e| error_response("cwd.outside_library_root", e.to_string()))?;
 
     let canonical_cwd =
         working_dir_path.canonicalize().unwrap_or_else(|_| working_dir_path.clone());
