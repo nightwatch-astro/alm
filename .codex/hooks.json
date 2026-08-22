@@ -66,26 +66,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".codex/hooks/hooks-quality/scripts/quality-before-commit.sh",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".codex/hooks/speckit/scripts/speckit-pr-title.sh",
-            "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
             "command": ".codex/hooks/beads/scripts/beads-gh-issue-guard.py",
             "statusMessage": "Checking gh issue command against beads policy...",
             "timeout": 10
@@ -256,16 +236,6 @@
           {
             "type": "command",
             "command": ".codex/hooks/speckit/scripts/speckit-task-issue-sync.sh",
-            "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".codex/hooks/mcp-repomix/scripts/repomix-refresh-snapshot.sh",
             "timeout": 30
           }
         ]
