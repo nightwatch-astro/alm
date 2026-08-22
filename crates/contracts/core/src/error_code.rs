@@ -119,8 +119,8 @@ pub enum ErrorCode {
     #[serde(rename = "inbox.missing_path_attributes")]
     InboxMissingPathAttributes,
     /// `inbox.confirm`: two or more source files resolve onto one destination
-    /// path, so applying the plan would overwrite one with another
-    /// (Constitution I/II). Refused at plan-build time.
+    /// path, so the plan cannot be applied without one item claiming another's
+    /// path. Refused at plan-build time (Constitution II).
     #[serde(rename = "inbox.destination_collision")]
     InboxDestinationCollision,
 

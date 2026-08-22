@@ -59,6 +59,7 @@ use persistence_lifecycle::repositories::settings as settings_repo;
 use persistence_plans::repositories::plans as plans_repo;
 use serde_json::json;
 use sqlx::SqlitePool;
+use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 use app_core_errors::db_internal_ctx;
@@ -712,45 +713,61 @@ fn reject_if_missing_path_attrs(
     .with_details(json!({ "files": files })))
 }
 
-/// Fail with `InboxDestinationCollision` if two resolved rows claim one
-/// `(to_root_id, to_relative_path)`.
+/// Case-folded, NFC-normalized destination path, used as the collision key.
 ///
-/// A per-item overwrite check at apply time cannot catch this: the second item
-/// overwrites what the first item just wrote, so nothing pre-existing is in the
-/// way. The frames are irreplaceable (Constitution I) and a plan whose own items
-/// overwrite each other is not reviewable (Constitution II), so the plan is
-/// refused rather than resolved to a winner.
+/// APFS and NTFS resolve two paths differing only in case to one file, and APFS
+/// also compares NFC and NFD spellings as equal, so a byte comparison would pass
+/// rows that name one file on the volumes this app targets.
+fn destination_key(dest_rel: &str) -> String {
+    dest_rel.nfc().collect::<String>().to_lowercase()
+}
+
+/// Fail with `InboxDestinationCollision` if two resolved rows claim one
+/// destination root and [`destination_key`].
+///
+/// A per-item overwrite check at apply time cannot catch a same-plan collision:
+/// nothing pre-existing is in the way when the first item runs. The executor
+/// then refuses the second item (`fs_executor::ops::move_op`,
+/// `conflict.destination_exists`), which leaves the item's frames half-moved
+/// with the plan failed partway. Constitution II puts that decision in the
+/// reviewable plan instead, so confirm refuses to build one.
 fn reject_if_destinations_collide(resolved: &[ResolvedRow]) -> Result<(), ContractError> {
-    let mut by_dest: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
+    let mut by_dest: BTreeMap<(&str, String), Vec<&ResolvedRow>> = BTreeMap::new();
     for row in resolved {
         by_dest
-            .entry((row.to_root_id.as_str(), row.dest_rel.as_str()))
+            .entry((row.to_root_id.as_str(), destination_key(&row.dest_rel)))
             .or_default()
-            .push(row.source_rel.as_str());
+            .push(row);
     }
-    let collisions: Vec<((&str, &str), Vec<&str>)> =
-        by_dest.into_iter().filter(|(_, sources)| sources.len() > 1).collect();
+    let collisions: Vec<((&str, String), Vec<&ResolvedRow>)> =
+        by_dest.into_iter().filter(|(_, rows)| rows.len() > 1).collect();
     if collisions.is_empty() {
         return Ok(());
     }
 
     let details: Vec<serde_json::Value> = collisions
         .iter()
-        .map(|((root_id, dest), sources)| {
-            json!({ "toRootId": root_id, "toRelativePath": dest, "sourcePaths": sources })
+        .map(|((root_id, _), rows)| {
+            let items: Vec<serde_json::Value> = rows
+                .iter()
+                .map(|r| json!({ "sourcePath": r.source_rel, "toRelativePath": r.dest_rel }))
+                .collect();
+            json!({ "toRootId": root_id, "items": items })
         })
         .collect();
     let summary = collisions
         .iter()
-        .map(|((_, dest), sources)| format!("{dest} <- {}", sources.join(", ")))
+        .map(|(_, rows)| {
+            rows.iter()
+                .map(|r| format!("{} -> {}", r.source_rel, r.dest_rel))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
         .collect::<Vec<_>>()
         .join("; ");
     Err(ContractError::new(
         ErrorCode::InboxDestinationCollision,
-        format!(
-            "These files resolve onto the same destination, so moving them would overwrite one \
-             with another: {summary}"
-        ),
+        format!("These files claim one destination path, so the plan cannot be applied: {summary}"),
         ErrorSeverity::Blocking,
         false,
     )
@@ -1377,21 +1394,17 @@ mod tests {
         assert_eq!(resp.items_total, 3);
     }
 
-    /// Two frames captured in different session folders share a basename and
-    /// carry identical pattern tokens, so the rendered destination is the same
-    /// path for both. Applying that plan overwrites one frame with the other
-    /// (Constitution I: the frames are user-owned source material; Constitution
-    /// II: a plan that overwrites silently is not reviewable), so confirm must
-    /// refuse to build it.
-    #[tokio::test]
-    async fn confirm_refuses_two_files_that_resolve_onto_one_destination() {
+    /// Confirm one inbox item holding two light frames, one per session folder,
+    /// under identical pattern tokens. Returns the confirm error and asserts
+    /// that nothing appliable was left behind.
+    async fn confirm_two_session_frames(item_id: &str, names: (&str, &str)) -> ContractError {
         let tmp = tempfile::tempdir().unwrap();
-        for session in ["session-a", "session-b"] {
+        for (session, name) in [("session-a", names.0), ("session-b", names.1)] {
             let dir = tmp.path().join(session);
             std::fs::create_dir_all(&dir).unwrap();
             write_fits(
                 &dir,
-                "light_001.fits",
+                name,
                 "Light Frame",
                 Some("M42"),
                 Some("Ha"),
@@ -1400,13 +1413,14 @@ mod tests {
         }
 
         let db = test_db().await;
+        let files = [format!("session-a/{}", names.0), format!("session-b/{}", names.1)];
         setup_classified_item(
             &db,
-            "item-collide",
+            item_id,
             "classified",
             Some("light"),
             "sig-collide",
-            &["session-a/light_001.fits", "session-b/light_001.fits"],
+            &[files[0].as_str(), files[1].as_str()],
         )
         .await;
 
@@ -1414,7 +1428,7 @@ mod tests {
             db.pool(),
             &make_bus(&db),
             ConfirmRequest {
-                inbox_item_id: "item-collide".to_owned(),
+                inbox_item_id: item_id.to_owned(),
                 content_signature: "sig-collide".to_owned(),
                 destructive_destination: None,
                 root_absolute_path: tmp.path().to_owned(),
@@ -1425,13 +1439,48 @@ mod tests {
         .await
         .expect_err("two files on one destination must not produce a plan");
 
-        assert_eq!(err.code, ErrorCode::InboxDestinationCollision);
         assert_eq!(
             count_plans_in_state(db.pool(), "ready_for_review").await,
             0,
             "the collision must not reach apply through a reviewable plan"
         );
-        assert!(inbox_repo::get_plan_link(db.pool(), "item-collide").await.unwrap().is_none());
+        assert!(inbox_repo::get_plan_link(db.pool(), item_id).await.unwrap().is_none());
+        err
+    }
+
+    /// Two frames captured in different session folders share a basename and
+    /// carry identical pattern tokens, so the rendered destination is the same
+    /// path for both. Applying that plan fails partway: `move_op` refuses the
+    /// second item with `conflict.destination_exists`, leaving the item's frames
+    /// half-moved. Constitution II puts that decision in the reviewable plan, so
+    /// confirm must refuse to build one.
+    #[tokio::test]
+    async fn confirm_refuses_two_files_that_resolve_onto_one_destination() {
+        let err =
+            confirm_two_session_frames("item-collide", ("light_001.fits", "light_001.fits")).await;
+        assert_eq!(err.code, ErrorCode::InboxDestinationCollision);
+    }
+
+    /// The byte comparison this replaces treats each pair below as two paths.
+    /// APFS resolves both pairs to one file, NTFS the first. Only the case pair
+    /// is reachable end to end: the filesystem normalizes the Unicode pair
+    /// before `file_name()` sees it.
+    #[test]
+    fn destination_key_folds_case_and_normalizes_unicode() {
+        assert_ne!("m42/Light_001.fits", "m42/light_001.fits");
+        assert_eq!(destination_key("m42/Light_001.fits"), destination_key("m42/light_001.fits"));
+        assert_ne!("m42/cafe\u{301}.fits", "m42/caf\u{e9}.fits");
+        assert_eq!(destination_key("m42/cafe\u{301}.fits"), destination_key("m42/caf\u{e9}.fits"));
+    }
+
+    /// APFS and NTFS resolve two destinations differing only in case to one
+    /// file, so the gate compares case-folded keys rather than bytes.
+    #[tokio::test]
+    async fn confirm_refuses_two_files_whose_destinations_differ_only_in_case() {
+        let err =
+            confirm_two_session_frames("item-collide-case", ("light_001.fits", "LIGHT_001.fits"))
+                .await;
+        assert_eq!(err.code, ErrorCode::InboxDestinationCollision);
     }
 
     /// Build one classified sibling sub-item under `sg_id`.
