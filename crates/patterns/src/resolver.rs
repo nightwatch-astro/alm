@@ -178,35 +178,8 @@ pub fn resolve(
     // 3. Assemble relative path.
     let relative_path: String = parts.concat();
 
-    // 4a. Traversal guard on assembled path: check each `/`-delimited segment.
-    for segment in relative_path.split('/') {
-        if segment == ".." || segment == "." {
-            return Err(ResolveError::PathTraversal { segment: segment.to_owned() });
-        }
-    }
-
-    // 4b. Per-segment byte-length check and reserved-name check.
-    for segment in relative_path.split('/') {
-        if segment.is_empty() {
-            continue; // Leading/trailing slash produces empty segments — skip.
-        }
-        let byte_len = segment.len();
-        if byte_len > config.max_segment_bytes() {
-            return Err(ResolveError::PathTooLong {
-                resolved_length: relative_path.chars().count(),
-                segment_length_bytes: byte_len,
-            });
-        }
-    }
-
-    // 4c. Total length check.
-    let total_chars = relative_path.chars().count();
-    if total_chars > config.max_path_chars() {
-        return Err(ResolveError::PathTooLong {
-            resolved_length: total_chars,
-            segment_length_bytes: 0,
-        });
-    }
+    // 4. Traversal guard and length caps on the assembled path.
+    check_assembled_path(&relative_path, config)?;
 
     Ok(ResolveResult { relative_path, missing_tokens, warnings: validation.warnings })
 }
@@ -295,10 +268,26 @@ fn resolve_pattern_str_with(
 
     let relative_path = segments.join("/");
 
-    // Length caps — identical policy to resolve().
+    check_assembled_path(&relative_path, config)?;
+
+    Ok(ResolveResult { relative_path, missing_tokens, warnings: Vec::new() })
+}
+
+/// Traversal guard and length caps applied to an assembled relative path.
+///
+/// Per-piece sanitization cannot see traversal that only appears once the
+/// pieces are joined: a segment of `{filter}.` whose token value sanitizes to
+/// `.` assembles to `..`. Both resolvers therefore re-check the assembled
+/// string, and they must apply the same policy -- a resolver that skips this
+/// hands its caller a destination that escapes the root it was resolved
+/// against.
+fn check_assembled_path(relative_path: &str, config: &ResolverConfig) -> Result<(), ResolveError> {
     for segment in relative_path.split('/') {
+        if segment == ".." || segment == "." {
+            return Err(ResolveError::PathTraversal { segment: segment.to_owned() });
+        }
         if segment.is_empty() {
-            continue;
+            continue; // Leading/trailing slash produces empty segments — skip.
         }
         let byte_len = segment.len();
         if byte_len > config.max_segment_bytes() {
@@ -308,6 +297,7 @@ fn resolve_pattern_str_with(
             });
         }
     }
+
     let total_chars = relative_path.chars().count();
     if total_chars > config.max_path_chars() {
         return Err(ResolveError::PathTooLong {
@@ -316,7 +306,7 @@ fn resolve_pattern_str_with(
         });
     }
 
-    Ok(ResolveResult { relative_path, missing_tokens, warnings: Vec::new() })
+    Ok(())
 }
 
 /// Resolve one `/`-delimited segment that may interleave `{token}` placeholders
@@ -837,6 +827,28 @@ mod tests {
         let bundle = meta(&[]);
         let err = resolve_pattern_str("masters/./x/", &bundle).unwrap_err();
         assert!(matches!(err, ResolveError::PathTraversal { .. }));
+    }
+
+    /// astro-plan-3v3r.9.10: `sanitize_token_value` leaves `/` alone by design
+    /// (`safe-filename` defers separators to the resolver), so a token value
+    /// carrying `../` only fails on the assembled-path check that `resolve`
+    /// always had and `resolve_pattern_str` skipped.
+    #[test]
+    fn pattern_str_token_value_traversal_rejected() {
+        let bundle = meta(&[("filter", "Ha/../../etc")]);
+        let err = resolve_pattern_str("flats/{filter}/", &bundle).unwrap_err();
+        assert!(matches!(err, ResolveError::PathTraversal { .. }));
+    }
+
+    /// The same value through `resolve`, pinning that both resolvers now answer
+    /// alike -- the defect was the divergence.
+    #[test]
+    fn assembled_traversal_rejected_alike_by_both_resolvers() {
+        let bundle = meta(&[("filter", "Ha/../../etc")]);
+        let via_parts = resolve_v1(&[tok("f", "filter")], &bundle).unwrap_err();
+        let via_pattern_str = resolve_pattern_str("{filter}", &bundle).unwrap_err();
+        assert!(matches!(via_parts, ResolveError::PathTraversal { .. }));
+        assert!(matches!(via_pattern_str, ResolveError::PathTraversal { .. }));
     }
 
     #[test]
