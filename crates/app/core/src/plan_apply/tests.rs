@@ -1507,16 +1507,24 @@ fn n765_destination_root_falls_back_to_library_root_when_to_root_id_absent() {
     assert_eq!(item.destination_root, Some(Utf8PathBuf::from("/mnt/library")));
 }
 
-/// astro-plan-d8cyr FIX 1: a `source_view_generation` plan row written before
-/// migration 0003 has `to_root_id=None`, `from_root_id=Some` and an ABSOLUTE
-/// `to_relative_path`. Falling back to `library_root` (the SOURCE root) gates
-/// that destination against a root it never belonged to, so every item of the
-/// user's existing plan is refused `root_escape`, which is non-retryable.
-/// `destination_root` must stay `None` so the destination gate is inactive and
-/// the plan applies as it did before the column existed.
-#[test]
-fn absolute_destination_takes_no_library_root_fallback() {
-    let row = plans_repo::PlanItemRow {
+/// A path that `Utf8Path::is_absolute` accepts on the platform running the test.
+///
+/// A POSIX literal such as `/mnt/x` is root-relative on Windows, where
+/// absoluteness needs a drive or UNC prefix. Hardcoding one makes an
+/// absolute-destination test silently exercise the relative branch there
+/// (astro-plan-d8cyr round 4: run 32580340909 job 97048640912).
+/// `std::env::temp_dir` is prefixed on every platform and touches no disk,
+/// which keeps these row-mapping tests pure.
+fn absolute_test_path(tail: &str) -> Utf8PathBuf {
+    let base =
+        Utf8PathBuf::from_path_buf(std::env::temp_dir()).expect("temp dir path is UTF-8 in tests");
+    let path = base.join(tail);
+    assert!(path.is_absolute(), "test fixture must be absolute on this platform: {path}");
+    path
+}
+
+fn source_view_item_row(to_relative_path: &str) -> plans_repo::PlanItemRow {
+    plans_repo::PlanItemRow {
         id: "item-abs-dest".to_owned(),
         plan_id: "plan-pre-0003".to_owned(),
         item_index: 1,
@@ -1525,8 +1533,7 @@ fn absolute_destination_takes_no_library_root_fallback() {
         from_root_id: Some("root-001".to_owned()),
         from_relative_path: "raw/frame.fits".to_owned(),
         to_root_id: None,
-        to_relative_path: "/mnt/projects/m101/source-views/plan-pre-0003/lights/frame.fits"
-            .to_owned(),
+        to_relative_path: to_relative_path.to_owned(),
         reason: "view_generation".to_owned(),
         protection: "normal".to_owned(),
         linked_entity: None,
@@ -1542,22 +1549,50 @@ fn absolute_destination_takes_no_library_root_fallback() {
         requires_destructive_confirm: Some(0),
         resolved_pattern: None,
         destructive_confirmed: 0,
-    };
+    }
+}
+
+/// astro-plan-d8cyr FIX 1: a `source_view_generation` plan row written before
+/// migration 0003 has `to_root_id=None`, `from_root_id=Some` and an ABSOLUTE
+/// `to_relative_path`. Falling back to `library_root` (the SOURCE root) gates
+/// that destination against a root it never belonged to, so every item of the
+/// user's existing plan is refused `root_escape`, which is non-retryable.
+/// `destination_root` must stay `None` so the destination gate is inactive and
+/// the plan applies as it did before the column existed.
+#[test]
+fn absolute_destination_takes_no_library_root_fallback() {
+    let view_root = absolute_test_path("projects/m101/source-views/plan-pre-0003");
+    let row = source_view_item_row(view_root.join("lights/frame.fits").as_str());
 
     let mut root_map = HashMap::new();
-    root_map.insert("root-001".to_owned(), Utf8PathBuf::from("/mnt/library"));
+    root_map.insert("root-001".to_owned(), absolute_test_path("library"));
 
     let item = item_row_to_executor_item(&row, &root_map, "archive", None);
-    assert_eq!(item.library_root, Some(Utf8PathBuf::from("/mnt/library")));
+    assert_eq!(item.library_root, Some(absolute_test_path("library")));
     assert_eq!(
         item.destination_root, None,
         "an absolute destination must not inherit the source root"
     );
 
     // The same row in a plan that DOES record its destination root is gated.
-    let recorded = Utf8PathBuf::from("/mnt/projects/m101/source-views/plan-pre-0003");
-    let gated = item_row_to_executor_item(&row, &root_map, "archive", Some(&recorded));
-    assert_eq!(gated.destination_root, Some(recorded));
+    let gated = item_row_to_executor_item(&row, &root_map, "archive", Some(&view_root));
+    assert_eq!(gated.destination_root, Some(view_root));
+}
+
+/// The sibling of the case above: a RELATIVE destination still takes the #765
+/// `library_root` fallback, so the no-fallback rule is scoped to absolute
+/// destinations rather than having disabled the fallback outright. Both cases
+/// run on every platform.
+#[test]
+fn relative_destination_still_takes_library_root_fallback() {
+    let library = absolute_test_path("library");
+    let row = source_view_item_row("archive/frame.fits");
+
+    let mut root_map = HashMap::new();
+    root_map.insert("root-001".to_owned(), library.clone());
+
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
+    assert_eq!(item.destination_root, Some(library));
 }
 
 /// T023a: root-escaping relative path is refused by the gate when library_root is set.
