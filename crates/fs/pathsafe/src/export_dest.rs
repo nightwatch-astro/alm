@@ -72,9 +72,14 @@ pub fn validate_export_destination(dest: &Path) -> Result<ExportDestination, Des
     let parent = dest.parent().ok_or(DestinationRejected::NoParent)?;
     let file_name = dest.file_name().ok_or(DestinationRejected::NoFileName)?;
 
+    // A verbatim Windows path (`\\?\C:\...`) gives `..` no special meaning, so
+    // `file_name` returns it as an ordinary component and the traversal check
+    // has to reject it here.
+    let name = file_name.to_string_lossy();
+    safe_filename::step3_traversal_check(&name).map_err(|_| DestinationRejected::NoFileName)?;
+
     // Windows resolves a device name from the text before the FIRST dot, so
     // `CON.foo.json` names the console where `file_stem` would keep `CON.foo`.
-    let name = file_name.to_string_lossy();
     let device = name.split('.').next().unwrap_or(&name);
     safe_filename::step4_reserved_name_check(device)
         .map_err(|_| DestinationRejected::ReservedName)?;
