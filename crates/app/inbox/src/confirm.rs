@@ -1066,6 +1066,16 @@ mod tests {
         persistence_core::test_support::setup_db().await
     }
 
+    /// Count plans sitting in one lifecycle state. `ready_for_review` is the
+    /// only state `plans.approve` accepts, so it is the appliability probe.
+    async fn count_plans_in_state(pool: &SqlitePool, state: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM plans WHERE state = ?")
+            .bind(state)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
     /// Write a minimal single-block FITS file from the optional cards the
     /// destination-pattern tests care about. The `write_fits*` helpers below
     /// are thin presets over this.
@@ -1309,6 +1319,63 @@ mod tests {
 
         assert_eq!(resp.plan_state, "ready_for_review");
         assert_eq!(resp.items_total, 3);
+    }
+
+    /// Two frames captured in different session folders share a basename and
+    /// carry identical pattern tokens, so the rendered destination is the same
+    /// path for both. Applying that plan overwrites one frame with the other
+    /// (Constitution I: the frames are user-owned source material; Constitution
+    /// II: a plan that overwrites silently is not reviewable), so confirm must
+    /// refuse to build it.
+    #[tokio::test]
+    async fn confirm_refuses_two_files_that_resolve_onto_one_destination() {
+        let tmp = tempfile::tempdir().unwrap();
+        for session in ["session-a", "session-b"] {
+            let dir = tmp.path().join(session);
+            std::fs::create_dir_all(&dir).unwrap();
+            write_fits(
+                &dir,
+                "light_001.fits",
+                "Light Frame",
+                Some("M42"),
+                Some("Ha"),
+                Some("2026-01-12T22:00:00"),
+            );
+        }
+
+        let db = test_db().await;
+        setup_classified_item(
+            &db,
+            "item-collide",
+            "classified",
+            Some("light"),
+            "sig-collide",
+            &["session-a/light_001.fits", "session-b/light_001.fits"],
+        )
+        .await;
+
+        let err = confirm(
+            db.pool(),
+            &make_bus(&db),
+            ConfirmRequest {
+                inbox_item_id: "item-collide".to_owned(),
+                content_signature: "sig-collide".to_owned(),
+                destructive_destination: None,
+                root_absolute_path: tmp.path().to_owned(),
+                root_id: None,
+                chosen_attribution: None,
+            },
+        )
+        .await
+        .expect_err("two files on one destination must not produce a plan");
+
+        assert_eq!(err.code, ErrorCode::InboxDestinationCollision);
+        assert_eq!(
+            count_plans_in_state(db.pool(), "ready_for_review").await,
+            0,
+            "the collision must not reach apply through a reviewable plan"
+        );
+        assert!(inbox_repo::get_plan_link(db.pool(), "item-collide").await.unwrap().is_none());
     }
 
     /// Build one classified sibling sub-item under `sg_id`.
@@ -3000,6 +3067,62 @@ mod tests {
             Some("framing-attr2"),
             "the apply-path must persist the pick on the plan confirm() itself created"
         );
+    }
+
+    /// Frame-to-framing attribution is a Tier-1 record (Constitution V): it
+    /// cannot be re-derived from the filesystem. A confirm whose attribution
+    /// fails must therefore leave nothing appliable behind, or the frames move
+    /// with the user's decision missing.
+    #[tokio::test]
+    async fn failed_attribution_leaves_no_appliable_plan() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_fits(
+            tmp.path(),
+            "light_001.fits",
+            "Light Frame",
+            Some("M42"),
+            Some("Ha"),
+            Some("2025-10-10T22:00:00"),
+        );
+        let db = test_db().await;
+        setup_classified_item(
+            &db,
+            "item-attr-fail",
+            "classified",
+            Some("light"),
+            "sig-attr-fail",
+            &["light_001.fits"],
+        )
+        .await;
+
+        let err = confirm(
+            db.pool(),
+            &make_bus(&db),
+            ConfirmRequest {
+                inbox_item_id: "item-attr-fail".to_owned(),
+                content_signature: "sig-attr-fail".to_owned(),
+                destructive_destination: None,
+                root_absolute_path: tmp.path().to_owned(),
+                root_id: None,
+                chosen_attribution: Some(contracts_core::framing::ChosenAttributionDto {
+                    kind: contracts_core::framing::ChosenAttributionKind::AddToFraming,
+                    project_id: None,
+                    framing_id: Some("framing-does-not-exist".to_owned()),
+                }),
+            },
+        )
+        .await
+        .expect_err("a failed Tier-1 attribution must fail the confirm");
+
+        assert_eq!(err.code, ErrorCode::FramingNotFound);
+        assert_eq!(
+            count_plans_in_state(db.pool(), "ready_for_review").await,
+            0,
+            "a failed attribution must leave no appliable plan"
+        );
+        assert!(inbox_repo::get_plan_link(db.pool(), "item-attr-fail").await.unwrap().is_none());
+        let item = inbox_repo::get_inbox_item(db.pool(), "item-attr-fail").await.unwrap();
+        assert_ne!(item.state, "plan_open");
     }
 
     // ── #1342: equipment resolution on the ingest path ────────────────────

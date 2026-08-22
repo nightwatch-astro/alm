@@ -118,6 +118,11 @@ pub enum ErrorCode {
     InboxInvalidDestinationRoot,
     #[serde(rename = "inbox.missing_path_attributes")]
     InboxMissingPathAttributes,
+    /// `inbox.confirm`: two or more source files resolve onto one destination
+    /// path, so applying the plan would overwrite one with another
+    /// (Constitution I/II). Refused at plan-build time.
+    #[serde(rename = "inbox.destination_collision")]
+    InboxDestinationCollision,
 
     // ── Metadata / classification ────────────────────────────────────────────
     #[serde(rename = "metadata.unreadable")]
