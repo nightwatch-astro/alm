@@ -3125,7 +3125,6 @@ export type CalibrationTolerances = {
 	temperatureToleranceC: number | null,
 	exposureToleranceS: number | null,
 	agingLimitDays: number,
-	requireSameCamera: boolean,
 	requireSameGain: boolean,
 	requireSameBinning: boolean,
 	/**
@@ -10546,7 +10545,6 @@ export type UpdateCalibrationTolerances = {
 	temperatureToleranceC: number | null,
 	exposureToleranceS: number | null,
 	agingLimitDays: number,
-	requireSameCamera: boolean,
 	requireSameGain: boolean,
 	requireSameBinning: boolean,
 	requireSameOffset: boolean,

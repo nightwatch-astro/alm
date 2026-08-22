@@ -61,7 +61,7 @@ src/features/projects/wizard/WizardPage.tsx	638	alm/require-root-testid
 src/features/sessions/CalendarScroll.tsx	72	alm/require-root-testid
 src/features/sessions/SessionNotesSection.tsx	97	alm/require-root-testid
 src/features/settings/AuditLog.tsx	285	alm/require-root-testid
-src/features/settings/CalibrationMatching.tsx	189	alm/require-root-testid
+src/features/settings/CalibrationMatching.tsx	176	alm/require-root-testid
 src/features/settings/Framing.tsx	134	alm/require-root-testid
 src/features/settings/ObservingSites.tsx	313	alm/require-root-testid
 src/features/settings/PatternChipsEditor.tsx	39	alm/require-root-testid

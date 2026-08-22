@@ -207,7 +207,6 @@ let mockCalibrationTolerances: CalibrationTolerances = {
   temperatureToleranceC: 5.0,
   exposureToleranceS: 2.0,
   agingLimitDays: 365,
-  requireSameCamera: true,
   requireSameGain: true,
   requireSameBinning: true,
   requireSameOffset: true,

@@ -32,7 +32,6 @@ fn row_to_dto(row: CalibrationTolerancesRow) -> CalibrationTolerances {
         // The table stores a plain i64 with no enforced range; the DTO uses
         // i32 (spec 007). Saturate rather than panic on an out-of-range value.
         aging_limit_days: i32::try_from(row.aging_limit_days).unwrap_or(i32::MAX),
-        require_same_camera: row.require_same_camera,
         require_same_gain: row.require_same_gain,
         require_same_binning: row.require_same_binning,
         require_same_offset: row.require_same_offset,
@@ -61,7 +60,6 @@ pub async fn tolerances_update(
         temperature_tolerance_c: request.temperature_tolerance_c,
         exposure_tolerance_s: request.exposure_tolerance_s,
         aging_limit_days: i64::from(request.aging_limit_days),
-        require_same_camera: request.require_same_camera,
         require_same_gain: request.require_same_gain,
         require_same_binning: request.require_same_binning,
         require_same_offset: request.require_same_offset,
