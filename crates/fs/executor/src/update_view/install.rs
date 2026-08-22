@@ -156,9 +156,9 @@ fn resolve_no_follow(
 }
 
 fn open_no_follow(abs: &Utf8PathBuf) -> Result<std::fs::File, InstallError> {
-    let is_symlink =
-        std::fs::symlink_metadata(abs.as_std_path()).is_ok_and(|m| m.file_type().is_symlink());
-    if is_symlink {
+    // The shared primitive, not `file_type().is_symlink()`: a Windows junction
+    // is a reparse point that `is_symlink()` need not report.
+    if fs_pathsafe::is_link_or_junction(abs.as_std_path()) {
         return Err(InstallError {
             code: InstallErrorCode::SourcePathUnsafe,
             message: format!("source is a symlink: {abs}"),
@@ -260,7 +260,7 @@ mod tests {
         let link = src_dir.path().join("link.fits");
 
         // Create a symlink using the platform-appropriate API.
-        // The rejection check uses symlink_metadata().is_symlink() which is
+        // The rejection check is `fs_pathsafe::is_link_or_junction`, which is
         // cross-platform, so the assertion must hold on all three platforms.
         #[cfg(unix)]
         std::os::unix::fs::symlink(&real_file, &link).unwrap();
