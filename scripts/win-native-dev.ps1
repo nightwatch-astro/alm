@@ -58,5 +58,8 @@ Set-Location $desktop
 # Merge the dev-only overlay (src-tauri/tauri.dev.conf.json) which enables
 # withGlobalTauri for the MCP Bridge plugin's webview channel. withGlobalTauri
 # MUST stay out of the base tauri.conf.json (production security surface); it is
-# applied here in dev only — mirrors the `just dev` invocation.
-pnpm tauri dev --config src-tauri/tauri.dev.conf.json
+# applied here in dev only — mirrors the `just tauri-dev` invocation.
+# `--features dev-tools` compiles the MCP bridge in; without it the plugin is
+# not linked and nothing listens on 9223. The bridge binds 127.0.0.1 unless
+# PV_MCP_BRIDGE_BIND overrides it (see docs/development/windows-native-rust-dev.md).
+pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools

@@ -2,9 +2,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 fn main() {
-    // `mut` is only exercised by the `#[cfg(windows)]` block below.
+    // `mut` is only exercised by the `#[cfg(windows)]` block and the
+    // capability-glob branch below.
     #[allow(unused_mut)]
     let mut attributes = tauri_build::Attributes::new();
+
+    // A capability file cannot be `cfg`-gated, so the dev-only grants live in
+    // `capabilities/dev/` and this narrows the default `./capabilities/**/*`
+    // glob to the top level when `dev-tools` is off. Those grants name
+    // permissions from plugins the same feature gates, and an unknown
+    // permission is a build error, so the two gates cannot drift apart.
+    if std::env::var_os("CARGO_FEATURE_DEV_TOOLS").is_none() {
+        println!("cargo:rerun-if-changed=capabilities");
+        attributes = attributes.capabilities_path_pattern("./capabilities/*.json");
+    }
 
     // Windows-only workaround for a known upstream tauri-build/embed-resource
     // limitation: `tauri_build::build()`'s default app-manifest embedding uses

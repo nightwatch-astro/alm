@@ -185,8 +185,12 @@ and launch with the dev overlay that enables the MCP bridge:
 cd C:\dev\astro-plan\apps\desktop
 $env:VITE_USE_MOCKS = 'false'                                        # real backend
 $env:PV_DB_URL     = 'sqlite://C:\dev\astro-plan\wizard-test.db?mode=rwc'
-pnpm tauri dev --config src-tauri\tauri.dev.conf.json               # overlay = bridge on
+pnpm tauri dev --config src-tauri\tauri.dev.conf.json --features dev-tools
 ```
+
+The overlay enables `withGlobalTauri`; `--features dev-tools` compiles the MCP
+bridge in. A build without the feature links no bridge, so nothing listens on
+9223.
 
 `scripts\win-native-dev.ps1` launches the same overlay with the real backend;
 add the `PV_DB_URL` line above when you need a disposable DB. Any `run-dev*.bat`
@@ -217,11 +221,14 @@ Get-ChildItem <changed>.rs | ForEach-Object { $_.LastWriteTime = Get-Date }
 Then relaunch (`tauri dev` recompiles). A frontend-only change needs only a hard
 refresh (Ctrl+R). Confirm the binary mtime is newer than the source.
 
-**Connect the MCP bridge.** The bridge is `#[cfg(debug_assertions)]`, WebSocket
-on `0.0.0.0:9223`. This host runs WSL in mirrored networking, so `localhost`
-reaches Windows directly — connect with `driver_session host=localhost
-port=9223`. The old NAT gateway-IP lookup (`ip route show default`) is
-**obsolete**. Invoke a command directly with `webview_execute_js` →
+**Connect the MCP bridge.** The bridge needs `--features dev-tools` and serves a
+WebSocket on `127.0.0.1:9223`. This host runs WSL in mirrored networking, so
+`localhost` reaches Windows loopback directly — connect with `driver_session
+host=localhost port=9223`. The old NAT gateway-IP lookup (`ip route show
+default`) is **obsolete** here; under NAT networking, set
+`PV_MCP_BRIDGE_BIND=0.0.0.0` before launching so the gateway address reaches the
+bridge. Anything that reaches that address controls the app without
+authentication. Invoke a command directly with `webview_execute_js` →
 `window.__TAURI__.core.invoke('<snake_command>', {args})` (`ipc_execute_command`
 rejects many real commands but is fine for scripted backend probes).
 

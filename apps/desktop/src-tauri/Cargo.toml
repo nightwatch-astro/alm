@@ -51,7 +51,10 @@ sqlx = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
 tauri-plugin-opener = { workspace = true }
-tauri-plugin-mcp-bridge = { workspace = true }
+# Agent-driven UI automation surface — ONLY compiled when `dev-tools` is
+# enabled. Release binaries MUST omit that feature so the WebSocket control
+# server is absent from the binary rather than merely unstarted.
+tauri-plugin-mcp-bridge = { workspace = true, optional = true }
 # Spec 051 shell integration plugins.
 tauri-plugin-single-instance = { workspace = true }
 tauri-plugin-window-state = { workspace = true }
@@ -84,7 +87,11 @@ tempfile = { workspace = true }
 [features]
 # Developer-mode surface (spec 021). Release binaries MUST NOT enable this.
 # Propagates to app_core so the dev_contracts use-case module is compiled in.
-dev-tools = ["app_core/dev-tools"]
+# Also embeds tauri-plugin-mcp-bridge and, via build.rs, widens the capability
+# glob to `capabilities/dev/`, which is where the plugin's permission grant
+# lives. With the feature off the plugin's ACL manifest does not exist, so an
+# ungated grant would fail the build.
+dev-tools = ["app_core/dev-tools", "dep:tauri-plugin-mcp-bridge"]
 # E2E automation gate (spec 037). Embeds tauri-plugin-webdriver so the app
 # binary accepts W3C WebDriver sessions from the tauri-webdriver CLI proxy.
 # The embedded server listens on 127.0.0.1:4445; the tauri-webdriver CLI

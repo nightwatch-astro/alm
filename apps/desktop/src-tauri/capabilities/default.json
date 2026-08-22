@@ -14,7 +14,6 @@
     "dialog:allow-open",
     "opener:allow-open-path",
     "opener:allow-reveal-item-in-dir",
-    "mcp-bridge:default",
     "updater:default",
     "process:default",
     "window-state:default"

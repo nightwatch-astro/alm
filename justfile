@@ -189,10 +189,10 @@ dev:
     pnpm --filter @astro-plan/desktop dev
 
 # Start the Tauri desktop app in development mode (Rust + frontend).
-# The dev overlay enables `withGlobalTauri`, required by the (debug-only) MCP
-# bridge plugin; it is never applied to release builds.
+# The dev overlay enables `withGlobalTauri`, and the `dev-tools` feature compiles
+# in the MCP bridge plugin that requires it. Release builds carry neither.
 tauri-dev:
-    cd apps/desktop && pnpm tauri dev --config src-tauri/tauri.dev.conf.json
+    cd apps/desktop && pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools
 
 # Clean build artifacts
 clean:

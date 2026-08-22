@@ -304,8 +304,12 @@ jobs:
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
             libayatana-appindicator3-dev
 
+      # `scripts` arms this too: the dev-surface guard below resolves the cargo
+      # feature graph, so a scripts-only PR that edits the guard still needs the
+      # pinned toolchain to run it against itself.
       - uses: dtolnay/rust-toolchain@1.98.0
-        if: needs.changes.outputs.rust == 'true'
+        if: >-
+          needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true'
         with:
           components: rustfmt, clippy
 
@@ -687,6 +691,16 @@ jobs:
       - name: Generated contract/binding drift
         if: runner.os == 'Linux' && needs.changes.outputs.rust == 'true'
         run: just check-generated
+
+      # The release gate runs this too, but only on release-please branches and
+      # tags, so a change that ships the dev surface would reach main unobserved.
+      - name: Dev surface absent from a default-feature build
+        # `scripts` is armed as well as `rust`: a scripts-only edit that weakens
+        # the guard must run the guard.
+        if: >-
+          runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' ||
+          needs.changes.outputs.scripts == 'true')
+        run: bash scripts/check-dev-surface-absent.sh
 
       # The declaration generator also reads `packages/contracts/schemas/` and
       # `specs/*/contracts/`, neither of which sets the `rust` filter. This leg
