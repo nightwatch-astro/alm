@@ -250,8 +250,9 @@ test.describe('calibration · masters listing + matching (spec 040 / 007)', () =
     });
 
     // Hard-required dimensions are exposed as toggles (spec 007 FR-012 hard
-    // rules): Camera / Binning / Gain / Offset, all defaulting on.
-    await expect(page.getByText('Camera', { exact: true })).toBeVisible();
+    // rules): Binning / Gain / Offset, all defaulting on. Camera carries no
+    // toggle — the ranking model has no camera-identity dimension to gate
+    // (crates/calibration/core/src/ranking.rs).
     await expect(page.getByText('Binning', { exact: true })).toBeVisible();
 
     // Soft tolerances are numeric inputs seeded from the persisted singleton
