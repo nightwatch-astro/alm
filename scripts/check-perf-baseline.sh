@@ -154,6 +154,15 @@ check() {
     stmts="$(printf '%s' "$line" | jq -r '.sqlx_stmts')"
     wall="$(printf '%s' "$line" | jq -r '.wall_ms')"
 
+    # `[[ null -gt 5 ]]` treats "null" as an unset name worth 0 and reports the
+    # scenario as within budget, so a malformed measurement reads as a pass.
+    for field in stmts wall; do
+      if [[ ! "${!field}" =~ ^-?[0-9]+$ ]]; then
+        echo "ERROR: scenario '$scenario' reported a non-numeric $field='${!field}' — perf-bench output is malformed." >&2
+        exit 1
+      fi
+    done
+
     # Look up baseline entry for this scenario.
     baseline_entry="$(jq -c --arg s "$scenario" '.[] | select(.scenario == $s)' "$BASELINE_FILE")"
     if [[ -z "$baseline_entry" ]]; then
