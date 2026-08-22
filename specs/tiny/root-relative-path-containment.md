@@ -39,9 +39,9 @@ rather than reaching it through a fallback arm:
 | root present, absolute path inside the root | `Ok`, the path itself |
 | root present, absolute path outside the root | `Err(Escapes)` |
 | root present but relative | `Err(RootNotAbsolute)` |
-| root absent, relative path | `Err(RootMissing)` |
-| root absent, absolute path with `.` or `..` components | `Err(NotNormalized)` |
-| root absent, absolute normal path | `Ok`, via `resolve_unrooted` only |
+| no root, absolute path with `.` or `..` components | `Err(NotNormalized)` |
+| no root, absolute normal path | `Ok`, via `resolve_unrooted` only |
+| no root, relative path | `Err(NotAbsolute)` from `resolve_unrooted`, or `RootMissing` where the caller knows a root id failed to resolve |
 
 ### The verdict is lexical, so a non-existent leaf is contained
 
@@ -81,8 +81,9 @@ assembly, not root-relative resolution, and stays where it is.
 
 | File | Role |
 |------|------|
-| `crates/fs/pathsafe/src/contain.rs` | Add: `ContainedPath`, `ContainmentError`, `resolve_in_root`, `resolve_unrooted`, `resolve_in_optional_root`, `contained_in_any` |
-| `crates/fs/executor/src/ops/path_gate.rs` | Modify: `resolve_and_validate` delegates the join-and-contain step, symlink walk unchanged |
+| `crates/fs/pathsafe/src/contain.rs` | Add: `ContainedPath`, `ContainmentError`, `resolve_in_root`, `resolve_unrooted`, `contained_in_any`, `normalize` |
+| `crates/fs/executor/src/ops/path_gate.rs` | Modify: `resolve_and_validate` delegates the join-and-contain step, symlink walk unchanged; `lexical_normalize` deleted so one normalizer remains |
+| `crates/app/core/src/plan_apply/{paths,reconcile}.rs` | Modify: use `contain::normalize_utf8`; the FR-017 overlap set is compared, never mutated, so an uncontained path is kept rather than refused |
 | `crates/fs/executor/src/run/loop_.rs` | Modify: resolve each side once and hand the resolved paths to `execute_item`, so no second root choice exists |
 | `crates/fs/executor/src/run/dispatch.rs` | Modify: `execute_item` consumes resolved paths, `resolve_item_path` deleted |
 | `crates/project/structure/src/lib.rs` | Modify: `resolve_working_folder` returns `Result` |

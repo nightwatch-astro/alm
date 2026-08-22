@@ -12,15 +12,19 @@ use super::{
 /// held across an `.await`.
 pub(super) static OVERLAP_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Resolve one claimed relative path the same way the executor resolves item
-/// paths (`resolve_item_path`): join against the root when known, then
-/// lexically normalize. Unrooted paths normalize as-is — they never falsely
-/// prefix-match rooted absolute paths.
+/// Resolve one claimed relative path for the FR-017 overlap set: join against
+/// the root when known, then lexically normalize. Unrooted paths normalize
+/// as-is — they never falsely prefix-match rooted absolute paths.
+///
+/// This set is compared for overlap and never mutated, so an uncontained path
+/// is deliberately kept rather than refused: over-claiming a path only makes
+/// the concurrency check stricter. Anything that mutates goes through
+/// `fs_pathsafe::contain` instead.
 pub(super) fn resolve_claimed_path(relative: &str, root: Option<&Utf8PathBuf>) -> Utf8PathBuf {
-    use fs_executor::ops::path_gate::lexical_normalize;
+    use fs_pathsafe::contain::normalize_utf8;
     match root {
-        Some(r) => lexical_normalize(&r.join(relative)),
-        None => lexical_normalize(Utf8Path::new(relative)),
+        Some(r) => normalize_utf8(&r.join(relative)),
+        None => normalize_utf8(Utf8Path::new(relative)),
     }
 }
 
@@ -35,7 +39,7 @@ pub(super) fn compute_plan_path_set(
     item_rows: &[plans_repo::PlanItemRow],
     root_map: &HashMap<String, Utf8PathBuf>,
 ) -> PlanPathSet {
-    use fs_executor::ops::path_gate::lexical_normalize;
+    use fs_pathsafe::contain::normalize_utf8;
 
     let mut set = PlanPathSet::new();
     for row in item_rows {
@@ -51,7 +55,7 @@ pub(super) fn compute_plan_path_set(
         if let Some(archive) = row.archive_path.as_deref().filter(|a| !a.is_empty()) {
             let p = Utf8Path::new(archive);
             if p.is_absolute() {
-                set.insert(lexical_normalize(p));
+                set.insert(normalize_utf8(p));
             } else {
                 set.insert(resolve_claimed_path(archive, to_root));
             }

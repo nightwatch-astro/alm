@@ -61,8 +61,10 @@ fn resolve_archive_abs_path(
 
 /// Resolve one archived item, recording an uncontained path as a failure.
 ///
-/// An uncontained path is a failed item, not a skipped one: skipping would let
-/// `items_moved` report success for an archive entry nobody could account for.
+/// The recorded failure surfaces to the caller only when no item moved at all,
+/// which is the same handling the trash and delete primitives already get. In a
+/// mixed batch the refusal is a `warn` and the response still reports the items
+/// that did move.
 fn resolve_or_record_failure(
     archive_path: &str,
     from_root_id: Option<&str>,

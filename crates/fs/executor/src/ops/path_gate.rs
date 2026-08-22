@@ -134,36 +134,6 @@ pub fn containment_failure(error: &fs_pathsafe::contain::ContainmentError) -> Pl
     PlanItemFailure::with_code(code, error.to_string())
 }
 
-/// Lexically normalize a path by collapsing `.` and `..` components **without**
-/// making any filesystem calls (no `canonicalize`).
-///
-/// - `.` components are dropped.
-/// - `..` components pop the last pushed component (or are ignored at root).
-/// - Absolute path prefixes (root component) are preserved.
-///
-/// This is intentionally conservative: it does not strip Windows UNC
-/// prefixes or long-path `\\?\` prefixes.
-///
-/// spec 042 (T206): the lexical collapse is delegated to `path-clean`, whose
-/// `PathClean::clean` implements the same purely-lexical algorithm (drop `.`,
-/// pop the element preceding an inner `..`, drop a leading `..` on a rooted
-/// path, preserve the root/prefix). This is *only* the lexical step — the
-/// symlink/junction safety walk in [`resolve_and_validate`] is unchanged and
-/// still runs `symlink_metadata` per component of the original relative path,
-/// so the no-link-following guard (Product Constraints §II) is preserved. The
-/// `lexical_normalize_*` unit tests are the equivalence guard for the collapse.
-#[must_use]
-pub fn lexical_normalize(path: &Utf8Path) -> Utf8PathBuf {
-    use path_clean::PathClean as _;
-    // `path-clean` operates on `std::path`; bridge through it. The input is
-    // already guaranteed UTF-8 and `clean` only drops/pops/reorders existing
-    // components (it never synthesizes new bytes), so the cleaned result is
-    // UTF-8 by construction — the back-conversion cannot lose data.
-    let cleaned = path.as_std_path().clean();
-    Utf8PathBuf::from_path_buf(cleaned)
-        .unwrap_or_else(|p| Utf8PathBuf::from(p.to_string_lossy().into_owned()))
-}
-
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -173,28 +143,6 @@ mod tests {
     /// Convert a tempdir path to a guaranteed-UTF-8 path for the tests.
     fn utf8_root(p: &std::path::Path) -> Utf8PathBuf {
         Utf8PathBuf::from_path_buf(p.to_path_buf()).expect("temp dir path is UTF-8")
-    }
-
-    #[test]
-    fn lexical_normalize_simple_path() {
-        let p = Utf8PathBuf::from("/lib/root/./sub/../file.fits");
-        let n = lexical_normalize(&p);
-        assert_eq!(n, Utf8PathBuf::from("/lib/root/file.fits"));
-    }
-
-    #[test]
-    fn lexical_normalize_no_escape_at_root() {
-        // `..` at the root should not escape.
-        let p = Utf8PathBuf::from("/../../file.fits");
-        let n = lexical_normalize(&p);
-        assert_eq!(n, Utf8PathBuf::from("/file.fits"));
-    }
-
-    #[test]
-    fn lexical_normalize_deep_traversal() {
-        let p = Utf8PathBuf::from("/a/b/c/../../d");
-        let n = lexical_normalize(&p);
-        assert_eq!(n, Utf8PathBuf::from("/a/d"));
     }
 
     #[test]

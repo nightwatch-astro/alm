@@ -29,7 +29,7 @@ pub use delete_op::delete_file;
 pub use link_op::create_link;
 pub use mkdir_op::make_dir;
 pub use move_op::move_file;
-pub use path_gate::{lexical_normalize, resolve_and_validate};
+pub use path_gate::resolve_and_validate;
 pub use trash_op::trash_file;
 pub use volume_check::{available_space_bytes, recheck_disk_space, recheck_volume_available};
 pub use write_manifest_op::write_marker;

@@ -145,26 +145,6 @@ pub fn resolve_unrooted(path: &Path) -> Result<ContainedPath, ContainmentError> 
     }
 }
 
-/// Resolve `path` against a root that may be absent.
-///
-/// A present root delegates to [`resolve_in_root`]. An absent root is refused:
-/// the rootless shape is [`resolve_unrooted`], and a caller that legitimately
-/// holds a pre-resolved absolute path calls it by name.
-///
-/// # Errors
-///
-/// [`ContainmentError::RootMissing`] when `root` is `None`, plus every error of
-/// [`resolve_in_root`].
-pub fn resolve_in_optional_root(
-    root: Option<&Path>,
-    path: &Path,
-) -> Result<ContainedPath, ContainmentError> {
-    match root {
-        Some(root) => resolve_in_root(root, path),
-        None => Err(ContainmentError::RootMissing { path: path.to_path_buf() }),
-    }
-}
-
 /// Report whether `path` resolves inside at least one of `roots`.
 ///
 /// An empty `roots` is not contained: no registered root means nothing to be
@@ -220,6 +200,27 @@ mod tests {
 
     const ROOT: &str = "/mnt/library";
 
+    /// The collapse is delegated to `path-clean`; these are the equivalence
+    /// guard for it, moved here when `path_gate::lexical_normalize` folded into
+    /// this one implementation.
+    #[test]
+    fn normalize_collapses_dot_and_dotdot() {
+        assert_eq!(
+            normalize(Path::new("/lib/root/./sub/../file.fits")),
+            Path::new("/lib/root/file.fits")
+        );
+    }
+
+    #[test]
+    fn normalize_does_not_escape_at_the_root() {
+        assert_eq!(normalize(Path::new("/../../file.fits")), Path::new("/file.fits"));
+    }
+
+    #[test]
+    fn normalize_collapses_deep_traversal() {
+        assert_eq!(normalize(Path::new("/a/b/c/../../d")), Path::new("/a/d"));
+    }
+
     #[test]
     fn relative_path_inside_the_root_resolves() {
         let contained = resolve_in_root(Path::new(ROOT), Path::new("targets/m31/light.fits"))
@@ -268,18 +269,6 @@ mod tests {
     fn a_relative_root_is_refused() {
         let err = resolve_in_root(Path::new("library"), Path::new("x.fits")).unwrap_err();
         assert!(matches!(err, ContainmentError::RootNotAbsolute { .. }), "{err}");
-    }
-
-    #[test]
-    fn an_absent_root_refuses_a_relative_path() {
-        let err = resolve_in_optional_root(None, Path::new("sub/x.fits")).unwrap_err();
-        assert!(matches!(err, ContainmentError::RootMissing { .. }), "{err}");
-    }
-
-    #[test]
-    fn an_absent_root_refuses_an_absolute_path_too() {
-        let err = resolve_in_optional_root(None, Path::new("/mnt/library/x.fits")).unwrap_err();
-        assert!(matches!(err, ContainmentError::RootMissing { .. }), "{err}");
     }
 
     #[test]
