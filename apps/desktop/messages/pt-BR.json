@@ -253,6 +253,7 @@
   "err_inbox_invalid_destination_root": "Essa biblioteca de destino não é válida.",
   "err_inbox_item_no_plan": "Ainda não há plano para este item.",
   "err_inbox_item_not_found": "Esse item da caixa de entrada não pôde ser encontrado.",
+  "err_inbox_destination_collision": "Dois ou mais arquivos terminariam no mesmo caminho de destino. Renomeie-os ou adicione ao padrão de nomes um token que os diferencie.",
   "err_inbox_missing_path_attributes": "Faltam a este item os detalhes necessários para planejar uma movimentação.",
   "err_inbox_no_destination_root": "Escolha uma biblioteca de destino antes de continuar.",
   "err_internal_audit": "Não foi possível registrar esta ação no histórico. Tente novamente.",

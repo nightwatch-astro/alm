@@ -142,6 +142,7 @@ pub struct ResolvedDestination {
 /// - `classification.ambiguous` — action/classification mismatch or no classified files.
 /// - `classification.stale` — signature drift detected.
 /// - `pattern.unset` — naming pattern is unset or fails to resolve required tokens.
+/// - `inbox.destination_collision` — two files resolve onto one destination path.
 /// - `attribution.not_light_frame` — `chosen_attribution` was supplied for a
 ///   non-light item (spec 008 Q27 F-Framing-10).
 /// - `attribution.geometry_unavailable` — `chosen_attribution` requires
@@ -275,6 +276,9 @@ pub async fn confirm(
     // 8d. US9 gate: reject if any file is missing a path-load-bearing attribute.
     reject_if_missing_path_attrs(&missing_by_file)?;
 
+    // 8e. Self-collision gate: refuse before any plan row exists.
+    reject_if_destinations_collide(&resolved_items)?;
+
     // 10. Build the plan.
     // A move-only split is non-destructive from the user perspective but the
     // plans table CHECK constraint only accepts the canonical 'archive' | 'trash'
@@ -323,12 +327,31 @@ pub async fn confirm(
         insert_plan_items_batch(pool, &plan_id, &item.root_id, &resolved_items, &root_paths)
             .await?;
 
-    // 12. Transition plan to ready_for_review
+    // 12. Attribution apply-path (spec 008 Q27, F-Framing-10/6, FR-022): the
+    // plan row and its items now exist, so the pick can be persisted
+    // (`plans.chosen_framing_id`) for `ingest_sessions` to bind once the real
+    // session is created. Creates the framing/project the kind requires and
+    // honors the F-Framing-6 completed-project reopen.
+    //
+    // Ordered before the three writes below, not after: frame-to-framing
+    // attribution is a Tier-1 record (Constitution V) that the filesystem cannot
+    // re-derive, and those writes are what make the plan appliable. Running them
+    // first left a `ready_for_review` plan on a failed attribution, so the frames
+    // could move with the user's decision missing. The plan stays in `draft` on
+    // failure, which `plans.approve` refuses.
+    let attribution_applied = match (&item_geometry, &req.chosen_attribution) {
+        (Some(geometry), Some(chosen)) => {
+            attribution::apply_chosen_attribution(pool, bus, &plan_id, geometry, chosen).await?
+        }
+        _ => None,
+    };
+
+    // 13. Transition plan to ready_for_review
     plans_repo::update_plan_state(pool, &plan_id, PlanState::ReadyForReview.as_str())
         .await
         .map_err(|e| db_internal_ctx(e, "transition plan to ready_for_review"))?;
 
-    // 13. Create plan link and update item state
+    // 14. Create plan link and update item state
     inbox_repo::insert_plan_link(pool, &req.inbox_item_id, &plan_id)
         .await
         .map_err(|e| db_internal_ctx(e, "insert plan link"))?;
@@ -339,18 +362,6 @@ pub async fn confirm(
     inbox_repo::update_inbox_item_state(pool, &req.inbox_item_id, "plan_open")
         .await
         .map_err(|e| db_internal_ctx(e, "mark inbox item plan_open"))?;
-
-    // 14. Attribution apply-path (spec 008 Q27, F-Framing-10/6, FR-022): the
-    // plan now exists, so the pick can be persisted (`plans.chosen_framing_id`)
-    // for `ingest_sessions` to bind once the real session is created. Creates
-    // the framing/project the kind requires and honors the F-Framing-6
-    // completed-project reopen.
-    let attribution_applied = match (&item_geometry, &req.chosen_attribution) {
-        (Some(geometry), Some(chosen)) => {
-            attribution::apply_chosen_attribution(pool, bus, &plan_id, geometry, chosen).await?
-        }
-        _ => None,
-    };
 
     // 15. Publish `inventory.confirmed` (best-effort; durable writes above already
     //     succeeded — a bus failure must not surface as Fatal).
@@ -699,6 +710,51 @@ fn reject_if_missing_path_attrs(
         false,
     )
     .with_details(json!({ "files": files })))
+}
+
+/// Fail with `InboxDestinationCollision` if two resolved rows claim one
+/// `(to_root_id, to_relative_path)`.
+///
+/// A per-item overwrite check at apply time cannot catch this: the second item
+/// overwrites what the first item just wrote, so nothing pre-existing is in the
+/// way. The frames are irreplaceable (Constitution I) and a plan whose own items
+/// overwrite each other is not reviewable (Constitution II), so the plan is
+/// refused rather than resolved to a winner.
+fn reject_if_destinations_collide(resolved: &[ResolvedRow]) -> Result<(), ContractError> {
+    let mut by_dest: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
+    for row in resolved {
+        by_dest
+            .entry((row.to_root_id.as_str(), row.dest_rel.as_str()))
+            .or_default()
+            .push(row.source_rel.as_str());
+    }
+    let collisions: Vec<((&str, &str), Vec<&str>)> =
+        by_dest.into_iter().filter(|(_, sources)| sources.len() > 1).collect();
+    if collisions.is_empty() {
+        return Ok(());
+    }
+
+    let details: Vec<serde_json::Value> = collisions
+        .iter()
+        .map(|((root_id, dest), sources)| {
+            json!({ "toRootId": root_id, "toRelativePath": dest, "sourcePaths": sources })
+        })
+        .collect();
+    let summary = collisions
+        .iter()
+        .map(|((_, dest), sources)| format!("{dest} <- {}", sources.join(", ")))
+        .collect::<Vec<_>>()
+        .join("; ");
+    Err(ContractError::new(
+        ErrorCode::InboxDestinationCollision,
+        format!(
+            "These files resolve onto the same destination, so moving them would overwrite one \
+             with another: {summary}"
+        ),
+        ErrorSeverity::Blocking,
+        false,
+    )
+    .with_details(json!({ "collisions": details })))
 }
 
 /// Publish `inventory.confirmed` to the event bus (spec 056).

@@ -253,6 +253,7 @@
   "err_inbox_invalid_destination_root": "That destination library isn't valid.",
   "err_inbox_item_no_plan": "There's no plan for this item yet.",
   "err_inbox_item_not_found": "That inbox item could not be found.",
+  "err_inbox_destination_collision": "Two or more files would end up at the same destination path. Rename them, or add a token to the naming pattern that tells them apart.",
   "err_inbox_missing_path_attributes": "This item is missing the details needed to plan a move.",
   "err_inbox_no_destination_root": "Choose a destination library before continuing.",
   "err_internal_audit": "Couldn't record this action to the history log. Please try again.",
