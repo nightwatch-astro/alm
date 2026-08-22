@@ -180,50 +180,27 @@ fn tool_id_from_project_tool(project_tool: &str) -> String {
 /// Constitution: never follows symlinks/junctions (no per-root opt-in exists
 /// for project output folders in v1) — neither into a symlinked directory
 /// nor as a symlinked file.
-fn real_read_dir(dir: &Path) -> Result<workflow_artifacts::DirListing, String> {
-    let mut listing = workflow_artifacts::DirListing::default();
-    let entries =
-        std::fs::read_dir(dir).map_err(|e| format!("read_dir({}) failed: {e}", dir.display()))?;
-    real_read_dir_into(entries, &mut listing.files, &mut listing.unreadable);
-    Ok(listing)
-}
-
-/// Recursion helper for [`real_read_dir_reporting`]; `files` accumulates real
-/// file paths across the whole subtree and `skipped` the directories whose
-/// `read_dir` failed.
 ///
-/// An unreadable subdirectory is skipped, not propagated: one
-/// permission-denied directory must not abort reconciliation for every
-/// artifact elsewhere under the project root (matches
-/// `fs_pathsafe::real_files_under`). Callers must treat `skipped` as unknown
-/// state, never as absence.
-fn real_read_dir_into(
-    entries: std::fs::ReadDir,
-    files: &mut Vec<PathBuf>,
-    skipped: &mut Vec<PathBuf>,
-) {
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
-        if file_type.is_symlink() {
-            continue;
-        }
-        let path = entry.path();
-        if file_type.is_dir() {
-            match std::fs::read_dir(&path) {
-                Ok(child) => real_read_dir_into(child, files, skipped),
-                Err(_) => skipped.push(path),
-            }
-        } else if file_type.is_file() {
-            files.push(path);
-        }
-    }
+/// The walk itself is `fs_pathsafe::real_files_under_reporting`, which is
+/// reparse-aware (a Windows junction is a reparse point `is_symlink()` need
+/// not report) and iterative, so a deep tree cannot exhaust the stack. An
+/// unreadable subdirectory lands in `unreadable` rather than aborting the
+/// walk: one permission-denied directory must not stop reconciliation for
+/// every artifact elsewhere under the project root. Only an unreadable root
+/// is an error, because there the walk yields nothing at all.
+fn real_read_dir(dir: &Path) -> Result<workflow_artifacts::DirListing, String> {
+    fs_pathsafe::probe_root(dir, false)
+        .map_err(|reason| format!("read_dir({}) failed: {reason}", dir.display()))?;
+    let (files, unreadable) = fs_pathsafe::real_files_under_reporting(dir, false);
+    Ok(workflow_artifacts::DirListing { files, unreadable })
 }
 
-/// Real (size, mtime) probe. Uses `symlink_metadata` and rejects symlinks
-/// explicitly — belt-and-suspenders alongside `real_read_dir`'s filter.
+/// Real (size, mtime) probe. Uses `symlink_metadata` and rejects symlinks and
+/// junctions explicitly — belt-and-suspenders alongside `real_read_dir`'s
+/// filter.
 fn real_metadata(path: &Path) -> Option<(u64, std::time::SystemTime)> {
     let meta = std::fs::symlink_metadata(path).ok()?;
-    if meta.file_type().is_symlink() {
+    if fs_pathsafe::is_link_or_junction_metadata(&meta) {
         return None;
     }
     let modified = meta.modified().ok()?;

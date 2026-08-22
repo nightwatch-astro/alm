@@ -94,6 +94,26 @@ pub fn register_watch_paths(
             continue;
         }
 
+        // `real_dirs_under` answers with an empty list for a root it refuses,
+        // which would leave the loop below with nothing to do and report
+        // success while watching nothing. Probe first so an unwatchable root is
+        // an error rather than an empty success.
+        //
+        // `GatedLink` is the exception: observing nothing under a symlinked
+        // root while `follow_symlinks` is off is the constitution's gate doing
+        // its job, not a failure, so it is recorded as skipped and the
+        // registration continues.
+        match fs_pathsafe::probe_root(path.as_std_path(), false) {
+            Ok(()) => {}
+            Err(fs_pathsafe::RootUnavailable::GatedLink) => {
+                let reason = fs_pathsafe::RootUnavailable::GatedLink.to_string();
+                tracing::info!(root = %path, "not watching a symlinked root: {reason}");
+                report.skipped.push((path.as_std_path().to_path_buf(), reason));
+                continue;
+            }
+            Err(reason) => return Err(format!("failed to watch {path}: {reason}")),
+        }
+
         let dirs = fs_pathsafe::real_dirs_under(path.as_std_path(), false);
         // Root path (dirs[0]) failure is always fatal — if we cannot watch the
         // root itself, there is nothing useful the watcher can do.

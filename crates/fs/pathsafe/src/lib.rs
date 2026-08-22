@@ -33,13 +33,20 @@ use camino::Utf8Path;
 ///
 /// Uses `symlink_metadata` (not `metadata`) so the check inspects the entry
 /// itself rather than following it — inspecting a link's target would defeat
-/// the purpose of the gate. A path that cannot be stat'd (missing,
-/// permission denied, race) is reported as "not a link" — callers that need
-/// to distinguish a stat failure from "not a link" should stat the path
-/// themselves and call [`is_link_or_junction_metadata`] instead.
+/// the purpose of the gate.
+///
+/// Fails closed. `NotFound` answers `false`, because a path that does not
+/// exist is determinately not a link. Every other stat failure (permission
+/// denied, stale mount, I/O error) answers `true`: the result feeds a refusal
+/// decision, so "cannot determine" must refuse rather than let the caller
+/// descend or traverse. Callers that must distinguish the cases should stat
+/// the path themselves and call [`is_link_or_junction_metadata`].
 #[must_use]
 pub fn is_link_or_junction(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok_and(|m| is_link_or_junction_metadata(&m))
+    match fs::symlink_metadata(path) {
+        Ok(meta) => is_link_or_junction_metadata(&meta),
+        Err(e) => e.kind() != io::ErrorKind::NotFound,
+    }
 }
 
 /// Classify already-fetched [`Metadata`] (from `symlink_metadata`, never
@@ -186,15 +193,42 @@ pub fn real_dirs_under(root: &Path, follow_symlinks: bool) -> Vec<PathBuf> {
 /// enumerate on-disk frames without ever following a link (spec 048 R6).
 #[must_use]
 pub fn real_files_under(root: &Path, follow_symlinks: bool) -> Vec<PathBuf> {
+    real_files_under_reporting(root, follow_symlinks).0
+}
+
+/// [`real_files_under`], additionally returning the directories whose
+/// `read_dir` failed.
+///
+/// Both walkers skip an unreadable directory rather than aborting, which makes
+/// "no files here" ambiguous between empty and unreadable. Callers that must
+/// not read a permission-denied subtree as deletion need the second list;
+/// treat it as unknown state, never as absence.
+///
+/// When `follow_symlinks` is on, directories are deduplicated by their
+/// canonical path so a link pointing at an ancestor terminates instead of
+/// re-entering the subtree forever.
+#[must_use]
+pub fn real_files_under_reporting(
+    root: &Path,
+    follow_symlinks: bool,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut files = Vec::new();
+    let mut unreadable = Vec::new();
 
     if !follow_symlinks && is_link_or_junction(root) {
-        return files;
+        return (files, unreadable);
     }
 
+    let mut visited = std::collections::HashSet::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
+        if follow_symlinks
+            && !visited.insert(fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone()))
+        {
+            continue;
+        }
         let Ok(entries) = fs::read_dir(&dir) else {
+            unreadable.push(dir);
             continue;
         };
         for entry in entries.flatten() {
@@ -210,7 +244,7 @@ pub fn real_files_under(root: &Path, follow_symlinks: bool) -> Vec<PathBuf> {
         }
     }
 
-    files
+    (files, unreadable)
 }
 
 /// Create a symlink from `source` to `destination`, pointing at a **file**
@@ -322,6 +356,36 @@ mod tests {
         // A link whose target is gone is Missing, not GatedLink, when following.
         std::fs::remove_dir_all(&real).unwrap();
         assert_eq!(probe_root(&link, true), Err(RootUnavailable::Missing));
+    }
+
+    #[test]
+    fn a_missing_path_is_not_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_link_or_junction(&dir.path().join("absent")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_files_under_reporting_names_the_unreadable_directory() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::write(locked.join("hidden.fits"), b"data").unwrap();
+        std::fs::write(dir.path().join("top.fits"), b"data").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let readable = std::fs::read_dir(&locked).is_ok();
+        let (files, unreadable) = real_files_under_reporting(dir.path(), false);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        if readable {
+            eprintln!("skipping: this environment can read a mode-000 directory (root?)");
+            return;
+        }
+        assert_eq!(files, vec![dir.path().join("top.fits")]);
+        assert_eq!(unreadable, vec![locked]);
     }
 
     #[test]
