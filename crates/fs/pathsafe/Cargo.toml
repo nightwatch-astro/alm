@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 camino = { workspace = true }
+safe-filename = { path = "../../safe-filename" }
 
 [dev-dependencies]
 proptest.workspace = true

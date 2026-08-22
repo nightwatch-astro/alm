@@ -266,8 +266,9 @@ pub struct ExportOptions {
 
 /// Export matching log entries to a JSON file at `options.file_path`.
 ///
-/// Writes atomically: entries are serialised to a temp file in the same parent
-/// directory, then renamed into place.
+/// The destination passes `fs_pathsafe::export_dest`, so an existing file is
+/// refused rather than replaced and the write cannot leave the canonicalized
+/// parent directory.
 ///
 /// # Errors
 /// Returns `LogError::Export` for filesystem / format problems.
@@ -276,22 +277,15 @@ pub async fn export_entries(
     pool: &SqlitePool,
     options: ExportOptions,
 ) -> Result<(String, usize, u64), LogError> {
+    use fs_pathsafe::export_dest::{validate_export_destination, ExportWriteError};
     use std::io::Write;
     use std::path::Path;
 
     let dest = Path::new(&options.file_path);
-
-    // Validate parent directory.
-    let parent = dest.parent().ok_or_else(|| LogError::Export {
-        code: LogExportErrorCode::PathParentMissing,
-        message: format!("No parent directory for path {}", dest.display()),
+    let validated = validate_export_destination(dest).map_err(|rejected| LogError::Export {
+        code: export_error_code(rejected),
+        message: format!("{}: {}", rejected.message(), dest.display()),
     })?;
-    if !parent.exists() {
-        return Err(LogError::Export {
-            code: LogExportErrorCode::PathParentMissing,
-            message: format!("Parent directory does not exist: {}", parent.display()),
-        });
-    }
 
     let rows = persistence_lifecycle::repositories::events::list_by_emitted_at_range(
         pool,
@@ -320,22 +314,30 @@ pub async fn export_entries(
     // Serialise to JSON array.
     let json_bytes = serde_json::to_vec_pretty(&entries).map_err(LogError::Serialise)?;
 
-    // Write to temp file then rename (atomic write).
-    let tmp_path = format!("{}.tmp", options.file_path);
-    let mut tmp_file = std::fs::File::create(&tmp_path).map_err(|_e| LogError::Export {
-        code: LogExportErrorCode::PathWriteDenied,
-        message: format!("Cannot write to path: {}", dest.display()),
-    })?;
-    tmp_file.write_all(&json_bytes).map_err(LogError::Io)?;
-    drop(tmp_file);
+    let bytes =
+        validated.write_atomically(|file| file.write_all(&json_bytes)).map_err(|e| match e {
+            ExportWriteError::Rejected(rejected) => LogError::Export {
+                code: export_error_code(rejected),
+                message: format!("{}: {}", rejected.message(), dest.display()),
+            },
+            ExportWriteError::Io(e) => LogError::Io(e),
+        })?;
 
-    std::fs::rename(&tmp_path, dest).map_err(|_e| LogError::Export {
-        code: LogExportErrorCode::PathWriteDenied,
-        message: format!("Cannot rename temp file to: {}", dest.display()),
-    })?;
+    Ok((validated.path().to_string_lossy().into_owned(), count, bytes))
+}
 
-    let bytes = u64::try_from(json_bytes.len()).unwrap_or(0);
-    Ok((options.file_path, count, bytes))
+/// Map a destination rejection onto the two path codes the `log.export`
+/// contract defines; the rejection's own message carries the specific rule.
+fn export_error_code(
+    rejected: fs_pathsafe::export_dest::DestinationRejected,
+) -> LogExportErrorCode {
+    use fs_pathsafe::export_dest::DestinationRejected as R;
+    match rejected {
+        R::NotAbsolute | R::NoParent | R::NoFileName | R::ParentMissing | R::ParentNotDirectory => {
+            LogExportErrorCode::PathParentMissing
+        }
+        R::ReservedName | R::AlreadyExists => LogExportErrorCode::PathWriteDenied,
+    }
 }
 
 #[cfg(test)]
@@ -566,7 +568,14 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(out_path, path);
+        // The response reports the canonicalized destination, which differs from
+        // the requested string wherever the parent path crosses a symlink.
+        let expected = std::path::Path::new(&path)
+            .parent()
+            .and_then(|p| p.canonicalize().ok())
+            .map(|p| p.join("export.json").to_string_lossy().into_owned())
+            .expect("canonical parent");
+        assert_eq!(out_path, expected);
         assert_eq!(count, 2);
         assert!(bytes > 0);
 
@@ -620,5 +629,61 @@ mod tests {
         } else {
             panic!("expected LogError::Export");
         }
+    }
+
+    async fn export_to(pool: &SqlitePool, file_path: String) -> Result<(), LogError> {
+        export_entries(
+            pool,
+            ExportOptions {
+                file_path,
+                level_min: None,
+                since: None,
+                until: None,
+                include_diagnostics: false,
+            },
+        )
+        .await
+        .map(|_| ())
+    }
+
+    #[tokio::test]
+    async fn export_entries_refuses_an_existing_destination() {
+        let pool = make_pool().await;
+        insert_event(&pool, "plan.approved", "{}").await;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("keep.json");
+        std::fs::write(&dest, b"user data").expect("seed");
+
+        let err = export_to(&pool, dest.to_string_lossy().into_owned()).await.expect_err("refused");
+
+        assert!(matches!(err, LogError::Export { code: LogExportErrorCode::PathWriteDenied, .. }));
+        assert_eq!(std::fs::read(&dest).expect("read"), b"user data");
+    }
+
+    #[tokio::test]
+    async fn export_entries_refuses_a_relative_destination() {
+        let pool = make_pool().await;
+        let err = export_to(&pool, "../../export.json".to_owned()).await.expect_err("refused");
+        assert!(matches!(
+            err,
+            LogError::Export { code: LogExportErrorCode::PathParentMissing, .. }
+        ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn export_entries_does_not_write_through_a_symlinked_destination() {
+        let pool = make_pool().await;
+        insert_event(&pool, "plan.approved", "{}").await;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outside = dir.path().join("outside.json");
+        std::fs::write(&outside, b"outside").expect("seed");
+        let link = dir.path().join("export.json");
+        std::os::unix::fs::symlink(&outside, &link).expect("symlink");
+
+        let err = export_to(&pool, link.to_string_lossy().into_owned()).await.expect_err("refused");
+
+        assert!(matches!(err, LogError::Export { code: LogExportErrorCode::PathWriteDenied, .. }));
+        assert_eq!(std::fs::read(&outside).expect("read"), b"outside");
     }
 }
