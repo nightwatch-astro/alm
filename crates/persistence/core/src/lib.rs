@@ -293,6 +293,14 @@ mod tests {
         }
     }
 
+    /// `MigrateError::Dirty` names a partially-applied migration, which sqlx
+    /// only produces on databases without transactional DDL. `sqlx-sqlite` runs
+    /// each migration script and its `_sqlx_migrations` bookkeeping in one
+    /// transaction, so a failing script rolls back and no `Dirty` state is
+    /// reachable here. A migration that opts out of the transaction would make
+    /// it reachable, and would need its own user-facing repair message rather
+    /// than the "written by a different revision" wording this classifier
+    /// produces.
     #[test]
     fn divergence_detail_ignores_unrelated_failures() {
         assert!(super::migration_divergence_detail(&super::DbError::NotImplemented).is_none());
