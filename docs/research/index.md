@@ -6,6 +6,7 @@ live in this directory; feature-scoped research lives under
 
 ## Topic research notes
 
+- [audit-log-pruning.md](./audit-log-pruning.md): audit and event retention design; Tier 1 exemptions, per-table row sizes, projected growth by library size, and the `auditRetentionDays` / `eventLogRetentionDays` settings.
 - [first-run-source-setup.md](./first-run-source-setup.md) — first-run source registration.
 - [imagetyp-normalization.md](./imagetyp-normalization.md) — IMAGETYP → frame-type normalization.
 - [implementation-dependencies.md](./implementation-dependencies.md) — cross-feature implementation dependencies.
