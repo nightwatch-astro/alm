@@ -245,32 +245,24 @@ pub(super) struct SpawnExecutorParams {
 /// run. Falls back to `segment_counts` if the fetch fails (best-effort,
 /// matching this function's existing `let _ = ...` error-swallowing
 /// elsewhere).
-///
-/// The second element is the plan row's remaining `items_pending`, or `None`
-/// when the row could not be read. `pause_run` persists that count, and there
-/// is no sound way to derive it from `segment_counts` alone: a caller that
-/// needs it must treat `None` as a failed read rather than substitute a guess.
 pub(super) async fn cumulative_counts(
     pool: &SqlitePool,
     plan_id: &str,
     segment_counts: &TerminalCounts,
-) -> (TerminalCounts, Option<i64>) {
+) -> TerminalCounts {
     match plans_repo::get_plan(pool, plan_id, false).await {
-        Ok(row) => (
-            TerminalCounts {
-                succeeded: row.items_applied,
-                failed: row.items_failed,
-                skipped: row.items_skipped,
-                cancelled: row.items_cancelled,
-            },
-            Some(row.items_pending),
-        ),
+        Ok(row) => TerminalCounts {
+            succeeded: row.items_applied,
+            failed: row.items_failed,
+            skipped: row.items_skipped,
+            cancelled: row.items_cancelled,
+        },
         Err(e) => {
             tracing::error!(
                 %plan_id, error=%e,
                 "failed to fetch cumulative plan counters; using segment-local counts"
             );
-            (segment_counts.clone(), None)
+            segment_counts.clone()
         }
     }
 }

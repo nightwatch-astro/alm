@@ -18,6 +18,43 @@ use super::{
 
 use super::apply::cumulative_counts;
 
+/// Surface a terminal-state write that did not commit, in place of the state it
+/// would have announced.
+///
+/// The plan row keeps whatever state the failed transaction left, so the run
+/// stays `applying` and `sweep_crashed_applying_plans` with
+/// `list_crash_interrupted_plans` claim it at the next boot. Callers must return
+/// after this instead of publishing the intended state.
+fn report_unwritten_state(
+    plan_id: &str,
+    run_id: &str,
+    intended_state: &str,
+    reason: Option<&str>,
+    error: &str,
+    op_emitter: Option<&OpEventEmitter>,
+    at: &str,
+) {
+    tracing::error!(
+        plan_id, run_id, intended_state, pause_reason = reason, %error,
+        "a terminal plan state was not persisted; the plan row is left for boot recovery"
+    );
+    if let Some(emitter) = op_emitter.as_ref() {
+        let handle = emitter.handle(OperationStatus::Failed);
+        emitter.emit(
+            OperationEventType::Failed,
+            json!({
+                "handle": handle,
+                "planId": plan_id,
+                "runId": run_id,
+                "intendedState": intended_state,
+                "pauseReason": reason,
+                "error": error,
+                "at": at,
+            }),
+        );
+    }
+}
+
 /// Handle `ApplyOutcome::Completed`: finalize origin-specific side-effects,
 /// persist the terminal state, emit audit + bus + long-op events.
 #[expect(
@@ -53,7 +90,7 @@ pub(super) async fn handle_completed(
         }
     }
 
-    let (counts, _) = cumulative_counts(pool, plan_id, &counts).await;
+    let counts = cumulative_counts(pool, plan_id, &counts).await;
     let terminal = counts.terminal_state(false).to_owned();
 
     // Origin-specific lifecycle side-effects (only on clean terminals).
@@ -106,7 +143,7 @@ pub(super) async fn handle_completed(
         }
     }
 
-    let _ = apply_repo::complete_run(
+    if let Err(e) = apply_repo::complete_run(
         pool,
         plan_id,
         run_id,
@@ -116,7 +153,11 @@ pub(super) async fn handle_completed(
         counts.skipped,
         counts.cancelled,
     )
-    .await;
+    .await
+    {
+        report_unwritten_state(plan_id, run_id, &terminal, None, &e.to_string(), op_emitter, &at);
+        return;
+    }
 
     let _ = apply_repo::append_event(
         pool,
@@ -203,9 +244,9 @@ pub(super) async fn handle_cancelled(
     }
 
     // Fetch cumulative counters AFTER batch-cancel so cancelled items are counted.
-    let (counts, _) = cumulative_counts(pool, plan_id, &counts).await;
+    let counts = cumulative_counts(pool, plan_id, &counts).await;
 
-    let _ = apply_repo::complete_run(
+    if let Err(e) = apply_repo::complete_run(
         pool,
         plan_id,
         run_id,
@@ -215,7 +256,11 @@ pub(super) async fn handle_cancelled(
         counts.skipped,
         counts.cancelled,
     )
-    .await;
+    .await
+    {
+        report_unwritten_state(plan_id, run_id, "cancelled", None, &e.to_string(), op_emitter, &at);
+        return;
+    }
 
     let _ = apply_repo::append_event(
         pool,
@@ -286,47 +331,50 @@ pub(super) async fn handle_paused(
     counts: TerminalCounts,
 ) {
     let at = Timestamp::now_iso();
-    let (counts, pending) = cumulative_counts(pool, plan_id, &counts).await;
+    let counts = cumulative_counts(pool, plan_id, &counts).await;
 
-    let write_failure = match pending {
-        // `pause_run`'s last argument is the count of items still to run, the
-        // complement of the settled counters above.
-        Some(items_pending) => apply_repo::pause_run(
-            pool,
-            plan_id,
-            run_id,
-            reason,
-            counts.succeeded,
-            counts.failed,
-            counts.skipped,
-            counts.cancelled,
-            items_pending,
-        )
-        .await
-        .err()
-        .map(|e| e.to_string()),
-        None => Some("the plan's item counters could not be read".to_owned()),
+    // `pause_run`'s last argument is the count of items still to run. It comes
+    // from the item rows rather than `plans.items_pending`, which lags a skip
+    // the run never reached (`skip_pending_item`) and would inflate this
+    // Tier-1 record by one item per such skip.
+    let items_pending = match apply_repo::list_pending_items(pool, plan_id).await {
+        Ok(ids) => i64::try_from(ids.len()).unwrap_or(i64::MAX),
+        Err(e) => {
+            report_unwritten_state(
+                plan_id,
+                run_id,
+                "paused",
+                Some(reason),
+                &e.to_string(),
+                op_emitter,
+                &at,
+            );
+            return;
+        }
     };
 
-    if let Some(error) = write_failure {
-        tracing::error!(
-            plan_id, run_id, pause_reason = reason, %error,
-            "the pause was not persisted; the plan stays 'applying' for boot recovery"
+    if let Err(e) = apply_repo::pause_run(
+        pool,
+        plan_id,
+        run_id,
+        reason,
+        counts.succeeded,
+        counts.failed,
+        counts.skipped,
+        counts.cancelled,
+        items_pending,
+    )
+    .await
+    {
+        report_unwritten_state(
+            plan_id,
+            run_id,
+            "paused",
+            Some(reason),
+            &e.to_string(),
+            op_emitter,
+            &at,
         );
-        if let Some(emitter) = op_emitter.as_ref() {
-            let handle = emitter.handle(OperationStatus::Failed);
-            emitter.emit(
-                OperationEventType::Failed,
-                json!({
-                    "handle": handle,
-                    "planId": plan_id,
-                    "runId": run_id,
-                    "pauseReason": reason,
-                    "error": error,
-                    "at": at,
-                }),
-            );
-        }
         return;
     }
 
