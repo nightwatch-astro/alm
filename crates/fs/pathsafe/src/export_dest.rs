@@ -72,8 +72,11 @@ pub fn validate_export_destination(dest: &Path) -> Result<ExportDestination, Des
     let parent = dest.parent().ok_or(DestinationRejected::NoParent)?;
     let file_name = dest.file_name().ok_or(DestinationRejected::NoFileName)?;
 
-    let stem = Path::new(file_name).file_stem().unwrap_or(file_name).to_string_lossy();
-    safe_filename::step4_reserved_name_check(&stem)
+    // Windows resolves a device name from the text before the FIRST dot, so
+    // `CON.foo.json` names the console where `file_stem` would keep `CON.foo`.
+    let name = file_name.to_string_lossy();
+    let device = name.split('.').next().unwrap_or(&name);
+    safe_filename::step4_reserved_name_check(device)
         .map_err(|_| DestinationRejected::ReservedName)?;
 
     let dir = parent.canonicalize().map_err(|_| DestinationRejected::ParentMissing)?;
@@ -251,7 +254,7 @@ mod tests {
     #[test]
     fn windows_reserved_device_name_is_refused_on_every_platform() {
         let (_guard, dir) = tempdir();
-        for name in ["CON", "con.json", "NUL.txt", "com1.json"] {
+        for name in ["CON", "con.json", "NUL.txt", "com1.json", "CON.foo.json", "nul.a.b"] {
             let err = validate_export_destination(&dir.join(name)).unwrap_err();
             assert_eq!(err, DestinationRejected::ReservedName, "{name}");
         }
