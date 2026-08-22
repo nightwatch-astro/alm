@@ -88,6 +88,88 @@ async fn happy_path_all_succeed() {
     assert!(!src.exists());
 }
 
+/// astro-plan-3v3r.9.29: the source gate cannot see a destination that escapes
+/// its own root, so this is the last line of defence -- it must refuse even
+/// when handed an escaping destination directly, with layers 1 and 2 bypassed.
+#[tokio::test]
+async fn destination_outside_destination_root_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = utf8(dir.path());
+    let view_root = root.join("source-views/plan-1");
+    std::fs::create_dir_all(&view_root).unwrap();
+    let src = view_root.join("frame.fits");
+    std::fs::write(&src, b"data").unwrap();
+    let escaping = Utf8PathBuf::from("../../../outside.fits");
+
+    let mut item = make_move_item("item-1", Utf8Path::new("frame.fits"), &escaping);
+    item.library_root = Some(view_root.clone());
+    item.destination_root = Some(view_root.clone());
+
+    let callbacks = FakeCallbacks::default();
+    let outcome = execute_plan(
+        vec![item],
+        &callbacks,
+        &CancellationToken::new(),
+        &SkipSet::new(),
+        &RetryQueue::new(),
+    )
+    .await;
+
+    let events = callbacks.events.lock().await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].new_state, "refused");
+    assert_eq!(
+        events[0].failure.as_ref().map(|f| f.code),
+        Some(crate::failure::FailureCode::RootEscape)
+    );
+    drop(events);
+
+    match outcome {
+        ApplyOutcome::Completed(counts) => assert_eq!(counts.failed, 1),
+        other => panic!("expected Completed, got {other:?}"),
+    }
+    assert!(src.exists(), "the source must be untouched");
+    assert!(!root.join("outside.fits").exists());
+    assert!(!dir.path().parent().unwrap().join("outside.fits").exists());
+}
+
+/// The destination root outranks the source root: a source-view item joins its
+/// destination against the picked root, not the root its frames came from.
+#[tokio::test]
+async fn destination_under_destination_root_is_allowed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = utf8(dir.path());
+    let source_root = root.join("library");
+    let view_root = root.join("views");
+    std::fs::create_dir_all(&source_root).unwrap();
+    std::fs::create_dir_all(&view_root).unwrap();
+    std::fs::write(source_root.join("frame.fits"), b"data").unwrap();
+
+    let mut item =
+        make_move_item("item-1", Utf8Path::new("frame.fits"), Utf8Path::new("lights/frame.fits"));
+    item.library_root = Some(source_root);
+    item.destination_root = Some(view_root.clone());
+
+    let callbacks = FakeCallbacks::default();
+    let outcome = execute_plan(
+        vec![item],
+        &callbacks,
+        &CancellationToken::new(),
+        &SkipSet::new(),
+        &RetryQueue::new(),
+    )
+    .await;
+
+    let events = callbacks.events.lock().await;
+    assert_eq!(events[0].new_state, "succeeded", "failure: {:?}", events[0].failure);
+    drop(events);
+    match outcome {
+        ApplyOutcome::Completed(counts) => assert_eq!(counts.succeeded, 1),
+        other => panic!("expected Completed, got {other:?}"),
+    }
+    assert!(view_root.join("lights/frame.fits").exists());
+}
+
 #[tokio::test]
 async fn item_in_failed_state_is_skipped_by_executor() {
     let item = ExecutorItem {

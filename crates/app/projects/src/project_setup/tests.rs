@@ -249,6 +249,23 @@ async fn create_parent_dir_components_rejected() {
     assert_eq!(err.field_errors[0].code, "path.invalid");
 }
 
+/// astro-plan-3v3r.9.12: an accepted `/` becomes the source-view destination
+/// root, so scaffolding and generated links land directly under the filesystem
+/// root.
+#[tokio::test]
+async fn create_filesystem_root_path_rejected() {
+    let (pool, bus) = setup().await;
+    for path in [abs("/"), ".".to_owned()] {
+        let req = ProjectCreateRequest {
+            path: path.clone(),
+            ..make_create_req("Root Attempt", ProjectTool::PixInsight)
+        };
+        let err = create(&pool, &bus, &empty_cache(), &req).await.unwrap_err();
+        assert_eq!(err.code, ErrorCode::PathInvalid, "path {path} must be refused");
+        assert_eq!(err.field_errors[0].field, "path");
+    }
+}
+
 #[tokio::test]
 async fn create_project_empty_name_rejected() {
     let (pool, bus) = setup().await;

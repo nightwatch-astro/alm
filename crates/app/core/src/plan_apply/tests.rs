@@ -1374,7 +1374,7 @@ fn t023a_library_root_resolved_from_map() {
     let mut root_map = HashMap::new();
     root_map.insert("root-001".to_owned(), Utf8PathBuf::from("/mnt/library"));
 
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert_eq!(
         item.library_root,
         Some(Utf8PathBuf::from("/mnt/library")),
@@ -1413,7 +1413,7 @@ fn t023a_no_root_id_gives_none_library_root() {
     };
 
     let root_map: HashMap<String, Utf8PathBuf> = HashMap::new();
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert_eq!(item.library_root, None);
 }
 
@@ -1454,7 +1454,7 @@ fn n765_destination_root_resolves_independently_from_to_root_id() {
     root_map.insert("inbox-root".to_owned(), Utf8PathBuf::from("/mnt/inbox"));
     root_map.insert("lights-root".to_owned(), Utf8PathBuf::from("/mnt/lights/1"));
 
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert_eq!(
         item.library_root,
         Some(Utf8PathBuf::from("/mnt/inbox")),
@@ -1502,7 +1502,7 @@ fn n765_destination_root_falls_back_to_library_root_when_to_root_id_absent() {
     let mut root_map = HashMap::new();
     root_map.insert("root-001".to_owned(), Utf8PathBuf::from("/mnt/library"));
 
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert_eq!(item.destination_root, item.library_root);
     assert_eq!(item.destination_root, Some(Utf8PathBuf::from("/mnt/library")));
 }
@@ -1555,7 +1555,7 @@ fn t023a_destructive_confirmed_reads_from_db_column() {
     };
 
     let root_map: HashMap<String, Utf8PathBuf> = HashMap::new();
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert!(item.destructive_confirmed, "destructive_confirmed=1 in DB must be read as true");
     assert!(item.requires_destructive_confirm, "delete action must require destructive confirm");
 }

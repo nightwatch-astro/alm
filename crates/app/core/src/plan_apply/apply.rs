@@ -99,9 +99,18 @@ pub async fn apply_plan(
         }
     }
 
+    let plan_destination_root: Option<Utf8PathBuf> =
+        plan_row.destination_root.as_deref().map(Utf8PathBuf::from);
     let executor_items: Vec<ExecutorItem> = item_rows
         .iter()
-        .map(|r| item_row_to_executor_item(r, &root_map, &plan_row.destructive_destination))
+        .map(|r| {
+            item_row_to_executor_item(
+                r,
+                &root_map,
+                &plan_row.destructive_destination,
+                plan_destination_root.as_deref(),
+            )
+        })
         .collect();
 
     // Overlap check + active-run registration (FR-017, R-Concur-1): the

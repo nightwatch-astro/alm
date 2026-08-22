@@ -422,10 +422,19 @@ pub async fn resume_plan(
     // audit record (review fix, resume+retry item-set mismatch).
     // succeeded/skipped/cancelled items are still excluded: they are truly
     // terminal and never eligible for retry.
+    let plan_destination_root: Option<Utf8PathBuf> =
+        plan_row.destination_root.as_deref().map(Utf8PathBuf::from);
     let executor_items: Vec<ExecutorItem> = item_rows
         .iter()
         .filter(|r| matches!(r.item_state.as_str(), "pending" | "failed"))
-        .map(|r| item_row_to_executor_item(r, &root_map, &plan_row.destructive_destination))
+        .map(|r| {
+            item_row_to_executor_item(
+                r,
+                &root_map,
+                &plan_row.destructive_destination,
+                plan_destination_root.as_deref(),
+            )
+        })
         .collect();
 
     // Re-register the ActiveRun (R-Concur-1). A paused run has no registry

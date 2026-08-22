@@ -147,6 +147,28 @@ async fn drive_plan<C: ExecutorCallbacks>(
     ApplyOutcome::Completed(counts)
 }
 
+/// Path-resolution gate (FR-001/002, D8, T018): resolve and validate both sides
+/// of an item against the roots `dispatch::execute_item` joins them onto, before
+/// any filesystem CAS or mutation.
+///
+/// The destination side (astro-plan-d8cyr) is checked against the same root
+/// precedence `dispatch::execute_item` uses, so a refusal here means the
+/// mutation would have landed outside the root the plan declared. Gating the
+/// source alone left a traversing or absolute destination to reach
+/// `mkdir`/`link`/`move` unchecked. A side with no root stays ungated, which is
+/// the legacy mode for items carrying pre-resolved absolute paths.
+fn gate_item_paths(item: &ExecutorItem) -> Result<(), PlanItemFailure> {
+    if let (Some(src_rel), Some(root)) = (&item.source_path, &item.library_root) {
+        path_gate::resolve_and_validate(root, src_rel)?;
+    }
+    if let (Some(dst_rel), Some(root)) =
+        (&item.destination_path, item.destination_root.as_ref().or(item.library_root.as_ref()))
+    {
+        path_gate::resolve_and_validate(root, dst_rel)?;
+    }
+    Ok(())
+}
+
 /// Outcome of one retry-queue drain pass.
 enum DrainOutcome {
     Continue,
@@ -386,32 +408,23 @@ async fn process_single_item<C: ExecutorCallbacks>(
         callbacks.on_item_start(&item.id).await;
     }
 
-    // Path-resolution gate (FR-001/002, D8, T018): resolve + validate source path
-    // against the library root before any filesystem CAS or mutation.
-    if let (Some(ref src_rel), Some(ref root)) = (&item.source_path, &item.library_root) {
-        match path_gate::resolve_and_validate(root, src_rel) {
-            Err(gate_failure) => {
-                let audit_reason = gate_failure.code.as_str().to_owned();
-                let triggers_pause = gate_failure.code.triggers_pause();
-                callbacks
-                    .on_item_progress(ItemProgressEvent::terminal(
-                        item.id.clone(),
-                        "applying",
-                        "refused",
-                        Some(gate_failure),
-                        Some(audit_reason),
-                    ))
-                    .await;
-                counts.failed += 1;
-                if triggers_pause {
-                    return ItemOutcome::Pause("path.invalid".to_owned());
-                }
-                return ItemOutcome::Continue;
-            }
-            Ok(_resolved) => {
-                // Path is safe; the resolved absolute path will be used by execute_item.
-            }
+    if let Err(gate_failure) = gate_item_paths(item) {
+        let audit_reason = gate_failure.code.as_str().to_owned();
+        let triggers_pause = gate_failure.code.triggers_pause();
+        callbacks
+            .on_item_progress(ItemProgressEvent::terminal(
+                item.id.clone(),
+                "applying",
+                "refused",
+                Some(gate_failure),
+                Some(audit_reason),
+            ))
+            .await;
+        counts.failed += 1;
+        if triggers_pause {
+            return ItemOutcome::Pause("path.invalid".to_owned());
         }
+        return ItemOutcome::Continue;
     }
 
     // Per-item FS CAS revalidation (R-FS-1).

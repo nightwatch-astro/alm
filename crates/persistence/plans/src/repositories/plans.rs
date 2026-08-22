@@ -41,6 +41,11 @@ pub struct PlanRow {
     pub approved_at: Option<String>,
     pub discarded_at: Option<String>,
     pub created_at: String,
+    /// Absolute root every item destination in this plan must resolve under
+    /// (migration 0003). `None` leaves the executor's destination gate
+    /// inactive, which is the behaviour for every plan type that does not set
+    /// it.
+    pub destination_root: Option<String>,
 }
 
 /// Flat row returned from the `plan_items` table.
@@ -346,6 +351,30 @@ pub async fn confirm_plan_destructive_items(pool: &SqlitePool, plan_id: &str) ->
     .execute(pool)
     .await?;
     Ok(result.rows_affected())
+}
+
+/// Record the absolute destination root every item in `plan_id` must resolve
+/// under (migration 0003).
+///
+/// # Errors
+///
+/// Returns [`persistence_core::DbError::NotFound`] if no plan with `plan_id`
+/// exists, or [`persistence_core::DbError::Database`] on connection failure.
+pub async fn set_destination_root(
+    pool: &SqlitePool,
+    plan_id: &str,
+    destination_root: &str,
+) -> DbResult<()> {
+    let rows = sqlx::query("UPDATE plans SET destination_root = ? WHERE id = ?")
+        .bind(destination_root)
+        .bind(plan_id)
+        .execute(pool)
+        .await?
+        .rows_affected();
+    if rows == 0 {
+        return Err(persistence_core::DbError::NotFound(format!("plan {plan_id}")));
+    }
+    Ok(())
 }
 
 /// Update the plan state.

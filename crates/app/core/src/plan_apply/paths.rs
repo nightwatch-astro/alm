@@ -174,11 +174,11 @@ pub(super) fn materialization_from_provenance(
 /// `from_root_id` or id absent from the map), `library_root` is `None` and
 /// the gate is skipped (legacy/test mode).
 ///
-/// `destination_root` is resolved independently from `to_root_id` (falling
-/// back to `library_root` when `to_root_id` is absent or unresolvable, same
-/// as `compute_plan_path_set`'s `to_root` fallback) so a cross-root move
-/// joins `to_relative_path` against the *picked* destination root instead of
-/// silently reusing the source root (#765).
+/// `destination_root` is resolved independently from `to_root_id` so a
+/// cross-root move joins `to_relative_path` against the *picked* destination
+/// root instead of silently reusing the source root (#765). Precedence:
+/// `to_root_id` → `plan_destination_root` (`plans.destination_root`) →
+/// `library_root`.
 ///
 /// `plan_destructive_destination` is the *plan-level* `plans.destructive_destination`
 /// choice ("archive" | "trash"), not a per-item column: both `cleanup_generator`
@@ -191,6 +191,7 @@ pub(super) fn item_row_to_executor_item(
     row: &plans_repo::PlanItemRow,
     root_map: &HashMap<String, Utf8PathBuf>,
     plan_destructive_destination: &str,
+    plan_destination_root: Option<&Utf8Path>,
 ) -> ExecutorItem {
     // DB path columns are stored as `String` (unchanged DB representation,
     // Local-First custody §I). Rust strings are already UTF-8, so building a
@@ -250,11 +251,16 @@ pub(super) fn item_row_to_executor_item(
     // back to library_root — NOT reusing from_root_id's resolution outright —
     // so a cross-root move/link/mkdir joins to_relative_path against the
     // destination root the user actually picked.
+    // astro-plan-d8cyr: `plans.destination_root` outranks the `library_root`
+    // fallback. A source-view item stores an absolute destination with no
+    // `to_root_id`, so falling straight back to the SOURCE root left the
+    // executor gating the destination against a root it never belonged to.
     let destination_root: Option<Utf8PathBuf> = row
         .to_root_id
         .as_deref()
         .and_then(|rid| root_map.get(rid))
         .cloned()
+        .or_else(|| plan_destination_root.map(Utf8Path::to_path_buf))
         .or_else(|| library_root.clone());
 
     // Paths are stored as relative to the library root.

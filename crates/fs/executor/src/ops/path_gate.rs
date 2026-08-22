@@ -38,6 +38,10 @@ impl ResolvedPath {
 
 /// Resolve `relative` against `root` and validate the result.
 ///
+/// `relative` may already be absolute (source-view plan items store an absolute
+/// destination); joining it onto `root` yields the path itself, so containment
+/// is decided by the same root-prefix check.
+///
 /// Returns `Ok(ResolvedPath)` when the path:
 /// - resolves under `root` (no escape via `..`)
 /// - contains no symlink or junction component
@@ -69,11 +73,17 @@ pub fn resolve_and_validate(
     }
 
     // Step 3: per-component lstat for symlinks/junctions.
-    // Walk each component of the relative portion only (the root itself may
-    // legitimately be a symlink at the mount level — we do not follow further).
-    let relative_components: Utf8PathBuf = relative.components().collect();
+    // Walk the normalized path's portion below the root only (the root itself
+    // may legitimately be a symlink at the mount level — we do not follow
+    // further). Taking it from `normalized` rather than from `relative` keeps
+    // the walk anchored when `relative` is already absolute: pushing its root
+    // component onto `current` would otherwise restart the walk at `/` and
+    // refuse every ancestor symlink above the root (`/var` on macOS).
+    // Cannot fail: the root-prefix check above already ran. An empty walk is
+    // the conservative answer rather than a panic inside a safety gate.
+    let below_root = normalized.strip_prefix(root).unwrap_or_else(|_| Utf8Path::new(""));
     let mut current = root.to_path_buf();
-    for component in relative_components.components() {
+    for component in below_root.components() {
         current.push(component);
         // If the path doesn't exist yet (e.g. new destination dir), stop checking —
         // there can be no symlink for a non-existent path component.
@@ -242,5 +252,32 @@ mod tests {
         let err = result.unwrap_err();
         assert_eq!(err.code, FailureCode::SymlinkComponent);
         assert!(err.message.contains("symlink"));
+    }
+
+    /// astro-plan-d8cyr: source-view plan items store an absolute destination,
+    /// and the symlink walk must stay below the root. Walking the absolute path
+    /// from `/` refuses any ancestor symlink above the root, which on macOS is
+    /// every temp dir (`/var` -> `private/var`).
+    #[test]
+    fn resolve_and_validate_absolute_path_under_root_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = utf8_root(dir.path());
+        let absolute = root.join("views/frame.fits");
+
+        let resolved = resolve_and_validate(&root, &absolute).expect("absolute path under root");
+        assert_eq!(resolved.as_path(), absolute);
+    }
+
+    #[test]
+    fn resolve_and_validate_absolute_path_outside_root_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = utf8_root(dir.path());
+        let outside = Utf8PathBuf::from_path_buf(
+            dir.path().parent().expect("temp parent").join("outside.fits"),
+        )
+        .expect("temp dir path is UTF-8");
+
+        let err = resolve_and_validate(&root, &outside).unwrap_err();
+        assert_eq!(err.code, FailureCode::RootEscape);
     }
 }
