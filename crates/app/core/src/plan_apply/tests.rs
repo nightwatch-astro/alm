@@ -2350,3 +2350,394 @@ async fn reconcile_crashed_plans_classifies_all_three_verdicts() {
         "ambiguous item is flagged failed for review"
     );
 }
+
+// ── G-RUNSTATE-TRUTH: a reported lifecycle state is a written one ────────────
+
+/// `pause_run`'s last argument is `items_pending`. It received the settled sum
+/// (succeeded + failed + skipped + cancelled), so a pause recorded the count of
+/// items that had finished as the count still to run.
+#[tokio::test]
+async fn a_pause_records_the_items_still_to_run_not_the_settled_ones() {
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-pause-count", 3).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-pause-count",
+        "run-pause-count",
+        "test-token",
+        3,
+        3,
+    )
+    .await
+    .unwrap();
+    {
+        let mut conn = db.pool().acquire().await.unwrap();
+        apply_repo::batch_flush_item_states(
+            &mut conn,
+            "p-pause-count",
+            &[apply_repo::BatchItemState {
+                item_id: "p-pause-count-item-0",
+                new_state: "succeeded",
+                failure_reason: None,
+                is_stale: false,
+            }],
+            1,
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+    }
+
+    terminal::handle_paused(
+        db.pool(),
+        &bus,
+        "p-pause-count",
+        "run-pause-count",
+        "item.stale",
+        None,
+        TerminalCounts { succeeded: 1, ..TerminalCounts::default() },
+    )
+    .await;
+
+    let pending: i64 = sqlx::query_scalar("SELECT items_pending FROM plan_apply_runs WHERE id = ?")
+        .bind("run-pause-count")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(pending, 2, "1 of 3 items settled, so 2 remain pending");
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-pause-count")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "paused");
+}
+
+/// A pause whose write fails leaves the plan `applying` for boot recovery, so
+/// the long-op stream carries the failure rather than a pause the row denies.
+#[tokio::test]
+async fn a_pause_that_cannot_be_written_is_not_reported_as_paused() {
+    use std::sync::Mutex;
+
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-pause-fail", 1).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-pause-fail",
+        "run-pause-fail",
+        "test-token",
+        1,
+        1,
+    )
+    .await
+    .unwrap();
+    sqlx::query("DROP TABLE plan_apply_runs").execute(db.pool()).await.unwrap();
+
+    let captured: Arc<Mutex<Vec<OperationEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink_store = captured.clone();
+    let sink: OperationEventSink = Arc::new(move |event: OperationEvent| {
+        sink_store.lock().unwrap().push(event);
+    });
+    let emitter = OpEventEmitter::new(OperationId("run-pause-fail".to_owned()), sink);
+
+    terminal::handle_paused(
+        db.pool(),
+        &bus,
+        "p-pause-fail",
+        "run-pause-fail",
+        "disk.full",
+        Some(&emitter),
+        TerminalCounts::default(),
+    )
+    .await;
+
+    let events = captured.lock().unwrap().clone();
+    assert_eq!(events.len(), 1, "exactly one long-op event for a failed pause");
+    assert_eq!(events[0].event_type, OperationEventType::Failed);
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-pause-fail")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "applying", "the plan is left for the boot sweep to classify");
+}
+
+/// Cancelling a paused plan whose item write fails is refused. The plan stays
+/// `paused` with its items `pending` instead of reporting a cancellation the
+/// items contradict.
+#[tokio::test]
+async fn a_paused_cancel_whose_item_write_fails_is_refused() {
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-cancel-refuse", 2).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-cancel-refuse",
+        "run-cancel-refuse",
+        "test-token",
+        2,
+        2,
+    )
+    .await
+    .unwrap();
+    apply_repo::pause_run(
+        db.pool(),
+        "p-cancel-refuse",
+        "run-cancel-refuse",
+        "disk.full",
+        0,
+        0,
+        0,
+        0,
+        2,
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "CREATE TRIGGER block_item_cancel BEFORE UPDATE OF item_state ON plan_items \
+         WHEN NEW.item_state = 'cancelled' BEGIN SELECT RAISE(ABORT, 'write refused'); END",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    let err = cancel_plan(db.pool(), &bus, "p-cancel-refuse").await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::InternalDatabase);
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-cancel-refuse")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "paused", "a refused cancel leaves the plan cancellable again");
+
+    let pending = apply_repo::list_pending_items(db.pool(), "p-cancel-refuse").await.unwrap();
+    assert_eq!(pending.len(), 2, "both items are still pending");
+}
+
+/// The user's skip is committed before the item stops being eligible to run, so
+/// a pause or crash cannot put a deliberately skipped item back on the forward
+/// pass (`resume_plan` re-reads `pending`/`failed` rows only).
+#[tokio::test]
+async fn a_skip_is_persisted_before_the_item_is_bypassed() {
+    let (db, _bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-skip-persist", 2).await;
+    plans_repo::update_plan_state(db.pool(), "p-skip-persist", "applying").await.unwrap();
+    register_fake_active_run("p-skip-persist");
+
+    let resp = skip_plan_item(db.pool(), "p-skip-persist", "p-skip-persist-item-0").await.unwrap();
+    assert_eq!(resp.new_state, "skipped");
+
+    let state: String = sqlx::query_scalar("SELECT item_state FROM plan_items WHERE id = ?")
+        .bind("p-skip-persist-item-0")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "skipped", "the reported state is the stored state");
+
+    let pending = apply_repo::list_pending_items(db.pool(), "p-skip-persist").await.unwrap();
+    assert_eq!(pending, vec!["p-skip-persist-item-1".to_owned()]);
+
+    active_runs().remove("p-skip-persist");
+}
+
+/// A skip whose write fails is refused with the item left `pending`, rather
+/// than answered `skipped` from an in-memory set the next resume discards.
+#[tokio::test]
+async fn a_skip_that_cannot_be_written_is_refused() {
+    let (db, _bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-skip-refuse", 1).await;
+    plans_repo::update_plan_state(db.pool(), "p-skip-refuse", "applying").await.unwrap();
+    register_fake_active_run("p-skip-refuse");
+    sqlx::query(
+        "CREATE TRIGGER block_item_skip BEFORE UPDATE OF item_state ON plan_items \
+         WHEN NEW.item_state = 'skipped' BEGIN SELECT RAISE(ABORT, 'write refused'); END",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    let err = skip_plan_item(db.pool(), "p-skip-refuse", "p-skip-refuse-item-0").await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::InternalDatabase);
+
+    let state: String = sqlx::query_scalar("SELECT item_state FROM plan_items WHERE id = ?")
+        .bind("p-skip-refuse-item-0")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "pending", "a refused skip leaves the item eligible to run");
+
+    active_runs().remove("p-skip-refuse");
+}
+
+/// A cancelled run whose terminal write fails is not announced as cancelled:
+/// finding .5.17 on the live-executor branch, where `handle_cancelled` performs
+/// the write (review FIX 1).
+#[tokio::test]
+async fn a_cancelled_run_whose_terminal_write_fails_is_not_reported_as_cancelled() {
+    use std::sync::Mutex;
+
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-cancel-write", 1).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-cancel-write",
+        "run-cancel-write",
+        "test-token",
+        1,
+        1,
+    )
+    .await
+    .unwrap();
+    sqlx::query("DROP TABLE plan_apply_runs").execute(db.pool()).await.unwrap();
+
+    let captured: Arc<Mutex<Vec<OperationEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink_store = captured.clone();
+    let sink: OperationEventSink = Arc::new(move |event: OperationEvent| {
+        sink_store.lock().unwrap().push(event);
+    });
+    let emitter = OpEventEmitter::new(OperationId("run-cancel-write".to_owned()), sink);
+
+    terminal::handle_cancelled(
+        db.pool(),
+        &bus,
+        "p-cancel-write",
+        "run-cancel-write",
+        Some(&emitter),
+        TerminalCounts::default(),
+    )
+    .await;
+
+    let events = captured.lock().unwrap().clone();
+    assert_eq!(events.len(), 1, "exactly one long-op event for a failed terminal write");
+    assert_eq!(events[0].event_type, OperationEventType::Failed);
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-cancel-write")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "applying", "the plan is left for the boot sweep to classify");
+}
+
+/// The same gate on the completed path: a terminal state the plan row denies is
+/// reported as a failure, not as the terminal the run computed.
+#[tokio::test]
+async fn a_completed_run_whose_terminal_write_fails_is_not_reported_as_terminal() {
+    use std::sync::Mutex;
+
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-complete-write", 1).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-complete-write",
+        "run-complete-write",
+        "test-token",
+        1,
+        1,
+    )
+    .await
+    .unwrap();
+    // The item is flushed succeeded so the computed terminal is `applied`. An
+    // all-zero counter set computes `failed`, which the emitter reports as a
+    // Failed event of its own accord.
+    {
+        let mut conn = db.pool().acquire().await.unwrap();
+        apply_repo::batch_flush_item_states(
+            &mut conn,
+            "p-complete-write",
+            &[apply_repo::BatchItemState {
+                item_id: "p-complete-write-item-0",
+                new_state: "succeeded",
+                failure_reason: None,
+                is_stale: false,
+            }],
+            1,
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+    }
+    sqlx::query("DROP TABLE plan_apply_runs").execute(db.pool()).await.unwrap();
+
+    let captured: Arc<Mutex<Vec<OperationEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink_store = captured.clone();
+    let sink: OperationEventSink = Arc::new(move |event: OperationEvent| {
+        sink_store.lock().unwrap().push(event);
+    });
+    let emitter = OpEventEmitter::new(OperationId("run-complete-write".to_owned()), sink);
+
+    terminal::handle_completed(
+        db.pool(),
+        &bus,
+        "p-complete-write",
+        "run-complete-write",
+        "cleanup",
+        None,
+        Some(&emitter),
+        TerminalCounts { succeeded: 1, ..TerminalCounts::default() },
+    )
+    .await;
+
+    let events = captured.lock().unwrap().clone();
+    assert_eq!(events.len(), 1, "exactly one long-op event for a failed terminal write");
+    assert_eq!(events[0].event_type, OperationEventType::Failed);
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-complete-write")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "applying");
+}
+
+/// The pause record counts the item rows still `pending`, so a skip the run
+/// never reached cannot inflate it through the lagging plan counter
+/// (astro-plan-ajy4v).
+#[tokio::test]
+async fn a_pause_after_a_skip_counts_the_rows_not_the_lagging_plan_counter() {
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-pause-skip", 3).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-pause-skip",
+        "run-pause-skip",
+        "test-token",
+        3,
+        3,
+    )
+    .await
+    .unwrap();
+    register_fake_active_run("p-pause-skip");
+    skip_plan_item(db.pool(), "p-pause-skip", "p-pause-skip-item-0").await.unwrap();
+
+    let counter: i64 = sqlx::query_scalar("SELECT items_pending FROM plans WHERE id = ?")
+        .bind("p-pause-skip")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(counter, 3, "the plan counter still carries the skipped item");
+
+    terminal::handle_paused(
+        db.pool(),
+        &bus,
+        "p-pause-skip",
+        "run-pause-skip",
+        "disk.full",
+        None,
+        TerminalCounts::default(),
+    )
+    .await;
+
+    let pending: i64 = sqlx::query_scalar("SELECT items_pending FROM plan_apply_runs WHERE id = ?")
+        .bind("run-pause-skip")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(pending, 2, "the skipped item is not part of the work still to run");
+
+    active_runs().remove("p-pause-skip");
+}
