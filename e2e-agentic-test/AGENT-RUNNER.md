@@ -36,6 +36,7 @@ Windows repo root holds, each on its own line (no `&&`):
 ```
 cd /d C:\dev\astro-plan
 set PV_DB_URL=sqlite://C:\dev\astro-plan\wizard-test.db?mode=rwc
+set PV_MCP_BRIDGE_ENABLE=1
 set PV_MCP_BRIDGE_BIND=0.0.0.0
 cargo tauri dev --config src-tauri\tauri.dev.conf.json --features dev-tools
 ```
@@ -49,12 +50,14 @@ powershell.exe -NoProfile -Command "Start-Process -FilePath 'cmd.exe' -ArgumentL
 - The `--config src-tauri\tauri.dev.conf.json` overlay enables `withGlobalTauri`,
   and `--features dev-tools` compiles the MCP bridge WebSocket server in. Without
   the feature the plugin is not linked and nothing listens on 9223.
+- `PV_MCP_BRIDGE_ENABLE=1` starts the bridge. `1` is the only value that starts
+  it; without the variable a `dev-tools` build opens no port.
 - The bridge binds `127.0.0.1:9223`. `PV_MCP_BRIDGE_BIND=0.0.0.0` binds all
   interfaces, which is what a WSL agent connecting through the NAT gateway needs.
   Anything that reaches that address drives the app without authentication, so set
   it only for a validation run on a trusted network.
 - Scenarios in this tree REQUIRE the bridge, so always launch with the overlay,
-  the feature, and the bind variable.
+  the feature, and both bridge variables.
 - App process = `desktop_shell.exe`; Vite dev server on `localhost:5173`.
 - `.env` in the Windows checkout must have `VITE_USE_MOCKS=false` (real
   backend). **Verify this before running any scenario** — a scenario executed
@@ -139,10 +142,13 @@ gateway=$(ip route show default | awk '{print $3}')   # e.g. 172.23.112.1
 
 Connect: `mcp__tauri__driver_session` with `host=<gateway>` `port=9223`.
 The Windows firewall already allows 9223. A gateway connection reaches the bridge
-only when the app was launched with `PV_MCP_BRIDGE_BIND=0.0.0.0`; the default
-`127.0.0.1` bind accepts connections from the Windows host alone. If the session
-fails, confirm the app was launched with the `tauri.dev.conf.json` overlay,
-`--features dev-tools`, and that bind variable.
+only when the app was launched with `PV_MCP_BRIDGE_ENABLE=1` and
+`PV_MCP_BRIDGE_BIND=0.0.0.0`; the default `127.0.0.1` bind accepts connections
+from the Windows host alone, and without the enable variable no port is open at
+all. If the session fails, confirm the app was launched with the
+`tauri.dev.conf.json` overlay, `--features dev-tools`, and both variables. The
+startup log records which case applies: `MCP bridge starting` or `MCP bridge not
+started`.
 
 ## Driving and asserting
 

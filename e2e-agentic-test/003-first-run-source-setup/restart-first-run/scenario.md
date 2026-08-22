@@ -253,7 +253,8 @@ FAIL if:
   Preconditions step 2).
 - **Tauri MCP bridge** (needed only for Test 5): launch with the dev overlay
   enabled (`cargo tauri dev --config src-tauri\tauri.dev.conf.json
-  --features dev-tools`, WS on `127.0.0.1:9223`, so a gateway connection needs
+  --features dev-tools` plus `PV_MCP_BRIDGE_ENABLE=1`, without which the bridge
+  does not start; WS on `127.0.0.1:9223`, so a gateway connection also needs
   `PV_MCP_BRIDGE_BIND=0.0.0.0` at launch), connect from WSL via
   `driver_session host=<gateway> port=9223` where
   `gateway = ip route show default | awk '{print $3}'`; then use

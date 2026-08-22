@@ -82,7 +82,8 @@ tauri-build = { version = "2.6", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 # Tauri MCP bridge plugin (@hypothesi). Dev-only surface, an optional dependency
-# of desktop_shell behind its `dev-tools` feature; runs a WebSocket server on
+# of desktop_shell behind its `dev-tools` feature; started only when
+# PV_MCP_BRIDGE_ENABLE=1, then runs a WebSocket server on
 # 127.0.0.1:9223 (PV_MCP_BRIDGE_BIND overrides the address) for the
 # @hypothesi/tauri-mcp-server MCP server. Requires the dev-only tauri.dev.conf.json
 # overlay (withGlobalTauri).

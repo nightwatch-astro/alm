@@ -221,8 +221,11 @@ Get-ChildItem <changed>.rs | ForEach-Object { $_.LastWriteTime = Get-Date }
 Then relaunch (`tauri dev` recompiles). A frontend-only change needs only a hard
 refresh (Ctrl+R). Confirm the binary mtime is newer than the source.
 
-**Connect the MCP bridge.** The bridge needs `--features dev-tools` and serves a
-WebSocket on `127.0.0.1:9223`. This host runs WSL in mirrored networking, so
+**Connect the MCP bridge.** The bridge needs `--features dev-tools` to be
+compiled in and `PV_MCP_BRIDGE_ENABLE=1` to start; without the variable a
+`dev-tools` build opens no port, and the startup log says `MCP bridge not
+started`. It serves a WebSocket on `127.0.0.1:9223`. `scripts/win-native-dev.ps1
+-McpBridge` sets the variable. This host runs WSL in mirrored networking, so
 `localhost` reaches Windows loopback directly — connect with `driver_session
 host=localhost port=9223`. The old NAT gateway-IP lookup (`ip route show
 default`) is **obsolete** here; under NAT networking, set

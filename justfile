@@ -190,9 +190,16 @@ dev:
 
 # Start the Tauri desktop app in development mode (Rust + frontend).
 # The dev overlay enables `withGlobalTauri`, and the `dev-tools` feature compiles
-# in the MCP bridge plugin that requires it. Release builds carry neither.
+# in the MCP bridge plugin that requires it. Release builds carry neither. The
+# bridge stays closed here: it needs PV_MCP_BRIDGE_ENABLE=1 (see tauri-dev-mcp).
 tauri-dev:
     cd apps/desktop && pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools
+
+# Start the desktop app with the MCP bridge open so an agent can drive it.
+# The bridge is unauthenticated and reaches every command handler; BIND defaults
+# to loopback and takes an address (0.0.0.0) only for cross-host validation.
+tauri-dev-mcp bind="127.0.0.1":
+    cd apps/desktop && PV_MCP_BRIDGE_ENABLE=1 PV_MCP_BRIDGE_BIND={{bind}} pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools
 
 # Clean build artifacts
 clean:

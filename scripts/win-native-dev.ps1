@@ -19,14 +19,26 @@
   the WSL side (via \\wsl$ or /mnt/c) reliably trigger HMR; turn it off if you
   only ever edit from Windows-native tools and want lower idle CPU.
 
+.PARAMETER McpBridge
+  Start the MCP bridge (PV_MCP_BRIDGE_ENABLE=1) so an agent can drive this app.
+  Off by default: the bridge is unauthenticated and reaches every command
+  handler. Set -McpBridgeBind to widen its 127.0.0.1 bind for a WSL-side agent.
+
+.PARAMETER McpBridgeBind
+  Address the MCP bridge binds (PV_MCP_BRIDGE_BIND), e.g. 0.0.0.0 so the WSL NAT
+  gateway address reaches it. Requires -McpBridge.
+
 .EXAMPLE
   pwsh -File scripts\win-native-dev.ps1            # real backend, polling on
   pwsh -File scripts\win-native-dev.ps1 -Mocks     # fixtures, no backend
+  pwsh -File scripts\win-native-dev.ps1 -McpBridge -McpBridgeBind 0.0.0.0
 #>
 [CmdletBinding()]
 param(
   [switch]$Mocks,
-  [switch]$NoPolling
+  [switch]$NoPolling,
+  [switch]$McpBridge,
+  [string]$McpBridgeBind
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,9 +61,20 @@ $env:VITE_USE_MOCKS = if ($Mocks) { 'true' } else { 'false' }
 if ($NoPolling) { Remove-Item Env:CHOKIDAR_USEPOLLING -ErrorAction SilentlyContinue }
 else { $env:CHOKIDAR_USEPOLLING = 'true' }
 
+if ($McpBridgeBind -and -not $McpBridge) {
+  throw "-McpBridgeBind requires -McpBridge (the bridge does not start without it)."
+}
+if ($McpBridge) {
+  $env:PV_MCP_BRIDGE_ENABLE = '1'
+  if ($McpBridgeBind) { $env:PV_MCP_BRIDGE_BIND = $McpBridgeBind }
+} else {
+  Remove-Item Env:PV_MCP_BRIDGE_ENABLE -ErrorAction SilentlyContinue
+}
+
 Write-Host "Repo:        $repoRoot"
 Write-Host "Backend:     $(if ($Mocks) { 'MOCKS (fixtures, no Rust backend)' } else { 'REAL (Rust backend wired)' })"
 Write-Host "Watch:       $(if ($NoPolling) { 'native notifications' } else { 'polling (WSL-edit safe)' })"
+Write-Host "MCP bridge:  $(if ($McpBridge) { "ON (bind $(if ($McpBridgeBind) { $McpBridgeBind } else { '127.0.0.1' }))" } else { 'OFF (-McpBridge to enable)' })"
 Write-Host "Starting tauri dev... (first build compiles the Rust workspace; later builds are incremental)"
 
 Set-Location $desktop
@@ -60,6 +83,7 @@ Set-Location $desktop
 # MUST stay out of the base tauri.conf.json (production security surface); it is
 # applied here in dev only — mirrors the `just tauri-dev` invocation.
 # `--features dev-tools` compiles the MCP bridge in; without it the plugin is
-# not linked and nothing listens on 9223. The bridge binds 127.0.0.1 unless
-# PV_MCP_BRIDGE_BIND overrides it (see docs/development/windows-native-rust-dev.md).
+# not linked. Compiled in is not started: `-McpBridge` sets PV_MCP_BRIDGE_ENABLE=1,
+# and nothing listens on 9223 without it (see
+# docs/development/windows-native-rust-dev.md).
 pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools

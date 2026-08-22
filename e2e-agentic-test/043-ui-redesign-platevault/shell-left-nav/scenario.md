@@ -47,8 +47,9 @@ Calibration / Targets / Projects can show count badges
    Frontend-only surface — no forced Rust recompile needed.
 2. App launched per AGENT-RUNNER.md with the dev overlay config so the bridge
    is up: `cargo tauri dev --config src-tauri\tauri.dev.conf.json`
-   (`--features dev-tools`; bridge WS on `127.0.0.1:9223`, so a NAT-gateway
-   connection from WSL needs `PV_MCP_BRIDGE_BIND=0.0.0.0` at launch).
+   (`--features dev-tools` plus `PV_MCP_BRIDGE_ENABLE=1`, without which the
+   bridge does not start; bridge WS on `127.0.0.1:9223`, so a NAT-gateway
+   connection from WSL also needs `PV_MCP_BRIDGE_BIND=0.0.0.0` at launch).
 3. First-run setup completed with at least ONE registered source root (any
    empty folder as Light frames), so the app lands on the shell, not `/setup`.
 4. `.env` has `VITE_USE_MOCKS=false`. Verify: `mcp__tauri__ipc_get_backend_state`
