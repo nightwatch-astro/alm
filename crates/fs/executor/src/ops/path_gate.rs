@@ -61,8 +61,8 @@ pub fn resolve_and_validate(
     // `fs_pathsafe::contain` so this gate and every other root-relative
     // resolver in the workspace cannot drift apart
     // (`specs/tiny/root-relative-path-containment.md`).
-    let normalized =
-        fs_pathsafe::contain::resolve_in_root_utf8(root, relative).map_err(containment_failure)?;
+    let normalized = fs_pathsafe::contain::resolve_in_root_utf8(root, relative)
+        .map_err(|e| containment_failure(&e))?;
     // The containment verdict is against the *normalized* root, so the walk
     // below must strip that same prefix rather than the caller's spelling.
     let root = &fs_pathsafe::contain::normalize_utf8(root);
@@ -121,9 +121,10 @@ pub fn resolve_and_validate(
 /// Only [`ContainmentError::Escapes`] is `root_escape`; a malformed root or an
 /// unrooted path that cannot be resolved is a bad plan item, not a traversal
 /// attempt, and the two must stay distinguishable in the audit record.
-pub fn containment_failure(error: fs_pathsafe::contain::ContainmentError) -> PlanItemFailure {
+#[must_use]
+pub fn containment_failure(error: &fs_pathsafe::contain::ContainmentError) -> PlanItemFailure {
     use fs_pathsafe::contain::ContainmentError as E;
-    let code = match error {
+    let code = match *error {
         E::Escapes { .. } => FailureCode::RootEscape,
         E::RootMissing { .. }
         | E::RootNotAbsolute { .. }

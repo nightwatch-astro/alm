@@ -179,7 +179,7 @@ fn resolve_side(
         (Some(path), Some(root)) => path_gate::resolve_and_validate(root, path).map(|r| Some(r.0)),
         (Some(path), None) => fs_pathsafe::contain::resolve_unrooted_utf8(path)
             .map(Some)
-            .map_err(path_gate::containment_failure),
+            .map_err(|e| path_gate::containment_failure(&e)),
     }
 }
 

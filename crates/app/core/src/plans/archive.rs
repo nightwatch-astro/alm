@@ -59,6 +59,27 @@ fn resolve_archive_abs_path(
     }
 }
 
+/// Resolve one archived item, recording an uncontained path as a failure.
+///
+/// An uncontained path is a failed item, not a skipped one: skipping would let
+/// `items_moved` report success for an archive entry nobody could account for.
+fn resolve_or_record_failure(
+    archive_path: &str,
+    from_root_id: Option<&str>,
+    root_map: &HashMap<String, Utf8PathBuf>,
+    item_id: &str,
+    last_failure: &mut Option<(FailureCode, String)>,
+) -> Option<Utf8PathBuf> {
+    match resolve_archive_abs_path(archive_path, from_root_id, root_map) {
+        Ok(path) => Some(path),
+        Err(e) => {
+            tracing::warn!(item_id = %item_id, error = %e, "archive item path not contained");
+            *last_failure = Some((FailureCode::PathInvalid, e.to_string()));
+            None
+        }
+    }
+}
+
 /// Map a trash-primitive failure to the closed `archive.send_to_trash` error set.
 fn trash_failure_error_code(code: FailureCode) -> ErrorCode {
     match code {
@@ -125,19 +146,14 @@ pub async fn send_archive_to_trash(
     for item in &archive_items {
         // Filtered by `archive_path.is_some()` above.
         let archive_rel = item.archive_path.as_deref().unwrap_or_default();
-        // An uncontained path is a failed item, not a skipped one: skipping
-        // would report success for an archive entry nobody could account for.
-        let abs_path = match resolve_archive_abs_path(
+        let Some(abs_path) = resolve_or_record_failure(
             archive_rel,
             item.from_root_id.as_deref(),
             &root_map,
-        ) {
-            Ok(path) => path,
-            Err(e) => {
-                tracing::warn!(item_id = %item.id, error = %e, "archive item path not contained");
-                last_failure = Some((FailureCode::PathInvalid, e.to_string()));
-                continue;
-            }
+            &item.id,
+            &mut last_failure,
+        ) else {
+            continue;
         };
 
         if !abs_path.exists() {
@@ -243,19 +259,14 @@ pub async fn permanently_delete_archive(
     let mut last_failure: Option<(FailureCode, String)> = None;
     for item in &archive_items {
         let archive_rel = item.archive_path.as_deref().unwrap_or_default();
-        // An uncontained path is a failed item, not a skipped one: skipping
-        // would report success for an archive entry nobody could account for.
-        let abs_path = match resolve_archive_abs_path(
+        let Some(abs_path) = resolve_or_record_failure(
             archive_rel,
             item.from_root_id.as_deref(),
             &root_map,
-        ) {
-            Ok(path) => path,
-            Err(e) => {
-                tracing::warn!(item_id = %item.id, error = %e, "archive item path not contained");
-                last_failure = Some((FailureCode::PathInvalid, e.to_string()));
-                continue;
-            }
+            &item.id,
+            &mut last_failure,
+        ) else {
+            continue;
         };
 
         if !abs_path.exists() {

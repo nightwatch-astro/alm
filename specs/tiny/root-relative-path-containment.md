@@ -38,6 +38,7 @@ rather than reaching it through a fallback arm:
 | root present, relative path that escapes after normalization | `Err(Escapes)` |
 | root present, absolute path inside the root | `Ok`, the path itself |
 | root present, absolute path outside the root | `Err(Escapes)` |
+| root present but relative | `Err(RootNotAbsolute)` |
 | root absent, relative path | `Err(RootMissing)` |
 | root absent, absolute path with `.` or `..` components | `Err(NotNormalized)` |
 | root absent, absolute normal path | `Ok`, via `resolve_unrooted` only |
@@ -105,18 +106,19 @@ assembly, not root-relative resolution, and stays where it is.
 
 ## Tasks
 
-- [ ] Add `fs_pathsafe::contain` with a unit test for each of the seven rule rows
-- [ ] Route `path_gate::resolve_and_validate` through it, keeping the symlink walk
-- [ ] Resolve once in `run/loop_.rs`, delete `dispatch::resolve_item_path`
-- [ ] `resolve_working_folder` returns `Result`; update callers and tests
-- [ ] `resolve_archive_abs_path` returns `Result`; an unresolvable root id errors
-- [ ] `verify_cwd_containment` uses `contained_in_any`; empty roots refuse
-- [ ] One regression test per LIVE finding, run red before the fix
-- [ ] `cargo clippy` and `cargo nextest` for the six touched crates
+- [x] Add `fs_pathsafe::contain` with a unit test for each of the seven rule rows
+- [x] Route `path_gate::resolve_and_validate` through it, keeping the symlink walk
+- [x] Resolve once in `run/loop_.rs`, delete `dispatch::resolve_item_path`
+- [x] `resolve_working_folder` returns `Result`; update callers and tests
+- [x] `resolve_archive_abs_path` returns `Result`; an unresolvable root id errors
+- [x] `verify_cwd_containment` uses `contained_in_any`; empty roots refuse
+- [x] One regression test per LIVE finding, run red before the fix
+- [x] `cargo clippy` and `cargo nextest` for the six touched crates
 
 ## Done When
 
-- [ ] Every LIVE finding has a test that fails at base 4948b3ece and passes here
-- [ ] All four rule cases (absent root, escape after normalization, absolute
+- [x] Every LIVE finding has a test that fails at base 4948b3ece and passes here
+      (.1.12 5/6, .1.16 2/2, .5.20 2/2, .13.26 2/2 red at base)
+- [x] All four rule cases (absent root, escape after normalization, absolute
       where a root is expected, non-existent leaf) have a unit test
-- [ ] Touched-crate lint and test gates are green
+- [x] Touched-crate lint and test gates are green
