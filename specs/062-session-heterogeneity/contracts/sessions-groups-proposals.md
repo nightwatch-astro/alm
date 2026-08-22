@@ -193,14 +193,14 @@ RelationEvidence {
   parity: "match" | "mismatch" | "unknown",
   acquisitionGeometry: "compatible" | "incompatible" | "unknown",
   equipment: "compatible" | "incompatible" | "unknown",
-  missingEvidenceCodes: BoundedList<string, 100>,
+  missingEvidenceCodes: BoundedList<SafeText, 100>,
   thresholdSnapshot: BoundedList<ThresholdMeasurement, 100>
 }
 
 ThresholdMeasurement {
-  key: string,
+  key: SafeText,
   measuredValue: decimal,
-  unit: string,
+  unit: SafeText,
   comparison: "lt" | "lte" | "eq" | "gte" | "gt",
   thresholdValue: decimal,
   outcome: "pass" | "fail"
@@ -231,7 +231,7 @@ ManualRelationReview {
     { kind: "new_reviewed_cross_target",
       canonicalTargetIds: BoundedList<string, 500>,
       purpose: SafeText },
-  missingEvidenceCodes: BoundedList<string, 100>
+  missingEvidenceCodes: BoundedList<SafeText, 100>
 }
 
 RelationDecisionCounts {
@@ -444,6 +444,19 @@ complete tuple.
 - Notes: results exclude point-like objects outside the captured union and
   extended objects with zero intersection.
 
+### `relation_evidence.query`
+
+- Type: read-only.
+- Request: `{ evidenceId }`.
+- Response: `RelationEvidence`.
+- Errors: `relation_evidence.not_found`.
+- Notes: `PanelGroupRevision.representativeEvidenceId` and
+  `MosaicRevision.capturedUnionEvidenceId` are the only handles a revision gives
+  to the reasoning behind it, and neither resolves through
+  `relation_proposal.query`: an ingestion-created singleton panel group lacks a
+  proposal, and an accepted revision references an envelope of its own rather
+  than the proposal's.
+
 ### `relation_proposal.list`
 
 - Type: read-only.
@@ -579,9 +592,15 @@ unavailable rather than replaying the traversal against another snapshot.
 ### `relation_proposal.manual.create`
 
 - Type: atomic database mutation.
-- Request: `{ relationKind, sourceRevisionRefs: BoundedList<RevisionRef, 500>, subjectRefs: BoundedList<EntityRef, 500>, proposedMembershipRefs?: BoundedList<EntityRef, 500>, proposedEdges?: BoundedList<MosaicEdge, 500>, proposedLineage?: BoundedList<{ predecessorGroupId: string, successorGroupId: string }, 500>, targetScope: ManualRelationReview.targetScope, evidence: RelationEvidence, reviewReason: SafeText, mutationContext }`.
+- Request: `{ relationKind, sourceRevisionRefs: BoundedList<RevisionRef, 500>, subjectRefs: BoundedList<EntityRef, 500>, proposedMembershipRefs?: BoundedList<EntityRef, 500>, proposedEdges?: BoundedList<MosaicEdge, 500>, proposedLineage?: BoundedList<{ predecessorGroupId: string, successorGroupId: string }, 500>, targetScope: ManualRelationReview.targetScope, evidence: RelationEvidence, expectedMatchingSettingsRevision: uint64, reviewReason: SafeText, mutationContext }`.
 - Response: `{ proposal: RelationProposal, auditId }`.
 - Guard: `reviewReason` must contain non-whitespace text.
+- Guard: `expectedMatchingSettingsRevision` must equal the accepted settings
+  revision, and is the `uint64` a caller reads from `MatchingSettings.revision`.
+  The submitted `evidence` was measured under that revision and the envelope is
+  stamped with it, so a revision change between measurement and submission
+  rejects with a stale-revision error instead of storing thresholds the caller
+  never read.
 - Guard: `evidence.missingEvidenceCodes` must enumerate every required geometry or orientation measurement unavailable to the proposal.
 - Guard: a `new_reviewed_cross_target` scope must contain at least two distinct canonical target IDs.
 - Guard: every source revision, subject, proposed member, edge endpoint, and lineage endpoint must exist.
@@ -665,14 +684,15 @@ unavailable rather than replaying the traversal against another snapshot.
 | `mosaic.not_found` | A mosaic ID is unknown. | `mosaicId` |
 | `mosaic.revision_not_found` | A mosaic revision ID is unknown for the mosaic. | `mosaicId`, `revisionId` |
 | `relation_proposal.not_found` | A proposal ID is unknown. | `proposalId` |
+| `relation_evidence.not_found` | An evidence ID is unknown. | `evidenceId` |
 | `relation_proposal.not_pending` | A decision already exists. | `proposalId`, `state` |
 | `relation_proposal.stale` | Evidence, a source head, or a subject revision changed. | `proposalId`, `staleRefCount`, `staleRefs: BoundedList<RevisionRef, 100>`, `truncated` |
 | `relation_proposal.invalid_membership` | Membership violates target, uniqueness, or supersession rules. | `proposalId`, `violations: BoundedList<Violation, 100>` |
 | `relation_proposal.lineage_cycle` | Proposed lineage would contain a cycle. | `proposalId`, `groupCount`, `groupIds: BoundedList<string, 100>`, `truncated` |
 | `relation_proposal.merge_required` | A bridge would join accepted mosaic components. | `proposalId`, `mosaicCount`, `mosaicIds: BoundedList<string, 100>`, `truncated` |
 | `relation_proposal.cross_target_review_required` | A durable cross-target relation lacks an accepted association. | `proposalId`, `targetCount`, `targetIds: BoundedList<string, 100>`, `truncated` |
-| `relation_proposal.evidence_missing` | Automatic acceptance lacks required geometry or orientation evidence. | `proposalId`, `missingEvidenceCodes: BoundedList<string, 100>` |
-| `relation_proposal.manual_evidence_disclosure_incomplete` | A manual proposal omits a required missing-evidence code. | `missingEvidenceCodes: BoundedList<string, 100>` |
+| `relation_proposal.evidence_missing` | Automatic acceptance lacks required geometry or orientation evidence. | `proposalId`, `missingEvidenceCodes: BoundedList<SafeText, 100>` |
+| `relation_proposal.manual_evidence_disclosure_incomplete` | A manual proposal omits a required missing-evidence code. | `missingEvidenceCodes: BoundedList<SafeText, 100>` |
 | `pagination.snapshot_unavailable` | A cursor's immutable read watermark is unavailable. | None |
 | `traversal.operation_not_found` | A preview operation is unknown, expired, or lost with its process. | `operationId` |
 | `traversal.result_not_ready` | Result rows were requested before completion. | `operationId`, `state` |

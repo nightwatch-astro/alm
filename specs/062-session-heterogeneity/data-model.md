@@ -614,6 +614,7 @@ deferred and must reference a revision of the same group.
 | `revision_number` | INTEGER | `NOT NULL CHECK (revision_number >= 1)` |
 | `parent_revision_id` | UUID FK | Nullable only for initial revision |
 | `representative_session_id` | UUID FK | Exact immutable representative |
+| `representative_evidence_id` | UUID FK | Nullable `UNIQUE REFERENCES relation_evidence(id)`; the evidence measured for the representative session, projected as `PanelGroupRevision.representativeEvidenceId` |
 | `proposal_id` | UUID FK | Null only for the ingestion-created singleton |
 | `config_version_id` | UUID FK | `NOT NULL` |
 | `actor_id` | UUID | System or user actor |
@@ -695,7 +696,11 @@ timestamps.
 
 An immutable accepted revision stores UUID, mosaic UUID, numeric
 `revision_number`, optional same-mosaic parent revision UUID, accepted proposal
-UUID, configuration version UUID, actor, reason, and creation time.
+UUID, configuration version UUID, actor, reason, and creation time. A nullable
+`captured_union_evidence_id` UUID FK `UNIQUE REFERENCES relation_evidence(id)`
+holds the union-coverage evidence projected as
+`MosaicRevision.capturedUnionEvidenceId`, which a client resolves through
+`relation_evidence.query`.
 `UNIQUE(mosaic_id, revision_number)` orders revisions and
 `UNIQUE(parent_revision_id)` permits one accepted successor from a head.
 
@@ -747,7 +752,8 @@ modifies image files.
 | `proposal_revision` | INTEGER | `NOT NULL CHECK (proposal_revision >= 1)`; contract CAS token incremented by each state decision |
 | `kind` | TEXT | `panel_add`, `panel_replace`, `panel_split`, `panel_merge`, `mosaic_create`, `mosaic_edge`, `mosaic_split`, `mosaic_merge`, or `manual_relation` |
 | `basis_digest` | TEXT | `NOT NULL`; exact ordered inputs and relation kind |
-| `evidence_digest` | TEXT | `NOT NULL` |
+| `evidence_id` | UUID FK | Nullable `UNIQUE REFERENCES relation_evidence(id)`; the envelope this proposal was measured from, projected as the contract `evidenceId` |
+| `evidence_digest` | TEXT | `NOT NULL`; equals the `input_digest` of the referenced `relation_evidence` row when `evidence_id` is present |
 | `config_version_id` | UUID FK | `NOT NULL` |
 | `state` | TEXT | `pending`, `accepted`, `rejected`, `superseded`, or `stale` |
 | `created_at`, `decided_at` | timestamp | Decision time follows state |
@@ -774,6 +780,146 @@ per-proposal ordinal uniqueness constraint in its typed table:
 typed integer value, unit, comparison, threshold, outcome, and source evidence
 digest. Geometry payloads remain in the exact edge or frame evidence tables.
 Corrected proposals retain measured evidence and store typed review overrides.
+
+### `relation_evidence`
+
+One row is the `RelationEvidence` envelope the contract projects on a
+`RelationProposal`, a `PanelGroupRevision`, and a `MosaicRevision`. It is keyed by
+its own `id`, so each subject references it by UUID.
+
+| Field | Type | Constraints and meaning |
+|---|---|---|
+| `id` | UUID | Public evidence identity; the contract `evidenceId` |
+| `target_compatibility` | TEXT | `NOT NULL`; `same_target`, `reviewed_cross_target`, or `incompatible` |
+| `parity` | TEXT | `NOT NULL`; `match`, `mismatch`, or `unknown` |
+| `acquisition_geometry` | TEXT | `NOT NULL`; `compatible`, `incompatible`, or `unknown` |
+| `equipment` | TEXT | `NOT NULL`; `compatible`, `incompatible`, or `unknown` |
+| `footprint_coverage_ppm` | INTEGER | Nullable; `CHECK (value BETWEEN 0 AND 1000000)`; the optional `footprintCoveragePercent` |
+| `centre_separation_ppm` | INTEGER | Nullable; `CHECK (value >= 0)`; the optional `centerSeparationPercent`, a percent, distinct from the angular `centre_separation_udeg` on `mosaic_edge_evidence` |
+| `residual_sky_rotation_udeg` | INTEGER | Nullable; the optional `residualSkyRotationDeg` in microdegrees |
+| `settings_revision_id` | UUID FK | `NOT NULL REFERENCES matching_settings_revision(id)`; the revision whose threshold columns the stored verdicts were measured against |
+| `input_digest` | TEXT | `NOT NULL`; digest over every input the verdicts derive from: the ordered footprints, the settings revision, the ordered resolved target identities behind `target_compatibility`, and the equipment-resolution revisions behind `equipment` |
+| `created_sequence` | INTEGER | `NOT NULL`; append-only sequence |
+| `created_at` | timestamp | `NOT NULL` |
+
+#### Settings revision against configuration version
+
+`settings_revision_id` and the `config_version_id` on each subject table
+identify different things and neither substitutes for the other.
+`matching_settings_revision` stores the thresholds a verdict is measured
+against, and its `revision_number` is the contract `matchingSettingsRevision` on
+`RelationProposal`, `PanelGroupRevision`, and `MosaicRevision`.
+`spec062_config_revision` is the feature-wide configuration a subject row was
+derived under and the fourth column of
+`UNIQUE(kind, basis_digest, evidence_digest, config_version_id)`. A subject row
+carries the configuration version; the envelope carries the settings revision
+alone, because `RelationEvidence` does not project a configuration field.
+
+`relation_proposal.manual.create` takes `expectedMatchingSettingsRevision` and
+rejects a submission whose value differs from the accepted settings revision.
+The repository stamps the current revision on the envelope it writes, so without
+that guard a settings change between the caller's measurement and its submission
+stores the caller's verdicts under thresholds the caller never read.
+
+#### Child lists
+
+`missingEvidenceCodes`, `allowedResidualRotationRangesDeg`, and
+`thresholdSnapshot` are bounded contract lists, so each is a typed child table
+with a per-evidence ordinal rather than JSON:
+
+- `relation_evidence_missing_code(evidence_id, ordinal, code, created_sequence)`
+  with `UNIQUE(evidence_id, ordinal)` and `CHECK (ordinal BETWEEN 0 AND 99)` for
+  the contract bound of 100. A `manual.create` guard requires the list to
+  enumerate every geometry or orientation measurement the proposal could not
+  compute.
+- `relation_evidence_allowed_rotation(evidence_id, ordinal, lower_udeg,
+  upper_udeg, created_sequence)` with `UNIQUE(evidence_id, ordinal)`, `CHECK
+  (ordinal BETWEEN 0 AND 15)` for the contract bound of 16, and `CHECK
+  (lower_udeg <= upper_udeg)`. The interval is closed at both ends, so the
+  projection returns `minInclusive` and `maxInclusive` of the contract
+  `Range<decimal>` as `true` without storing either flag. A `manual.create`
+  range asking for an open endpoint is rejected; the caller narrows the bound by
+  one microdegree, which the stored scale makes exact.
+- `relation_evidence_measurement(evidence_id, ordinal, measurement_key,
+  measured_value_micro, unit, comparison, threshold_value_micro, outcome,
+  source_evidence_digest, created_sequence)` with `UNIQUE(evidence_id, ordinal)`,
+  `CHECK (ordinal BETWEEN 0 AND 99)`, and `UNIQUE(evidence_id, measurement_key)`,
+  scoped to the envelope so representative and captured-union evidence carry
+  their own `thresholdSnapshot`.
+
+Every child column above is `NOT NULL`. SQLite evaluates a `CHECK` over a null to
+null and admits the row, and `UNIQUE` admits repeated nulls, so a null ordinal
+satisfies both the bound and the per-evidence uniqueness while leaving the list
+without a stable order. The only nullable columns in this design are the optional
+geometry values on the envelope, named as such above.
+
+A child batch and its envelope commit in one transaction with ordinals
+`0..count - 1`, so a reader never sees a partial list and the tables do not
+need a completeness column. Child rows carry `created_sequence` and answer the same
+watermark predicate as any other append-only table, so a row inserted between two
+pages of one `relation_proposal.query` walk is excluded from the later pages.
+
+`relation_evidence_measurement` stores exactly the contract's
+`ThresholdMeasurement` vocabulary: `CHECK (comparison IN ('lt', 'lte', 'eq',
+'gte', 'gt'))`, `CHECK (outcome IN ('pass', 'fail'))`, and one threshold column.
+The projection returns each stored verdict unchanged. `proposal_measurement` keeps the wider
+stored set, `inside` alongside the five single-sided comparisons and `warn`
+alongside `pass` and `fail`, because it is internal review state that no contract
+field projects.
+
+`measuredValue` and `thresholdValue` are contract decimals, and SQLite `REAL`
+would make two envelopes with the same measurement disagree in `input_digest`.
+Both are stored as signed integer microunits of the row's own `unit`, the scale
+`footprint_coverage_ppm` and `residual_sky_rotation_udeg` already use, and the
+column names carry it: `measured_value_micro`, `threshold_value_micro`. The
+projection divides by 1,000,000; a measurement needing finer resolution than
+1e-6 of its unit changes the unit rather than the scale.
+
+`code`, `measurement_key`, and `unit` stay open `TEXT`, exactly as
+`proposal_measurement` already treats them, because the contract types them as
+`SafeText` rather than closed enums. The accepted values are owned by the
+`manual.create` and proposal-generation validators, not by a database `CHECK`.
+
+#### Nullable references from the three subjects
+
+`relation_proposal.evidence_id`,
+`panel_group_revision.representative_evidence_id`, and
+`mosaic_revision.captured_union_evidence_id` are each nullable and `UNIQUE`.
+`UNIQUE` stops reuse within a table; SQLite admits repeated nulls, so it does not
+constrain rows that reference no envelope.
+
+Nullable is forced by two facts. The migration chain is append-only over tables
+that already hold rows, and SQLite cannot add a `NOT NULL` foreign-key column
+without a default to a populated table. Accepting a proposal also does not write an
+envelope: `accept_proposal` updates the proposal state and its visibility history
+(`crates/persistence/topology/src/repositories/proposals.rs:313`), and the
+revision inserts do not bind an evidence column
+(`crates/persistence/topology/src/repositories/panels.rs:530`,
+`crates/persistence/topology/src/repositories/panels.rs:628`,
+`crates/persistence/topology/src/repositories/mosaics.rs:490`). A `NOT NULL`
+column would therefore lack a writer on the accept path, and every acceptance
+would fail.
+
+A row whose reference is null does not project an envelope, and the non-optional contract
+fields `RelationProposal.evidence`,
+`PanelGroupRevision.representativeEvidenceId`, and
+`MosaicRevision.capturedUnionEvidenceId` are projectable only for rows written by
+a path that stores one. That path writes the envelope in the same transaction as
+the subject, which the foreign key already requires. Rows predating the column,
+and the ingestion-created singleton panel revision that lacks a proposal to
+inherit an envelope from, keep a null reference until an accept-path writer
+supplies one.
+
+The envelope row is written in the same transaction as the subject that
+references it, so batching it behind its subject is not available at any tier.
+Its content is re-derivable from the inputs `input_digest` covers, so a value
+lost to a crash costs a recomputation rather than user knowledge. Missing-evidence
+codes supplied by a caller on `relation_proposal.manual.create` are Tier 1: the
+disclosure is a user decision no scan re-derives, and it commits with the
+proposal and the envelope. The Tier 1 record stays the user decision, which is
+the proposal state, actor, reason code, and typed review overrides on
+`relation_proposal`. Principle V of the project governance document defines these
+tiers.
 
 ### `relation_decision_snapshot`
 
