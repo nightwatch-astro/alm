@@ -787,6 +787,10 @@ One row is the `RelationEvidence` envelope the contract projects on a
 `RelationProposal`, a `PanelGroupRevision`, and a `MosaicRevision`. It is keyed by
 its own `id`, so each subject references it by UUID.
 
+`crates/persistence/core/migrations/0001_initial_schema.sql` creates every other
+table in this document. It creates neither `relation_evidence`, its three child
+tables, nor the three columns that reference it, and no code writes them.
+
 | Field | Type | Constraints and meaning |
 |---|---|---|
 | `id` | UUID | Public evidence identity; the contract `evidenceId` |
@@ -900,15 +904,22 @@ revision inserts do not bind an evidence column
 column would therefore lack a writer on the accept path, and every acceptance
 would fail.
 
-A row whose reference is null does not project an envelope, and the non-optional contract
-fields `RelationProposal.evidence`,
-`PanelGroupRevision.representativeEvidenceId`, and
-`MosaicRevision.capturedUnionEvidenceId` are projectable only for rows written by
-a path that stores one. That path writes the envelope in the same transaction as
-the subject, which the foreign key already requires. Rows predating the column,
-and the ingestion-created singleton panel revision that lacks a proposal to
-inherit an envelope from, keep a null reference until an accept-path writer
-supplies one.
+A row whose reference is null does not project an envelope, so the two revision
+contract fields are optional. `PanelGroupRevision.representativeEvidenceId` and
+`MosaicRevision.capturedUnionEvidenceId` are omitted for a revision that holds no
+envelope, and a client shows that revision without the reasoning behind it.
+`crates/app/inbox/src/session_materialization/apply.rs:278` writes exactly such a
+revision on every ingestion: the singleton panel group it creates has no proposal
+and no measured geometry.
+
+`RelationProposal.evidence` stays required, because one path writes every proposal
+and computes the envelope first. `insert_proposal`
+(`crates/persistence/topology/src/repositories/proposals.rs:249`) has no caller
+outside `crates/persistence/topology/src/test_support.rs`, so no stored proposal
+predates the column, and the writer that lands proposal generation commits the
+envelope in the proposal's transaction, which the foreign key already requires. A
+proposal row with a null `evidence_id` is a write bug, and a read rejects it with
+`relation_evidence.not_found` rather than projecting a fabricated envelope.
 
 The envelope row is written in the same transaction as the subject that
 references it, so batching it behind its subject is not available at any tier.

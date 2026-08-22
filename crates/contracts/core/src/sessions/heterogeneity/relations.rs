@@ -128,7 +128,11 @@ pub struct PanelGroupRevision {
     pub cross_target_association_id: Option<CanonicalId>,
     pub session_count: u32,
     pub representative_session_id: CanonicalId,
-    pub representative_evidence_id: CanonicalId,
+    /// Absent on a revision written without an evidence envelope, which
+    /// `crates/app/inbox/src/session_materialization/apply.rs` does for every
+    /// ingestion-created singleton panel group.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub representative_evidence_id: Option<CanonicalId>,
     pub matching_settings_revision: u64,
     pub accepted_at: Rfc3339Timestamp,
     pub accepted_by: CanonicalId,
@@ -154,7 +158,9 @@ pub struct MosaicRevision {
     pub cross_target_association_id: Option<CanonicalId>,
     pub panel_count: u32,
     pub edge_count: u32,
-    pub captured_union_evidence_id: CanonicalId,
+    /// Absent on a revision written without an evidence envelope.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captured_union_evidence_id: Option<CanonicalId>,
     pub matching_settings_revision: u64,
     pub accepted_at: Rfc3339Timestamp,
     pub accepted_by: CanonicalId,

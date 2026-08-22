@@ -98,7 +98,7 @@ PanelGroupRevision {
   crossTargetAssociationId?: string,
   sessionCount: uint32,
   representativeSessionId: string,
-  representativeEvidenceId: string,
+  representativeEvidenceId?: string,
   matchingSettingsRevision: uint64,
   acceptedAt: timestamp,
   acceptedBy: string,
@@ -129,7 +129,7 @@ MosaicRevision {
   crossTargetAssociationId?: string,
   panelCount: uint32,
   edgeCount: uint32,
-  capturedUnionEvidenceId: string,
+  capturedUnionEvidenceId?: string,
   matchingSettingsRevision: uint64,
   acceptedAt: timestamp,
   acceptedBy: string,
@@ -456,6 +456,10 @@ complete tuple.
   `relation_proposal.query`: an ingestion-created singleton panel group lacks a
   proposal, and an accepted revision references an envelope of its own rather
   than the proposal's.
+- Notes: both fields are optional. A revision written without an envelope omits
+  the field, and a client shows the revision without the reasoning behind it.
+  `crates/app/inbox/src/session_materialization/apply.rs` writes such a revision
+  for every ingestion-created singleton panel group.
 
 ### `relation_proposal.list`
 
