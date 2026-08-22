@@ -563,6 +563,17 @@ async fn fetch_plan(
     })
 }
 
+/// Read a plan's state by row id. `None` when no such row exists.
+///
+/// # Errors
+/// Returns [`DbError::Database`] on query failure.
+pub async fn plan_state(conn: &mut SqliteConnection, plan_row_id: i64) -> DbResult<Option<String>> {
+    Ok(sqlx::query_scalar("SELECT state FROM materialization_update_plan WHERE row_id = ?")
+        .bind(plan_row_id)
+        .fetch_optional(&mut *conn)
+        .await?)
+}
+
 /// CAS state transition.
 pub async fn transition_plan_state(
     conn: &mut SqliteConnection,

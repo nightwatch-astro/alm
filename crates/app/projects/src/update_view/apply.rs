@@ -225,21 +225,75 @@ pub async fn run_apply_loop(
     }
 }
 
-/// Move a plan out of `applying` on an error path, reporting failure to do so.
+/// Where a plan ended up after an error path tried to move it out of `applying`.
+#[derive(Debug, PartialEq, Eq)]
+enum LeftApplying {
+    /// The transition committed.
+    Transitioned,
+    /// Another writer moved the plan out of `applying` first, so there is
+    /// nothing to correct. `cancel_update_view` does this to a running plan.
+    /// `observed` is the state now on the row, or `None` when the row is gone.
+    AlreadyLeft { observed: Option<String> },
+    /// The row is still `applying` and nothing remains that will move it.
+    Stuck,
+}
+
+/// Move a plan out of `applying` on an error path.
 ///
 /// The caller owes the user the original failure, so this cannot return an error
 /// of its own. `transition_plan_state` is the only mechanism that moves a plan
-/// out of `applying`: when it or its commit fails, the row stays `applying` with
-/// nothing left to move it, and boot reconciliation cannot tell that state from
-/// a mutation still in flight. The log line is the only remaining signal.
-async fn leave_applying(pool: &SqlitePool, plan_row_id: i64, new_state: &str) {
-    if let Err(e) = try_leave_applying(pool, plan_row_id, new_state).await {
-        tracing::error!(
+/// out of `applying`, so a plan left in that state after this call is
+/// indistinguishable at boot from a mutation still in flight, and the log line
+/// is its only trace. The returned value is what tests assert on.
+async fn leave_applying(pool: &SqlitePool, plan_row_id: i64, new_state: &str) -> LeftApplying {
+    let Err(e) = try_leave_applying(pool, plan_row_id, new_state).await else {
+        return LeftApplying::Transitioned;
+    };
+
+    let outcome = classify_failure_to_leave(pool, plan_row_id, &e).await;
+    match &outcome {
+        LeftApplying::AlreadyLeft { observed } => tracing::info!(
+            plan_row_id,
+            new_state,
+            observed = observed.as_deref().unwrap_or("<row gone>"),
+            "another writer moved the plan out of 'applying' first"
+        ),
+        LeftApplying::Stuck => tracing::error!(
             plan_row_id,
             new_state,
             error = %e,
             "plan is stuck in 'applying': nothing remains that will move it"
-        );
+        ),
+        LeftApplying::Transitioned => {}
+    }
+    outcome
+}
+
+/// A failure to transition is only a stuck plan when the row is still
+/// `applying`; a lost race against `cancel_update_view` is not.
+async fn classify_failure_to_leave(
+    pool: &SqlitePool,
+    plan_row_id: i64,
+    error: &DbError,
+) -> LeftApplying {
+    let Ok(mut conn) = pool.acquire().await else {
+        return LeftApplying::Stuck;
+    };
+    match repo::plan_state(&mut conn, plan_row_id).await {
+        Ok(None) => LeftApplying::AlreadyLeft { observed: None },
+        Ok(Some(state)) if state != "applying" => {
+            LeftApplying::AlreadyLeft { observed: Some(state) }
+        }
+        Ok(Some(_)) => LeftApplying::Stuck,
+        Err(read_error) => {
+            tracing::error!(
+                plan_row_id,
+                transition_error = %error,
+                read_error = %read_error,
+                "could not read plan state after a failed transition out of 'applying'"
+            );
+            LeftApplying::Stuck
+        }
     }
 }
 
@@ -371,10 +425,94 @@ async fn finalize_snapshot(
 
 #[cfg(test)]
 mod tests {
-    use persistence_core::{test_support::setup_db, DbError};
+    use super::LeftApplying;
+    use persistence_core::{test_support::setup_db, Database, DbError};
+    use persistence_topology::test_support as support;
+
+    /// Insert a `materialization_update_plan` row in `state`, returning its row id.
+    async fn plan_in_state(db: &Database, state: &str) -> i64 {
+        let pool = db.pool();
+        let project_row_id = support::insert_spec062_project(pool, "proj-leave").await;
+        let actor_row_id = support::insert_actor(pool, "actor-leave").await;
+        let seq = support::insert_sequence(pool).await;
+
+        let revision_row_id: i64 = sqlx::query_scalar(
+            "INSERT INTO project_membership_revision
+                 (public_id, project_row_id, revision_number, actor_row_id,
+                  created_sequence, created_at)
+             VALUES ('rev-leave', ?, 1, ?, ?, '2026-07-22T00:00:00.000000Z')
+             RETURNING row_id",
+        )
+        .bind(project_row_id)
+        .bind(actor_row_id)
+        .bind(seq)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+        sqlx::query_scalar(
+            "INSERT INTO materialization_update_plan
+                 (public_id, project_row_id, target_membership_revision_row_id, state,
+                  content_digest, session_count, item_count, source_frame_count,
+                  source_byte_count, remaining_session_count, actor_row_id,
+                  created_sequence, created_at)
+             VALUES ('plan-leave', ?, ?, ?, 'digest', 0, 0, 0, 0, 0, ?, ?, \
+                     '2026-07-22T00:00:00.000000Z')
+             RETURNING row_id",
+        )
+        .bind(project_row_id)
+        .bind(revision_row_id)
+        .bind(state)
+        .bind(actor_row_id)
+        .bind(seq)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
 
     #[tokio::test]
-    async fn leaving_applying_surfaces_a_transition_that_matched_no_row() {
+    async fn leaving_applying_transitions_a_plan_that_is_still_applying() {
+        let db = setup_db().await;
+        let plan_row_id = plan_in_state(&db, "applying").await;
+
+        assert_eq!(
+            super::leave_applying(db.pool(), plan_row_id, "stopped").await,
+            LeftApplying::Transitioned
+        );
+
+        let mut conn = db.pool().acquire().await.unwrap();
+        assert_eq!(
+            super::repo::plan_state(&mut conn, plan_row_id).await.unwrap().as_deref(),
+            Some("stopped")
+        );
+    }
+
+    /// `cancel_update_view` moves a running plan out of `applying` while the
+    /// loop is still working, so the loop's own transition loses the race. That
+    /// plan is not stuck and must not be reported as stuck.
+    #[tokio::test]
+    async fn a_plan_another_writer_already_moved_is_not_stuck() {
+        let db = setup_db().await;
+        let plan_row_id = plan_in_state(&db, "stopped").await;
+
+        assert_eq!(
+            super::leave_applying(db.pool(), plan_row_id, "stopped").await,
+            LeftApplying::AlreadyLeft { observed: Some("stopped".to_owned()) }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_plan_row_that_is_gone_is_not_stuck() {
+        let db = setup_db().await;
+
+        assert_eq!(
+            super::leave_applying(db.pool(), 999, "stopped").await,
+            LeftApplying::AlreadyLeft { observed: None }
+        );
+    }
+
+    #[tokio::test]
+    async fn the_transition_result_is_not_discarded() {
         let db = setup_db().await;
 
         let err = super::try_leave_applying(db.pool(), 999, "stopped")

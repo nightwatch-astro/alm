@@ -205,9 +205,10 @@ impl Database {
         let dest_str = dest.display().to_string().replace('\'', "''");
         let stmt = sqlx::AssertSqlSafe(format!("VACUUM INTO '{dest_str}'"));
         sqlx::query(stmt).execute(&self.pool).await?;
-        // A URI in-memory source database makes `VACUUM INTO` report success and
-        // write nothing, so the statement result alone does not establish that the
-        // backup exists. The caller relies on this file as rollback material.
+        // Observed with a `Database::in_memory()` source on this workspace's sqlx
+        // build: `VACUUM INTO` reports success and writes nothing. The statement
+        // result therefore does not establish that the backup exists, and the
+        // caller relies on this file as rollback material.
         if !dest.is_file() {
             return Err(DbError::Database(sqlx::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -397,8 +398,8 @@ mod tests {
         assert!(err.to_string().contains("no-such-dir"), "error must name the destination: {err}");
     }
 
-    /// `VACUUM INTO` reports success and writes nothing when the source is a URI
-    /// in-memory database, so success is decided by the file, not the statement.
+    /// With a `Database::in_memory()` source, `VACUUM INTO` reports success and
+    /// writes nothing, so success is decided by the file, not the statement.
     #[tokio::test]
     async fn backup_to_fails_when_the_statement_writes_no_file() {
         let db = super::Database::in_memory().await.expect("in-memory connect");
