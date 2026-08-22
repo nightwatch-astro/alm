@@ -110,6 +110,7 @@ dependencies = [
  "filetime",
  "fs_executor",
  "fs_inventory",
+ "fs_pathsafe",
  "hex",
  "patterns",
  "persistence_calibration",
@@ -1421,6 +1422,7 @@ dependencies = [
  "contracts_core",
  "domain_core",
  "fs_inventory",
+ "fs_pathsafe",
  "futures-util",
  "persistence_core",
  "persistence_inbox",
@@ -2030,6 +2032,7 @@ version = "0.1.0"
 dependencies = [
  "camino",
  "proptest",
+ "safe-filename",
  "tempfile",
 ]
 

@@ -878,8 +878,13 @@ export const commands = {
 	 *  a file (mirrors `log.export`). Streams backend-side; only the path and count
 	 *  cross IPC.
 	 * 
+	 *  The destination passes `fs_pathsafe::export_dest`, so an existing file is
+	 *  refused rather than replaced and the write cannot leave the canonicalized
+	 *  parent directory.
+	 * 
 	 *  # Errors
-	 *  Returns `Err(ContractError)` on database or filesystem failure.
+	 *  Returns `Err(ContractError)` on a refused destination, database failure, or
+	 *  filesystem failure.
 	 */
 	auditExport: (filePath: string, filters: {
 	entityType?: string | null,
@@ -922,8 +927,8 @@ export const commands = {
 	 *  `log.export` — export filtered log entries to a JSON file.
 	 * 
 	 *  # Errors
-	 *  Returns `Err(String)` with code `"path.parent.missing"`, `"path.write.denied"`,
-	 *  `"range.invalid"`, or `"format.unsupported"`.
+	 *  Returns `Err(ContractError)` with code `path.parent.missing`,
+	 *  `path.write.denied`, `range.invalid`, or `format.unsupported`.
 	 */
 	logExport: (requestId: string, filePath: string, format: string | null, levelMin: "debug" | "info" | "warn" | "error" | null, since: string | null, until: string | null, includeDiagnostics: boolean | null) => typedError<LogExportResponse_Serialize, ContractError_Serialize>(__TAURI_INVOKE("log_export", { requestId, filePath, format, levelMin, since, until, includeDiagnostics })),
 	/**
