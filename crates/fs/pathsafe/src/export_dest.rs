@@ -383,25 +383,26 @@ mod tests {
         assert!(real.join("out.json").exists());
     }
 
+    /// `create_temp` relies on `create_new` refusing a name already taken by a
+    /// symlink. Naming the temporary path this test occupies would depend on
+    /// [`TEMP_SEQ`], which other tests share whenever they run in one process.
     #[cfg(unix)]
     #[test]
-    fn a_symlink_planted_at_the_temporary_path_is_not_written_through() {
+    fn create_new_refuses_a_symlink_instead_of_writing_through_it() {
         let (_guard, dir) = tempdir();
         let (_outside_guard, outside_dir) = tempdir();
         let outside = outside_dir.join("target.json");
         std::fs::write(&outside, b"outside").expect("seed");
+        let planted = dir.join(".export-planted.tmp");
+        std::os::unix::fs::symlink(&outside, &planted).expect("plant symlink");
 
-        // Occupy every name create_temp will try, so it cannot follow any of them.
-        let pid = std::process::id();
-        let start = TEMP_SEQ.load(Ordering::Relaxed);
-        for seq in start..start + 8 {
-            std::os::unix::fs::symlink(&outside, dir.join(format!(".export-{pid}-{seq}.tmp")))
-                .expect("plant symlink");
-        }
+        let err = File::options()
+            .write(true)
+            .create_new(true)
+            .open(&planted)
+            .expect_err("create_new refuses the planted symlink");
 
-        let validated = validate_export_destination(&dir.join("out.json")).expect("valid");
-        let err = write_hello(&validated).expect_err("temp creation refused");
-        assert!(matches!(err, ExportWriteError::Io(_)), "{err:?}");
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(std::fs::read(&outside).expect("read"), b"outside");
     }
 
