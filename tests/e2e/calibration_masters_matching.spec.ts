@@ -254,6 +254,9 @@ test.describe('calibration · masters listing + matching (spec 040 / 007)', () =
     // toggle — the ranking model has no camera-identity dimension to gate
     // (crates/calibration/core/src/ranking.rs).
     await expect(page.getByText('Binning', { exact: true })).toBeVisible();
+    await expect(page.getByText('Gain', { exact: true })).toBeVisible();
+    await expect(page.getByText('Offset', { exact: true })).toBeVisible();
+    await expect(page.getByText('Camera', { exact: true })).toHaveCount(0);
 
     // Soft tolerances are numeric inputs seeded from the persisted singleton
     // (temperatureToleranceC 5, agingLimitDays 365).
