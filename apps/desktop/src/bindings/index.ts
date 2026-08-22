@@ -743,27 +743,28 @@ export const commands = {
 	/**
 	 *  `plans.apply.direct` — channel-free variant of `plans.apply` (spec 037).
 	 * 
-	 *  Auto-approves the plan if it is still `ready_for_review`, then runs the
-	 *  same background executor and writes the same durable audit trail as
-	 *  `plans_apply_real` — it just takes no `tauri::ipc::Channel`, so it can be
-	 *  invoked directly by the Layer-2 `WebDriver` E2E bridge (which could build
-	 *  a `Channel`, but should not have to reach into Tauri internals to do it)
-	 *  or by any UI surface that only needs a fire-and-poll apply (poll
-	 *  `plans.apply.status` for the durable terminal counts) rather than a live
-	 *  progress stream.
+	 *  Runs the same background executor, the same approval-token gate, and the
+	 *  same durable audit trail as `plans_apply_real` — it just takes no
+	 *  `tauri::ipc::Channel`, so it can be invoked directly by the Layer-2
+	 *  `WebDriver` E2E bridge (which could build a `Channel`, but should not have
+	 *  to reach into Tauri internals to do it) or by any UI surface that only
+	 *  needs a fire-and-poll apply (poll `plans.apply.status` for the durable
+	 *  terminal counts) rather than a live progress stream.
 	 * 
-	 *  Intended for archive/cleanup plans, which — unlike inbox plans — have no
-	 *  `inbox.plan.apply` channel-free equivalent to route through.
+	 *  The caller supplies the `approval_token` returned by `plans.approve`. This
+	 *  command must never mint that token itself: the gate in `apply_plan` is the
+	 *  only evidence that a human approved the plan (constitution §II).
 	 * 
 	 *  # Errors
 	 * 
 	 *  Returns `Err(ContractError)` with:
 	 *  - `"plan.not_found"` — plan not found.
-	 *  - `"plan.invalid_state"` — plan is not `ready_for_review`/`approved` (e.g.
-	 *    already applied/discarded/applying), or has no items.
+	 *  - `"plan.invalid_state"` — plan is not `approved` (e.g. still
+	 *    `ready_for_review`, or already applied/discarded/applying).
+	 *  - `"plan.approval.stale"` — approval token absent, or not this plan's.
 	 *  - `"plan.conflict.overlap"` — concurrent apply already running.
 	 */
-	plansApplyDirect: (planId: string) => typedError<PlanApplyResponse, ContractError_Serialize>(__TAURI_INVOKE("plans_apply_direct", { planId })),
+	plansApplyDirect: (planId: string, approvalToken: string) => typedError<PlanApplyResponse, ContractError_Serialize>(__TAURI_INVOKE("plans_apply_direct", { planId, approvalToken })),
 	/**
 	 *  `plans.cancel` — cancel an in-flight apply (US3, T033).
 	 * 

@@ -119,6 +119,14 @@ pub(super) fn verify_approval_token(
     stored_token: Option<&str>,
     supplied_token: &str,
 ) -> Result<(), ContractError> {
+    if supplied_token.is_empty() {
+        return Err(ContractError::new(
+            ErrorCode::PlanApprovalStale,
+            "no approval token supplied; approve the plan and pass its token".to_owned(),
+            ErrorSeverity::Blocking,
+            false,
+        ));
+    }
     match stored_token {
         None => Err(ContractError::new(
             ErrorCode::PlanApprovalStale,
