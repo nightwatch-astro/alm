@@ -3872,7 +3872,13 @@ export type ErrorCode = "validation.request_envelope_invalid" | "dev_mode.disabl
  *  Cross-cutting across categories — an inbox root inside a light-frames
  *  root is still an overlap.
  */
-"path.overlaps_existing" | "inbox.item.not_found" | "inbox.has.open.plan" | "inbox.item.no_plan" | "inbox.no_destination_root" | "inbox.destination_root_required" | "inbox.invalid_destination_root" | "inbox.missing_path_attributes" | "inbox.destination_collision" | "metadata.unreadable" | "classification.ambiguous" | "classification.stale" | "pattern.unset" | "pattern.empty" | "pattern.invalid" | "pattern.invalid.unicode" | "token.unknown" | "file.not_found" | "note.content_too_large" | "session.not_found" | "session.mixed_state" | "operation.handler_duplicate" | "operation.not_found" | 
+"path.overlaps_existing" | "inbox.item.not_found" | "inbox.has.open.plan" | "inbox.item.no_plan" | "inbox.no_destination_root" | "inbox.destination_root_required" | "inbox.invalid_destination_root" | "inbox.missing_path_attributes" | 
+/**
+ *  `inbox.confirm`: two or more source files resolve onto one destination
+ *  path, so the plan cannot be applied without one item claiming another's
+ *  path. Refused at plan-build time (Constitution II).
+ */
+"inbox.destination_collision" | "metadata.unreadable" | "classification.ambiguous" | "classification.stale" | "pattern.unset" | "pattern.empty" | "pattern.invalid" | "pattern.invalid.unicode" | "token.unknown" | "file.not_found" | "note.content_too_large" | "session.not_found" | "session.mixed_state" | "operation.handler_duplicate" | "operation.not_found" | 
 /**  Plan approval is outstanding (sent as `ContractError`, not `TransitionError`). */
 "plan.approval_required" | "plan.approval.stale" | 
 /**
