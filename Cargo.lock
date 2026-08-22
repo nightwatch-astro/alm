@@ -2032,6 +2032,7 @@ name = "fs_pathsafe"
 version = "0.1.0"
 dependencies = [
  "camino",
+ "path-clean",
  "proptest",
  "safe-filename",
  "tempfile",
