@@ -225,16 +225,21 @@ pub fn build_app() -> tauri::App {
         // plugin's own (skipped) fern dispatch.
         .plugin(tauri_plugin_log::Builder::new().skip_logger().build());
 
-    // Tauri MCP bridge plugin (@hypothesi tauri-plugin-mcp-bridge) — dev/debug
-    // builds only. Runs a WebSocket server on 0.0.0.0:9223 that the
+    // Tauri MCP bridge plugin (@hypothesi tauri-plugin-mcp-bridge) — `dev-tools`
+    // builds only. Runs a WebSocket server from port 9223 that the
     // @hypothesi/tauri-mcp-server MCP server connects to, letting an agent drive
     // the running app for automated UI testing. Requires `withGlobalTauri`, which
     // is enabled only via the dev-only `tauri.dev.conf.json` overlay (never in the
-    // shipped config). `debug_assertions` is off in release builds, so this
-    // surface is absent from shipped binaries.
-    #[cfg(debug_assertions)]
+    // shipped config). The server is unauthenticated and `execute_js` reaches
+    // every command handler, so it binds loopback only: the plugin's default
+    // `Config` binds 0.0.0.0, which would put that surface on the LAN. The
+    // feature also gates the dependency itself, so release binaries do not link
+    // the plugin (`Cargo.toml` `dev-tools`, `capabilities/dev/mcp-bridge.json`).
+    #[cfg(feature = "dev-tools")]
     {
-        tb = tb.plugin(tauri_plugin_mcp_bridge::init());
+        tb = tb.plugin(tauri_plugin_mcp_bridge::init_with_config(
+            tauri_plugin_mcp_bridge::Config::localhost_only(),
+        ));
     }
 
     // E2E gate: embed the WebDriver server only when built with --features e2e.

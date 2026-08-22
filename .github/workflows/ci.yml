@@ -687,6 +687,14 @@ jobs:
         if: runner.os == 'Linux' && needs.changes.outputs.rust == 'true'
         run: just check-generated
 
+      # The release gate runs this too, but only on release-please branches and
+      # tags, so a change that ships the dev surface would reach main unobserved.
+      - name: Dev surface absent from a default-feature build
+        # Rust-lane only: the check resolves the cargo feature graph, so it needs
+        # the pinned toolchain that a scripts-only change does not install.
+        if: runner.os == 'Linux' && needs.changes.outputs.rust == 'true'
+        run: bash scripts/check-dev-surface-absent.sh
+
       # The declaration generator also reads `packages/contracts/schemas/` and
       # `specs/*/contracts/`, neither of which sets the `rust` filter. This leg
       # covers them without the Rust toolchain, system webkit, or cargo cache
