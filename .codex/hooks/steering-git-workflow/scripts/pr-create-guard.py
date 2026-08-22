@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Block non-draft or unlinked agent-issued ``gh pr create`` commands."""
+"""Block non-draft or unlinked agent-issued ``gh pr create`` commands.
+
+Local fork of the ``steering-git-workflow`` package script pinned in
+``apm.lock.yaml``. ``apm install`` overwrites this file. See
+``docs/development/pr-create-guard-fork.md``.
+"""
 
 from __future__ import annotations
 
