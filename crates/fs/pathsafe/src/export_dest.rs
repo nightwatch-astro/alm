@@ -252,7 +252,11 @@ mod tests {
     #[test]
     fn path_without_a_file_name_is_refused() {
         let (_guard, dir) = tempdir();
-        let err = validate_export_destination(&dir.join("..")).unwrap_err();
+        // `join` collapses `..` on a verbatim Windows path, which would leave the
+        // parent directory rather than a path terminating in `..`.
+        let dest = PathBuf::from(format!("{}{}..", dir.display(), std::path::MAIN_SEPARATOR));
+
+        let err = validate_export_destination(&dest).unwrap_err();
         assert_eq!(err, DestinationRejected::NoFileName);
     }
 
