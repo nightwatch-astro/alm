@@ -48,8 +48,8 @@
 - Blank window recovery: restart the dev server; if still blank,
   `pnpm install` with `$env:CI="true"`, relaunch.
 - Tauri MCP bridge (optional, for programmatic driving): launch with
-  `cargo tauri dev --config src-tauri\tauri.dev.conf.json` (bridge on
-  `0.0.0.0:9223`), connect with `driver_session host=localhost port=9223`,
+  `cargo tauri dev --config src-tauri\tauri.dev.conf.json --features dev-tools` (bridge on
+  `127.0.0.1:9223`), connect with `driver_session host=localhost port=9223`,
   invoke commands via `webview_execute_js` →
   `window.__TAURI__.core.invoke('<snake_command>', {args})`. Native folder
   pickers still need `VITE_E2E=1` stand-ins (see Journey 1's doc for the

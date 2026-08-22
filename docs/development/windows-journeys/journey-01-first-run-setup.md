@@ -56,8 +56,8 @@
 
 ### Tauri MCP bridge (if driving the app programmatically instead of pure vision)
 - Launch with the dev overlay so the bridge is live:
-  `cargo tauri dev --config src-tauri\tauri.dev.conf.json` (bridge is
-  `#[cfg(debug_assertions)]`, WebSocket on `0.0.0.0:9223`).
+  `cargo tauri dev --config src-tauri\tauri.dev.conf.json --features dev-tools` (bridge needs the
+  `dev-tools` feature; WebSocket on `127.0.0.1:9223`).
 - Connect via `driver_session host=localhost port=9223` — WSL runs in
   mirrored networking mode (`networkingMode=mirrored` in `.wslconfig`), so
   `localhost` reaches Windows services directly; the old NAT gateway-IP
