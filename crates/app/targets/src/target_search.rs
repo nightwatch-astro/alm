@@ -108,12 +108,23 @@ fn hit_to_suggestion(hit: SearchHit) -> TargetSuggestion {
 
 // ── search ──────────────────────────────────────────────────────────────────
 
+const DEFAULT_SEARCH_LIMIT: usize = 20;
+
+/// `target.search.json` §Request declares `limit` as `maximum: 100`. Requests
+/// reaching this use case are not schema-validated, so the ceiling is enforced
+/// here; `MAX_FETCH_CAP` below is only sound while `limit <= MAX_FETCH_CAP`.
+const MAX_SEARCH_LIMIT: usize = 100;
+
+/// Upper bound on the over-fetch that feeds the post-filter.
+const MAX_FETCH_CAP: usize = 500;
+
 /// `target.search` — ranked typeahead suggestions from the shared redb resolve
 /// cache (seed + anything the facade has resolved/warmed, spec 052 P1 D1/T012).
 ///
-/// Respects `limit` (default 20, see the request DTO). A blank query yields an
-/// empty suggestion list. Both optional filters are applied as a post-filter and
-/// AND together: `catalog_filter` against the target's catalogue membership
+/// Respects `limit` (default 20, contract maximum 100; a larger request is
+/// clamped down to 100). A blank query yields an empty suggestion list. Both
+/// optional filters are applied as a post-filter and AND together:
+/// `catalog_filter` against the target's catalogue membership
 /// (derived from its alias designations) and `type_filter` against the object
 /// type. Over-fetches a bounded multiple of `limit` from the cache before
 /// filtering, so a narrow filter still fills the page.
@@ -126,14 +137,18 @@ pub async fn search(
     cache: &dyn simbad_resolver::Cache,
     req: &TargetSearchRequest,
 ) -> Result<TargetSearchResponse, ContractError> {
-    let limit = if req.limit == 0 { 20 } else { req.limit as usize };
+    let limit = if req.limit == 0 {
+        DEFAULT_SEARCH_LIMIT
+    } else {
+        (req.limit as usize).min(MAX_SEARCH_LIMIT)
+    };
 
     let catalog_filter = &req.catalog_filter;
     let type_filter = &req.type_filter;
     let fetch_cap = if catalog_filter.is_empty() && type_filter.is_empty() {
         limit
     } else {
-        (limit.saturating_mul(8)).clamp(limit, 500)
+        limit.saturating_mul(8).min(MAX_FETCH_CAP)
     };
 
     let hits = cache.search(&req.query, fetch_cap).await.map_err(|e| cache_err(&e))?;
@@ -302,6 +317,18 @@ mod tests {
         r.limit = 0;
         let resp = search(&cache, &r).await.unwrap();
         assert_eq!(resp.suggestions.len(), 2);
+    }
+
+    /// bd astro-plan-3v3r.11.26: an over-contract `limit` combined with a
+    /// filter made the over-fetch clamp's min exceed its max and panicked.
+    #[tokio::test]
+    async fn search_limit_above_the_contract_maximum_with_a_filter_does_not_panic() {
+        let cache = seeded_cache().await;
+        let mut r = req("NGC");
+        r.limit = 501;
+        r.type_filter = vec![TargetObjectType::EmissionNebula];
+        let resp = search(&cache, &r).await.unwrap();
+        assert_eq!(resp.suggestions.len(), 1);
     }
 
     #[tokio::test]
