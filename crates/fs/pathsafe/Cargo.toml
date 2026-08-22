@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 camino = { workspace = true }
+path-clean = { workspace = true }
 safe-filename = { path = "../../safe-filename" }
 
 [dev-dependencies]
