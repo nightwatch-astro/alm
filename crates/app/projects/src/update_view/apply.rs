@@ -16,6 +16,7 @@ use sqlx::SqlitePool;
 
 use contracts_core::{error_code::ErrorCode, ContractError, ErrorSeverity};
 use domain_core::ids::Timestamp;
+use persistence_core::DbError;
 use persistence_plans::repositories::update_view as repo;
 use persistence_sessions::repositories::{change_sequence, tx};
 
@@ -123,10 +124,6 @@ async fn apply_inner(
 /// absolute source path and destination root path for a plan item. The Tauri
 /// adapter supplies these from the registered library-root and destination-root
 /// paths. Tests may supply a closure that returns real temp-dir paths.
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "linear per-item apply loop with failure taxonomy and lease checks"
-)]
 pub async fn run_apply_loop(
     pool: &SqlitePool,
     plan_id: &str,
@@ -202,13 +199,7 @@ pub async fn run_apply_loop(
                 installed.push((entry.row_id, entry_row_id, entry.relative_path.clone(), fp));
             }
             Err(e) => {
-                let mut c =
-                    pool.acquire().await.map_err(|e2| app_core_errors::db_err(e2.into()))?;
-                tx::enable_foreign_keys(&mut c).await.map_err(app_core_errors::db_err)?;
-                tx::begin_immediate(&mut c).await.map_err(app_core_errors::db_err)?;
-                let _ =
-                    repo::transition_plan_state(&mut *c, plan.row_id, "applying", "stopped").await;
-                let _ = tx::commit(&mut c).await;
+                leave_applying(pool, plan.row_id, "stopped").await;
                 return Err(e);
             }
         }
@@ -228,14 +219,45 @@ pub async fn run_apply_loop(
         }
         Err(e) => {
             tx::rollback(&mut conn).await;
-            let mut c = pool.acquire().await.map_err(|e2| app_core_errors::db_err(e2.into()))?;
-            tx::enable_foreign_keys(&mut c).await.map_err(app_core_errors::db_err)?;
-            tx::begin_immediate(&mut c).await.map_err(app_core_errors::db_err)?;
-            let _ = repo::transition_plan_state(&mut *c, plan.row_id, "applying", "failed").await;
-            let _ = tx::commit(&mut c).await;
+            leave_applying(pool, plan.row_id, "failed").await;
             Err(e)
         }
     }
+}
+
+/// Move a plan out of `applying` on an error path, reporting failure to do so.
+///
+/// The caller owes the user the original failure, so this cannot return an error
+/// of its own. `transition_plan_state` is the only mechanism that moves a plan
+/// out of `applying`: when it or its commit fails, the row stays `applying` with
+/// nothing left to move it, and boot reconciliation cannot tell that state from
+/// a mutation still in flight. The log line is the only remaining signal.
+async fn leave_applying(pool: &SqlitePool, plan_row_id: i64, new_state: &str) {
+    if let Err(e) = try_leave_applying(pool, plan_row_id, new_state).await {
+        tracing::error!(
+            plan_row_id,
+            new_state,
+            error = %e,
+            "plan is stuck in 'applying': nothing remains that will move it"
+        );
+    }
+}
+
+async fn try_leave_applying(
+    pool: &SqlitePool,
+    plan_row_id: i64,
+    new_state: &str,
+) -> Result<(), DbError> {
+    let mut conn = pool.acquire().await?;
+    tx::enable_foreign_keys(&mut conn).await?;
+    tx::begin_immediate(&mut conn).await?;
+    if let Err(e) =
+        repo::transition_plan_state(&mut *conn, plan_row_id, "applying", new_state).await
+    {
+        tx::rollback(&mut conn).await;
+        return Err(e);
+    }
+    tx::commit(&mut conn).await
 }
 
 async fn finalize_snapshot(
@@ -345,4 +367,20 @@ async fn finalize_snapshot(
         .map_err(app_core_errors::db_err)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use persistence_core::{test_support::setup_db, DbError};
+
+    #[tokio::test]
+    async fn leaving_applying_surfaces_a_transition_that_matched_no_row() {
+        let db = setup_db().await;
+
+        let err = super::try_leave_applying(db.pool(), 999, "stopped")
+            .await
+            .expect_err("a transition that matched no row must not read as success");
+
+        assert!(matches!(err, DbError::CasFailed(_)), "expected a CAS failure, got {err}");
+    }
 }

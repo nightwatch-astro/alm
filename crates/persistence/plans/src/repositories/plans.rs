@@ -484,17 +484,22 @@ pub async fn set_reopened(pool: &SqlitePool, plan_id: &str) -> DbResult<()> {
 ///
 /// # Errors
 ///
-/// Returns [`persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::NotFound`] when no plan carries
+/// `plan_id`, and [`persistence_core::DbError::Database`] on connection failure.
 pub async fn set_chosen_framing_id(
     pool: &SqlitePool,
     plan_id: &str,
     framing_id: &str,
 ) -> DbResult<()> {
-    sqlx::query("UPDATE plans SET chosen_framing_id = ? WHERE id = ?")
+    let rows = sqlx::query("UPDATE plans SET chosen_framing_id = ? WHERE id = ?")
         .bind(framing_id)
         .bind(plan_id)
         .execute(pool)
         .await?;
+
+    if rows.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!("plan {plan_id}")));
+    }
     Ok(())
 }
 
@@ -591,6 +596,20 @@ mod tests {
     }
 
     // ── chosen_framing_id (F-Framing-10) ────────────────────────────────────
+
+    #[tokio::test]
+    async fn set_chosen_framing_id_reports_a_plan_that_is_gone() {
+        let db = setup_db().await;
+
+        let err = set_chosen_framing_id(db.pool(), "plan-gone", "framing-1")
+            .await
+            .expect_err("an attribution write that matches no plan must not report success");
+
+        assert!(
+            matches!(err, DbError::NotFound(ref m) if m.contains("plan-gone")),
+            "error must name the missing plan: {err}"
+        );
+    }
 
     #[tokio::test]
     async fn chosen_framing_id_defaults_to_none_and_round_trips() {

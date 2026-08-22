@@ -199,11 +199,21 @@ impl Database {
     /// # Errors
     ///
     /// Returns `persistence_core::DbError::Database` if the statement fails (e.g. destination
-    /// already exists, or disk full).
+    /// already exists, the destination directory does not exist, or disk full), or if the
+    /// statement reports success without leaving a file at `dest`.
     pub async fn backup_to(&self, dest: &std::path::Path) -> DbResult<()> {
         let dest_str = dest.display().to_string().replace('\'', "''");
         let stmt = sqlx::AssertSqlSafe(format!("VACUUM INTO '{dest_str}'"));
         sqlx::query(stmt).execute(&self.pool).await?;
+        // A URI in-memory source database makes `VACUUM INTO` report success and
+        // write nothing, so the statement result alone does not establish that the
+        // backup exists. The caller relies on this file as rollback material.
+        if !dest.is_file() {
+            return Err(DbError::Database(sqlx::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("VACUUM INTO reported success but wrote no file at {}", dest.display()),
+            ))));
+        }
         Ok(())
     }
 
@@ -353,5 +363,55 @@ mod tests {
 
         let pending = db.has_pending_migrations().await.expect("has_pending_migrations");
         assert!(pending, "one migration removed: must report pending");
+    }
+
+    async fn file_backed_db(dir: &std::path::Path) -> super::Database {
+        let src = dir.join("src.sqlite3");
+        let db = super::Database::connect(&format!("sqlite://{}?mode=rwc", src.display()))
+            .await
+            .expect("file-backed connect");
+        db.migrate().await.expect("migrate");
+        db
+    }
+
+    #[tokio::test]
+    async fn backup_to_writes_the_requested_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = file_backed_db(dir.path()).await;
+        let dest = dir.path().join("plain.sqlite3");
+
+        db.backup_to(&dest).await.expect("backup");
+
+        assert!(dest.is_file(), "a successful backup must leave a file at {}", dest.display());
+    }
+
+    #[tokio::test]
+    async fn backup_to_rejects_an_absent_destination_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = file_backed_db(dir.path()).await;
+        let dest = dir.path().join("no-such-dir").join("backup.sqlite3");
+
+        let err = db.backup_to(&dest).await.expect_err("absent parent must fail");
+
+        assert!(!dest.exists(), "no file may be created for a rejected backup");
+        assert!(err.to_string().contains("no-such-dir"), "error must name the destination: {err}");
+    }
+
+    /// `VACUUM INTO` reports success and writes nothing when the source is a URI
+    /// in-memory database, so success is decided by the file, not the statement.
+    #[tokio::test]
+    async fn backup_to_fails_when_the_statement_writes_no_file() {
+        let db = super::Database::in_memory().await.expect("in-memory connect");
+        db.migrate().await.expect("migrate");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("plain.sqlite3");
+
+        let err = db.backup_to(&dest).await.expect_err("an unwritten backup must fail");
+
+        assert!(!dest.exists());
+        assert!(
+            err.to_string().contains("wrote no file"),
+            "error must say nothing was written: {err}"
+        );
     }
 }
