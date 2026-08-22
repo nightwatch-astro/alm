@@ -447,6 +447,30 @@ pub async fn list_pending_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Ve
     Ok(ids)
 }
 
+/// Record a user's skip of one still-`pending` item, returning `false` when the
+/// row was no longer `pending`.
+///
+/// Plan counters are deliberately untouched: the executor's skip branch emits
+/// the item's terminal progress event, and `batch_flush_item_states` applies the
+/// `items_skipped` / `items_pending` delta for it. That flush is not gated on
+/// the prior item state, so it stays correct over a row already reading
+/// `skipped` and the delta lands exactly once.
+///
+/// # Errors
+///
+/// Returns [`persistence_core::DbError::Database`] on connection failure.
+pub async fn skip_pending_item(pool: &SqlitePool, plan_id: &str, item_id: &str) -> DbResult<bool> {
+    let rows = sqlx::query(
+        "UPDATE plan_items SET item_state = 'skipped' \
+         WHERE id = ? AND plan_id = ? AND item_state = 'pending'",
+    )
+    .bind(item_id)
+    .bind(plan_id)
+    .execute(pool)
+    .await?;
+    Ok(rows.rows_affected() == 1)
+}
+
 /// Batch-transition all `pending` items to `cancelled`; update plan counters.
 ///
 /// # Errors

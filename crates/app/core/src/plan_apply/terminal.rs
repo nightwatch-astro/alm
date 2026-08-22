@@ -53,7 +53,7 @@ pub(super) async fn handle_completed(
         }
     }
 
-    let counts = cumulative_counts(pool, plan_id, &counts).await;
+    let (counts, _) = cumulative_counts(pool, plan_id, &counts).await;
     let terminal = counts.terminal_state(false).to_owned();
 
     // Origin-specific lifecycle side-effects (only on clean terminals).
@@ -203,7 +203,7 @@ pub(super) async fn handle_cancelled(
     }
 
     // Fetch cumulative counters AFTER batch-cancel so cancelled items are counted.
-    let counts = cumulative_counts(pool, plan_id, &counts).await;
+    let (counts, _) = cumulative_counts(pool, plan_id, &counts).await;
 
     let _ = apply_repo::complete_run(
         pool,
@@ -268,6 +268,14 @@ pub(super) async fn handle_cancelled(
 }
 
 /// Handle `ApplyOutcome::Paused`: persist pause state, emit events.
+///
+/// The pause row is a Tier-1 record: `pause_reason` is what
+/// `revalidate_pause_condition` re-checks on resume, and a boot sweep can only
+/// re-derive the generic `crash` reason. So the paused events are emitted only
+/// after `pause_run` commits. When the write fails the plan row stays
+/// `applying`, which `sweep_crashed_applying_plans` and
+/// `list_crash_interrupted_plans` classify at the next boot, and the long-op
+/// event carries the failure instead of a pause.
 pub(super) async fn handle_paused(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -278,20 +286,49 @@ pub(super) async fn handle_paused(
     counts: TerminalCounts,
 ) {
     let at = Timestamp::now_iso();
-    let counts = cumulative_counts(pool, plan_id, &counts).await;
+    let (counts, pending) = cumulative_counts(pool, plan_id, &counts).await;
 
-    let _ = apply_repo::pause_run(
-        pool,
-        plan_id,
-        run_id,
-        reason,
-        counts.succeeded,
-        counts.failed,
-        counts.skipped,
-        counts.cancelled,
-        counts.succeeded + counts.failed + counts.skipped + counts.cancelled,
-    )
-    .await;
+    let write_failure = match pending {
+        // `pause_run`'s last argument is the count of items still to run, the
+        // complement of the settled counters above.
+        Some(items_pending) => apply_repo::pause_run(
+            pool,
+            plan_id,
+            run_id,
+            reason,
+            counts.succeeded,
+            counts.failed,
+            counts.skipped,
+            counts.cancelled,
+            items_pending,
+        )
+        .await
+        .err()
+        .map(|e| e.to_string()),
+        None => Some("the plan's item counters could not be read".to_owned()),
+    };
+
+    if let Some(error) = write_failure {
+        tracing::error!(
+            plan_id, run_id, pause_reason = reason, %error,
+            "the pause was not persisted; the plan stays 'applying' for boot recovery"
+        );
+        if let Some(emitter) = op_emitter.as_ref() {
+            let handle = emitter.handle(OperationStatus::Failed);
+            emitter.emit(
+                OperationEventType::Failed,
+                json!({
+                    "handle": handle,
+                    "planId": plan_id,
+                    "runId": run_id,
+                    "pauseReason": reason,
+                    "error": error,
+                    "at": at,
+                }),
+            );
+        }
+        return;
+    }
 
     let _ = apply_repo::append_event(
         pool,
