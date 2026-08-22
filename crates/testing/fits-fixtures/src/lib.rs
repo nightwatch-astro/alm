@@ -29,14 +29,14 @@
 use std::io::Write as _;
 use std::path::Path;
 
+const CARD: usize = 80;
+
 /// Minimal FITS fixture builder.
 ///
 /// # Panics
 ///
 /// Panics if more than 35 cards are added (overflows one 2880-byte block
 /// after the mandatory END card). Test fixtures never need more than ~10 cards.
-const CARD: usize = 80;
-
 #[derive(Default)]
 pub struct FitsFixture {
     cards: Vec<[u8; CARD]>,
