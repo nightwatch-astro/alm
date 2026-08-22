@@ -57,20 +57,15 @@ pub fn resolve_and_validate(
     root: &Utf8Path,
     relative: &Utf8Path,
 ) -> Result<ResolvedPath, PlanItemFailure> {
-    // Step 1: join + lexical normalize.
-    let joined = root.join(relative);
-    let normalized = lexical_normalize(&joined);
-
-    // Step 2: root-escape check.
-    if !normalized.starts_with(root) {
-        return Err(PlanItemFailure::with_code(
-            FailureCode::RootEscape,
-            format!(
-                "path '{relative}' escapes library root '{root}' after normalization; \
-                 resolved to '{normalized}'"
-            ),
-        ));
-    }
+    // Steps 1-2: join, normalize, and prove containment. The rule lives in
+    // `fs_pathsafe::contain` so this gate and every other root-relative
+    // resolver in the workspace cannot drift apart
+    // (`specs/tiny/root-relative-path-containment.md`).
+    let normalized =
+        fs_pathsafe::contain::resolve_in_root_utf8(root, relative).map_err(containment_failure)?;
+    // The containment verdict is against the *normalized* root, so the walk
+    // below must strip that same prefix rather than the caller's spelling.
+    let root = &fs_pathsafe::contain::normalize_utf8(root);
 
     // Step 3: per-component lstat for symlinks/junctions.
     // Walk the normalized path's portion below the root only (the root itself
@@ -119,6 +114,23 @@ pub fn resolve_and_validate(
     }
 
     Ok(ResolvedPath(normalized))
+}
+
+/// Map a containment refusal onto the executor's failure taxonomy.
+///
+/// Only [`ContainmentError::Escapes`] is `root_escape`; a malformed root or an
+/// unrooted path that cannot be resolved is a bad plan item, not a traversal
+/// attempt, and the two must stay distinguishable in the audit record.
+pub fn containment_failure(error: fs_pathsafe::contain::ContainmentError) -> PlanItemFailure {
+    use fs_pathsafe::contain::ContainmentError as E;
+    let code = match error {
+        E::Escapes { .. } => FailureCode::RootEscape,
+        E::RootMissing { .. }
+        | E::RootNotAbsolute { .. }
+        | E::NotAbsolute { .. }
+        | E::NotNormalized { .. } => FailureCode::PathInvalid,
+    };
+    PlanItemFailure::with_code(code, error.to_string())
 }
 
 /// Lexically normalize a path by collapsing `.` and `..` components **without**

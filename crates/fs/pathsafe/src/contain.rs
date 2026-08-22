@@ -184,10 +184,32 @@ pub fn resolve_in_root_utf8(
     path: &camino::Utf8Path,
 ) -> Result<camino::Utf8PathBuf, ContainmentError> {
     let contained = resolve_in_root(root.as_std_path(), path.as_std_path())?;
-    // `clean` only drops, pops, and reorders existing components, so a UTF-8
-    // input cannot produce a non-UTF-8 result.
-    Ok(camino::Utf8PathBuf::from_path_buf(contained.into_path_buf())
-        .unwrap_or_else(|p| camino::Utf8PathBuf::from(p.to_string_lossy().into_owned())))
+    Ok(to_utf8(contained.into_path_buf()))
+}
+
+/// Camino-typed [`resolve_unrooted`].
+///
+/// # Errors
+///
+/// As [`resolve_unrooted`].
+pub fn resolve_unrooted_utf8(
+    path: &camino::Utf8Path,
+) -> Result<camino::Utf8PathBuf, ContainmentError> {
+    let contained = resolve_unrooted(path.as_std_path())?;
+    Ok(to_utf8(contained.into_path_buf()))
+}
+
+/// Camino-typed [`normalize`].
+#[must_use]
+pub fn normalize_utf8(path: &camino::Utf8Path) -> camino::Utf8PathBuf {
+    to_utf8(normalize(path.as_std_path()))
+}
+
+/// `clean` only drops, pops, and reorders existing components, so a UTF-8 input
+/// cannot produce a non-UTF-8 result; the fallback is unreachable in practice.
+fn to_utf8(path: PathBuf) -> camino::Utf8PathBuf {
+    camino::Utf8PathBuf::from_path_buf(path)
+        .unwrap_or_else(|p| camino::Utf8PathBuf::from(p.to_string_lossy().into_owned()))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
