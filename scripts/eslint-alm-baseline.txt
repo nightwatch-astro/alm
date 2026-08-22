@@ -31,7 +31,7 @@ src/features/inbox/InboxControls.tsx	160	alm/require-root-testid
 src/features/inbox/InboxDetail.tsx	366	alm/require-root-testid
 src/features/inbox/InboxNeedsReview.tsx	113	alm/require-root-testid
 src/features/inbox/PlanDestructiveControl.tsx	33	alm/require-root-testid
-src/features/onboarding/ChecklistPopover.tsx	110	alm/require-root-testid
+src/features/onboarding/ChecklistPopover.tsx	101	alm/require-root-testid
 src/features/onboarding/FindSpotlight.tsx	177	alm/require-root-testid
 src/features/onboarding/OrientationWalk.tsx	161	alm/require-root-testid
 src/features/onboarding/joyrideAdapter.tsx	209	alm/require-root-testid
@@ -59,15 +59,15 @@ src/features/projects/wizard/StepSources.tsx	28	alm/require-root-testid
 src/features/projects/wizard/StepViews.tsx	74	alm/require-root-testid
 src/features/projects/wizard/WizardPage.tsx	638	alm/require-root-testid
 src/features/sessions/CalendarScroll.tsx	72	alm/require-root-testid
-src/features/sessions/SessionNotesSection.tsx	93	alm/require-root-testid
-src/features/settings/AuditLog.tsx	308	alm/require-root-testid
+src/features/sessions/SessionNotesSection.tsx	97	alm/require-root-testid
+src/features/settings/AuditLog.tsx	285	alm/require-root-testid
 src/features/settings/CalibrationMatching.tsx	189	alm/require-root-testid
 src/features/settings/Framing.tsx	134	alm/require-root-testid
 src/features/settings/ObservingSites.tsx	313	alm/require-root-testid
 src/features/settings/PatternChipsEditor.tsx	39	alm/require-root-testid
 src/features/settings/PerTypePatternChipsEditor.tsx	90	alm/require-root-testid
 src/features/settings/ProcessingTools.tsx	181	alm/require-root-testid
-src/features/settings/RootCard.tsx	110	alm/require-root-testid
+src/features/settings/RootCard.tsx	93	alm/require-root-testid
 src/features/settings/SettingsKit.tsx	106	alm/require-root-testid
 src/features/settings/SettingsKit.tsx	33	alm/require-root-testid
 src/features/settings/SettingsPage.tsx	187	alm/require-root-testid

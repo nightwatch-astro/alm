@@ -14,6 +14,7 @@ import type {
 import { useEntityNames, entityNameKey } from '@/hooks/useEntityNames';
 import { errMessage } from '@/lib/errors';
 import { formatDateTime, toEpochMs } from '@/lib/datetime';
+import { entityPath } from '@/lib/entity-path';
 import { m } from '@/lib/i18n';
 import { SettingsSection } from './SettingsKit';
 import { selectBase } from '@/styles/select.css';
@@ -50,30 +51,6 @@ const ENTITY_TYPE_VALUES = [
   'processing_artifact',
   'projection',
 ] as const;
-
-/**
- * Entity types with a dedicated detail page to cross-link to (#831). Other
- * types (settings, protection, equipment, and the rest of
- * `ENTITY_TYPE_VALUES`) have no reachable page yet, so their rows stay
- * unlinked rather than routing to a dead end. `plan` is intentionally
- * excluded — no `/plans/:id` route exists yet (#626, same reasoning as the
- * LogPanel's `buildEntityPath`).
- */
-function resolveAuditEntityPath(
-  entityType: string,
-  entityId: string,
-): string | null {
-  switch (entityType) {
-    case 'project':
-      return `/projects/${entityId}`;
-    case 'target':
-      return `/targets/${entityId}`;
-    case 'session':
-      return `/sessions/${entityId}`;
-    default:
-      return null;
-  }
-}
 
 const ITEMS_PER_PAGE = 8;
 
@@ -448,7 +425,10 @@ export function AuditLog() {
             },
           ]}
           rows={entries.map((e) => {
-            const path = resolveAuditEntityPath(e.entityType, e.entityId);
+            // No fallback (#831): types without a detail page — settings,
+            // protection, equipment, and the rest of `ENTITY_TYPE_VALUES` —
+            // stay unlinked rather than routing to a dead end.
+            const path = entityPath(e.entityType, e.entityId);
             const resolvedName = entityNames.get(entityNameKey(e));
             return {
               _onClick: path
