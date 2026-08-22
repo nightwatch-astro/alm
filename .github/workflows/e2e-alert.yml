@@ -40,6 +40,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           # Fetch the workflow run to extract metadata
           RUN_ID="${{ github.event.workflow_run.id }}"
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}"
@@ -58,6 +59,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           RUN_ID="${{ steps.workflow.outputs.run_id }}"
 
           # Query the GitHub API for all jobs in the workflow run
@@ -93,6 +95,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           # Search for open issues with ci-regression label and "main L3 E2E" in title
           ISSUE_NUM=$(gh issue list \
             --label ci-regression \

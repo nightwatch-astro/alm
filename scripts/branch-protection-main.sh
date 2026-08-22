@@ -64,40 +64,68 @@ BRANCH="${BRANCH:-main}"
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CONFIG="$here/branch-protection-main.json"
 
+# Read the required contexts once, and refuse to report on an empty list: a
+# `while read` loop over an empty producer leaves every accumulator at 0, so
+# both verify_* functions returned PASS having inspected nothing whenever
+# python3 was missing, the config was unreadable, or the config carried no
+# required_status_checks.contexts.
+read_contexts() {
+  if ! command -v python3 >/dev/null; then
+    echo "ERROR: python3 is required to read $CONFIG." >&2
+    return 2
+  fi
+  local out
+  out=$(python3 -c '
+import json,sys
+print("\n".join(json.load(open(sys.argv[1]))["required_status_checks"]["contexts"]))' "$CONFIG") || {
+    echo "ERROR: could not read required_status_checks.contexts from $CONFIG." >&2
+    return 2
+  }
+  if [ -z "${out//[[:space:]]/}" ]; then
+    echo "ERROR: $CONFIG lists zero required_status_checks.contexts; there is nothing to verify." >&2
+    return 2
+  fi
+  printf '%s\n' "$out"
+}
+
 # The context strings contain U+2014 EM DASH, not a hyphen. A hyphen produces a
 # required context that never reports, which leaves every PR pending forever.
 verify_contexts() {
   # Only the SEPARATOR matters. Hyphens inside a word are fine
   # ("UI mock-mode (Playwright)", "ubuntu-latest"); the failure mode is a
   # spaced hyphen " - " where the job name uses " — ".
-  local bad=0
+  local bad=0 contexts
+  contexts=$(read_contexts) || return $?
   while IFS= read -r ctx; do
+    [ -n "$ctx" ] || continue
     case "$ctx" in
       *" - "*) echo "  WARN: '$ctx' uses ' - ' as a separator; job names use ' — ' (U+2014)" >&2; bad=1 ;;
     esac
-  done < <(python3 -c '
-import json,sys
-print("\n".join(json.load(open(sys.argv[1]))["required_status_checks"]["contexts"]))' "$CONFIG")
+  done <<< "$contexts"
   return $bad
 }
 
 # Guard against protecting on names no workflow produces.
 verify_names_exist() {
   local missing=0
-  local names
+  local names contexts
+  contexts=$(read_contexts) || return $?
   names=$(grep -hoE "^    name: .*" "$here/../.github/workflows/ci.yml" \
                                     "$here/../.github/workflows/e2e.yml" \
           | sed 's/^    name: //')
+  if [ -z "${names//[[:space:]]/}" ]; then
+    echo "ERROR: no job names parsed from ci.yml and e2e.yml; the name scan failed." >&2
+    return 2
+  fi
   while IFS= read -r ctx; do
+    [ -n "$ctx" ] || continue
     # matrix jobs appear in source as `... — ${{ matrix.os }}`
     local stem="${ctx% — *}"
     if ! printf '%s\n' "$names" | grep -qF "$stem"; then
       echo "  WARN: no workflow job matches '$ctx' (stem '$stem')" >&2
       missing=1
     fi
-  done < <(python3 -c '
-import json,sys
-print("\n".join(json.load(open(sys.argv[1]))["required_status_checks"]["contexts"]))' "$CONFIG")
+  done <<< "$contexts"
   return $missing
 }
 
@@ -118,7 +146,15 @@ case "${1:-show}" in
     # for a check that can never arrive. PR #1313 hit that shape from the other
     # direction — a skipped matrix job never published its expanded names — and
     # sat unmergeable until it was admin-merged.
-    if ! verify_names_exist; then
+    # rc 2 means the check could not run; ALLOW_MISSING_NAMES waives a known
+    # missing name, never a scan that inspected nothing.
+    names_rc=0
+    verify_names_exist || names_rc=$?
+    if [ "$names_rc" -eq 2 ]; then
+      echo "refusing to apply: the required-context check could not run." >&2
+      exit 2
+    fi
+    if [ "$names_rc" -ne 0 ]; then
       if [ "${ALLOW_MISSING_NAMES:-}" = "1" ]; then
         echo "  (continuing: ALLOW_MISSING_NAMES=1)" >&2
       else

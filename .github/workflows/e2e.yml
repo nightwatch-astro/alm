@@ -281,6 +281,7 @@ jobs:
         env:
           DISPATCHED: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
+          set -euo pipefail
           run=false
           if [ "$DISPATCHED" = "true" ] \
             || [ "${{ steps.filter.outputs.force_full }}" = "true" ] \
@@ -392,6 +393,7 @@ jobs:
         id: appkey
         shell: bash
         run: |
+          set -euo pipefail
           key=$(bash scripts/e2e-app-cache-key.sh)
           # An empty key would silently degrade to a bare prefix shared by
           # every commit — the worst case, a permanent stale hit. Fail loudly.
@@ -432,6 +434,7 @@ jobs:
         id: verify-app-cache
         shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ steps.app-cache.outputs.cache-hit }}" = "true" ] && [ -x "${{ env.APP_BIN }}" ]; then
             echo "app_usable=true" >> "$GITHUB_OUTPUT"
           else
@@ -529,6 +532,7 @@ jobs:
         id: appkey
         shell: bash
         run: |
+          set -euo pipefail
           key=$(bash scripts/e2e-app-cache-key.sh)
           # An empty key would silently degrade to a bare prefix shared by
           # every commit — the worst case, a permanent stale hit. Fail loudly.
@@ -564,6 +568,7 @@ jobs:
         id: verify-app-cache
         shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ steps.app-cache.outputs.cache-hit }}" = "true" ] && [ -f "${{ env.APP_BIN }}" ]; then
             echo "app_usable=true" >> "$GITHUB_OUTPUT"
           else
@@ -636,6 +641,7 @@ jobs:
         id: appkey
         shell: bash
         run: |
+          set -euo pipefail
           key=$(bash scripts/e2e-app-cache-key.sh)
           # An empty key would silently degrade to a bare prefix shared by
           # every commit — the worst case, a permanent stale hit. Fail loudly.
@@ -671,6 +677,7 @@ jobs:
         id: verify-app-cache
         shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ steps.app-cache.outputs.cache-hit }}" = "true" ] && [ -f "${{ env.APP_BIN }}" ]; then
             echo "app_usable=true" >> "$GITHUB_OUTPUT"
           else

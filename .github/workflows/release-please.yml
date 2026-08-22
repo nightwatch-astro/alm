@@ -195,6 +195,7 @@ jobs:
           # Only exclude the clobbered extensions on the leg that actually clobbers them.
           SKIP_WINDOWS_BUNDLES: ${{ runner.os == 'Windows' && vars.ENABLE_WINDOWS_SIGNING == 'true' }}
         run: |
+          set -euo pipefail
           # Drop .sig sidecars (signatures over the bundles, not artifacts in their own
           # right) and latest.json (a pointer regenerated on every release, so a
           # provenance claim over it ages out immediately).

@@ -190,6 +190,7 @@ jobs:
       - id: decide
         shell: bash
         run: |
+          set -euo pipefail
           shared="${{ steps.filter.outputs.force_full_shared }}"
           rust=false
           frontend=false
@@ -818,6 +819,7 @@ jobs:
         env:
           CHANGED_FILES: ${{ needs.changes.outputs.all_files }}
         run: |
+          set -euo pipefail
           args=$(printf '%s' "$CHANGED_FILES" | tr ',' '\n' | bash scripts/ci-affected-crates.sh)
           if printf '%s' "$args" | grep -qE 'app_core_inbox|persistence_inbox|fs_inventory'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
