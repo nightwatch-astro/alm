@@ -293,15 +293,17 @@ mod tests {
         }
     }
 
-    /// `MigrateError::Dirty` names a partially-applied migration, which sqlx
-    /// only produces on databases without transactional DDL. `sqlx-sqlite` runs
-    /// each migration script and its `_sqlx_migrations` bookkeeping in one
-    /// transaction, so a failing script rolls back and no `Dirty` state is
-    /// reachable here. A migration that opts out of the transaction would make
-    /// it reachable, and would need its own user-facing repair message rather
-    /// than the "written by a different revision" wording this classifier
-    /// produces. [`every_migration_runs_inside_a_transaction`] enforces that
-    /// precondition.
+    /// `MigrateError::Dirty` reports a `_sqlx_migrations` row with
+    /// `success = false`. This build never records one: `execute_migration`
+    /// inserts `success` as a `TRUE` literal, and a script that fails inserts
+    /// nothing at all, so a database this build wrote cannot produce `Dirty`.
+    /// [`a_failed_migration_records_no_row`] pins that dependency behaviour.
+    ///
+    /// `Dirty` does still arrive from a `success = false` row written by another
+    /// tool, such as an older sqlx or the sqlx CLI, and this classifier returns
+    /// `None` for it. That is a diagnosis gap rather than a custody one: sqlx
+    /// reads the dirty version before applying anything, so the migration never
+    /// starts. Tracked on astro-plan-00yw0.
     #[test]
     fn divergence_detail_ignores_unrelated_failures() {
         assert!(super::migration_divergence_detail(&super::DbError::NotImplemented).is_none());
@@ -311,12 +313,10 @@ mod tests {
         .is_none());
     }
 
-    /// Enforces the precondition that makes a partially-applied migration
-    /// impossible on SQLite, and with it the `Dirty` arm's absence from
-    /// [`super::migration_divergence_detail`].
-    ///
-    /// A migration file marked `-- no-transaction` sets `Migration::no_tx`, and
-    /// sqlx then runs that script outside a transaction.
+    /// Keeps a partially-applied schema unreachable. A migration file starting
+    /// with `-- no-transaction` sets `Migration::no_tx`, and sqlx then runs that
+    /// script outside a transaction, so a failure partway leaves the statements
+    /// it already ran in place.
     #[test]
     fn every_migration_runs_inside_a_transaction() {
         let opted_out: Vec<i64> = super::Database::migrator()
@@ -328,14 +328,73 @@ mod tests {
         assert!(
             opted_out.is_empty(),
             "migrations {opted_out:?} opt out of the per-migration transaction. \
-             Such a migration can fail partway and leave the schema partially \
-             applied, which makes MigrateError::Dirty reachable and leaves a \
-             failed migration with no rollback material. The constitution's \
-             unclean-shutdown constraint then requires a verified pre-migration \
-             backup and an explicit user resume-or-repair prompt, plus a \
-             migration_divergence_detail arm wording Dirty as a partial apply \
-             rather than a build mismatch. Satisfy those before deleting this \
-             assertion."
+             Such a migration can fail partway and leave the schema half built, \
+             and because a failed migration records no bookkeeping row, nothing \
+             marks the database as partially applied and \
+             migration_divergence_detail has no error to classify. Recovery then \
+             depends entirely on the pre-migration backup. The constitution's \
+             unclean-shutdown constraint requires a verified backup and an \
+             explicit user resume-or-repair prompt before a migration may run in \
+             that state. Satisfy those before deleting this assertion."
+        );
+    }
+
+    /// Pins the sqlx behaviour that keeps `MigrateError::Dirty` out of reach:
+    /// a failed migration leaves no `_sqlx_migrations` row, so no
+    /// `success = false` row exists for `dirty_version` to find.
+    ///
+    /// This is a property of the sqlx version this workspace resolves, not of
+    /// this crate, so a sqlx upgrade that starts recording failed migrations
+    /// turns this red. That is the point: it is the moment to re-examine whether
+    /// a partially-applied migration needs a user-facing repair path.
+    #[tokio::test]
+    async fn a_failed_migration_records_no_row() {
+        use std::borrow::Cow;
+
+        let failing = sqlx::migrate::Migrator {
+            migrations: Cow::Owned(vec![
+                sqlx::migrate::Migration::new(
+                    1,
+                    Cow::Borrowed("create probe"),
+                    sqlx::migrate::MigrationType::Simple,
+                    sqlx::SqlStr::from_static("CREATE TABLE probe (id INTEGER);"),
+                    false,
+                ),
+                sqlx::migrate::Migration::new(
+                    2,
+                    Cow::Borrowed("collide with probe"),
+                    sqlx::migrate::MigrationType::Simple,
+                    sqlx::SqlStr::from_static("CREATE TABLE probe (id INTEGER);"),
+                    false,
+                ),
+            ]),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+
+        let db = super::Database::in_memory().await.expect("in-memory connect");
+        let mut conn = db.pool().acquire().await.expect("acquire");
+
+        let error = failing.run(&mut *conn).await.expect_err("migration 2 must fail");
+        assert!(
+            matches!(error, sqlx::migrate::MigrateError::ExecuteMigration(_, 2)),
+            "a failing script must surface as ExecuteMigration: {error:?}"
+        );
+
+        let dirty_rows: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations WHERE success = FALSE")
+                .fetch_one(&mut *conn)
+                .await
+                .expect("count dirty rows");
+        assert_eq!(dirty_rows, 0, "a failed migration must record no bookkeeping row");
+
+        let rerun = failing.run(&mut *conn).await.expect_err("migration 2 must fail again");
+        assert!(
+            !matches!(rerun, sqlx::migrate::MigrateError::Dirty(_)),
+            "without a dirty row sqlx must not escalate to Dirty: {rerun:?}"
+        );
+        assert!(
+            super::migration_divergence_detail(&super::DbError::Migration(rerun)).is_none(),
+            "a failed script is not a divergent history"
         );
     }
 
