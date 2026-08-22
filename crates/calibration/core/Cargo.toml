@@ -17,5 +17,8 @@ skymath = "0.7.2"
 # observing-night proximity (replaces the hand-rolled YMD parse + JDN math).
 time = { workspace = true }
 
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true
