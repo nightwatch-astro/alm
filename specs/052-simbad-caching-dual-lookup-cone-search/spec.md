@@ -6,11 +6,12 @@
 
 **Status**: Implemented (post-hoc record, verified 2026-07-28). The resolver
 facade, dual TAP/Sesame lookup, oid recovery, normalize choke-point, seed-builder
-`v_mag` column, cache-clear command, and cone search all ship at HEAD. The
-remaining unchecked boxes in `tasks.md` are legacy paper: `T002` asks to bump
-`simbad-resolver` 0.1.3 to 0.2.0, and the workspace is on 0.5.0. Task state for
-this spec lives in beads, not `tasks.md`. Outstanding process gates (speckit-verify
-run, Windows verification) are tracked separately.
+`v_mag` column, cache-clear command, and cone search all ship at HEAD. Task state
+for this spec is recorded in beads. The legacy `tasks.md` was retired rather than
+reconciled: its unchecked boxes described work that had shipped or been overtaken,
+such as `T002` asking to bump `simbad-resolver` 0.1.3 to 0.2.0 when the workspace
+is on 0.5.0. The outstanding speckit-verify run is tracked in
+`astro-plan-n6zv`; Windows verification is tracked in `astro-plan-ltoy`.
 
 **Input**: User description: "SIMBAD resolver: persistent resolve cache, in-use-gated persistence, dual lookup (catalogue-first with a name-resolver fallback), and cone-search from plate-solved coordinates to suggest a target at Inbox ingest."
 

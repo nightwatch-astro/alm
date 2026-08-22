@@ -19,7 +19,13 @@ import { useDebouncedCallback } from 'use-debounce';
 import { queryKeys } from '@/data/queryKeys';
 import { addToast } from '@/shared/toast';
 import { m } from '@/lib/i18n';
-import { MAX_NOTE_BYTES, NOTE_DEBOUNCE_MS, noteByteLength } from '@/lib/notes';
+import {
+  MAX_NOTE_BYTES,
+  NOTE_DEBOUNCE_MS,
+  noteByteLength,
+  noteByteStatus,
+} from '@/lib/notes';
+import { NoteByteCounter } from '@/components/NoteByteCounter';
 import { saveSessionNote } from './store';
 
 export interface SessionNotesSectionProps {
@@ -45,9 +51,7 @@ export function SessionNotesSection({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const byteCount = noteByteLength(draft);
-  const overLimit = byteCount > MAX_NOTE_BYTES;
-  const nearLimit = byteCount > MAX_NOTE_BYTES * 0.9;
+  const { overLimit } = noteByteStatus(draft);
 
   const triggerSave = useDebouncedCallback(
     (content: string) => {
@@ -105,19 +109,7 @@ export function SessionNotesSection({
         data-guide-anchor="sessions.note-field"
       />
       <div className="pv-project-notes__toolbar">
-        <span
-          data-testid="session-notes-byte-counter"
-          className={
-            overLimit
-              ? 'pv-project-notes__byte-counter--over'
-              : nearLimit
-                ? 'pv-project-notes__byte-counter--near'
-                : 'pv-project-notes__byte-counter'
-          }
-        >
-          {byteCount.toLocaleString()} / {MAX_NOTE_BYTES.toLocaleString()}{' '}
-          {m.projects_notes_bytes_unit()}
-        </span>
+        <NoteByteCounter content={draft} testId="session-notes-byte-counter" />
         {saving ? (
           <span className="pv-project-notes__saved">{m.common_saving()}</span>
         ) : (

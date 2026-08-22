@@ -15,10 +15,11 @@ serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 time.workspace = true
+tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-persistence_core = { path = "../core", features = [] }
+persistence_core = { path = "../core", features = ["test-fixture"] }
 tempfile.workspace = true
 tokio.workspace = true
 

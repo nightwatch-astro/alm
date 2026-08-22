@@ -26,3 +26,21 @@ export function noteByteLength(content: string): number {
 export function noteContentValid(content: string): boolean {
   return noteByteLength(content) <= MAX_NOTE_BYTES;
 }
+
+export interface NoteByteStatus {
+  byteCount: number;
+  /** Content exceeds the cap; the backend would reject a save. */
+  overLimit: boolean;
+  /** Content is within 10% of the cap — warn before the counter turns over. */
+  nearLimit: boolean;
+}
+
+/** Byte count plus the two threshold flags the note byte counters render from. */
+export function noteByteStatus(content: string): NoteByteStatus {
+  const byteCount = noteByteLength(content);
+  return {
+    byteCount,
+    overLimit: byteCount > MAX_NOTE_BYTES,
+    nearLimit: byteCount > MAX_NOTE_BYTES * 0.9,
+  };
+}

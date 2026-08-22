@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /** Per-root card: path/pill/meta row + kebab (⋯) action menu (issue #562). */
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Btn, Pill } from '@/ui';
 import { formatDistanceToNow } from 'date-fns';
 import type { LibraryRoot } from '@/bindings/types';
 import { m } from '@/lib/i18n';
+import { useDismiss } from '@/hooks/useDismiss';
 import { SourceProtectionOverride } from './SourceProtectionOverride';
 import { RootDetectionConfig } from '@/features/inventory/RootDetectionConfig';
 import { revealInOs } from '@/shared/native/reveal';
@@ -46,25 +47,7 @@ export function RootCard({
   const [editProtectionOpen, setEditProtectionOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close the kebab menu on outside click or Escape — standard menu UX; no
-  // shared close-on-outside helper exists yet in this codebase (single
-  // consumer today), so this stays a small inline effect rather than a new
-  // abstraction (YAGNI).
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handlePointerDown = (e: PointerEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false);
-    };
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [menuOpen]);
+  useDismiss([menuRef], () => setMenuOpen(false), menuOpen);
 
   const metaParts: string[] = [];
   if (root.fileCount != null && root.fileCount > 0) {

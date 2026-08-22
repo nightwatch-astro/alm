@@ -914,7 +914,13 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth 2: on a main push `origin/main` is the commit just pushed, so
+      # the tracking check would compare the baseline against itself. It falls
+      # back to HEAD~1, which the default depth-1 checkout does not contain, and
+      # the check fails closed under CI.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: taiki-e/install-action@v2
         with:
           tool: just
