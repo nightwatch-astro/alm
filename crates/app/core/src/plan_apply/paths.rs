@@ -178,7 +178,8 @@ pub(super) fn materialization_from_provenance(
 /// cross-root move joins `to_relative_path` against the *picked* destination
 /// root instead of silently reusing the source root (#765). Precedence:
 /// `to_root_id` → `plan_destination_root` (`plans.destination_root`) →
-/// `library_root`.
+/// `library_root`, and the last step is skipped for an absolute destination,
+/// which belongs to no root the item names.
 ///
 /// `plan_destructive_destination` is the *plan-level* `plans.destructive_destination`
 /// choice ("archive" | "trash"), not a per-item column: both `cleanup_generator`
@@ -247,22 +248,6 @@ pub(super) fn item_row_to_executor_item(
     let library_root: Option<Utf8PathBuf> =
         row.from_root_id.as_deref().and_then(|rid| root_map.get(rid)).cloned();
 
-    // #765: destination_root resolves independently from to_root_id, falling
-    // back to library_root — NOT reusing from_root_id's resolution outright —
-    // so a cross-root move/link/mkdir joins to_relative_path against the
-    // destination root the user actually picked.
-    // astro-plan-d8cyr: `plans.destination_root` outranks the `library_root`
-    // fallback. A source-view item stores an absolute destination with no
-    // `to_root_id`, so falling straight back to the SOURCE root left the
-    // executor gating the destination against a root it never belonged to.
-    let destination_root: Option<Utf8PathBuf> = row
-        .to_root_id
-        .as_deref()
-        .and_then(|rid| root_map.get(rid))
-        .cloned()
-        .or_else(|| plan_destination_root.map(Utf8Path::to_path_buf))
-        .or_else(|| library_root.clone());
-
     // Paths are stored as relative to the library root.
     let source_path = if row.from_relative_path.is_empty() {
         None
@@ -275,6 +260,25 @@ pub(super) fn item_row_to_executor_item(
     } else {
         Some(Utf8PathBuf::from(&row.to_relative_path))
     };
+
+    // #765: destination_root resolves independently from to_root_id, falling
+    // back to library_root — NOT reusing from_root_id's resolution outright —
+    // so a cross-root move/link/mkdir joins to_relative_path against the
+    // destination root the user actually picked.
+    // astro-plan-d8cyr: `plans.destination_root` outranks that fallback, and an
+    // ABSOLUTE destination takes no fallback at all. Source-view generation
+    // stores an absolute destination with `to_root_id=None` and
+    // `from_root_id=Some`, so falling back to the source root would gate such a
+    // destination against a root it never belonged to and refuse every item of
+    // a plan written before migration 0003 with a non-retryable `root_escape`.
+    let destination_is_absolute = destination_path.as_ref().is_some_and(|p| p.is_absolute());
+    let destination_root: Option<Utf8PathBuf> = row
+        .to_root_id
+        .as_deref()
+        .and_then(|rid| root_map.get(rid))
+        .cloned()
+        .or_else(|| plan_destination_root.map(Utf8Path::to_path_buf))
+        .or_else(|| if destination_is_absolute { None } else { library_root.clone() });
 
     let is_protected = row.protection == "protected";
 

@@ -151,19 +151,18 @@ async fn drive_plan<C: ExecutorCallbacks>(
 /// of an item against the roots `dispatch::execute_item` joins them onto, before
 /// any filesystem CAS or mutation.
 ///
-/// The destination side (astro-plan-d8cyr) is checked against the same root
-/// precedence `dispatch::execute_item` uses, so a refusal here means the
-/// mutation would have landed outside the root the plan declared. Gating the
-/// source alone left a traversing or absolute destination to reach
-/// `mkdir`/`link`/`move` unchecked. A side with no root stays ungated, which is
+/// The destination side (astro-plan-d8cyr) is checked against
+/// `destination_root` alone. Gating the source alone left a traversing or
+/// absolute destination to reach `mkdir`/`link`/`move` unchecked. Falling back
+/// to `library_root` here would put a second fallback behind the one in
+/// `app_core::plan_apply::paths`, and the two would disagree about which root
+/// governs an absolute destination. A side with no root stays ungated, which is
 /// the legacy mode for items carrying pre-resolved absolute paths.
 fn gate_item_paths(item: &ExecutorItem) -> Result<(), PlanItemFailure> {
     if let (Some(src_rel), Some(root)) = (&item.source_path, &item.library_root) {
         path_gate::resolve_and_validate(root, src_rel)?;
     }
-    if let (Some(dst_rel), Some(root)) =
-        (&item.destination_path, item.destination_root.as_ref().or(item.library_root.as_ref()))
-    {
+    if let (Some(dst_rel), Some(root)) = (&item.destination_path, &item.destination_root) {
         path_gate::resolve_and_validate(root, dst_rel)?;
     }
     Ok(())

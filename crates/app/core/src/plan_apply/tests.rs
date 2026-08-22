@@ -1507,6 +1507,59 @@ fn n765_destination_root_falls_back_to_library_root_when_to_root_id_absent() {
     assert_eq!(item.destination_root, Some(Utf8PathBuf::from("/mnt/library")));
 }
 
+/// astro-plan-d8cyr FIX 1: a `source_view_generation` plan row written before
+/// migration 0003 has `to_root_id=None`, `from_root_id=Some` and an ABSOLUTE
+/// `to_relative_path`. Falling back to `library_root` (the SOURCE root) gates
+/// that destination against a root it never belonged to, so every item of the
+/// user's existing plan is refused `root_escape`, which is non-retryable.
+/// `destination_root` must stay `None` so the destination gate is inactive and
+/// the plan applies as it did before the column existed.
+#[test]
+fn absolute_destination_takes_no_library_root_fallback() {
+    let row = plans_repo::PlanItemRow {
+        id: "item-abs-dest".to_owned(),
+        plan_id: "plan-pre-0003".to_owned(),
+        item_index: 1,
+        name: "frame.fits".to_owned(),
+        action: "link".to_owned(),
+        from_root_id: Some("root-001".to_owned()),
+        from_relative_path: "raw/frame.fits".to_owned(),
+        to_root_id: None,
+        to_relative_path: "/mnt/projects/m101/source-views/plan-pre-0003/lights/frame.fits"
+            .to_owned(),
+        reason: "view_generation".to_owned(),
+        protection: "normal".to_owned(),
+        linked_entity: None,
+        item_state: "pending".to_owned(),
+        failure_reason: None,
+        provenance: None,
+        approved_mtime: None,
+        approved_size_bytes: None,
+        archive_path: None,
+        created_at: "2026-06-17T00:00:00Z".to_owned(),
+        source_id: None,
+        category: None,
+        requires_destructive_confirm: Some(0),
+        resolved_pattern: None,
+        destructive_confirmed: 0,
+    };
+
+    let mut root_map = HashMap::new();
+    root_map.insert("root-001".to_owned(), Utf8PathBuf::from("/mnt/library"));
+
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
+    assert_eq!(item.library_root, Some(Utf8PathBuf::from("/mnt/library")));
+    assert_eq!(
+        item.destination_root, None,
+        "an absolute destination must not inherit the source root"
+    );
+
+    // The same row in a plan that DOES record its destination root is gated.
+    let recorded = Utf8PathBuf::from("/mnt/projects/m101/source-views/plan-pre-0003");
+    let gated = item_row_to_executor_item(&row, &root_map, "archive", Some(&recorded));
+    assert_eq!(gated.destination_root, Some(recorded));
+}
+
 /// T023a: root-escaping relative path is refused by the gate when library_root is set.
 /// This proves the gate is active on real plan items (not inert).
 #[test]
