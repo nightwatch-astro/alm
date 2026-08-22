@@ -300,7 +300,8 @@ mod tests {
     /// reachable here. A migration that opts out of the transaction would make
     /// it reachable, and would need its own user-facing repair message rather
     /// than the "written by a different revision" wording this classifier
-    /// produces.
+    /// produces. [`every_migration_runs_inside_a_transaction`] enforces that
+    /// precondition.
     #[test]
     fn divergence_detail_ignores_unrelated_failures() {
         assert!(super::migration_divergence_detail(&super::DbError::NotImplemented).is_none());
@@ -308,6 +309,34 @@ mod tests {
             sqlx::migrate::MigrateError::Dirty(71)
         ))
         .is_none());
+    }
+
+    /// Enforces the precondition that makes a partially-applied migration
+    /// impossible on SQLite, and with it the `Dirty` arm's absence from
+    /// [`super::migration_divergence_detail`].
+    ///
+    /// A migration file marked `-- no-transaction` sets `Migration::no_tx`, and
+    /// sqlx then runs that script outside a transaction.
+    #[test]
+    fn every_migration_runs_inside_a_transaction() {
+        let opted_out: Vec<i64> = super::Database::migrator()
+            .iter()
+            .filter(|migration| migration.no_tx)
+            .map(|migration| migration.version)
+            .collect();
+
+        assert!(
+            opted_out.is_empty(),
+            "migrations {opted_out:?} opt out of the per-migration transaction. \
+             Such a migration can fail partway and leave the schema partially \
+             applied, which makes MigrateError::Dirty reachable and leaves a \
+             failed migration with no rollback material. The constitution's \
+             unclean-shutdown constraint then requires a verified pre-migration \
+             backup and an explicit user resume-or-repair prompt, plus a \
+             migration_divergence_detail arm wording Dirty as a partial apply \
+             rather than a build mismatch. Satisfy those before deleting this \
+             assertion."
+        );
     }
 
     #[tokio::test]
@@ -404,6 +433,27 @@ mod tests {
 
         assert!(!dest.exists(), "no file may be created for a rejected backup");
         assert!(err.to_string().contains("no-such-dir"), "error must name the destination: {err}");
+    }
+
+    /// The pre-migration backup names its destination after the app version, so
+    /// a second launch on the same version aims at an existing backup. SQLite
+    /// refuses that destination ("output file already exists"), which preserves
+    /// the earlier rollback material rather than overwriting it.
+    #[tokio::test]
+    async fn backup_to_rejects_an_existing_destination_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = file_backed_db(dir.path()).await;
+        let dest = dir.path().join("already-there.sqlite3");
+        db.backup_to(&dest).await.expect("first backup");
+        let first = std::fs::read(&dest).expect("read the first backup");
+
+        let err = db.backup_to(&dest).await.expect_err("an existing destination must fail");
+
+        assert_eq!(
+            std::fs::read(&dest).expect("destination still readable"),
+            first,
+            "a rejected backup must leave the earlier backup byte-for-byte: {err}"
+        );
     }
 
     /// With a `Database::in_memory()` source, `VACUUM INTO` reports success and
