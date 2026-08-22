@@ -33,8 +33,8 @@ use persistence_core::{DbError, DbResult};
 ///
 /// A failed checkpoint (e.g. a reader holding the WAL open) is not fatal: the
 /// intent is already committed to the WAL, boot reconciliation is the backstop,
-/// and the next automatic checkpoint will sync it. Both callers discard the
-/// error without logging and proceed.
+/// and the next automatic checkpoint will sync it. Both callers warn and
+/// proceed rather than propagating.
 async fn checkpoint_intent(conn: &mut SqliteConnection) -> DbResult<()> {
     sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(conn).await?;
     Ok(())
@@ -180,10 +180,15 @@ pub async fn cas_approved_to_applying(
     // Tier-1: sync the just-committed intent before the executor touches the
     // filesystem (see `checkpoint_intent`). Best-effort: a failed checkpoint
     // leaves the intent durable in the WAL, and boot reconciliation is the
-    // backstop, so the error is intentionally swallowed (the persistence layer
-    // carries no logging facade).
+    // backstop, so the error is logged and not propagated.
     let mut conn = pool.acquire().await?;
-    let _ = checkpoint_intent(&mut conn).await;
+    if let Err(error) = checkpoint_intent(&mut conn).await {
+        tracing::warn!(
+            plan_id,
+            %error,
+            "apply-start intent checkpoint failed; intent remains durable in the WAL"
+        );
+    }
 
     Ok(())
 }
@@ -333,7 +338,14 @@ pub async fn resume_run(pool: &SqlitePool, plan_id: &str, run_id: &str) -> DbRes
     // items, so the same intent-durability guarantee as apply-start applies.
     // Best-effort (see `cas_approved_to_applying`).
     let mut conn = pool.acquire().await?;
-    let _ = checkpoint_intent(&mut conn).await;
+    if let Err(error) = checkpoint_intent(&mut conn).await {
+        tracing::warn!(
+            plan_id,
+            run_id,
+            %error,
+            "resume intent checkpoint failed; intent remains durable in the WAL"
+        );
+    }
 
     Ok(())
 }
