@@ -1,8 +1,8 @@
 ---
 name: speckit-research
 description: Researches primary-source APIs and uses Serena semantic tools when available to bound decisions inside an active SpecKit workflow.
-model: sonnet
-effort: medium
+model: opus
+effort: low
 permissionMode: plan
 maxTurns: 20
 background: true
@@ -46,7 +46,8 @@ Expect:
 
 ## Output
 
-L1 RESEARCH: COMPLETE|INCONCLUSIVE — one-line evidence verdict.
+L1 RESEARCH: COMPLETE|INCONCLUSIVE -- one-line evidence verdict.
+MUST Begin your reply with `RESEARCH:` -- the very first characters, before any other text, thought, or markdown; "L1" is notation for "first line", never printed.
 CAP 200w clean · 600w with findings.
 MUST Never reprint source documents, code, diffs, or the caller's brief.
 

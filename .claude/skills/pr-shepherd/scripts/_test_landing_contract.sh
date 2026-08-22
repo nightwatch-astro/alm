@@ -1,9 +1,25 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# git-blob digest of stdin, matching `git hash-object --stdin`, which is what
+# landing-contract.py actually calls. Recomputing it as a bare sha1 -- which both
+# this suite and the fake git used to do -- made the oracle self-consistent but
+# blind: the ids it verified were not the ids production computes, so digest drift
+# could not fail a test.
+blob_sha1() {
+  # Read stdin as BYTES. Every identity payload is NUL-separated, and `$(cat)`
+  # strips NUL bytes, so a shell round trip hashed "slot-1stable-holder1" where
+  # git hashes "slot-1\0stable-holder\01\0". The helper and the fake agreed with
+  # each other and disagreed with production -- the drift this suite must catch.
+  python3 -c 'import hashlib,sys
+d=sys.stdin.buffer.read()
+print(hashlib.sha1(b"blob %d\0"%len(d)+d).hexdigest())'
+}
+
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly SCRIPT_DIR
-readonly CONTRACT="$SCRIPT_DIR/landing-contract.sh"
+readonly CONTRACT="$SCRIPT_DIR/landing-contract.py"
 readonly PROBE="$SCRIPT_DIR/merge-probe.sh"
 readonly FIXTURE_BIN="$SCRIPT_DIR/test-fixtures/bin"
 readonly SYSTEM_PATH="$PATH"
@@ -111,7 +127,7 @@ assert_waiter_status() {
   local generation="${4:-1}"
   local digest waiter actual
 
-  digest="$(printf 'slot-1\0%s\0%s\0' "$holder" "$generation" | sha1sum | awk '{print $1}')"
+  digest="$(printf 'slot-1\0%s\0%s\0' "$holder" "$generation" | blob_sha1)"
   waiter="slot-1-waiter-${digest:0:12}"
   actual="missing"
   [[ ! -f "$state/waiters/$waiter/status" ]] || actual="$(<"$state/waiters/$waiter/status")"
@@ -123,7 +139,7 @@ waiter_path() {
   local generation="${2:-1}"
   local digest
 
-  digest="$(printf 'slot-1\0%s\0%s\0' "$holder" "$generation" | sha1sum | awk '{print $1}')"
+  digest="$(printf 'slot-1\0%s\0%s\0' "$holder" "$generation" | blob_sha1)"
   printf '%s/waiters/slot-1-waiter-%s\n' "$state" "${digest:0:12}"
 }
 
@@ -136,7 +152,7 @@ native_holder_for() {
   waiter="$(waiter_path "$holder" "$generation")"
   waiter="${waiter##*/}"
   digest="$(printf '%s\0%s\0%s\0%s\0' "$holder" "$generation" "$lease_actor" "$waiter" |
-    sha1sum | awk '{print $1}')"
+    blob_sha1)"
   printf 'pr-shepherd:%s\n' "$digest"
 }
 
@@ -189,6 +205,184 @@ run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" release external
 assert_eq 11 "$last_rc" "empty review parsing still enforces exact base identity"
 assert_contains "actual_base=main" "$last_output" \
   "stale base reports the unshifted live identity"
+
+write_local_receipt() {
+  local failure_class="${1:-github_billing_zero_steps}"
+  local head="${2:-$EXPECTED_HEAD}"
+  local operator="${3:-operator-a}"
+  jq -cn --arg schema pr-shepherd/local-gate-v1 --arg head "$head" \
+    --arg operator "$operator" --arg failure_class "$failure_class" \
+    '{schema: $schema, head_sha: $head, operator_authorized: true,
+      authorization: "operator-approved", authorized_by: $operator,
+      local_gate: "passed", evidence_ref: "artifacts/local-gate.json",
+      run_id: 32477339806, failure_class: $failure_class}' \
+    >"$state/local-gate.json"
+}
+
+new_state local-gate
+scenario=local-gate
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 0 "$last_rc" "operator-approved zero-step billing gate is admitted"
+assert_contains "approval=local" "$last_output" "local gate mode is explicit"
+assert_contains "LOCAL_GATE_READY" "$last_output" "local gate receipt is verified"
+
+new_state local-gate-repeated-billing
+scenario=local-gate-repeated-billing
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 0 "$last_rc" "repeated zero-step billing runs at the exact head are admitted"
+
+new_state local-gate-startup
+scenario=local-gate-startup
+write_local_receipt github_startup_zero_steps
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 0 "$last_rc" "operator-approved zero-step startup gate is admitted"
+
+new_state local-gate-startup-rollup
+scenario=local-gate-startup-rollup
+write_local_receipt github_startup_zero_steps
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 0 "$last_rc" "startup failure rollup bound to the local gate is admitted"
+
+new_state local-gate-no-authorization
+scenario=local-gate
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local "" "$state/local-gate.json"
+assert_eq 2 "$last_rc" "local gate requires explicit operator authorization"
+assert_not_contains "PR_READY" "$last_output" "missing operator authorization cannot admit"
+
+new_state local-gate-stale-receipt
+scenario=local-gate
+write_local_receipt github_billing_zero_steps "$STALE_HEAD"
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 2 "$last_rc" "local gate receipt must bind the expected head"
+
+new_state local-gate-stale-run
+scenario=local-gate-stale-run
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 11 "$last_rc" "local gate run identity must match the reviewed head"
+assert_contains LOCAL_GATE_STALE "$last_output" "stale local gate run is classified"
+
+new_state local-gate-steps
+scenario=local-gate-steps
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 12 "$last_rc" "local gate rejects a real failure with executed steps"
+assert_contains LOCAL_GATE_FAILED "$last_output" "executed-step failure is classified"
+
+new_state local-gate-job-no-steps
+scenario=local-gate-job-no-steps
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 12 "$last_rc" "local gate rejects a job with zero steps"
+assert_contains "jobs=1 steps=0" "$last_output" "nonzero job evidence is classified"
+
+new_state local-gate-billing-no-annotation
+scenario=local-gate-billing-no-annotation
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 12 "$last_rc" "local gate rejects a zero-step failure without GitHub billing evidence"
+assert_contains "billing_signal=absent" "$last_output" "missing billing evidence is classified"
+
+new_state local-gate-billing-wrong-annotation
+scenario=local-gate-billing-wrong-annotation
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 12 "$last_rc" "local gate rejects a zero-step workflow failure annotation"
+assert_contains "billing_signal=absent" "$last_output" "non-billing annotation is classified"
+
+new_state local-gate-action-required
+scenario=local-gate-action-required
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 12 "$last_rc" "local gate rejects action-required runs"
+
+for local_pr_failure in conflict review stale-pr; do
+  new_state "local-gate-$local_pr_failure"
+  scenario="local-gate-$local_pr_failure"
+  write_local_receipt
+  run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+  case "$local_pr_failure" in
+  conflict)
+    assert_eq 12 "$last_rc" "local gate rejects merge conflicts"
+    assert_contains "mergeable=CONFLICTING" "$last_output" "local conflict is classified"
+    ;;
+  review)
+    assert_eq 12 "$last_rc" "local gate rejects requested changes"
+    assert_contains "review=CHANGES_REQUESTED" "$last_output" "local review failure is classified"
+    ;;
+  stale-pr)
+    assert_eq 11 "$last_rc" "local gate rejects stale live PR identity"
+    assert_contains "actual_head=$STALE_HEAD" "$last_output" "local stale PR identity is reported"
+    assert_not_contains_file "run view 32484277869" "$state/gh.log" \
+      "stale PR identity rejects before red-run binding"
+    ;;
+  esac
+done
+
+new_state local-gate-missing-receipt
+scenario=local-gate
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/missing.json"
+assert_eq 2 "$last_rc" "local gate requires a receipt file"
+assert_not_contains "PR_READY" "$last_output" "missing local receipt cannot admit"
+
+new_state local-gate-unrelated-red
+scenario=local-gate-unrelated-red
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 12 "$last_rc" "local gate rejects an unrelated genuine red check"
+assert_contains "red_checks=2 bound_checks=1" "$last_output" \
+  "unrelated red check is visible in rejection"
+
+new_state local-gate-cancelled-rollup
+scenario=local-gate-cancelled-rollup
+write_local_receipt
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 12 "$last_rc" "local gate rejects a cancelled red rollup"
+assert_contains "disallowed_checks=1" "$last_output" \
+  "cancelled red rollup is classified as genuine failure"
+
+new_state land-local-gate
+scenario=land-local-gate
+write_local_receipt
+run_contract land merge-1 owner/repo 7 main main "$RECORDED_BASE" "$EXPECTED_HEAD" \
+  squash local operator-a "$state/local-gate.json"
+assert_eq 0 "$last_rc" "local gate landing records and proves the admission"
+assert_contains "LANDING_COMPLETE" "$last_output" "local gate landing completes"
+assert_contains "local_gate_mode=local" "$(<"$state/bd.log")" \
+  "local mode is recorded on the merge bead"
+assert_contains "local_gate_receipt_sha=" "$(<"$state/bd.log")" \
+  "local receipt digest is recorded on the merge bead"
+
+new_state land-local-gate-replaced
+scenario=land-local-gate-replaced
+write_local_receipt
+run_contract land merge-1 owner/repo 7 main main "$RECORDED_BASE" "$EXPECTED_HEAD" \
+  squash local operator-a "$state/local-gate.json"
+assert_eq 2 "$last_rc" "receipt replacement rejects local gate landing"
+assert_contains "receipt changed before landing record" "$last_output" \
+  "receipt replacement is reported as an unknown admission"
+assert_not_contains_file "local_gate_mode=local" "$state/bd.log" \
+  "receipt replacement does not record local admission metadata"
+assert_not_contains_file "pr merge" "$state/gh.log" \
+  "receipt replacement cannot reach the merge command"
+
+for local_failure in cancelled timeout; do
+  new_state "local-gate-$local_failure"
+  scenario="local-gate-$local_failure"
+  write_local_receipt
+  run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+  assert_eq 12 "$last_rc" "local gate rejects $local_failure runs"
+done
+
+new_state local-gate-malformed
+scenario=local-gate
+printf '{"schema":"pr-shepherd/local-gate-v1","head_sha":"%s"}\n' "$EXPECTED_HEAD" \
+  >"$state/local-gate.json"
+run_contract check-pr owner/repo 7 "$EXPECTED_HEAD" main local operator-a "$state/local-gate.json"
+assert_eq 2 "$last_rc" "local gate rejects incomplete evidence"
 
 new_state slot-contention
 scenario=slot-contention
@@ -345,6 +539,25 @@ run_contract acquire-slot stable-holder 1 0
 assert_eq 0 "$last_rc" "successor reacquires after durable dead-claim recovery"
 run_contract release-slot stable-holder terminal
 assert_eq 0 "$last_rc" "successor terminally releases the recovered waiter"
+
+# A corrupt recovery_phase must ABORT rather than mutate the claim.
+#
+# The defensive fix at the `recovery_phase_rank` call site is unreachable today:
+# `prepare_recovery` validates the phase first (its `fail` is a bare statement, so
+# the exit propagates under `set -e`), and it returns either that validated phase or
+# the literal `prepared`. The check downstream was still written as
+# `[[ "$(recovery_phase_rank ...)" -lt 2 ]]`, where a command substitution inside
+# [[ ]] DISCARDS the callee's exit and `[[ "" -lt 2 ]]` is true in bash 3.2 -- so the
+# unknown-phase path would have taken the mutating branch if anything ever reached
+# it. This case pins the abort at the reachable gate, so the invariant is covered
+# wherever it is enforced.
+new_state recover-claim-corrupt-phase
+scenario=recover-claim-corrupt-phase
+actor="actor-corrupt"
+printf 'not-a-real-phase\n' >"$state/recovery-phase"
+printf 'pr-shepherd:claim-recovery:merge-1:dead-actor\n' >"$state/recovery-key"
+run_contract recover-claim merge-1 dead-actor session-registry:dead stable-holder
+assert_eq 2 "$last_rc" "a corrupt recovery phase aborts instead of mutating"
 
 new_state recover-claim-waiter-competitor-before-acquire
 scenario=recover-claim-waiter-competitor-before-acquire
@@ -677,6 +890,137 @@ assert_eq 10 "$last_rc" "stacked merge remains open until its content reaches ma
 assert_contains LANDING_HOLD "$last_output" "stacked merge emits a durable hold state"
 assert_contains "landing_state=waiting_base" "$(<"$state/bd.log")" "stacked hold is persisted"
 assert_not_contains_file "close merge-1" "$state/bd.log" "stacked merge does not close before main proof"
+
+# GitHub merge queue. On a queue-enabled base `gh pr merge` ENQUEUES: there is no
+# merge commit and the head is not on landing_base. Stamping `merged` there would
+# report success for a PR a failing merge group can still eject, so these cases
+# pin the queued state, the later proof, and the ejection bounce.
+new_state queue-enqueue
+scenario=queue-enqueue
+run_contract land merge-1 owner/repo 7 main main "$RECORDED_BASE" "$EXPECTED_HEAD" squash external
+assert_eq 10 "$last_rc" "an enqueued PR waits instead of claiming a landing"
+assert_contains LANDING_ENQUEUED "$last_output" "enqueue is reported distinctly"
+assert_contains "landing_state=queued" "$last_output" "enqueue names the queued state"
+assert_eq queued "$(<"$state/landing-state")" "enqueue persists landing_state=queued"
+assert_contains "comment merge-1 ENQUEUED" "$(<"$state/bd.log")" "enqueue writes a durable receipt"
+assert_not_contains_file "landing_state=merged" "$state/bd.log" \
+  "an enqueued PR is never stamped merged"
+assert_not_contains_file "landing_state=proved" "$state/bd.log" \
+  "an enqueued PR is never stamped proved"
+assert_not_contains_file "close merge-1" "$state/bd.log" "an enqueued PR does not close its bead"
+assert_file "$state/released" "enqueue releases the beads merge slot"
+assert_file "$state/atomic-head-guard" "the enqueue call still carries the exact head"
+
+new_state queue-proved
+scenario=queue-proved
+printf 'queued\n' >"$state/landing-state"
+run_contract land merge-1 owner/repo 7 main main "$RECORDED_BASE" "$EXPECTED_HEAD" squash external
+assert_eq 0 "$last_rc" "a queued PR that merged proves and closes"
+assert_contains LANDING_QUEUE_PROVED "$last_output" "queued proof is reported"
+assert_contains LANDING_COMPLETE "$last_output" "queued landing completes"
+assert_contains "close merge-1" "$(<"$state/bd.log")" "queued proof closes the merge bead"
+assert_not_contains_file "pr merge" "$state/gh.log" "a queued resume never merges again"
+assert_not_contains_file "merge-slot acquire" "$state/bd.log" \
+  "a queued resume does not hold the beads slot"
+
+new_state queue-ejected
+scenario=queue-ejected
+printf 'queued\n' >"$state/landing-state"
+run_contract land merge-1 owner/repo 7 main main "$RECORDED_BASE" "$EXPECTED_HEAD" squash external
+assert_eq 12 "$last_rc" "an ejected PR is a bounce, never a success"
+assert_contains LANDING_QUEUE_EJECTED "$last_output" "ejection is reported distinctly"
+assert_contains "entry=absent" "$last_output" "ejection cites the absent queue entry"
+assert_contains "prior_state=queued" "$last_output" "ejection cites the state it left"
+assert_eq ejected "$(<"$state/landing-state")" "ejection persists landing_state=ejected"
+assert_contains "comment merge-1 QUEUE_EJECTED" "$(<"$state/bd.log")" \
+  "ejection writes a durable receipt"
+assert_not_contains "LANDED" "$last_output" "ejection cannot read as a landing"
+assert_not_contains_file "close merge-1" "$state/bd.log" "ejection does not close the merge bead"
+
+new_state queue-absent
+scenario=queue-absent
+run_contract queue-state owner/repo 7
+assert_eq 0 "$last_rc" "queue detection succeeds on a non-queue base"
+assert_contains QUEUE_ABSENT "$last_output" "a non-queue base is reported explicitly"
+
+new_state queue-present
+scenario=queue-present
+run_contract queue-state owner/repo 7
+assert_eq 0 "$last_rc" "queue detection succeeds on a queue base"
+assert_contains QUEUE_PRESENT "$last_output" "a queue base is reported explicitly"
+
+# Detection failure must SAY so and be treated as non-queue, never guessed.
+new_state queue-detect-failure
+scenario=queue-detect-failure
+run_contract queue-state owner/repo 7
+assert_eq 2 "$last_rc" "a failed queue probe is unknown, not a guess"
+assert_contains QUEUE_UNKNOWN "$last_output" "probe failure is stated explicitly"
+assert_contains "treated=non-queue" "$last_output" "probe failure names its fallback"
+
+new_state queue-detect-malformed
+scenario=queue-detect-malformed
+run_contract land merge-1 owner/repo 7 main main "$RECORDED_BASE" "$EXPECTED_HEAD" squash external
+assert_eq 2 "$last_rc" "an undetectable queue fails closed rather than stamping merged"
+assert_contains QUEUE_DETECT_FAILED "$last_output" "undetectable queue state is announced"
+assert_not_contains_file "landing_state=merged" "$state/bd.log" \
+  "an undetectable queue never stamps merged"
+assert_not_contains_file "close merge-1" "$state/bd.log" \
+  "an undetectable queue never closes the merge bead"
+
+# --- the merge bead's anchors must describe the PR it names -------------------
+#
+# A merge bead pointing at the wrong PR was previously meant to be caught by a
+# `Merge-Bead:` trailer in the PR body, but no code ever compared the two. The
+# bead is authoritative, so the comparison reads the bead and the live PR.
+
+new_state anchor-ok
+scenario=anchor-ok
+run_contract check-anchors merge-1 owner/repo 7
+assert_eq 0 "$last_rc" "matching anchors pass"
+assert_contains ANCHOR_OK "$last_output" "a matching bead is announced"
+
+new_state anchor-branch-mismatch
+scenario=anchor-branch-mismatch
+run_contract check-anchors merge-1 owner/repo 7
+assert_eq 12 "$last_rc" "a bead whose branch is not the PR's head branch fails"
+assert_contains "ANCHOR_MISMATCH" "$last_output" "the mismatched field is named"
+assert_contains "field=branch" "$last_output" "the branch field is identified"
+
+new_state anchor-pr-mismatch
+scenario=anchor-pr-mismatch
+run_contract check-anchors merge-1 owner/repo 7
+assert_eq 12 "$last_rc" "a bead anchored to a different PR number fails"
+assert_contains "field=pr" "$last_output" "the pr field is identified"
+
+new_state anchor-repo-mismatch
+scenario=anchor-repo-mismatch
+run_contract check-anchors merge-1 owner/repo 7
+assert_eq 12 "$last_rc" "a bead anchored to a different repository fails"
+assert_contains "field=repo" "$last_output" "the repo field is identified"
+
+new_state anchor-unanchored
+scenario=anchor-unanchored
+run_contract check-anchors merge-1 owner/repo 7
+assert_eq 0 "$last_rc" "a bead predating the branch anchor is not a mismatch"
+assert_contains "branch=unanchored" "$last_output" "the absent anchor is announced"
+
+new_state anchor-bd-error
+scenario=anchor-bd-error
+run_contract check-anchors merge-1 owner/repo 7
+assert_eq 2 "$last_rc" "an unavailable bd is unknown, not a mismatch"
+assert_contains ANCHOR_UNKNOWN "$last_output" "an unavailable lookup is announced"
+
+new_state anchor-no-metadata
+scenario=anchor-no-metadata
+run_contract check-anchors merge-1 owner/repo 7
+assert_eq 0 "$last_rc" "a bead carrying no metadata at all is unanchored, not a mismatch"
+assert_contains "branch=unanchored" "$last_output" "no metadata reads as unanchored"
+
+new_state anchor-bad-metadata
+scenario=anchor-bad-metadata
+run_contract check-anchors merge-1 owner/repo 7
+assert_eq 2 "$last_rc" "metadata that is not an object is unknown, not a mismatch"
+assert_contains ANCHOR_UNKNOWN "$last_output" "malformed metadata is announced"
 
 new_state ready-order
 scenario=ready-order

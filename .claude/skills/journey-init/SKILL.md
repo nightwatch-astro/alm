@@ -1,6 +1,6 @@
 ---
 name: journey-init
-description: Use when setting up a user-journeys directory for a repo that has none: investigates, interviews, and scaffolds the format spec.
+description: "Use when setting up a user-journeys directory for a repo that has none: investigates, interviews, and scaffolds the format spec."
 ---
 
 # journey-init
@@ -92,4 +92,5 @@ not cover is an open question in your report -- never guess it.
   (monorepos: ask which app the journeys belong to; one journeys dir per
   product, not per package).
 - The scaffold must be immediately lintable:
-  `journeys.py lint <dir>` exits 0 on a fresh scaffold (no journeys yet).
+  `python3 <journeys-dir>/journeys.py lint <journeys-dir>` exits 0 on a fresh
+  scaffold (no journeys yet).

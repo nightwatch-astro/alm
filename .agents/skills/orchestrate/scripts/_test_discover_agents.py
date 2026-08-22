@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
 SCRIPT = Path(__file__).with_name("discover-agents.py")
 SPEC = importlib.util.spec_from_file_location("discover_agents", SCRIPT)
 assert SPEC and SPEC.loader
@@ -178,19 +177,47 @@ class DiscoverAgentsTest(unittest.TestCase):
 
         self.assertEqual([agent["name"] for agent in agents], ["coder"])
 
+    @staticmethod
+    def frontmatter_model(agents_dir, name: str) -> str:
+        """The `model:` line in the agent's own definition -- the source of truth."""
+        text = (agents_dir / f"{name}.agent.md").read_text(encoding="utf-8")
+        for line in text.split("---")[1].splitlines():
+            if line.startswith("model:"):
+                return line.split(":", 1)[1].strip()
+        raise AssertionError(f"{name}.agent.md has no model: pin")
+
+    @staticmethod
+    def frontmatter_tools(agents_dir, name: str) -> str:
+        """The declared tools, or the runtime default when omitted."""
+        text = (agents_dir / f"{name}.agent.md").read_text(encoding="utf-8")
+        frontmatter = text.split("---")[1].splitlines()
+        for index, line in enumerate(frontmatter):
+            if line.startswith("tools:"):
+                value = line.split(":", 1)[1].strip()
+                if value:
+                    return value
+                tools = []
+                for item in frontmatter[index + 1 :]:
+                    if not item.startswith("  - "):
+                        break
+                    tools.append(item[4:].strip())
+                return ", ".join(tools) or "(all)"
+        return "(all)"
+
     def test_real_package_agents_preserve_model_and_tools(self) -> None:
         package_agents = SCRIPT.parents[3] / "agents"
 
         agents = {agent["name"]: agent for agent in self.collect(package_agents)}
 
-        self.assertEqual(agents["workflow-pull-worker"]["model"], "sonnet")
-        self.assertEqual(
-            agents["workflow-pull-worker"]["tools"],
-            "Read, Edit, Write, Bash, Grep, Glob",
-        )
-        self.assertEqual(agents["workflow-researcher"]["model"], "sonnet")
-        self.assertIn("WebSearch", str(agents["workflow-researcher"]["tools"]))
-        self.assertEqual(agents["workflow-worker"]["model"], "sonnet")
+        # Assert the discovered model matches the definition's own frontmatter
+        # rather than a literal. These pins move whenever routing is re-evaluated,
+        # and a hardcoded tier makes every such change look like a discovery bug.
+        for name in ("domain-specialist", "researcher", "shepherd"):
+            self.assertEqual(agents[name]["model"], self.frontmatter_model(package_agents, name))
+            self.assertEqual(
+                agents[name]["tools"],
+                self.frontmatter_tools(package_agents, name),
+            )
 
     def test_quality_guard_package_agents_preserve_model_and_tools(self) -> None:
         package_agents = (
@@ -208,8 +235,11 @@ class DiscoverAgentsTest(unittest.TestCase):
             "maintenance-metrics-reader",
             "reviewer-mechanics",
         ):
-            self.assertEqual(agents[name]["model"], "haiku")
-            self.assertEqual(agents[name]["tools"], "Read, Grep, Glob, Bash")
+            self.assertEqual(agents[name]["model"], self.frontmatter_model(package_agents, name))
+            self.assertEqual(
+                agents[name]["tools"],
+                self.frontmatter_tools(package_agents, name),
+            )
 
     def test_json_is_byte_deterministic(self) -> None:
         self.write(self.first, "beta.md", definition("beta"))
