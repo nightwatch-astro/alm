@@ -249,9 +249,11 @@ As a user tracking what happened in my library, I open the Audit log to see an i
   - A session reaches a project through the project-creation wizard's session
     selection.
 
-  Panel and mosaic relations are proposed and accepted individually in the
-  Sessions detail surface (spec 062 FR-044). Those change logical group
-  identity, not session membership.
+  Panel and mosaic split, merge, and identity change belong to logical group
+  identity, not session membership. Spec 062 FR-044 requires each such change to
+  create a new group identity linked to a retired predecessor. Spec 062 US2
+  specifies the surface for those changes; its Tauri commands have no backend
+  handlers, tracked by bead astro-plan-ic9h.20.
 
   Original requirement, preserved for history: Sessions toolbar MUST provide
   bulk actions (Confirm, Split, Merge, Use in project) that operate on
