@@ -35,7 +35,15 @@ apps/desktop/tokens/*.json text eol=lf
 # present in the actual source.
 specs/**/contracts/*.generated.json text eol=lf
 
-# Migration SQL and Rust test files must use LF so that the frozen baseline
-# checksum (SHA-384 of file bytes) is identical on all platforms.
+# Migration SQL must use LF: sqlx stores `_sqlx_migrations.checksum` as a
+# SHA-384 over each migration file's exact bytes, so a CRLF checkout reports
+# VersionMismatch against a database migrated from an LF checkout. Rust sources
+# are normalized with them so the tree stays byte-identical across platforms.
 *.sql text eol=lf
 *.rs text eol=lf
+
+# The bundled star-catalogue blobs are pinned by a SHA-256 of their exact bytes
+# in `crates/targeting/resolver/tests/bundled_seed_digest.rs`. A Windows checkout
+# would otherwise convert them to CRLF and fail that digest there — and only
+# there. The committed blobs are already LF, so the pinned digests are unchanged.
+assets/seed/*.json text eol=lf

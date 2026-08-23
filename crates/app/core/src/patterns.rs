@@ -230,6 +230,13 @@ fn map_resolve_error(e: ResolveError) -> ContractError {
             "resolvedLength": resolved_length,
             "segmentLengthBytes": segment_length_bytes
         })),
+        ResolveError::EmptySegment { value } => ContractError::new(
+            ErrorCode::PatternInvalid,
+            format!("Pattern segment is empty after sanitization: {value}"),
+            ErrorSeverity::Blocking,
+            false,
+        )
+        .with_details(serde_json::json!({ "offendingValue": value })),
     }
 }
 

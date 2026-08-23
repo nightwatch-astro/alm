@@ -3477,6 +3477,7 @@ version = "0.1.0"
 dependencies = [
  "fits-header",
  "metadata_core",
+ "tempfile",
 ]
 
 [[package]]
@@ -5355,6 +5356,7 @@ dependencies = [
  "rstest",
  "thiserror 2.0.19",
  "unicode-normalization",
+ "unicode-script",
  "unicode-security",
 ]
 
@@ -6497,6 +6499,7 @@ dependencies = [
  "persistence_targets",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "simbad-resolver",
  "skymath 0.7.2",
  "sqlx",

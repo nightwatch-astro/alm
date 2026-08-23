@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 thiserror.workspace = true
 unicode-normalization.workspace = true
+unicode-script.workspace = true
 unicode-security.workspace = true
 
 [dev-dependencies]

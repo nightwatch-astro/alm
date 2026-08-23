@@ -3,8 +3,10 @@
 
 //! Invariants for the pre-1.0 database reset.
 //!
-//! The schema is now a frozen 0001 baseline. These tests intentionally verify
-//! the resulting database, rather than replaying the deleted historical chain.
+//! Before 1.0 the schema is a single editable 0001 baseline: schema changes are
+//! made in place there instead of appended as new migrations, and each such edit
+//! requires every existing development database to be recreated. These tests
+//! verify the database the baseline produces; there is no chain to replay.
 
 use std::collections::HashSet;
 
@@ -12,7 +14,7 @@ use persistence_core::Database;
 
 async fn migrated() -> Database {
     let db = Database::in_memory().await.expect("in-memory database");
-    db.migrate().await.expect("frozen baseline applies cleanly");
+    db.migrate().await.expect("baseline applies cleanly");
     db
 }
 
@@ -108,25 +110,15 @@ async fn representative_repository_queries_cover_seeded_and_empty_surfaces() {
 }
 
 #[test]
-fn migration_set_has_frozen_0001_and_unique_append_only_versions() {
+fn migration_set_starts_at_baseline_with_unique_versions() {
     let mut migrations = Database::migrator().iter();
-    let first = migrations.next().expect("0001 baseline migration is embedded");
+    let first = migrations.next().expect("baseline migration is embedded");
     assert_eq!(first.version, 1);
     assert_eq!(first.description, "initial schema");
-    assert_eq!(first.sql.as_str(), include_str!("../migrations/0001_initial_schema.sql"));
-    assert_eq!(
-        first.checksum.as_ref(),
-        &[
-            0x38, 0x87, 0xe6, 0xde, 0x23, 0xf8, 0xc4, 0xc0, 0x3a, 0x36, 0x5f, 0xa1, 0x7a, 0xf3,
-            0x7e, 0xa8, 0x29, 0x80, 0xce, 0x94, 0x93, 0x70, 0xca, 0x47, 0xaa, 0x27, 0xad, 0x1b,
-            0x25, 0xe3, 0x9d, 0xad, 0x3f, 0xf7, 0x93, 0x9d, 0x04, 0xe5, 0x17, 0xb0, 0xbb, 0x93,
-            0xdc, 0x0d, 0x72, 0x84, 0xae, 0xd7,
-        ]
-    );
 
     let mut versions = HashSet::new();
     for migration in migrations {
-        assert!(migration.version >= 2, "future migrations append after frozen 0001");
+        assert!(migration.version >= 2, "no migration shares version 1 with the baseline");
         assert!(
             versions.insert(migration.version),
             "duplicate migration version {}",

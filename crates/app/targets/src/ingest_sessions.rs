@@ -738,6 +738,17 @@ mod tests {
         RawFileMetadata { image_typ: Some(t.to_owned()), ..RawFileMetadata::default() }
     }
 
+    /// Records whether the observing-night date underflow is reachable from a
+    /// header. `Iso8601::DEFAULT` needs the `time` crate's `large-dates`
+    /// feature to accept a signed expanded year, and the workspace does not
+    /// enable it, so `Date::MIN`'s year cannot arrive through `DATE-OBS`. If
+    /// this assertion ever fails the underflow is header-reachable.
+    #[test]
+    fn a_minimum_date_header_is_not_parsed_as_that_year() {
+        let parsed = parse_date_obs(Some("-9999-01-01T00:00:00"));
+        assert_ne!(parsed.year(), -9999, "DATE-OBS reached sessions::observing_night as Date::MIN");
+    }
+
     #[test]
     fn is_light_recognizes_variants() {
         assert!(is_light_frame(&meta_imagetyp("Light Frame")));

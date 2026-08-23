@@ -370,8 +370,10 @@ pub async fn drain_and_backfill_once(
     // `SimbadResolver::new` never builds a reqwest/TLS client when
     // `online_enabled` is false (mirrors target.resolve FIX-3); cache hits
     // still resolve regardless.
-    let config =
-        SimbadConfig::from_settings(endpoint, u64::try_from(timeout_secs.max(1)).unwrap_or(10));
+    let config = SimbadConfig::from_settings(
+        endpoint,
+        u64::from(crate::resolver_settings::positive_or_default(timeout_secs, 10)),
+    );
     let resolver = match SimbadResolver::new(&config, resolve_cache, online_enabled) {
         Ok(resolver) => resolver,
         Err(e) => {
