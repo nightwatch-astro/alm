@@ -14,9 +14,16 @@
 //! `GAIN`, `XBINNING`, `YBINNING`, `NAXIS1`, `NAXIS2`, `INSTRUME`, `TELESCOP`,
 //! `DATE-OBS`.
 //!
-//! No cfitsio or heavy C dependencies — `fits-header` is pure Rust. Missing or
-//! garbage headers are handled gracefully; the extractor never panics or
-//! returns hard errors for corrupt files, preferring `None` values.
+//! No cfitsio or heavy C dependencies — `fits-header` is pure Rust. A missing
+//! keyword yields `None` rather than an error. A header the parser cannot
+//! handle at all — including one that panics inside `fits-header` — yields
+//! [`MetadataExtractError::Parse`]; [`FitsExtractor::extract`] never panics.
+//!
+//! A silent mis-parse passes through this adapter undetected, because it does
+//! not validate that the header block is ASCII: `fits-header` lossy-decodes
+//! each card before slicing it at fixed offsets, so one invalid UTF-8 byte
+//! shifts every later field and can yield a wrong keyword and value with no
+//! panic and no error.
 #![allow(clippy::doc_markdown)]
 
 use std::io::{self, Read};
@@ -66,10 +73,26 @@ impl MetadataExtractor for FitsExtractor {
             msg: e.to_string(),
         })?;
 
+        // `fits-header` 0.4.2 lossy-decodes the block and then slices the
+        // resulting `String` at fixed byte offsets (`parse.rs:38`, `:47`,
+        // `:61`, `:92`, `:98`). A non-ASCII byte widens to a 3-byte U+FFFD, so
+        // those
+        // offsets can land inside a char and panic. Containing that here
+        // depends on panics unwinding: the release profile in the workspace
+        // `Cargo.toml` deliberately keeps the default `panic = "unwind"`.
+        let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            fits_header::Header::parse(&bytes)
+        }))
+        .map_err(|_| MetadataExtractError::Parse {
+            path: path.display().to_string(),
+            msg: "the FITS header parser panicked on malformed header bytes".to_owned(),
+        })?;
+
         // Header::parse never actually errs (parsing is lenient by design);
         // propagate defensively rather than unwrap.
-        let header = fits_header::Header::parse(&bytes).map_err(|e| {
-            MetadataExtractError::Parse { path: path.display().to_string(), msg: e.to_string() }
+        let header = parsed.map_err(|e| MetadataExtractError::Parse {
+            path: path.display().to_string(),
+            msg: e.to_string(),
         })?;
 
         Ok(Some(parse_header(&header)))
@@ -351,6 +374,22 @@ mod tests {
     fn empty_block_returns_empty_metadata() {
         let meta = parse(&[]);
         assert!(meta.image_typ.is_none());
+    }
+
+    /// Regression for astro-plan-3v3r.20.33 / 20.16: a `.fits` file whose first
+    /// block is non-ASCII drives `fits-header` 0.4.2 into a non-char-boundary
+    /// slice, which in production unwinds out of the inbox scan.
+    #[test]
+    fn malformed_header_bytes_are_an_error_not_a_panic() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("corrupt.fits");
+        std::fs::write(&path, [0xffu8; BLOCK_SIZE]).expect("write fixture");
+
+        let err = FitsExtractor.extract(&path).expect_err("malformed header must be an error");
+        assert!(
+            matches!(err, MetadataExtractError::Parse { .. }),
+            "expected a Parse error, got {err:?}"
+        );
     }
 
     #[test]
