@@ -247,15 +247,15 @@ pub async fn find_by_source_frame(
     pool: &SqlitePool,
     frame_id: &str,
 ) -> DbResult<Vec<CalibrationAssignmentRow>> {
-    let like = format!("%\"{frame_id}\"%");
     let rows: Vec<(String, String, String, String, f64, i64, String, String)> = sqlx::query_as(
         "SELECT ca.id, ca.session_id, ca.calibration_type, ca.master_id, ca.confidence,
                 ca.was_override, ca.mismatched_dimensions, ca.assigned_at
          FROM calibration_assignment ca
          JOIN calibration_session cs ON cs.id = ca.master_id
-         WHERE cs.frame_ids LIKE ?",
+         JOIN json_each(cs.frame_ids) je
+         WHERE je.value = ?",
     )
-    .bind(like)
+    .bind(frame_id)
     .fetch_all(pool)
     .await
     .map_err(DbError::Database)?;
@@ -407,5 +407,41 @@ mod tests {
         let result =
             upsert(&pool, params("a-df", "ses-001", "dark_flat", "m-1", 1.0, false, &[])).await;
         assert!(result.is_err(), "dark_flat should be rejected by DB CHECK constraint");
+    }
+
+    async fn insert_master(pool: &SqlitePool, master_id: &str, frame_ids: &str) {
+        sqlx::query(
+            "INSERT INTO calibration_session (id, session_key, frame_ids, kind, created_at) \
+             VALUES (?, ?, ?, 'dark', '2026-01-01T00:00:00Z')",
+        )
+        .bind(master_id)
+        .bind(master_id)
+        .bind(frame_ids)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// `_` and `%` are `LIKE` wildcards, so a pattern built from a frame id
+    /// containing either matched masters that do not list that frame.
+    #[tokio::test]
+    async fn find_by_source_frame_rejects_wildcard_collisions() {
+        let pool = setup().await;
+        insert_master(&pool, "m-other", r#"["fx1","frame-9"]"#).await;
+        upsert(&pool, params("a-1", "ses-001", "dark", "m-other", 1.0, false, &[])).await.unwrap();
+
+        assert!(find_by_source_frame(&pool, "f_1").await.unwrap().is_empty());
+        assert!(find_by_source_frame(&pool, "f%").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn find_by_source_frame_finds_exact_member_with_metacharacters() {
+        let pool = setup().await;
+        insert_master(&pool, "m-1", r#"["a_b"]"#).await;
+        upsert(&pool, params("a-1", "ses-001", "dark", "m-1", 1.0, false, &[])).await.unwrap();
+
+        let rows = find_by_source_frame(&pool, "a_b").await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].master_id, "m-1");
     }
 }
