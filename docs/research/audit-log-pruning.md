@@ -14,7 +14,7 @@ row classes, projected log size, and the settings that control retention.
   A plan item is one file operation, so this class scales with library size.
 - Every other audit producer writes one row per user command. There are 17 such
   sites (census below), and together they account for single-digit MB per decade.
-- The per-item class exceeds the per-command class by roughly 96x per year on a
+- The per-item class exceeds the per-command class by roughly 108x per year on a
   400,000-frame library. Retention must therefore be scoped by class, not
   applied uniformly by age.
 - A per-item row is prunable only where `plan_items` records the same fact in a
@@ -33,7 +33,7 @@ row classes, projected log size, and the settings that control retention.
   argument.
 - Multi-year retention is feasible. Ten years of per-command audit costs about
   25 MB. Ten years of per-item audit on the largest modelled library costs about
-  3.0 GB, which the 730-day default reduces to about 0.6 GB.
+  3.3 GB, which the 730-day default reduces to about 540 MB.
 
 ## What already exists
 
@@ -299,7 +299,7 @@ over 25 percent of the library:
 | --- | --- | --- | --- | --- | --- |
 | Small | 5,000 | 5,000 | 10,000 | 15 MB | 2.5 MB |
 | Medium | 20,000 | 25,000 | 45,000 | 68 MB | 2.5 MB |
-| Large | 60,000 | 100,000 | 160,000 | 240 MB | 2.5 MB |
+| Large | 80,000 | 100,000 | 180,000 | 270 MB | 2.5 MB |
 
 Assumptions for the yearly rows:
 
@@ -308,16 +308,16 @@ Assumptions for the yearly rows:
 - One cleanup or archive pass per year over 25 percent of the library. A user who
   does not run a cleanup pass pays only the new-frame column; a user who
   reorganises the whole library twice pays about eight times the large-case
-  figure.
+  cleanup column.
 - Per-command bytes assume 5,000 audited commands per year at about 500 bytes
   each. This column does not vary with library size because command count tracks
   user activity, not frame count.
 - Retries and failures are excluded. Each retried item adds one more row to each
   of the three tables.
 
-Ten-year totals for the large library: 600 MB of first organize, 2.4 GB of
-steady state, 25 MB of per-command audit, for about 3.0 GB. Under the 730-day
-default the per-item component holds at about 0.6 GB.
+Ten-year totals for the large library: 600 MB of first organize, 2.7 GB of
+steady state, 25 MB of per-command audit, for about 3.3 GB. Under the 730-day
+default the per-item component holds at about 540 MB.
 
 ## Feasibility
 
@@ -326,17 +326,17 @@ constraint.
 
 - Per-command classes: indefinite retention costs 25 MB per decade. No parameter
   is warranted, so the design retains them forever.
-- Per-item class: 240 MB per year at the large size, against 2.5 MB for
+- Per-item class: 270 MB per year at the large size, against 2.5 MB for
   everything else. It is the only class that scales with library size, and it
-  dominates by about 96x.
-- Uniform indefinite retention puts a 12 TB library at about 3.0 GB of log after
-  a decade. That is 0.025 percent of the image data it describes, and a database
+  dominates by about 108x.
+- Uniform indefinite retention puts a 12 TB library at about 3.3 GB of log after
+  a decade. That is 0.028 percent of the image data it describes, and a database
   large enough to slow the log view and every backup `VACUUM INTO`.
 
 One class dominating by that factor is what makes the design prune by class
 rather than uniformly by age.
 
-The 730-day default costs about 480 MB at the large size and keeps two years of
+The 730-day default costs about 540 MB at the large size and keeps two years of
 per-item transition history. A user who lowers it to 90 days loses the transition
 timeline of completed plans. The record of what was moved, archived, or deleted
 survives, because `plan_items` retains the intent and the outcome permanently.
