@@ -33,7 +33,9 @@ row classes, projected log size, and the settings that control retention.
   argument.
 - Multi-year retention is feasible. Ten years of per-command audit costs about
   25 MB. Ten years of per-item audit on the largest modelled library costs about
-  3.3 GB, which the 730-day default reduces to about 540 MB.
+  3.3 GB, which the retention defaults reduce to about 406 MB. That cost splits
+  across both parameters: `auditRetentionDays` governs 979 B of the 1365 B a
+  plan item writes and `eventLogRetentionDays` governs the other 386 B.
 
 ## What already exists
 
@@ -316,8 +318,12 @@ Assumptions for the yearly rows:
   of the three tables.
 
 Ten-year totals for the large library: 600 MB of first organize, 2.7 GB of
-steady state, 25 MB of per-command audit, for about 3.3 GB. Under the 730-day
-default the per-item component holds at about 540 MB.
+steady state, 25 MB of per-command audit, for about 3.3 GB. At the retention
+defaults the resident per-item component is about 406 MB, split across both
+parameters. `auditRetentionDays` governs `audit_log_entry` and
+`plan_apply_events`, 979 B of the 1365 B per item, so 194 MB of the 270 MB per
+year. `eventLogRetentionDays` governs the `events` share, 386 B and 76 MB per
+year.
 
 ## Feasibility
 
@@ -336,10 +342,13 @@ constraint.
 One class dominating by that factor is what makes the design prune by class
 rather than uniformly by age.
 
-The 730-day default costs about 540 MB at the large size and keeps two years of
-per-item transition history. A user who lowers it to 90 days loses the transition
-timeline of completed plans. The record of what was moved, archived, or deleted
-survives, because `plan_items` retains the intent and the outcome permanently.
+The 730-day `auditRetentionDays` default keeps two years of `audit_log_entry` and
+`plan_apply_events` transition history, 387 MB at the large size. The 90-day
+`eventLogRetentionDays` default keeps 19 MB of `events` alongside it, about
+406 MB together. A user who lowers `auditRetentionDays` to 90 days loses the
+transition timeline of completed plans. The record of what was moved, archived,
+or deleted survives, because `plan_items` retains the intent and the outcome
+permanently.
 
 ## Parameters
 
@@ -384,8 +393,10 @@ The 0 to 36500 range exists to cover these cases:
 
 - 90, for a database grown past a size the user finds acceptable on an SSD, or
   before handing the library to another machine.
-- 3650, for a user who wants the full per-item timeline for a decade and has the
-  3 GB.
+- 3650, for a user who wants a decade of the classes this key governs and has the
+  2.4 GB they cost at the large size. The `events` share stays on
+  `eventLogRetentionDays`, so this setting alone does not retain a decade of the
+  log view.
 - 0, for a user who wants no automatic deletion at all.
 
 `eventLogRetentionDays` must govern the `events` table. The 90-day default
