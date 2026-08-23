@@ -19,10 +19,11 @@
 //! handle at all — including one that panics inside `fits-header` — yields
 //! [`MetadataExtractError::Parse`]; [`FitsExtractor::extract`] never panics.
 //!
-//! A header that `fits-header` mis-parses without failing is NOT detectable
-//! here: the crate lossy-decodes each card before slicing it at fixed offsets,
-//! so one invalid byte shifts every later field and can yield a wrong keyword
-//! and value with no panic and no error.
+//! A silent mis-parse passes through this adapter undetected, because it does
+//! not validate that the header block is ASCII: `fits-header` lossy-decodes
+//! each card before slicing it at fixed offsets, so one invalid UTF-8 byte
+//! shifts every later field and can yield a wrong keyword and value with no
+//! panic and no error.
 #![allow(clippy::doc_markdown)]
 
 use std::io::{self, Read};
