@@ -258,7 +258,6 @@ pub fn verify_cwd_containment(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     fn sample_req() -> SpawnRequest {
         SpawnRequest {
@@ -305,15 +304,15 @@ mod tests {
 
     #[test]
     fn cwd_containment_passes_when_inside_root() {
-        let root = PathBuf::from("/mnt/library");
-        let cwd = PathBuf::from("/mnt/library/project");
+        let root = fs_pathsafe::test_support::abs_path("/mnt/library");
+        let cwd = fs_pathsafe::test_support::abs_path("/mnt/library/project");
         assert!(verify_cwd_containment(&cwd, &[root.as_path()]).is_ok());
     }
 
     #[test]
     fn cwd_containment_fails_when_outside_roots() {
-        let root = PathBuf::from("/mnt/library");
-        let cwd = PathBuf::from("/tmp/scratch");
+        let root = fs_pathsafe::test_support::abs_path("/mnt/library");
+        let cwd = fs_pathsafe::test_support::abs_path("/tmp/scratch");
         assert_eq!(
             verify_cwd_containment(&cwd, &[root.as_path()]),
             Err("cwd.outside_library_root")
@@ -322,15 +321,15 @@ mod tests {
 
     #[test]
     fn cwd_containment_fails_with_no_roots() {
-        let cwd = PathBuf::from("/anywhere");
+        let cwd = fs_pathsafe::test_support::abs_path("/anywhere");
         assert_eq!(verify_cwd_containment(&cwd, &[]), Err("cwd.outside_library_root"));
     }
 
     /// astro-plan-3v3r.13.26: the text prefix matches, the resolved path does not.
     #[test]
     fn cwd_containment_fails_for_a_path_that_traverses_out_of_a_root() {
-        let root = PathBuf::from("/mnt/library");
-        let cwd = PathBuf::from("/mnt/library/../../a");
+        let root = fs_pathsafe::test_support::abs_path("/mnt/library");
+        let cwd = fs_pathsafe::test_support::abs_path("/mnt/library/../../a");
         assert_eq!(
             verify_cwd_containment(&cwd, &[root.as_path()]),
             Err("cwd.outside_library_root")
@@ -341,8 +340,8 @@ mod tests {
     /// is when the caller's `canonicalize` fails and the raw path arrives here.
     #[test]
     fn cwd_containment_passes_for_a_directory_that_does_not_exist_yet() {
-        let root = PathBuf::from("/mnt/library");
-        let cwd = PathBuf::from("/mnt/library/project/_source_view");
+        let root = fs_pathsafe::test_support::abs_path("/mnt/library");
+        let cwd = fs_pathsafe::test_support::abs_path("/mnt/library/project/_source_view");
         assert!(verify_cwd_containment(&cwd, &[root.as_path()]).is_ok());
     }
 

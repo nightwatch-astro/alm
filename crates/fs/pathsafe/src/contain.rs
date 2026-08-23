@@ -198,7 +198,11 @@ fn to_utf8(path: PathBuf) -> camino::Utf8PathBuf {
 mod tests {
     use super::*;
 
-    const ROOT: &str = "/mnt/library";
+    use crate::test_support::abs_path as p;
+
+    fn root() -> PathBuf {
+        p("/mnt/library")
+    }
 
     /// The collapse is delegated to `path-clean`; these are the equivalence
     /// guard for it, moved here when `path_gate::lexical_normalize` folded into
@@ -223,28 +227,27 @@ mod tests {
 
     #[test]
     fn relative_path_inside_the_root_resolves() {
-        let contained = resolve_in_root(Path::new(ROOT), Path::new("targets/m31/light.fits"))
-            .expect("inside the root");
-        assert_eq!(contained.as_path(), Path::new("/mnt/library/targets/m31/light.fits"));
+        let contained =
+            resolve_in_root(&root(), Path::new("targets/m31/light.fits")).expect("inside the root");
+        assert_eq!(contained.as_path(), p("/mnt/library/targets/m31/light.fits"));
     }
 
     #[test]
     fn relative_path_that_escapes_after_normalization_is_refused() {
-        let err = resolve_in_root(Path::new(ROOT), Path::new("targets/../../outside/x.fits"))
-            .unwrap_err();
+        let err = resolve_in_root(&root(), Path::new("targets/../../outside/x.fits")).unwrap_err();
         assert!(matches!(err, ContainmentError::Escapes { .. }), "{err}");
     }
 
     #[test]
     fn absolute_path_inside_the_root_resolves() {
-        let contained = resolve_in_root(Path::new(ROOT), Path::new("/mnt/library/views/a.fits"))
-            .expect("inside the root");
-        assert_eq!(contained.as_path(), Path::new("/mnt/library/views/a.fits"));
+        let contained =
+            resolve_in_root(&root(), &p("/mnt/library/views/a.fits")).expect("inside the root");
+        assert_eq!(contained.as_path(), p("/mnt/library/views/a.fits"));
     }
 
     #[test]
     fn absolute_path_outside_the_root_does_not_replace_it() {
-        let err = resolve_in_root(Path::new(ROOT), Path::new("/etc/passwd")).unwrap_err();
+        let err = resolve_in_root(&root(), &p("/etc/passwd")).unwrap_err();
         assert!(matches!(err, ContainmentError::Escapes { .. }), "{err}");
     }
 
@@ -252,16 +255,15 @@ mod tests {
     fn a_leaf_that_does_not_exist_is_contained() {
         // No filesystem entry is created anywhere in this crate's tests; the
         // verdict is lexical, which is what makes a write destination resolvable.
-        let contained =
-            resolve_in_root(Path::new(ROOT), Path::new("brand/new/dir/file.fits")).unwrap();
-        assert_eq!(contained.as_path(), Path::new("/mnt/library/brand/new/dir/file.fits"));
+        let contained = resolve_in_root(&root(), Path::new("brand/new/dir/file.fits")).unwrap();
+        assert_eq!(contained.as_path(), p("/mnt/library/brand/new/dir/file.fits"));
     }
 
     #[test]
     fn a_path_that_traverses_out_of_an_absolute_root_is_refused() {
         // The defect this rule replaces: `starts_with` on unnormalized text
         // accepted this pair, because the text prefix matched.
-        let err = resolve_in_root(Path::new(ROOT), Path::new("/mnt/library/../../a")).unwrap_err();
+        let err = resolve_in_root(&root(), &p("/mnt/library/../../a")).unwrap_err();
         assert!(matches!(err, ContainmentError::Escapes { .. }), "{err}");
     }
 
@@ -273,8 +275,8 @@ mod tests {
 
     #[test]
     fn unrooted_accepts_an_absolute_normal_path() {
-        let contained = resolve_unrooted(Path::new("/mnt/archive/plan/x.fits")).unwrap();
-        assert_eq!(contained.as_path(), Path::new("/mnt/archive/plan/x.fits"));
+        let contained = resolve_unrooted(&p("/mnt/archive/plan/x.fits")).unwrap();
+        assert_eq!(contained.as_path(), p("/mnt/archive/plan/x.fits"));
     }
 
     #[test]
@@ -285,26 +287,25 @@ mod tests {
 
     #[test]
     fn unrooted_refuses_a_traversing_absolute_path() {
-        let err = resolve_unrooted(Path::new("/mnt/archive/../../etc/passwd")).unwrap_err();
+        let err = resolve_unrooted(&p("/mnt/archive/../../etc/passwd")).unwrap_err();
         assert!(matches!(err, ContainmentError::NotNormalized { .. }), "{err}");
     }
 
     #[test]
     fn contained_in_any_finds_the_matching_root() {
-        let a = Path::new("/mnt/a");
-        let b = Path::new("/mnt/b");
-        assert!(contained_in_any(Path::new("/mnt/b/project"), &[a, b]));
-        assert!(!contained_in_any(Path::new("/tmp/scratch"), &[a, b]));
+        let (a, b) = (p("/mnt/a"), p("/mnt/b"));
+        let roots = [a.as_path(), b.as_path()];
+        assert!(contained_in_any(&p("/mnt/b/project"), &roots));
+        assert!(!contained_in_any(&p("/tmp/scratch"), &roots));
     }
 
     #[test]
     fn contained_in_any_refuses_when_no_root_is_registered() {
-        assert!(!contained_in_any(Path::new("/anywhere"), &[]));
+        assert!(!contained_in_any(&p("/anywhere"), &[]));
     }
 
     #[test]
     fn contained_in_any_normalizes_before_comparing() {
-        let root = Path::new("/mnt/library");
-        assert!(!contained_in_any(Path::new("/mnt/library/../../a"), &[root]));
+        assert!(!contained_in_any(&p("/mnt/library/../../a"), &[root().as_path()]));
     }
 }

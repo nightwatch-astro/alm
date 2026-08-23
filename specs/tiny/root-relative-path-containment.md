@@ -57,6 +57,19 @@ per-component `lstat` walk in `path_gate::resolve_and_validate`, which stops at
 the first component that does not exist because a non-existent component cannot
 be a link.
 
+### An absolute root means absolute on the running platform
+
+`Path::is_absolute` requires a drive or UNC prefix on Windows, so the
+Unix-shaped literal `/mnt/library` is a relative root there and every entry
+point answers `RootNotAbsolute`. Tests that assert a containment verdict on a
+made-up path build their roots through `fs_pathsafe::test_support::abs`, which
+prefixes `C:` on Windows and returns the path unchanged elsewhere.
+
+The prefix comparison is case-sensitive on every platform, while NTFS treats
+`C:\Library` and `C:\library` as one directory. A case difference therefore
+turns a contained path into `Escapes`: the divergence produces a refusal, never
+an admission.
+
 ### The rule is implemented once, in `fs_pathsafe`
 
 `fs_pathsafe` is the containment crate and is already a dependency of

@@ -21,6 +21,7 @@
 
 pub mod contain;
 pub mod export_dest;
+pub mod test_support;
 
 use std::fs::{self, Metadata};
 use std::io;

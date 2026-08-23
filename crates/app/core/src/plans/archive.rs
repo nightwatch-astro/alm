@@ -321,7 +321,19 @@ mod tests {
     use super::*;
 
     fn root_map() -> HashMap<String, Utf8PathBuf> {
-        HashMap::from([("root-1".to_owned(), Utf8PathBuf::from("/mnt/library"))])
+        HashMap::from([(
+            "root-1".to_owned(),
+            Utf8PathBuf::from(fs_pathsafe::test_support::abs("/mnt/library")),
+        )])
+    }
+
+    /// Compare by path components: the resolved form carries the platform
+    /// separator, which differs from the Unix-style literal on Windows.
+    fn assert_same_path(actual: &camino::Utf8Path, expected_unix: &str) {
+        assert_eq!(
+            actual.as_std_path(),
+            std::path::Path::new(&fs_pathsafe::test_support::abs(expected_unix)),
+        );
     }
 
     #[test]
@@ -332,7 +344,7 @@ mod tests {
             &root_map(),
         )
         .unwrap();
-        assert_eq!(path, "/mnt/library/.astro-plan-archive/plan-1/x.fits");
+        assert_same_path(&path, "/mnt/library/.astro-plan-archive/plan-1/x.fits");
     }
 
     /// astro-plan-3v3r.5.20: an unresolvable root id took the no-root branch and
@@ -354,9 +366,9 @@ mod tests {
     /// Legacy archive/cleanup generators store an absolute path with no root id.
     #[test]
     fn a_rootless_absolute_path_still_resolves() {
-        let path =
-            resolve_archive_abs_path("/mnt/library/archive/x.fits", None, &root_map()).unwrap();
-        assert_eq!(path, "/mnt/library/archive/x.fits");
+        let supplied = fs_pathsafe::test_support::abs("/mnt/library/archive/x.fits");
+        let path = resolve_archive_abs_path(&supplied, None, &root_map()).unwrap();
+        assert_same_path(&path, "/mnt/library/archive/x.fits");
     }
 
     #[test]

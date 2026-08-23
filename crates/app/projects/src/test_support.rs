@@ -22,11 +22,7 @@ pub const TEST_PROJECT_ROOT: &str = "/library/projects-root";
 
 /// Make a Unix-style test path absolute on the current platform.
 pub fn abs(path: &str) -> String {
-    if cfg!(windows) {
-        format!("C:{path}")
-    } else {
-        path.to_owned()
-    }
+    fs_pathsafe::test_support::abs(path)
 }
 
 /// Register a project-kind source so relative request paths have an anchor

@@ -689,13 +689,22 @@ mod tests {
         // Insert a minimal project row
         sqlx::query(
             "INSERT INTO projects (id, name, tool, lifecycle, path, notes, channel_drift, created_at, updated_at) \
-             VALUES (?, 'Test Project', 'PixInsight', 'setup_incomplete', '/mnt/library/test_project', NULL, 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+             VALUES (?, 'Test Project', 'PixInsight', 'setup_incomplete', ?, NULL, 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
         )
         .bind(&project_id)
+        .bind(abs(PROJECT_DIR))
         .execute(pool)
         .await
         .unwrap();
         project_id
+    }
+
+    /// Unix-style project folder of [`make_project`]; absolute on the current
+    /// platform through [`abs`].
+    const PROJECT_DIR: &str = "/mnt/library/test_project";
+
+    fn abs(path: &str) -> String {
+        fs_pathsafe::test_support::abs(path)
     }
 
     async fn insert_root(db: &Database, path: &str) {
@@ -794,7 +803,7 @@ mod tests {
         let bus = make_bus(db.pool().clone());
         let spawner = FakeSpawner::ok();
         // Register a root that does NOT contain the project path (/mnt/library/test_project).
-        insert_root(&db, "/different/root").await;
+        insert_root(&db, &abs("/different/root")).await;
         set_tool_path(&db, "pixinsight", "/usr/bin/pixinsight").await;
         let req = ToolLaunchRequest { project_id, tool_id: "pixinsight".to_owned(), force: false };
         let resp = launch(db.pool(), &bus, &spawner, req).await.unwrap();
@@ -811,7 +820,7 @@ mod tests {
         let bus = make_bus(db.pool().clone());
         let spawner = FakeSpawner::ok();
         // Register library root that contains the project
-        insert_root(&db, "/mnt/library").await;
+        insert_root(&db, &abs("/mnt/library")).await;
         set_tool_path(&db, "pixinsight", "/usr/bin/pixinsight").await;
         let req = ToolLaunchRequest {
             project_id: project_id.clone(),
@@ -835,7 +844,7 @@ mod tests {
         let project_id = make_project(&db).await;
         let bus = make_bus(db.pool().clone());
         let spawner = FakeSpawner::ok();
-        insert_root(&db, "/mnt/library").await;
+        insert_root(&db, &abs("/mnt/library")).await;
         set_tool_path(&db, "siril", "/usr/bin/siril").await;
 
         psv_repo::insert_view(
@@ -848,7 +857,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let view_dir = "/mnt/library/test_project/source-views/plan-1/2026-01-01/L";
+        let view_dir = abs("/mnt/library/test_project/source-views/plan-1/2026-01-01/L");
         for (idx, name) in ["light1.fits", "light2.fits"].iter().enumerate() {
             psv_repo::insert_view_item(
                 db.pool(),
@@ -867,7 +876,10 @@ mod tests {
         let req = ToolLaunchRequest { project_id, tool_id: "siril".to_owned(), force: false };
         let resp = launch(db.pool(), &bus, &spawner, req).await.unwrap();
         assert_eq!(resp.status, ToolLaunchStatus::Success);
-        assert_eq!(resp.working_dir.as_deref(), Some(view_dir));
+        assert_eq!(
+            resp.working_dir.as_deref().map(std::path::Path::new),
+            Some(std::path::Path::new(&view_dir))
+        );
     }
 
     /// No generated view exists — must fall back to the project root exactly
@@ -878,13 +890,16 @@ mod tests {
         let project_id = make_project(&db).await;
         let bus = make_bus(db.pool().clone());
         let spawner = FakeSpawner::ok();
-        insert_root(&db, "/mnt/library").await;
+        insert_root(&db, &abs("/mnt/library")).await;
         set_tool_path(&db, "siril", "/usr/bin/siril").await;
 
         let req = ToolLaunchRequest { project_id, tool_id: "siril".to_owned(), force: false };
         let resp = launch(db.pool(), &bus, &spawner, req).await.unwrap();
         assert_eq!(resp.status, ToolLaunchStatus::Success);
-        assert_eq!(resp.working_dir.as_deref(), Some("/mnt/library/test_project"));
+        assert_eq!(
+            resp.working_dir.as_deref().map(std::path::Path::new),
+            Some(std::path::Path::new(&abs(PROJECT_DIR)))
+        );
     }
 
     /// Wizard-registered roots live in `registered_sources` only (they are
@@ -921,7 +936,7 @@ mod tests {
         let project_id = make_project(&db).await;
         let bus = make_bus(db.pool().clone());
         let spawner = FakeSpawner::ok();
-        insert_root(&db, "/mnt/library").await;
+        insert_root(&db, &abs("/mnt/library")).await;
         set_tool_path(&db, "pixinsight", "/usr/bin/pixinsight").await;
         let req = ToolLaunchRequest {
             project_id: project_id.clone(),
@@ -944,7 +959,7 @@ mod tests {
         let db = setup_db().await;
         let project_id = make_project(&db).await;
         let bus = make_bus(db.pool().clone());
-        insert_root(&db, "/mnt/library").await;
+        insert_root(&db, &abs("/mnt/library")).await;
         set_tool_path(&db, "pixinsight", "/usr/bin/pixinsight").await;
 
         // Insert a "spawned" row with a pid that the test process can never have as its own child.
