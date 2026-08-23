@@ -17,11 +17,15 @@ row classes, projected log size, and the settings that control retention.
 - The per-item class exceeds the per-command class by roughly 96x per year on a
   400,000-frame library. Retention must therefore be scoped by class, not
   applied uniformly by age.
-- All three per-item rows are derivable from `plan_items`, which carries the
-  intent (`action`, paths), the outcome (`item_state`, `failure_reason`), and the
-  destructive-operation destination (`archive_path`). This makes them Tier 2 and
-  prunable. `plan_items`, `plans`, and `plan_apply_runs` are Tier 1 and are
-  exempt.
+- A per-item row is prunable only where `plan_items` records the same fact in a
+  dedicated column. `plan_items` carries the intent (`action`, paths), the
+  outcome (`item_state`, `failure_reason`), and the destructive-operation
+  destination (`archive_path`). Two of the seven per-item audit triggers record
+  state that `plan_items` cannot express, so they are Tier 1. `plan_items`,
+  `plans`, and `plan_apply_runs` are Tier 1 and are exempt.
+- Prunable triggers are a closed allowlist of exact strings, not a `LIKE`
+  prefix. A trigger absent from the allowlist is retained, so a new trigger is
+  exempt until someone adds it and states the derivability argument.
 - Multi-year retention is feasible. Ten years of per-command audit costs about
   25 MB. Ten years of per-item audit on the largest modelled library costs about
   3.0 GB, which the 730-day default reduces to about 0.6 GB.
@@ -42,6 +46,14 @@ no table is pruned at runtime today. The pool sets no `auto_vacuum` and no
 defaults apply: a `DELETE` returns pages to the free list and the database file
 does not shrink.
 
+The shipped predicate at `crates/persistence/lifecycle/src/repositories/events.rs:310`
+filters on `emitted_at` alone. It carries neither a terminal-plan guard nor a
+`topic` restriction, so a caller wired to it deletes `plan.item.progress` rows
+for a plan still applying. That is inside Tier 2, because `reconcile.rs:20`
+never reads `events`, and it still contradicts the terminal-state guard this
+design requires of every prune predicate. Adding the guard is a precondition on
+wiring `pruner::spawn`, tracked as its own work item below.
+
 ## Producer census
 
 | Producer | Table | Cardinality | Site |
@@ -49,7 +61,8 @@ does not shrink.
 | Plan-apply group commit | `plan_apply_events` | 1 per plan item | `crates/app/core/src/plan_apply/callbacks.rs:184` |
 | Plan-apply group commit | `audit_log_entry` | 1 per plan item | `crates/app/core/src/plan_apply/callbacks.rs:215` |
 | Plan-apply group commit | `events` (`plan.item.progress`) | 1 per plan item | `crates/app/core/src/plan_apply/callbacks.rs:223` |
-| Plan-apply retry and terminal paths | `audit_log_entry` | 1 per retry, 1 per run | `crates/app/core/src/plan_apply/callbacks.rs:390`, `terminal.rs:458` |
+| Plan-apply divergence marker, `trigger` `plan_item.persist_divergence` | `audit_log_entry` | 1 per item, only on double flush failure | `crates/app/core/src/plan_apply/callbacks.rs:390` |
+| Plan-apply terminal path, `trigger` `plan.bulk_cancel_degraded` | `audit_log_entry` | 1 per run | `crates/app/core/src/plan_apply/terminal.rs:458` |
 | Settings writes, restore-defaults, source overrides | `audit_log_entry` | 1 per command | `crates/app/settings/src/writes.rs:164`, `:223`, `:448`, `:478` |
 | First-run root registration and remap | `audit_log_entry` | 1 per command | `crates/app/core/src/first_run/mod.rs:246`, `:298`, `root_ops.rs:70`, `:185`, `root_remap.rs:230` |
 | Source and plan protection checks | `audit_log_entry` | 1 per command | `crates/app/core/src/protection/source_protection.rs:142`, `plan_check.rs:148` |
@@ -77,8 +90,8 @@ loss destroys user knowledge.
 | `plan_apply_runs` | 1 | No | Boot reconciliation reads it alongside `plans.state` (`reconcile.rs:21`). |
 | `provenance_history_archive` | 1 | No | `origin` values `reviewed` and `applied` encode user decisions, and inline history is capped at 10 entries per field (`provenance.rs:42`), so the archive is the only full record. |
 | `outbox_event` where `published_at IS NULL` | 1 | No | An unpublished row is undelivered work, which `idx_outbox_event_unpublished` indexes. |
-| `audit_log_entry` where `trigger` is not `plan_item.%` | 1 | No | Records a user command whose prior state is not stored elsewhere. `settings.restore_defaults` (`crates/app/settings/src/writes.rs:359`) carries the pre-restore snapshot in its payload only. `outcome` values `refused` and `failed` record a rejected request that appears nowhere else. |
-| `audit_log_entry` where `trigger` is `plan_item.%` | 2 | Yes | Duplicates `plan_items.item_state` and `failure_reason`. The transition timeline is the only unique content and it is history, not a user decision. |
+| `audit_log_entry` where `trigger` is outside the prunable allowlist | 1 | No | The fail-closed default. It applies to the command triggers in the census above, to `plan_item.refused`, to `plan_item.persist_divergence`, and to any trigger added later. `settings.restore_defaults` (`crates/app/settings/src/writes.rs:359`) carries the pre-restore snapshot in its payload only. `outcome` values `refused` and `failed` record a rejected request that appears nowhere else. |
+| `audit_log_entry` where `trigger` is in the prunable allowlist | 2 | Yes | Each of the five listed triggers restates an `item_state` or `item_stale` value that `plan_items` holds in its own column. The transition timestamp is the only unique content and it is history, not a user decision. |
 | `plan_apply_events` | 2 | Yes | Per-item transition timeline for a run whose outcome is in `plan_items.item_state`. Not read by boot reconciliation. |
 | `events` | 2 | Yes | Live and replay feed for the log view. Hooks are idempotent, so a subscriber replaying past a pruned cutoff re-dispatches no-ops (`crates/audit/src/pruner.rs:20`). |
 | `audit_event`, `outbox_event` where `published_at IS NOT NULL`, `command_execution`, `repository_change` | 2 | Out of scope | Per-command volume, foreign-keyed into each other and into `audit_event.created_sequence`. Pruning them needs its own dependency-order design and is not justified by their size. |
@@ -87,6 +100,64 @@ The boundary is a `trigger` predicate on `audit_log_entry`, not the `severity`
 column. The per-item rows are written at `Severity::Workflow`
 (`crates/app/core/src/plan_apply/callbacks.rs:472`), so severity does not
 separate the high-volume class from the rest.
+
+### Prunable trigger allowlist
+
+`callbacks.rs:393`, `:469`, and `:568` are the sites that write a `plan_item.`
+trigger, and `:469` interpolates the executor's terminal state, so the prefix
+`plan_item.` expands to the seven trigger strings below. The "Recoverable from"
+column is the check a reader runs: open the cited column and confirm the audit
+row states nothing the column does not.
+
+| Trigger | Written at | Recoverable from | Tier | Prunable |
+| --- | --- | --- | --- | --- |
+| `plan_item.succeeded` | `callbacks.rs:469` from `crates/fs/executor/src/run/loop_.rs:512` | `plan_items.item_state` = `succeeded` | 2 | Yes |
+| `plan_item.failed` | `callbacks.rs:469` from `loop_.rs:472`, `:531` | `plan_items.item_state` = `failed` plus `failure_reason` | 2 | Yes |
+| `plan_item.skipped` | `callbacks.rs:469` from `loop_.rs:94` | `plan_items.item_state` = `skipped` | 2 | Yes |
+| `plan_item.stale` | `callbacks.rs:469` from `loop_.rs:445` | `plan_items.item_state` = `failed` plus `item_stale` = 1, set by `crates/persistence/plans/src/repositories/plan_apply.rs:740` | 2 | Yes |
+| `plan_item.cancelled` | `callbacks.rs:568` | `plan_items.item_state` = `cancelled`, written by `batch_cancel_pending_items` before the audit row (`crates/app/core/src/plan_apply/lifecycle.rs:131`) | 2 | Yes |
+| `plan_item.refused` | `callbacks.rs:469` from `loop_.rs:393`, `:414` | Nothing | 1 | No |
+| `plan_item.persist_divergence` | `callbacks.rs:393` | Nothing | 1 | No |
+
+`plan_item.refused` is Tier 1 because `refused` has no `item_state` value:
+`plan_apply.rs:735` collapses it to `failed` with `item_stale` = 0, which is
+byte-identical to a genuine failure. The gate that refused the item survives
+only in the audit row's `outcome` `refused` and its `reason_code`
+(`destructive_unconfirmed` at `loop_.rs:393`, `protected` at `loop_.rs:414`),
+and `plan_items` has no column for either. The free text inside
+`failure_reason` is not a substitute, because recovering the distinction from it
+means parsing a message. This is the same argument the table above makes for
+command triggers whose `outcome` is `refused`.
+
+`plan_item.persist_divergence` is Tier 1 by construction.
+`crates/app/core/src/plan_apply/callbacks.rs:240` writes it only after the
+`plan_items` flush and its single retry have both failed, and `:242` labels that
+path TIER-1 durability. The row exists because the `plan_items` write did not
+land, so the table it would be derived from is the table that is missing the
+data. `callbacks.rs:385` names the crash-recovery sweep as its reader, and
+`crates/app/core/src/plan_apply/reconcile.rs:20` reads `plans.state`, the
+`plan_apply_runs` row, and `plan_items.item_state` only, so no shipped consumer
+reads the marker. Pruning it removes the input before its reader exists.
+
+The allowlist is a constant in `crates/audit-types/src/event.rs`, beside the
+`AuditLogEntry` type it classifies (`:141`). Both `crates/audit`, which holds
+the pruner, and `crates/app/core`, which holds the write sites, depend on
+`audit-types`, so the pruner reads the constant and an author adding a trigger
+edits the file that defines it.
+
+The enumeration fails closed by these properties:
+
+1. The prune predicate is `trigger IN (...)` bound from the constant. `LIKE` is
+   rejected: a prefix match is an allowlist written as a wildcard, so it admits
+   every future `plan_item.` trigger without review.
+2. `callbacks.rs:469` interpolates `event.new_state`, a `String` the executor
+   supplies, so a new terminal state yields a new trigger with no edit at the
+   write site. Under `IN`, that trigger is retained.
+3. A test asserts every allowlist entry is `plan_item.<state>` where `<state>`
+   is in the `plan_items.item_state` CHECK set
+   (`crates/persistence/core/migrations/0001_initial_schema.sql:1748`), with
+   `stale` as the one named exception, carrying the `item_stale` argument
+   above. An entry `plan_items` cannot express fails the test.
 
 ## Row sizes
 
@@ -197,12 +268,23 @@ per-source-root one. Both are `noisy: false`, so a change writes one
 
 | Key | Type | Unit | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `auditRetentionDays` | integer | days | 730 | `NumberRangeInclusive { lo: 0, hi: 36500 }` |
-| `eventLogRetentionDays` | integer | days | 90 | `NumberRangeInclusive { lo: 0, hi: 36500 }` |
+| `auditRetentionDays` | integer | days | 730 | `NumberRangeInclusive`, 0 to 36500 |
+| `eventLogRetentionDays` | integer | days | 90 | `NumberRangeInclusive`, 0 to 36500 |
 
-`auditRetentionDays` governs `audit_log_entry` rows whose `trigger` matches
-`plan_item.%` and all `plan_apply_events` rows, in both cases only for plans in
-a terminal state. `0` disables pruning of those classes.
+`ValidationRule::NumberRangeInclusive` takes four fields, `lo: f64`, `hi: f64`,
+`msg`, and `want_msg` (`crates/app/settings/src/descriptors.rs:44`), so the
+bounds are `f64` while the stored value is a whole number of days. Both keys
+therefore need the two message strings alongside the range.
+
+`auditRetentionDays` governs `audit_log_entry` rows whose `trigger` is in the
+prunable allowlist and all `plan_apply_events` rows, in both cases only for
+plans in a terminal state. `0` disables pruning of those classes. An absent
+`settings` row resolves to the descriptor default, not to 0: `get_raw` returns
+`None` (`crates/persistence/lifecycle/src/repositories/settings.rs:37`),
+`apply_value_to_state` is never called for the key
+(`crates/app/settings/src/read.rs:111`), and the `SettingsState` field keeps its
+`Default` value, which `default_value_for_key` reports (`read.rs:120`). So unset
+means 730 and the implementation must set that field default to 730.
 
 - Lower it to 90 when the database has grown past a size the user finds
   acceptable on an SSD, or before handing the library to another machine.
@@ -211,7 +293,8 @@ a terminal state. `0` disables pruning of those classes.
 - Set it to 0 when the user wants no automatic deletion at all.
 
 `eventLogRetentionDays` governs the `events` table. The 90-day default matches
-the shipped `DEFAULT_RETENTION_DAYS` (`crates/audit/src/pruner.rs:35`).
+the shipped `DEFAULT_RETENTION_DAYS` (`crates/audit/src/pruner.rs:35`). An
+absent row resolves to 90 by the same descriptor path.
 
 - Lower it to 7 when the log view is only used for the current session and the
   database should stay small.
@@ -278,21 +361,25 @@ The user-facing review surface is:
 **Prune traceability.** Each pass writes one `audit_log_entry` with
 `trigger` `audit.pruned`, `severity` `workflow`, `actor` `system`, and a payload
 carrying the cutoff, the per-table deleted counts, and the oldest and newest
-`at` values removed. Its `trigger` does not match `plan_item.%`, so the design's
-own predicate exempts it and the prune history is never pruned. One row per day
-is about 0.2 MB per year.
+`at` values removed. Its `trigger` is absent from the prunable allowlist, so the
+predicate exempts it and the prune history is never pruned. One row per day is
+about 0.2 MB per year.
 
 **Unclean-shutdown reconciliation.** Pruning cannot remove a row that boot
 reconciliation needs. `crates/app/core/src/plan_apply/reconcile.rs:20` states
 the intent is `plans.state` plus the `plan_apply_runs` row and the outcome is
-`plan_items.item_state`; the pass reads only those. `plan_apply_events` and
-`audit_log_entry` are not read by it. Independent guards hold this:
+`plan_items.item_state`; the pass reads only those. Independent guards hold
+this:
 
 1. All three tables the pass reads are Tier 1 and no prune predicate targets
    them.
 2. Every prune predicate additionally requires the plan to be in a terminal
    state, so an interrupted mutation is out of scope for pruning regardless of
    its age.
+3. `plan_item.persist_divergence` is outside the prunable allowlist. The
+   terminal-state guard alone does not protect it, because a run whose flush
+   diverged still finalizes terminal, so the exemption has to be in the trigger
+   enumeration rather than in the state predicate.
 
 The `ON DELETE CASCADE` from `plans` to `plan_items` (schema line 1732) is the
 failure mode to guard against in future work: any feature that deletes a plan
@@ -306,8 +393,10 @@ Filed as beads from this node.
 | --- | --- |
 | Wire `pruner::spawn` into the app shell and drive it from `eventLogRetentionDays` | Settings descriptors |
 | Register `auditRetentionDays` and `eventLogRetentionDays` descriptors | |
-| Class-scoped prune for `audit_log_entry` and `plan_apply_events`, with the terminal-plan and `trigger` predicates and exemption tests | Settings descriptors |
-| Index supporting the `trigger` prefix predicate on `audit_log_entry` (migration) | Class-scoped prune |
+| Prunable-trigger allowlist constant in `crates/audit-types/src/event.rs`, with the CHECK-set test from the allowlist section | |
+| Class-scoped prune for `audit_log_entry` and `plan_apply_events`, with the terminal-plan predicate, `trigger IN` against the allowlist, and exemption tests for `plan_item.refused` and `plan_item.persist_divergence` | Settings descriptors, allowlist constant |
+| Index supporting the `trigger IN` predicate on `audit_log_entry` (migration) | Class-scoped prune |
+| Terminal-plan guard for the `events` pruner before `pruner::spawn` gains a caller | Allowlist constant |
 | `audit.pruned` audit row per pass | Class-scoped prune |
 | `log.prune` command with preview and `reclaimSpace` | Class-scoped prune |
 | Extend `log.export` to `audit_log_entry` | |
