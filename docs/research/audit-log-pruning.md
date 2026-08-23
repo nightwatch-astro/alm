@@ -23,9 +23,14 @@ row classes, projected log size, and the settings that control retention.
   destination (`archive_path`). One of the seven per-item audit triggers records
   state that `plan_items` cannot express, so it is Tier 1. `plan_items`,
   `plans`, and `plan_apply_runs` are Tier 1 and are exempt.
+- `plan_apply_events` is the one prunable table holding a column class of its
+  own, the three rollback columns. Its custody-bearing content still reaches
+  `plan_items.failure_reason` through the `FailureCode`, leaving
+  `rollback_message` as the only unrecoverable value (residue section below).
 - The design specifies prunable triggers as a closed allowlist of exact strings,
-  not a `LIKE` prefix. A trigger absent from the allowlist is retained, so a new
-  trigger is exempt until someone adds it and states the derivability argument.
+  not a `LIKE` prefix. A trigger absent from the allowlist must be retained, so
+  a new trigger stays exempt until someone adds it and states the derivability
+  argument.
 - Multi-year retention is feasible. Ten years of per-command audit costs about
   25 MB. Ten years of per-item audit on the largest modelled library costs about
   3.0 GB, which the 730-day default reduces to about 0.6 GB.
@@ -92,7 +97,7 @@ loss destroys user knowledge.
 | `outbox_event` where `published_at IS NULL` | 1 | No | An unpublished row is undelivered work, which `idx_outbox_event_unpublished` indexes. |
 | `audit_log_entry` where `trigger` is outside the prunable allowlist | 1 | No | The fail-closed default. It covers the command triggers in the census above, `plan_item.persist_divergence`, and any trigger added later. `settings.restore_defaults` (`crates/app/settings/src/writes.rs:359`) carries the pre-restore snapshot in its payload only. For a command trigger, `outcome` values `refused` and `failed` record a rejected request that appears nowhere else. |
 | `audit_log_entry` where `trigger` is in the prunable allowlist | 2 | Yes | Each of the six listed triggers restates an `item_state`, `item_stale`, or `failure_reason` value that `plan_items` holds in its own column. The transition timestamp is the only unique content and it is history, not a user decision. |
-| `plan_apply_events` | 2 | Yes | Per-item transition timeline for a run whose outcome is in `plan_items.item_state`. Not read by boot reconciliation. |
+| `plan_apply_events` | 2 | Yes | Per-item transition timeline for a run whose outcome is in `plan_items.item_state`. Not read by boot reconciliation. Sole holder of the three rollback columns, whose residue the section below states. |
 | `events` | 2 | Yes | Live and replay feed for the log view. Hooks are idempotent, so a subscriber replaying past a pruned cutoff re-dispatches no-ops (`crates/audit/src/pruner.rs:20`). |
 | `audit_event`, `outbox_event` where `published_at IS NOT NULL`, `command_execution`, `repository_change` | 2 | Out of scope | Per-command volume, foreign-keyed into each other and into `audit_event.created_sequence`. Pruning them needs its own dependency-order design and is not justified by their size. |
 
@@ -182,18 +187,62 @@ constant exists in the tree, and the work item below tracks adding it.
 
 These requirements on the implementation make the enumeration fail closed:
 
-1. The prune predicate binds `trigger IN (...)` from the constant. `LIKE` is
+1. The prune predicate must bind `trigger IN (...)` from the constant. `LIKE` is
    rejected: a prefix match is an allowlist written as a wildcard, so it admits
    every future `plan_item.` trigger without review.
 2. `callbacks.rs:469` interpolates `event.new_state`, a `String` the executor
    supplies, so a new terminal state yields a new trigger with no edit at the
-   write site. Under `IN`, that trigger is retained.
+   write site. Under `IN`, that trigger must be retained.
 3. A test must assert that every allowlist entry is `plan_item.<state>` where
    `<state>` is in the `plan_items.item_state` CHECK set
    (`crates/persistence/core/migrations/0001_initial_schema.sql:1748`), except
    for `stale` and `refused`, which `plan_apply.rs:735` collapses to `failed` and
    which the two arguments above cover. An entry `plan_items` cannot express
    fails the test.
+
+### Rollback residue in `plan_apply_events`
+
+`plan_apply_events` is the only table with `rollback_attempted`,
+`rollback_outcome`, and `rollback_message`
+(`crates/persistence/core/migrations/0001_initial_schema.sql:1708` to `:1711`).
+`plan_items` has no rollback column (schema lines 1735 to 1757), and the
+`audit_log_entry` payload is the five-key object at
+`crates/app/core/src/plan_apply/callbacks.rs:476`, which has none of the three
+keys. The values reach `plan_apply_events` alone, through
+`crates/persistence/plans/src/repositories/plan_apply.rs:597`. A
+`rollback_outcome` of `failed` records a mutation begun and not undone, which is
+the nearest thing in the per-item class to a custody fact.
+
+The rows are Tier 2 on the same test as the rest of the class, because the
+custody-bearing part is in `plan_items.failure_reason`. One site sets
+`rollback_attempted` (`crates/fs/executor/src/ops/move_op.rs:193`): the
+cross-volume move whose copy succeeded and whose source delete then failed. That
+site encodes the rollback outcome in the `FailureCode` it returns alongside
+(`move_op.rs:179` to `:186`).
+
+| Rollback outcome | `FailureCode` string |
+| --- | --- |
+| `succeeded` | `copy.succeeded.delete.failed` |
+| `failed` | `copy.succeeded.delete.failed.rollback.failed` |
+
+Those two strings (`crates/fs/executor/src/failure.rs:126`) are the prefix of
+`plan_items.failure_reason` by the `Display` format at `failure.rs:50`, and
+`plan_apply.rs:742` writes that column on the same `UPDATE` as `item_state`. So
+whether a rollback was attempted and whether it succeeded survive a prune of the
+event row, readable as a prefix split rather than message parsing.
+
+The residue is `rollback_message`, the operating-system error text from the
+failed removal of the copy (`move_op.rs:183`). It states why the rollback failed
+and not that it failed, and the action and both paths it refers to stay in
+`plan_items` permanently. Pruning it costs diagnostic detail rather than user
+knowledge, which is the same distinction that puts the `path.invalid` case above
+in Tier 2.
+
+The rejected alternative is exempting event rows with `rollback_attempted = 1` as
+Tier 1. The exemption adds nothing the `FailureCode` prefix does not already
+supply, and its predicate would have to read a column the matching
+`audit_log_entry` row does not have, splitting one per-item class across two
+retention rules.
 
 ## Row sizes
 
@@ -294,13 +343,19 @@ survives, because `plan_items` retains the intent and the outcome permanently.
 
 ## Parameters
 
-Both parameters are stable settings keys registered in
-`crates/app/settings/src/descriptors.rs:93`, hydrated into `SettingsState` by
-their `apply` closure and read from that applied in-memory value. Persistence to
-the `settings` table may lag, per the write-behind rule in Principle V. Neither
-is `overridable`, because retention is a database-wide property and not a
-per-source-root one. Both are `noisy: false`, so a change writes one
-`settings.update` audit row rather than a snapshot.
+The design places both parameters in the stable settings-key surface. Neither
+key appears in any non-markdown file in the tree, so the following are
+requirements on the implementation:
+
+- Add both as `Descriptor` entries in the table at
+  `crates/app/settings/src/descriptors.rs:93`.
+- Hydrate each into a `SettingsState` field through its `apply` closure, and
+  read dependents off that applied in-memory value. Persistence to the
+  `settings` table may lag, per the write-behind rule in Principle V.
+- Set neither as `overridable`, because retention is a database-wide property
+  and not a per-source-root one.
+- Set both `noisy: false`, so a change writes one `settings.update` audit row
+  rather than a snapshot.
 
 | Key | Type | Unit | Default | Validation |
 | --- | --- | --- | --- | --- |
@@ -312,31 +367,38 @@ per-source-root one. Both are `noisy: false`, so a change writes one
 bounds are `f64` while the stored value is a whole number of days. Both keys
 therefore need the two message strings alongside the range.
 
-`auditRetentionDays` governs `audit_log_entry` rows whose `trigger` is in the
-prunable allowlist and all `plan_apply_events` rows, in both cases only for
-plans in a terminal state. `0` disables pruning of those classes. An absent
-`settings` row resolves to the descriptor default, not to 0: `get_raw` returns
-`None` (`crates/persistence/lifecycle/src/repositories/settings.rs:37`),
+`auditRetentionDays` must govern `audit_log_entry` rows whose `trigger` is in the
+prunable allowlist and all `plan_apply_events` rows, in both cases only for plans
+in a terminal state, with `0` disabling the pruning of those classes.
+
+An absent `settings` row must resolve to the descriptor default rather than to 0,
+and the shipped read path already yields that once the key exists: `get_raw`
+returns `None` (`crates/persistence/lifecycle/src/repositories/settings.rs:37`),
 `apply_value_to_state` is never called for the key
-(`crates/app/settings/src/read.rs:111`), and the `SettingsState` field keeps its
-`Default` value, which `default_value_for_key` reports (`read.rs:120`). So unset
-means 730 and the implementation must set that field default to 730.
+(`crates/app/settings/src/read.rs:111`), the key's `SettingsState` field keeps
+its `Default` value, and `default_value_for_key` reports that value
+(`read.rs:120`). So the implementation must give the new field a `Default` of
+730, at which point unset means 730.
 
-- Lower it to 90 when the database has grown past a size the user finds
-  acceptable on an SSD, or before handing the library to another machine.
-- Raise it to 3650 when the user wants the full per-item timeline for a decade
-  and has the 3 GB.
-- Set it to 0 when the user wants no automatic deletion at all.
+The 0 to 36500 range exists to cover these cases:
 
-`eventLogRetentionDays` governs the `events` table. The 90-day default matches
-the shipped `DEFAULT_RETENTION_DAYS` (`crates/audit/src/pruner.rs:35`). An
-absent row resolves to 90 by the same descriptor path.
+- 90, for a database grown past a size the user finds acceptable on an SSD, or
+  before handing the library to another machine.
+- 3650, for a user who wants the full per-item timeline for a decade and has the
+  3 GB.
+- 0, for a user who wants no automatic deletion at all.
 
-- Lower it to 7 when the log view is only used for the current session and the
-  database should stay small.
-- Raise it to 365 when the user exports logs for support and wants a year of
-  history available to `log.export`.
-- Set it to 0 to disable, at which point the table grows without bound.
+`eventLogRetentionDays` must govern the `events` table. The 90-day default
+matches the shipped `DEFAULT_RETENTION_DAYS` (`crates/audit/src/pruner.rs:35`),
+and an absent row must resolve to 90 by the same descriptor path.
+
+Its range covers these cases:
+
+- 7, for a log view used only for the current session, keeping the database
+  small.
+- 365, for a user who exports logs for support and wants a year of history
+  available to `log.export`.
+- 0, disabling the prune, after which the table grows without bound.
 
 The keys are separate because the tables serve different purposes. `events` is
 the live feed for the log view, and its rows are the most redundant of the three.
@@ -345,18 +407,22 @@ Using one key for both forces the same window on both.
 
 ### Trigger and schedule
 
-Pruning is age-triggered and automatic: one pass at startup, then one per 24
-hours, which is the shape `crates/audit/src/pruner.rs:60` already implements. A
-manual `log.prune` command exists in addition, for a user who lowers retention
-and wants the effect immediately rather than at the next startup.
+Pruning must be age-triggered and automatic: one pass at startup, then one per 24
+hours, which is the shape `crates/audit/src/pruner.rs:60` already implements.
 
-`log.prune` takes one argument, `reclaimSpace: bool`, default false. With it
-set, the pass runs `VACUUM` after deleting. Without it, the freed pages stay on
-the free list and the database file does not shrink, because the pool sets no
-`auto_vacuum` (`crates/persistence/core/src/lib.rs:119`). A user pruning to
-recover disk space needs the vacuum; a user pruning to speed up the log view
-does not, and pays neither the full-file rewrite nor the transient doubling of
-disk use.
+The design also requires a manual command, `log.prune`, for a user who lowers
+retention and wants the effect immediately rather than at the next startup. No
+non-markdown file in the tree names it. Its required shape:
+
+- One argument, `reclaimSpace: bool`, default false.
+- Set, the pass must run `VACUUM` after deleting.
+- Unset, the freed pages stay on the free list and the database file does not
+  shrink, because the pool sets no `auto_vacuum`
+  (`crates/persistence/core/src/lib.rs:119`).
+
+A user pruning to recover disk space needs the vacuum. A user pruning to speed up
+the log view does not, and pays neither the full-file rewrite nor the transient
+doubling of disk use.
 
 ### Rejected parameters
 
@@ -364,7 +430,7 @@ disk use.
 | --- | --- |
 | Row-count cap | A user cannot map a row count to anything they care about. Rows per file operation is an implementation detail. |
 | Database-size cap | The file does not shrink on delete, so a size-triggered pass would fire repeatedly without changing the measured size unless it also vacuumed. Coupling a size trigger to a full-file rewrite is a worse default than an age trigger. |
-| Automatic or on-request mode enum | `auditRetentionDays = 0` already expresses "never delete automatically", and `log.prune` already covers "delete now". |
+| Automatic or on-request mode enum | `auditRetentionDays = 0` expresses "never delete automatically", and `log.prune` covers "delete now", so an enum restates both. |
 | Per-table retention keys beyond the two above | The remaining tables are Tier 1 or out of scope, so there is no window to configure. |
 | Vacuum-after-prune setting | The choice depends on the reason for the individual prune, not on a standing preference, so it belongs on the `log.prune` call. |
 
@@ -386,33 +452,33 @@ user chooses. That export covers `events` only. Extending it to
 filesystem mutation and a prune touches only the database, so it does not apply.
 The user-facing review surface is:
 
-1. A preview on `log.prune`: rows to delete per table and the cutoff timestamp,
-   returned before any delete runs.
+1. A preview on `log.prune`, required to return the rows to delete per table and
+   the cutoff timestamp before any delete runs.
 2. The retention-gap marker already shipped at
    `crates/app/core/src/log_stream.rs:228`, which reports `truncated` when a
    caller's cursor predates the oldest surviving row, so a pruned window is
    visible in the log view rather than silent.
 3. The prune's own audit row, below.
 
-**Prune traceability.** Each pass writes one `audit_log_entry` with
-`trigger` `audit.pruned`, `severity` `workflow`, `actor` `system`, and a payload
-carrying the cutoff, the per-table deleted counts, and the oldest and newest
-`at` values removed. Its `trigger` is absent from the prunable allowlist, so the
-predicate exempts it and the prune history is never pruned. One row per day is
-about 0.2 MB per year.
+**Prune traceability.** Each pass must write one `audit_log_entry` with `trigger`
+`audit.pruned`, `severity` `workflow`, `actor` `system`, and a payload holding the
+cutoff, the per-table deleted counts, and the oldest and newest `at` values
+removed. That `trigger` must stay outside the prunable allowlist, which exempts
+it and keeps the prune history itself unpruned. One row per day is about 0.2 MB
+per year.
 
-**Unclean-shutdown reconciliation.** Pruning cannot remove a row that boot
-reconciliation needs. `crates/app/core/src/plan_apply/reconcile.rs:20` states
-the intent is `plans.state` plus the `plan_apply_runs` row and the outcome is
-`plan_items.item_state`; the pass reads only those. Independent guards hold
-this:
+**Unclean-shutdown reconciliation.** No prune may remove a row that boot
+reconciliation needs. `crates/app/core/src/plan_apply/reconcile.rs:20` states the
+intent is `plans.state` plus the `plan_apply_runs` row and the outcome is
+`plan_items.item_state`; that sweep reads only those. Independent guards must
+hold this:
 
-1. All three tables the pass reads are Tier 1 and no prune predicate targets
+1. All three tables the sweep reads are Tier 1, and no prune predicate may target
    them.
-2. Every prune predicate additionally requires the plan to be in a terminal
-   state, so an interrupted mutation is out of scope for pruning regardless of
+2. Every prune predicate must additionally require the plan to be in a terminal
+   state, putting an interrupted mutation out of scope for pruning regardless of
    its age.
-3. `plan_item.persist_divergence` is outside the prunable allowlist. The
+3. `plan_item.persist_divergence` must stay outside the prunable allowlist. The
    terminal-state guard alone does not protect it, because a run whose flush
    diverged still finalizes terminal, so the exemption has to be in the trigger
    enumeration rather than in the state predicate.
