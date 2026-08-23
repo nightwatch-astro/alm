@@ -20,12 +20,12 @@ row classes, projected log size, and the settings that control retention.
 - A per-item row is prunable only where `plan_items` records the same fact in a
   dedicated column. `plan_items` carries the intent (`action`, paths), the
   outcome (`item_state`, `failure_reason`), and the destructive-operation
-  destination (`archive_path`). Two of the seven per-item audit triggers record
-  state that `plan_items` cannot express, so they are Tier 1. `plan_items`,
+  destination (`archive_path`). One of the seven per-item audit triggers records
+  state that `plan_items` cannot express, so it is Tier 1. `plan_items`,
   `plans`, and `plan_apply_runs` are Tier 1 and are exempt.
-- Prunable triggers are a closed allowlist of exact strings, not a `LIKE`
-  prefix. A trigger absent from the allowlist is retained, so a new trigger is
-  exempt until someone adds it and states the derivability argument.
+- The design specifies prunable triggers as a closed allowlist of exact strings,
+  not a `LIKE` prefix. A trigger absent from the allowlist is retained, so a new
+  trigger is exempt until someone adds it and states the derivability argument.
 - Multi-year retention is feasible. Ten years of per-command audit costs about
   25 MB. Ten years of per-item audit on the largest modelled library costs about
   3.0 GB, which the 730-day default reduces to about 0.6 GB.
@@ -35,7 +35,7 @@ row classes, projected log size, and the settings that control retention.
 | Component | Location | State |
 | --- | --- | --- |
 | Age-based `events` pruner, 90-day constant | `crates/audit/src/pruner.rs:35`, `:46`, `:60` | No caller anywhere in the repo or app shell |
-| `DELETE FROM events WHERE emitted_at < ?` | `crates/persistence/lifecycle/src/repositories/events.rs:310` | Marked `#[allow(dead_code)]` at `:277` |
+| `DELETE FROM events WHERE emitted_at < ?` | `crates/persistence/lifecycle/src/repositories/events.rs:310` | `pub`, reached only from `pruner::spawn`; filters on `emitted_at` alone |
 | Retention-gap marker for the log view | `crates/app/core/src/log_stream.rs:228` | Shipped; reports `truncated` when a cursor predates the oldest row |
 | Time-range log export | `crates/app/core/src/log_stream.rs:276` | Shipped; covers `events` only |
 | `VACUUM INTO` snapshot copy | `crates/persistence/core/src/lib.rs:188` | Shipped for backup, not for space reclamation |
@@ -90,8 +90,8 @@ loss destroys user knowledge.
 | `plan_apply_runs` | 1 | No | Boot reconciliation reads it alongside `plans.state` (`reconcile.rs:21`). |
 | `provenance_history_archive` | 1 | No | `origin` values `reviewed` and `applied` encode user decisions, and inline history is capped at 10 entries per field (`provenance.rs:42`), so the archive is the only full record. |
 | `outbox_event` where `published_at IS NULL` | 1 | No | An unpublished row is undelivered work, which `idx_outbox_event_unpublished` indexes. |
-| `audit_log_entry` where `trigger` is outside the prunable allowlist | 1 | No | The fail-closed default. It applies to the command triggers in the census above, to `plan_item.refused`, to `plan_item.persist_divergence`, and to any trigger added later. `settings.restore_defaults` (`crates/app/settings/src/writes.rs:359`) carries the pre-restore snapshot in its payload only. `outcome` values `refused` and `failed` record a rejected request that appears nowhere else. |
-| `audit_log_entry` where `trigger` is in the prunable allowlist | 2 | Yes | Each of the five listed triggers restates an `item_state` or `item_stale` value that `plan_items` holds in its own column. The transition timestamp is the only unique content and it is history, not a user decision. |
+| `audit_log_entry` where `trigger` is outside the prunable allowlist | 1 | No | The fail-closed default. It covers the command triggers in the census above, `plan_item.persist_divergence`, and any trigger added later. `settings.restore_defaults` (`crates/app/settings/src/writes.rs:359`) carries the pre-restore snapshot in its payload only. For a command trigger, `outcome` values `refused` and `failed` record a rejected request that appears nowhere else. |
+| `audit_log_entry` where `trigger` is in the prunable allowlist | 2 | Yes | Each of the six listed triggers restates an `item_state`, `item_stale`, or `failure_reason` value that `plan_items` holds in its own column. The transition timestamp is the only unique content and it is history, not a user decision. |
 | `plan_apply_events` | 2 | Yes | Per-item transition timeline for a run whose outcome is in `plan_items.item_state`. Not read by boot reconciliation. |
 | `events` | 2 | Yes | Live and replay feed for the log view. Hooks are idempotent, so a subscriber replaying past a pruned cutoff re-dispatches no-ops (`crates/audit/src/pruner.rs:20`). |
 | `audit_event`, `outbox_event` where `published_at IS NOT NULL`, `command_execution`, `repository_change` | 2 | Out of scope | Per-command volume, foreign-keyed into each other and into `audit_event.created_sequence`. Pruning them needs its own dependency-order design and is not justified by their size. |
@@ -116,18 +116,52 @@ row states nothing the column does not.
 | `plan_item.skipped` | `callbacks.rs:469` from `loop_.rs:94` | `plan_items.item_state` = `skipped` | 2 | Yes |
 | `plan_item.stale` | `callbacks.rs:469` from `loop_.rs:445` | `plan_items.item_state` = `failed` plus `item_stale` = 1, set by `crates/persistence/plans/src/repositories/plan_apply.rs:740` | 2 | Yes |
 | `plan_item.cancelled` | `callbacks.rs:568` | `plan_items.item_state` = `cancelled`, written by `batch_cancel_pending_items` before the audit row (`crates/app/core/src/plan_apply/lifecycle.rs:131`) | 2 | Yes |
-| `plan_item.refused` | `callbacks.rs:469` from `loop_.rs:393`, `:414` | Nothing | 1 | No |
+| `plan_item.refused` | `callbacks.rs:469` from `loop_.rs:393`, `:414` | `plan_items.item_state` = `failed` plus the `FailureCode` prefix of `failure_reason` | 2 | Yes |
 | `plan_item.persist_divergence` | `callbacks.rs:393` | Nothing | 1 | No |
 
-`plan_item.refused` is Tier 1 because `refused` has no `item_state` value:
-`plan_apply.rs:735` collapses it to `failed` with `item_stale` = 0, which is
-byte-identical to a genuine failure. The gate that refused the item survives
-only in the audit row's `outcome` `refused` and its `reason_code`
-(`destructive_unconfirmed` at `loop_.rs:393`, `protected` at `loop_.rs:414`),
-and `plan_items` has no column for either. The free text inside
-`failure_reason` is not a substitute, because recovering the distinction from it
-means parsing a message. This is the same argument the table above makes for
-command triggers whose `outcome` is `refused`.
+`plan_item.refused` is Tier 2, and the two paths that produce it are the
+destructive-confirmation gate at `loop_.rs:393`, `reason_code`
+`destructive_unconfirmed`, and the path gate at `loop_.rs:414`, whose
+`reason_code` is the `FailureCode` string. The protection check at `loop_.rs:472`
+is not one of them: it emits `new_state` `failed`, so it produces
+`plan_item.failed`.
+
+`refused` has no `item_state` value of its own, because `plan_apply.rs:735`
+collapses `refused` and `stale` to `failed`. The reason survives in
+`plan_items.failure_reason` rather than only in the audit row.
+`callbacks.rs:513` stores `PlanItemFailure` through `Display`, which
+`crates/fs/executor/src/failure.rs:50` formats as the code, a colon, then the
+message, so the column value begins with a stable `FailureCode` string, and
+`plan_apply.rs:742` writes that column on the same `UPDATE` as `item_state`.
+Reading the code is a prefix split on the first colon, not message parsing.
+
+The row is prunable under the Principle V test on two grounds. A refusal returns
+before `execute_item`, so the filesystem was never mutated and no custody fact
+can be lost. The intent, the paths, the outcome, and the reason code remain in
+`plan_items` permanently.
+
+The residue is the `refused` label itself:
+
+- `root_escape` and `symlink` (`crates/fs/executor/src/ops/path_gate.rs:67`,
+  `:98`) and `destructive_unconfirmed` appear on no other terminal path, so the
+  label follows from the code.
+- `path.invalid` is also produced on the execution path by `failure.rs:187`,
+  `crates/fs/executor/src/ops/write_manifest_op.rs:30`, and
+  `crates/fs/executor/src/run/dispatch.rs:119`, which record `item_state`
+  `failed`. Pruning the audit row for such an item drops whether the gate
+  refused it or the operation failed on it.
+
+Neither branch mutated the filesystem, so that one distinction is diagnostic
+history rather than user knowledge, which is what puts the row in Tier 2.
+
+The rejected alternative is exempting `plan_item.refused` as Tier 1 by analogy
+with the command triggers whose `outcome` is `refused`. The analogy does not
+hold. A refused command does not write a row anywhere else, whereas a refused
+plan item leaves a `plan_items` row with its action, its paths, and its reason
+code.
+Exempting it would also cost the retention policy its point: refusals rise with
+protected sources and unconfirmed deletes on exactly the large libraries whose
+per-item volume motivates pruning.
 
 `plan_item.persist_divergence` is Tier 1 by construction.
 `crates/app/core/src/plan_apply/callbacks.rs:240` writes it only after the
@@ -139,25 +173,27 @@ data. `callbacks.rs:385` names the crash-recovery sweep as its reader, and
 `plan_apply_runs` row, and `plan_items.item_state` only, so no shipped consumer
 reads the marker. Pruning it removes the input before its reader exists.
 
-The allowlist is a constant in `crates/audit-types/src/event.rs`, beside the
-`AuditLogEntry` type it classifies (`:141`). Both `crates/audit`, which holds
-the pruner, and `crates/app/core`, which holds the write sites, depend on
-`audit-types`, so the pruner reads the constant and an author adding a trigger
-edits the file that defines it.
+The allowlist belongs in `crates/audit-types/src/event.rs` as a constant, beside
+the `AuditLogEntry` type it classifies (`:141`). That file is the placement the
+crate graph forces: `crates/audit` holds the pruner and `crates/app/core` holds
+the write sites, and both depend on `audit-types`, so one constant serves the
+predicate and the author adding a trigger edits the file that defines it. No such
+constant exists in the tree, and the work item below tracks adding it.
 
-The enumeration fails closed by these properties:
+These requirements on the implementation make the enumeration fail closed:
 
-1. The prune predicate is `trigger IN (...)` bound from the constant. `LIKE` is
+1. The prune predicate binds `trigger IN (...)` from the constant. `LIKE` is
    rejected: a prefix match is an allowlist written as a wildcard, so it admits
    every future `plan_item.` trigger without review.
 2. `callbacks.rs:469` interpolates `event.new_state`, a `String` the executor
    supplies, so a new terminal state yields a new trigger with no edit at the
    write site. Under `IN`, that trigger is retained.
-3. A test asserts every allowlist entry is `plan_item.<state>` where `<state>`
-   is in the `plan_items.item_state` CHECK set
-   (`crates/persistence/core/migrations/0001_initial_schema.sql:1748`), with
-   `stale` as the one named exception, carrying the `item_stale` argument
-   above. An entry `plan_items` cannot express fails the test.
+3. A test must assert that every allowlist entry is `plan_item.<state>` where
+   `<state>` is in the `plan_items.item_state` CHECK set
+   (`crates/persistence/core/migrations/0001_initial_schema.sql:1748`), except
+   for `stale` and `refused`, which `plan_apply.rs:735` collapses to `failed` and
+   which the two arguments above cover. An entry `plan_items` cannot express
+   fails the test.
 
 ## Row sizes
 
@@ -394,7 +430,7 @@ Filed as beads from this node.
 | Wire `pruner::spawn` into the app shell and drive it from `eventLogRetentionDays` | Settings descriptors |
 | Register `auditRetentionDays` and `eventLogRetentionDays` descriptors | |
 | Prunable-trigger allowlist constant in `crates/audit-types/src/event.rs`, with the CHECK-set test from the allowlist section | |
-| Class-scoped prune for `audit_log_entry` and `plan_apply_events`, with the terminal-plan predicate, `trigger IN` against the allowlist, and exemption tests for `plan_item.refused` and `plan_item.persist_divergence` | Settings descriptors, allowlist constant |
+| Class-scoped prune for `audit_log_entry` and `plan_apply_events`, with the terminal-plan predicate, `trigger IN` against the allowlist, an exemption test for `plan_item.persist_divergence`, and a test that an unlisted `plan_item.` trigger is retained | Settings descriptors, allowlist constant |
 | Index supporting the `trigger IN` predicate on `audit_log_entry` (migration) | Class-scoped prune |
 | Terminal-plan guard for the `events` pruner before `pruner::spawn` gains a caller | Allowlist constant |
 | `audit.pruned` audit row per pass | Class-scoped prune |
