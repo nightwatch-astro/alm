@@ -9,8 +9,10 @@ dependencies:
   - srobroek/agentic-packages/packages/steering-pragmatic#main
   - srobroek/agentic-packages/packages/orchestrate#main
   - srobroek/agentic-packages/packages/release-please#main
-  - srobroek/agentic-packages/packages/speckit#main
-  - srobroek/agentic-packages/packages/steering-speckit#main
+  # speckit moved to its own repository (agentic-packages#829) and absorbed
+  # steering-speckit (#820); both subpaths are gone from agentic-packages, so
+  # every `apm update` here failed until this was repointed.
+  - srobroek/speckit-conductor#main
   - srobroek/agentic-packages/packages/rust-quality#main
   - srobroek/agentic-packages/packages/language-steering-rust#main
   - wshobson/agents/plugins/systems-programming
@@ -27,7 +29,7 @@ dependencies:
   - srobroek/agentic-packages/packages/mcp-playwright#main
   - srobroek/agentic-packages/packages/mcp-context7#main
   - srobroek/agentic-packages/packages/mcp-package-version#main
-  - srobroek/agentic-packages/packages/mcp-repomix#main
+  # mcp-repomix was dropped in favour of the repomix CLI (agentic-packages#815).
   - srobroek/agentic-packages/packages/mcp-tauri#main
   - wshobson/agents/plugins/database-design
   - srobroek/agentic-packages/packages/user-journeys#main
