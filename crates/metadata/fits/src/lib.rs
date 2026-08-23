@@ -18,6 +18,11 @@
 //! keyword yields `None` rather than an error. A header the parser cannot
 //! handle at all — including one that panics inside `fits-header` — yields
 //! [`MetadataExtractError::Parse`]; [`FitsExtractor::extract`] never panics.
+//!
+//! A header that `fits-header` mis-parses without failing is NOT detectable
+//! here: the crate lossy-decodes each card before slicing it at fixed offsets,
+//! so one invalid byte shifts every later field and can yield a wrong keyword
+//! and value with no panic and no error.
 #![allow(clippy::doc_markdown)]
 
 use std::io::{self, Read};
