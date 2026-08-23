@@ -218,7 +218,7 @@ impl Database {
         Ok(())
     }
 
-    /// Run all pending migrations from the frozen baseline and future append-only files.
+    /// Run all pending migrations, starting from the `0001` baseline.
     ///
     /// # Errors
     ///
