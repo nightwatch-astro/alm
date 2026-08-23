@@ -549,15 +549,27 @@ jobs:
             cargo nextest run --workspace --profile ci
           else
             echo "Running scoped tests for: $args"
-            # --no-tests=pass: a scoped crate set can legitimately contain
-            # zero runnable tests (e.g. an e2e_tests-only change — all its
-            # tests are #[ignore]d for the Layer-2 e2e.yml job), and nextest
-            # otherwise exits 4 ("no tests to run", run 28751553778).
+            # A scoped crate set can legitimately contain zero runnable tests
+            # (e.g. an e2e_tests-only change — all its tests are #[ignore]d for
+            # the Layer-2 e2e.yml job, run 28751553778), so nextest's default
+            # exit 4 is wrong here. A bare --no-tests=pass is wrong too: it also
+            # swallows a broken scripts/ci-affected-crates.sh output, and the job
+            # goes green having run nothing. Count the selection first, so the
+            # zero case is an announced exemption rather than a silent one.
+            # `nextest list` exits 0 on an empty selection, so the count is safe
+            # under `pipefail`.
             #
             # $args is a word list of `-p <crate>` flags and has to split, so the
             # SC2086 quote would collapse it into one bad argument.
             # shellcheck disable=SC2086
-            cargo nextest run --profile ci --no-tests=pass $args
+            selected=$(cargo nextest list --profile ci --message-format oneline $args | wc -l | tr -d '[:space:]')
+            echo "Scoped selection: ${selected} test(s)."
+            if [ "$selected" -eq 0 ]; then
+              echo "::notice::Exemption: the scoped crate set contains zero runnable tests; nextest is not invoked."
+            else
+              # shellcheck disable=SC2086
+              cargo nextest run --profile ci $args
+            fi
           fi
 
       # nextest does not run doctests; keep them in a dedicated step. Doctest
