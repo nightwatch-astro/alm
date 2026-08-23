@@ -18,9 +18,9 @@ status compared two candidates that were never in competition.
 | `crates/calibration/master-detect/src/lib.rs:167` `path_looks_like_master` | `name_lc.contains("master") \|\| path_lc.contains("master")` over the whole string | a `master`-prefixed token bounded by `/`, `\`, `_`, `-`, `.` or space |
 | `crates/calibration/master-detect/src/lib.rs:138` `parse_frame_type` | ordered `str::contains` chain, so `dark_flat` hits the `dark` arm | the first matching whole token, `darkflat` or adjacent `dark`+`flat` first |
 | `crates/calibration/master-detect/src/pixinsight.rs:49` `PixInsightDetector::detect` | `stack_count_evidence: false` unconditionally; `is_master` from naming only | a present `STACKCNT`/`NCOMBINE` is header evidence and decides `is_master` |
-| `crates/calibration/core/src/ranking.rs:239` `suggest_status` via `crates/app/calibration/src/matching/suggest.rs:60` | `matches[0]` against `matches[1]` on a list ranked per kind but unordered across kinds | statuses reduce within one calibration kind, then combine |
-| `crates/workflow/artifacts/src/watcher.rs:103` `extension_allowed` | `file_name.to_ascii_lowercase().ends_with(ext)` | `Path::extension()` compared against each allowlist entry |
-| `crates/workflow/artifacts/src/attribution.rs:66` `reattribute_candidates` | doc claims the same-tool rule; the rule lived in the caller at `crates/app/lifecycle/src/artifact/launches.rs:52` | the function that documents a rule owns it |
+| `crates/calibration/core/src/ranking.rs:238` `suggest_status` via `crates/app/calibration/src/matching/suggest.rs:60` | `matches[0]` against `matches[1]` on a list ranked per kind but unordered across kinds | statuses reduce within one calibration kind, then combine |
+| `crates/workflow/artifacts/src/watcher.rs:104` `extension_allowed` | `file_name.to_ascii_lowercase().ends_with(ext)` | `Path::extension()` compared against each allowlist entry |
+| `crates/workflow/artifacts/src/attribution.rs:66` `reattribute_candidates` | doc claims the same-tool rule; the rule lived in the caller at `crates/app/lifecycle/src/artifact/launches.rs:54` | the function that documents a rule owns it |
 
 ## The rule (decision)
 
@@ -50,11 +50,11 @@ Line references are the post-fix head of this branch; the "today" column in
 | Finding | Verdict | Reachable in production | Evidence read at this head |
 |---|---|---|---|
 | .2.30 | LIVE | **Yes.** `detect_master` is on the scan path, so any library with a folder whose name merely contains `master` had every descendant file flagged a calibration master | `lib.rs:180` `path_looks_like_master` now splits both separators and tests `is_master_token` per segment (`lib.rs:194`) |
-| .2.31 | LIVE, in part | **Partly.** The proven defect is the round trip: `FrameType::DarkFlat.as_str()` is `"dark_flat"`, and feeding it back returned `Dark`, so classification was not idempotent. Whether a capture tool writes that spelling into `IMAGETYP` is not established, so the header-side impact is unproven | `lib.rs:142` `parse_frame_type` tokenizes and matches whole tokens. `infer_frame_type_from_path` (`pixinsight.rs:84`) still reads a frame word out of a target name and is **not** fixed here — filed as astro-plan-qs26q |
-| .2.35 | LIVE | **Yes.** A PixInsight/WBPP file whose `IMAGETYP` was absent reported `stack_count_evidence: false` with `STACKCNT` present in the same input, and `detect_master` uses that flag to arbitrate between detectors, so a header fact was shadowed by a naming guess | `pixinsight.rs:52-55` decides `is_master` from `input.stack_count` when present; `pixinsight.rs:76` reports `input.stack_count.is_some()` |
+| .2.31 | LIVE, in part | **Partly.** The proven defect is the round trip: `FrameType::DarkFlat.as_str()` is `"dark_flat"`, and feeding it back returned `Dark`, so classification was not idempotent. Whether a capture tool writes that spelling into `IMAGETYP` is not established, so the header-side impact is unproven | `lib.rs:142` `parse_frame_type` tokenizes and matches whole tokens. `infer_frame_type_from_path` (`pixinsight.rs:90`) still reads a frame word out of a target name and is **not** fixed here — filed as astro-plan-qs26q |
+| .2.35 | LIVE | **Yes.** A PixInsight/WBPP file whose `IMAGETYP` was absent reported `stack_count_evidence: false` with `STACKCNT` present in the same input, and `detect_master` uses that flag to arbitrate between detectors, so a header fact was shadowed by a naming guess | `pixinsight.rs:58-61` decides `is_master` from `input.stack_count` when present; `pixinsight.rs:82` reports `input.stack_count.is_some()` |
 | .2.25 | LIVE | **Yes.** `suggest` serves multi-kind requests, so a weak dark pair next to a strong bias reported `ambiguous`, and a near-tie across two kinds reported `match` | `ranking.rs:281` `multi_kind_suggest_status` groups by `CalibrationMatch::calibration_type` and reduces per kind; `suggest.rs:60` calls it. `batch.rs:113` already passed a per-kind subset and is unchanged |
 | .13.28 | LIVE, weak | **Weak — no user-visible defect is claimed.** The predicate admitted the extensionless dotfile `.xisf` and the name `notxisf`. Reaching it needs such a file inside a watched project root, and the reconciler tolerates a spurious row | `watcher.rs:109` compares `Path::extension()`, ASCII-lowercased, against each entry with its leading `.` stripped. Both call sites (`reconciler.rs`, `src-tauri/src/watcher.rs`) are unchanged |
-| .13.37 | LIVE as a duplicated rule | **No — no behaviour change.** The caller already filtered by tool, so no artifact was ever mis-attributed. The defect was that the documented owner of the rule did not enforce it, leaving a second caller free to omit it | `attribution.rs:66` takes `(artifact_id, artifact_tool, detected_at, current_launch_id)` and filters on tool; the caller's `.filter(|r| r.tool == new_launch_tool_id)` is deleted at `launches.rs:50-58` |
+| .13.37 | LIVE as a duplicated rule | **No — no behaviour change.** The caller already filtered by tool, so no artifact was ever mis-attributed. The defect was that the documented owner of the rule did not enforce it, leaving a second caller free to omit it | `attribution.rs:66` takes `(artifact_id, artifact_tool, detected_at, current_launch_id)` and filters on tool; the caller's `.filter(|r| r.tool == new_launch_tool_id)` is deleted at `launches.rs:53-63` |
 
 ## Context
 
@@ -94,6 +94,17 @@ Line references are the post-fix head of this branch; the "today" column in
       is deleted
 - [x] Module docs that stated the old behaviour are corrected
 - [x] One regression case per finding, run red before the fix
+- [x] Disclose every case that is green both ways rather than dropping it:
+      `detect_master_prefers_stackcnt_evidence_over_naming` and
+      `detect_master_prefers_stackcnt_negative_over_naming_positive` are vacuous
+      for `.2.35` — `detect_master` (`lib.rs:111`) returns the first detector
+      reporting `stack_count_evidence` and `SirilDetector` reports it whenever
+      `IMAGETYP` parses, so Siril answered both and the PixInsight arm was
+      unreached. They are kept as `detect_master` arbitration coverage and
+      replaced for `.2.35` by
+      `pixinsight::tests::a_present_stack_count_decides_this_detector_on_its_own`.
+      `a_multi_kind_status_is_no_match_when_empty` (`ranking.rs:410`) is vacuous
+      for `.2.25` and kept as boundary coverage only.
 - [x] `cargo test` green for the five touched crates
 
 ## Done When
