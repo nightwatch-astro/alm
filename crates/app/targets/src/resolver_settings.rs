@@ -34,6 +34,19 @@ fn defaults() -> ResolverSettings {
     }
 }
 
+/// Read a stored resolver interval, falling back to `default` when the stored
+/// value is unusable.
+///
+/// A non-positive interval is a refusal rather than a value to repair: a zero
+/// `debounce_ms` disables throttling on the SIMBAD path and a zero
+/// `request_timeout_secs` fails every request. A value beyond `u32` is equally
+/// unusable. Clamping such a value to `0` or `1` would silently substitute an
+/// edge value for the documented default.
+#[must_use]
+pub fn positive_or_default(stored: i64, default: u32) -> u32 {
+    u32::try_from(stored).ok().filter(|value| *value > 0).unwrap_or(default)
+}
+
 /// Validate a resolver endpoint URL (FIX-5a).
 ///
 /// Accepts `https://…`; accepts `http://…` ONLY when the host is loopback
@@ -82,8 +95,8 @@ async fn read_row(pool: &SqlitePool) -> Result<ResolverSettings, ContractError> 
     let settings = row.map_or_else(defaults, |r| ResolverSettings {
         online_enabled: r.online_enabled != 0,
         simbad_endpoint: r.simbad_endpoint,
-        debounce_ms: u32::try_from(r.debounce_ms.max(0)).unwrap_or(300),
-        request_timeout_secs: u32::try_from(r.request_timeout_secs.max(0)).unwrap_or(10),
+        debounce_ms: positive_or_default(r.debounce_ms, 300),
+        request_timeout_secs: positive_or_default(r.request_timeout_secs, 10),
     });
     crate::caches::store_resolver_settings(std::sync::Arc::new(settings.clone()));
     Ok(settings)
@@ -227,6 +240,61 @@ mod tests {
         let resp = update(db.pool(), &upd).await.unwrap();
         assert_eq!(resp.settings.debounce_ms, 1);
         assert_eq!(resp.settings.request_timeout_secs, 1);
+    }
+
+    /// Write a value the contract type and `update`'s clamp cannot produce, so
+    /// the read side is exercised against genuine out-of-range storage. Asserts
+    /// the seeded singleton exists, otherwise `defaults()` would satisfy every
+    /// assertion below without the read path running.
+    async fn seed_stored(pool: &SqlitePool, update_sql: &'static str, value: i64) {
+        let affected =
+            sqlx::query(update_sql).bind(value).execute(pool).await.unwrap().rows_affected();
+        assert_eq!(affected, 1, "the seeded singleton resolver_settings row must exist");
+        crate::caches::invalidate_resolver_settings();
+    }
+
+    #[tokio::test]
+    async fn stored_out_of_range_debounce_reads_back_as_the_documented_default() {
+        for stored in [-1, 0] {
+            let db = setup().await;
+            seed_stored(
+                db.pool(),
+                "UPDATE resolver_settings SET debounce_ms = ? WHERE id = 1",
+                stored,
+            )
+            .await;
+            let resp = get(db.pool(), &get_req()).await.unwrap();
+            assert_eq!(resp.settings.debounce_ms, 300, "stored debounce_ms {stored}");
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_out_of_range_timeout_reads_back_as_the_documented_default() {
+        for stored in [-1, 0] {
+            let db = setup().await;
+            seed_stored(
+                db.pool(),
+                "UPDATE resolver_settings SET request_timeout_secs = ? WHERE id = 1",
+                stored,
+            )
+            .await;
+            let resp = get(db.pool(), &get_req()).await.unwrap();
+            assert_eq!(resp.settings.request_timeout_secs, 10, "stored timeout {stored}");
+        }
+    }
+
+    #[test]
+    fn positive_or_default_refuses_non_positive_and_unrepresentable_values() {
+        assert_eq!(positive_or_default(-1, 300), 300);
+        assert_eq!(positive_or_default(0, 300), 300);
+        assert_eq!(positive_or_default(i64::from(u32::MAX) + 1, 300), 300);
+        assert_eq!(positive_or_default(1, 300), 1);
+        assert_eq!(positive_or_default(500, 300), 500);
+
+        // The value the `ingest_resolution` and `target.lookup` SIMBAD timeout
+        // sites pass: a stored 0 must become 10 seconds, never 1.
+        assert_eq!(positive_or_default(0, 10), 10);
+        assert_eq!(positive_or_default(-1, 10), 10);
     }
 
     // ── FIX-5a: endpoint URL validation ────────────────────────────────────────
