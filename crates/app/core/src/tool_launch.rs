@@ -489,7 +489,10 @@ pub async fn launch(
         },
         file: None,
     };
-    let argv = render(&config.profile.args_template, &ctx);
+    let argv = match render(&config.profile.args_template, &ctx) {
+        Ok(argv) => argv,
+        Err(e) => return Ok(error_response("args.operand_not_absolute", e)),
+    };
     let args_hash = compute_args_hash(&config.executable_path, &argv);
 
     // bundle_id from Settings (override) or seeded default
