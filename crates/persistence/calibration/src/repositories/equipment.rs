@@ -242,7 +242,7 @@ pub async fn delete_camera(pool: &SqlitePool, id: &str) -> DbResult<()> {
     ensure_row_affected(result.rows_affected(), "camera", id)
 }
 
-/// Find a camera by alias. Searches the JSON aliases array using LIKE.
+/// Find a camera by alias. Matches an exact member of the JSON aliases array.
 ///
 /// # Errors
 ///
