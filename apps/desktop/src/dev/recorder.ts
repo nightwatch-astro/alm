@@ -21,6 +21,7 @@
 
 import type { ContractCall, ContractMeta } from '@/bindings/index';
 import { errMessage } from '@/lib/errors';
+import { safeStringify } from '@/lib/safe-json';
 
 /** Maximum entries retained in the ring buffer. */
 export const CALL_BUFFER_SIZE = 100;
@@ -103,10 +104,8 @@ function serializeAndCheck(value: unknown): {
   value: unknown;
   truncated: boolean;
 } {
-  let json: string;
-  try {
-    json = JSON.stringify(value);
-  } catch {
+  const json = safeStringify(value);
+  if (json === null) {
     return { value: { error: 'serialize_failed' }, truncated: false };
   }
   if (json.length > MAX_PAYLOAD_BYTES) {
