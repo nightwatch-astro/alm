@@ -12,6 +12,11 @@ camino = { workspace = true }
 path-clean = { workspace = true }
 safe-filename = { path = "../../safe-filename" }
 
+[features]
+# Enables `test_support` for crates that build containment fixtures in their own
+# tests. Off by default, so the helpers stay out of release builds.
+test-fixture = []
+
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true

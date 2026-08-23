@@ -63,12 +63,73 @@ be a link.
 Unix-shaped literal `/mnt/library` is a relative root there and every entry
 point answers `RootNotAbsolute`. Tests that assert a containment verdict on a
 made-up path build their roots through `fs_pathsafe::test_support::abs`, which
-prefixes `C:` on Windows and returns the path unchanged elsewhere.
+prefixes `C:` on Windows and returns the path unchanged elsewhere. The module is
+gated behind `cfg(test)` plus the default-off `test-fixture` feature, so the
+helpers are absent from a release build.
 
-The prefix comparison is case-sensitive on every platform, while NTFS treats
-`C:\Library` and `C:\library` as one directory. A case difference therefore
-turns a contained path into `Escapes`: the divergence produces a refusal, never
-an admission.
+#### Verdict per platform divergence
+
+`resolve_in_root` normalizes both sides with `path-clean` and then compares with
+`Path::starts_with`, which matches whole components. Where the filesystem treats
+two byte-different spellings as one location, the comparison sees two different
+components and reduces the match, so each divergence below refuses a path the
+filesystem would have accepted. None admits a path outside the root.
+
+| Divergence | Comparison behaviour | Verdict |
+|------------|----------------------|---------|
+| NTFS case: root `C:\Library`, path `C:\library\a` | components differ byte-wise | over-refuses (`Escapes`) |
+| Separators `\` and `/` on Windows | `std` treats both as component separators, so neither side is favoured | handled |
+| Verbatim `\\?\C:\Library` against `C:\Library` | the prefix component differs, so no component matches | over-refuses (`Escapes`) |
+| UNC `\\server\share` against a `Disk` prefix | prefix kinds differ | over-refuses (`Escapes`) |
+| Drive-relative `C:foo` | `is_absolute` is false | over-refuses (`RootNotAbsolute`) |
+| 8.3 short name `PROGRA~1` against the long name | components differ byte-wise | over-refuses (`Escapes`) |
+| Unicode NFC against NFD spelling of one filename | components differ byte-wise | over-refuses (`Escapes`) |
+
+The six over-refusals in the table are intended behaviour, and none offers the
+user a recovery path. The operation is refused, and re-spelling the input does
+not make it pass, because the stored root is the other side of the comparison.
+
+Principle IV requires that tradeoff recorded. A byte-wise comparison cannot
+admit a path outside the root. Case-folding or Unicode-folding the comparison
+makes two distinct on-disk names compare equal, which admits one of them.
+Sibling PR #1712 folds a destination *key* for deduplication, a different
+question from a containment verdict.
+
+`verify_cwd_containment` at `crates/app/core/src/tool_launch.rs:282-300` is the
+one caller that canonicalizes before comparing, because a working folder is an
+existing directory. It canonicalizes both the roots and the working folder with
+`dunce`, which strips the Windows verbatim prefix. `std::fs::canonicalize`
+returns a verbatim path for an existing root and fails on a working folder that
+does not exist yet, and that fallback keeps the raw non-verbatim spelling, so
+canonicalizing only one side refuses a legitimate working folder on Windows.
+
+#### The lexical verdict and the `lstat` walk answer different questions
+
+The containment verdict is lexical, so `..` collapses before the comparison. A
+lexically contained path can still leave the root at run time when one of its
+components is a symlink or an NTFS junction. Refusing that is the job of the
+per-component `lstat` walk in `path_gate::resolve_and_validate`, not of
+`contain`. Both checks are therefore required, and a side that reaches the
+filesystem without passing `path_gate` is not protected by the lexical rule
+alone.
+
+### Archive and trash destinations reach the filesystem ungated
+
+`ExecutorItemAction::Archive { archive_destination }` and
+`ExecutorItemAction::Trash { fallback_archive_destination }` reach
+`archive_op::archive_file` and `trash_op::trash_file` directly from
+`crates/fs/executor/src/run/dispatch.rs:49-61`. `run/loop_.rs:179-182` applies
+`resolve_side` and `path_gate` to `resolved_src` and `resolved_dst` only, so
+neither archive destination passes either. The plan-side check
+`resolve_unrooted_utf8` at `crates/app/core/src/plans/archive.rs:56-58` proves
+absolute-and-normal, which is not inside-a-root. An absolute out-of-root archive
+destination therefore still reaches `move_file`, and no `lstat` walk refuses a
+junction component on it.
+
+Closing that requires an archive-root policy decision, since an archive
+destination on another drive is a supported user configuration, plus root
+context threaded into the executor item loop. It is tracked on
+`astro-plan-zboex` and is out of scope here.
 
 ### The rule is implemented once, in `fs_pathsafe`
 
@@ -117,6 +178,11 @@ assembly, not root-relative resolution, and stays where it is.
    second join and no second root fallback.
 6. A launch whose working directory is outside every registered root, or which
    has no registered root at all, is refused with `cwd.outside_library_root`.
+7. `verify_cwd_containment`'s caller canonicalizes the roots and the working
+   folder through the same function, so the two sides carry the same Windows
+   prefix spelling.
+8. Fixture helpers that build platform-absolute roots are absent from a release
+   build.
 
 ## Tasks
 
@@ -126,6 +192,11 @@ assembly, not root-relative resolution, and stays where it is.
 - [x] `resolve_working_folder` returns `Result`; update callers and tests
 - [x] `resolve_archive_abs_path` returns `Result`; an unresolvable root id errors
 - [x] `verify_cwd_containment` uses `contained_in_any`; empty roots refuse
+- [x] Canonicalize both sides of the `verify_cwd_containment` comparison with
+      `dunce`, so a not-yet-created working folder compares against a
+      non-verbatim root
+- [x] Gate `fs_pathsafe::test_support` behind `cfg(test)` plus the default-off
+      `test-fixture` feature, activated in each consumer's dev-dependencies
 - [x] One regression test per LIVE finding, run red before the fix
 - [x] `cargo clippy` and `cargo nextest` for the six touched crates
 

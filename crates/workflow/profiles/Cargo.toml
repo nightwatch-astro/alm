@@ -22,6 +22,9 @@ fs_pathsafe = { path = "../../fs/pathsafe" }
 itertools = { workspace = true }
 
 [dev-dependencies]
+# Containment fixtures build platform-absolute roots via `test_support`, which the
+# `[dependencies]` edge above leaves off so it is absent from release builds.
+fs_pathsafe = { path = "../../fs/pathsafe", features = ["test-fixture"] }
 # Real-spawn integration test (spec 011 T022): disposable project roots, plus
 # the same working-folder resolution production launch uses.
 project_structure = { path = "../../project/structure" }

@@ -15,6 +15,9 @@ serde_json = { workspace = true }
 time = { workspace = true }
 
 [dev-dependencies]
+# Containment fixtures build platform-absolute roots via `test_support`, which the
+# `[dependencies]` edge above leaves off so it is absent from release builds.
+fs_pathsafe = { path = "../../fs/pathsafe", features = ["test-fixture"] }
 tempfile = { workspace = true }
 # spec 042 (T251): tokio is dev-only now — used solely by `#[tokio::test]` to
 # drive the async `NotesFileAdapter`/`write_manifest_file` seams in unit tests.

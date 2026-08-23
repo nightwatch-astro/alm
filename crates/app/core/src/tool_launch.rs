@@ -279,8 +279,11 @@ async fn resolve_and_check_working_dir(
     let working_dir_path = resolve_working_folder(&project_root, active_source_view.as_deref())
         .map_err(|e| error_response("cwd.outside_library_root", e.to_string()))?;
 
+    // `dunce` on both sides, not `std::fs::canonicalize`: a working folder that
+    // does not exist yet falls back to its raw non-verbatim spelling, so a root
+    // canonicalized to a Windows `\\?\` verbatim path would never prefix-match it.
     let canonical_cwd =
-        working_dir_path.canonicalize().unwrap_or_else(|_| working_dir_path.clone());
+        dunce::canonicalize(&working_dir_path).unwrap_or_else(|_| working_dir_path.clone());
     let all_roots = inv_repo::list_all_roots(pool)
         .await
         .map_err(|e| error_response("db.error", format!("{e}")))?;
@@ -293,7 +296,7 @@ async fn resolve_and_check_working_dir(
         .chain(registered.iter().map(|s| s.path.as_str()))
         .map(|raw| {
             let p = std::path::PathBuf::from(raw);
-            p.canonicalize().unwrap_or(p)
+            dunce::canonicalize(&p).unwrap_or(p)
         })
         .collect();
     let root_refs: Vec<&std::path::Path> =
@@ -917,9 +920,10 @@ mod tests {
         sqlx::query(
             "INSERT INTO registered_sources \
              (id, kind, path, scan_depth, created_at, created_via, organization_state) \
-             VALUES ('rs-proj', 'project', '/mnt/library', 'recursive', \
+             VALUES ('rs-proj', 'project', ?, 'recursive', \
                      '2026-01-01T00:00:00Z', 'first_run', 'organized')",
         )
+        .bind(abs("/mnt/library"))
         .execute(db.pool())
         .await
         .unwrap();
