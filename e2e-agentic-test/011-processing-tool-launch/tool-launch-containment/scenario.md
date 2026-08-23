@@ -20,9 +20,9 @@
 - UI: project detail action bar → `[data-testid="tool-launch-btn"]`, label
   "Open in {tool}" / working label "Launching…"; disabled with a tooltip when
   no executable is configured. Toasts: "Launched {tool}" /
-  "Failed to launch {tool}: {error}". One-time hint for cwd-anchored tools:
-  "{tool} doesn't accept a folder to open — its working directory is anchored
-  to the project instead." (localStorage `alm.toolhint.cwdAnchored.<toolId>`).
+  "Failed to launch {tool}: {error}". One-time hint for tools that take no
+  folder argument: "{tool} doesn't accept a folder to open — open your project
+  files from inside the app." (localStorage `alm.toolhint.cwdAnchored.<toolId>`).
   Relaunch confirm modal testids: `relaunch-modal`, `relaunch-confirm`,
   `relaunch-cancel`.
 
