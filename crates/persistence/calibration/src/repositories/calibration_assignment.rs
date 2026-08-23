@@ -218,13 +218,18 @@ pub async fn master_artifact_state(pool: &SqlitePool, master_id: &str) -> DbResu
 /// PATH B: does `master_id`'s own `calibration_session` currently have any
 /// member frame (`frame_ids`) whose `file_record.state = 'missing'`?
 ///
+/// The `CASE` skips a row whose `frame_ids` is not valid JSON, which
+/// `json_each` would otherwise raise on and fail the whole listing. Row
+/// multiplicity is irrelevant here because the result is `COUNT(*) > 0`.
+///
 /// # Errors
 /// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn master_has_missing_source_frame(pool: &SqlitePool, master_id: &str) -> DbResult<bool> {
     let (count,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*)
          FROM calibration_session cs
-         JOIN json_each(cs.frame_ids) je
+         JOIN json_each(
+             CASE WHEN json_valid(cs.frame_ids) THEN cs.frame_ids ELSE '[]' END) je
          JOIN file_record fr ON fr.id = je.value
          WHERE cs.id = ? AND fr.state = 'missing'",
     )
@@ -462,6 +467,36 @@ mod tests {
 
         let rows = find_by_source_frame(&pool, "f1").await.unwrap();
         assert_eq!(rows.len(), 1, "one assignment, not one row per array element");
+    }
+
+    /// A populated `file_record` is required: with that table empty the planner
+    /// satisfies the join without ever evaluating `json_each`, and an unguarded
+    /// predicate then passes for the wrong reason.
+    #[tokio::test]
+    async fn master_has_missing_source_frame_skips_malformed_frame_ids() {
+        let pool = setup().await;
+        insert_master(&pool, "m-bad", "oops").await;
+        sqlx::query(
+            "INSERT INTO library_root (id, label, current_path, kind, state, created_at) \
+             VALUES ('root-1', 'R', '/tmp/r', 'local', 'active', '2026-01-01T00:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO file_record \
+             (id, root_id, relative_path, size_bytes, mtime, state, first_seen_at, last_seen_at) \
+             VALUES ('f1', 'root-1', 'a.fits', 1, '2026-01-01T00:00:00Z', 'missing', \
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let has = master_has_missing_source_frame(&pool, "m-bad")
+            .await
+            .expect("a corrupt row must not fail the listing");
+        assert!(!has);
     }
 
     /// `frame_ids` has no `json_valid` CHECK. An unguarded `json_each` raises
