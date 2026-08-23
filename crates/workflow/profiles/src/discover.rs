@@ -206,7 +206,10 @@ fn resolve_executable(cmd: &str) -> Option<PathBuf> {
         return p.exists().then(|| p.to_path_buf());
     }
     let path_var = std::env::var_os("PATH")?;
-    absolute_path_dirs(&path_var).map(|dir| dir.join(cmd)).find(|c| c.exists())
+    // Bound to a local because the borrowing iterator, as a tail expression, would be
+    // dropped after `path_var` rather than before it.
+    let found = absolute_path_dirs(&path_var).map(|dir| dir.join(cmd)).find(|c| c.exists());
+    found
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
