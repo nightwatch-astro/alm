@@ -2,7 +2,6 @@
 
 **Branch**: fix/dbs5-documented-fallbacks
 **Date**: 2026-08-23
-**Status**: draft
 **Complexity**: small
 
 ## What
@@ -128,23 +127,23 @@ fabricates a date where the other refuses.
 
 ## Tasks
 
-- [ ] Add the out-of-range-to-default helper in `crates/app/targets` with the
+- [x] Add the out-of-range-to-default helper in `crates/app/targets` with the
       refusal invariant in its docstring
-- [ ] Apply it at `resolver_settings.rs:85`, `:86`, `ingest_resolution.rs:374`,
+- [x] Apply it at `resolver_settings.rs:85`, `:86`, `ingest_resolution.rs:374`,
       and `target_lookup.rs:130`
-- [ ] Add an underflow arm to `KeyError` and route `key::observing_night`
+- [x] Add an underflow arm to `KeyError` and route `key::observing_night`
       through `observing_night::noon_bounded_date`
-- [ ] Delete `key.rs`'s private `previous_day`
-- [ ] Add the tests for requirements 1-6 and 8-13, each confirmed failing at
+- [x] Delete `key.rs`'s private `previous_day`
+- [x] Add the tests for requirements 1-6 and 8-13, each confirmed failing at
       base where it targets a defect
-- [ ] `cargo test -p sessions -p app_core_targets`, `cargo check -p desktop_shell`,
+- [x] `cargo test -p sessions -p app_core_targets`, `cargo check -p desktop_shell`,
       `cargo clippy -p sessions -p app_core_targets --all-targets`
 
 ## Done When
 
-- [ ] Every requirement above has a test, and each test that targets a defect
+- [x] Every requirement above has a test, and each test that targets a defect
       was recorded failing at base with its actual output
-- [ ] `crates/sessions` contains exactly one noon-bounded date derivation
-- [ ] The four read sites call one helper, not four copies of one expression
-- [ ] `format_date_iso` and migration files are untouched
-- [ ] Touched-crate test, check, and clippy gates are green
+- [x] `crates/sessions` contains exactly one noon-bounded date derivation
+- [x] The four read sites call one helper, not four copies of one expression
+- [x] `format_date_iso` and migration files are untouched
+- [x] Touched-crate test, check, and clippy gates are green

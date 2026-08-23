@@ -165,8 +165,13 @@ pub async fn update(
     })
 }
 
-#[cfg(test)]
 // Guard held across assertions on borrowed data in every test below.
+//
+// This comment must stay above `cfg(test)`: `scripts/check-db-boundary.sh` skips
+// only stacked attribute lines while resolving one, so a comment sitting between
+// the attributes hides the test-module exemption and every query below is
+// counted as a production query site.
+#[cfg(test)]
 #[allow(clippy::significant_drop_tightening)]
 mod tests {
     use super::*;
