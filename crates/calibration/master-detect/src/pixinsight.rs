@@ -12,9 +12,12 @@
 //!
 //! It also stores masters in paths like `masterDarks/masterDark.xisf`.
 //!
-//! Detection priority (any one is sufficient for `is_master=true`):
-//! 1. `IMAGETYP` (lowercased) contains `"master"`.
-//! 2. File name or relative path contains `"master"` or `"_stacked"`.
+//! Detection priority for `is_master`:
+//! 1. A present `STACKCNT`/`NCOMBINE` count decides on its own (`> 1` is a
+//!    master), and is reported as `stack_count_evidence`.
+//! 2. Otherwise, either `IMAGETYP` (lowercased) contains `"master"`, or the
+//!    file name or relative path carries a `master`-prefixed token or
+//!    `"_stacked"`.
 //!
 //! The base frame type is determined by stripping "master" from `IMAGETYP`
 //! before parsing, so `"Master Dark"` → `"Dark"` → `FrameType::Dark`.
@@ -46,7 +49,13 @@ impl MasterDetector for PixInsightDetector {
         // Determine whether the path signals a master (fallback).
         let path_has_master = path_looks_like_master(input.file_name, input.rel_path);
 
-        let is_master = imagetyp_has_master || path_has_master;
+        // A present STACKCNT/NCOMBINE count is authoritative and decides
+        // is_master on its own; the naming heuristics apply only when no
+        // header count is available.
+        let is_master = match input.stack_count {
+            Some(n) => n > 1,
+            None => imagetyp_has_master || path_has_master,
+        };
 
         // Determine base frame type.
         // Prefer IMAGETYP (strip "master" before parsing). Fall back to path
@@ -63,13 +72,11 @@ impl MasterDetector for PixInsightDetector {
             infer_frame_type_from_path(input.file_name, input.rel_path)?
         };
 
-        // PixInsight/WBPP never write STACKCNT/NCOMBINE-derived masters; this
-        // detector's is_master is always a naming-convention inference.
         Some(MasterDetection {
             frame_type,
             is_master,
             detector: self.id(),
-            stack_count_evidence: false,
+            stack_count_evidence: input.stack_count.is_some(),
         })
     }
 }
