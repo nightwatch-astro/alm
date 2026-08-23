@@ -25,6 +25,17 @@ pub struct ConeCandidate {
     pub separation_deg: f64,
 }
 
+/// Total, nearest-first order on angular separation that keeps every
+/// non-finite value LAST.
+///
+/// `f64::total_cmp` alone orders NaN by its sign bit, and the x86-64
+/// invalid-operation QNaN is sign-negative, so a bare `total_cmp` sorts that
+/// NaN below `-inf` and hands it a nearest-to-centre pick.
+#[must_use]
+pub fn separation_order(a: f64, b: f64) -> std::cmp::Ordering {
+    (!a.is_finite()).cmp(&!b.is_finite()).then_with(|| a.total_cmp(&b))
+}
+
 /// Catalogue-prominence tier (OQ-1). Declared low → high so `derive(Ord)`'s
 /// declaration-order comparison matches "more prominent wins": `Messier`/
 /// common-name outranks `Ngc`, which outranks `Ic`, then the Sharpless/
@@ -153,7 +164,7 @@ pub fn dedup_candidates(candidates: Vec<ConeCandidate>) -> Vec<ConeCandidate> {
                 .min_by(|a, b| {
                     prominence_tier(&b.identity)
                         .cmp(&prominence_tier(&a.identity))
-                        .then_with(|| a.separation_deg.total_cmp(&b.separation_deg))
+                        .then_with(|| separation_order(a.separation_deg, b.separation_deg))
                 })
                 .expect("groups are never empty")
         })
@@ -198,9 +209,9 @@ pub fn select_for_display(
         (is_default_excluded(identity), std::cmp::Reverse(prominence_tier(identity)))
     };
     ranked.sort_by(|&a, &b| {
-        rank_key(a)
-            .cmp(&rank_key(b))
-            .then_with(|| candidates[a].separation_deg.total_cmp(&candidates[b].separation_deg))
+        rank_key(a).cmp(&rank_key(b)).then_with(|| {
+            separation_order(candidates[a].separation_deg, candidates[b].separation_deg)
+        })
     });
     if ranked.len() > limit {
         if let Some(pos) = primary.and_then(|p| ranked.iter().position(|&i| i == p)) {
@@ -381,6 +392,20 @@ mod tests {
         assert_eq!(out.len(), 2);
     }
 
+    #[test]
+    fn separation_order_puts_both_nan_signs_last() {
+        use std::cmp::Ordering;
+        // Every non-finite value sorts after every finite one, whatever its
+        // sign bit. `-inf` is itself non-finite, so it is on the same side.
+        for unusable in [f64::NAN, -f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(separation_order(unusable, 0.5), Ordering::Greater);
+            assert_eq!(separation_order(unusable, -0.5), Ordering::Greater);
+            assert_eq!(separation_order(0.5, unusable), Ordering::Less);
+        }
+        assert_eq!(separation_order(0.1, 0.2), Ordering::Less);
+        assert_eq!(separation_order(0.2, 0.2), Ordering::Equal);
+    }
+
     // ── select_for_display (#698) ─────────────────────────────────────────────
 
     // Every niche entry sits nearer to centre than the galaxy (0.000_833).
@@ -454,7 +479,13 @@ mod tests {
                 "HII",
                 &[&designation],
             );
-            let sep = if n % 3 == 0 { f64::NAN } else { f64::from(n) * 0.0001 };
+            // Both NaN signs: x86-64 produces a sign-negative QNaN for an
+            // invalid operation, and `total_cmp` alone sorts that below -inf.
+            let sep = match n % 4 {
+                0 => f64::NAN,
+                1 => -f64::NAN,
+                _ => f64::from(n) * 0.0001,
+            };
             candidates.push(candidate(niche, sep));
         }
 
@@ -483,7 +514,7 @@ mod tests {
         let with_nan_first = vec![
             candidate(
                 identity(Some(1), designation, None, ObjectType::Galaxy, "G", &[designation]),
-                f64::NAN,
+                -f64::NAN,
             ),
             candidate(
                 identity(Some(1), designation, None, ObjectType::Galaxy, "G", &[designation]),
@@ -498,10 +529,9 @@ mod tests {
 
         assert_eq!(first.len(), 1);
         assert_eq!(last.len(), 1);
-        assert_eq!(
-            first[0].separation_deg.is_nan(),
-            last[0].separation_deg.is_nan(),
-            "group collapse must not depend on where the NaN sat in the input"
+        assert!(
+            !first[0].separation_deg.is_nan() && !last[0].separation_deg.is_nan(),
+            "the finite-separation candidate must represent the group in both input orders"
         );
     }
 
