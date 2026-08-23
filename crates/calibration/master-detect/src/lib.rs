@@ -147,7 +147,7 @@ pub fn parse_frame_type(raw: &str) -> Option<FrameType> {
         normalised.split(|c: char| !c.is_ascii_alphanumeric()).filter(|t| !t.is_empty()).collect();
 
     // Dark flat must be decided before dark and flat individually.
-    if tokens.iter().any(|t| *t == "darkflat")
+    if tokens.contains(&"darkflat")
         || tokens.windows(2).any(|w| w == ["dark", "flat"])
         || tokens.windows(2).any(|w| w == ["flat", "dark"])
     {
