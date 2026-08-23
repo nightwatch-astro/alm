@@ -132,7 +132,7 @@ hygiene-pub:
 # Public API surface of one crate (read, not pass/fail).
 hygiene-api CRATE:
     @command -v cargo-public-api >/dev/null 2>&1 || { echo "cargo-public-api not installed: cargo install cargo-public-api"; exit 1; }
-    cargo public-api -p "{{CRATE}}"
+    cargo public-api -p {{quote(CRATE)}}
 
 # All non-interactive hygiene sweeps.
 hygiene: hygiene-deps hygiene-pub
@@ -199,7 +199,7 @@ tauri-dev:
 # The bridge is unauthenticated and reaches every command handler; BIND defaults
 # to loopback and takes an address (0.0.0.0) only for cross-host validation.
 tauri-dev-mcp bind="127.0.0.1":
-    cd apps/desktop && PV_MCP_BRIDGE_ENABLE=1 PV_MCP_BRIDGE_BIND="{{bind}}" pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools
+    cd apps/desktop && PV_MCP_BRIDGE_ENABLE=1 PV_MCP_BRIDGE_BIND={{quote(bind)}} pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools
 
 # Clean build artifacts
 clean:
@@ -207,16 +207,16 @@ clean:
 
 # Speckit workflows (requires specify CLI)
 speckit-full FEATURE INTEGRATION="codex":
-    specify workflow run speckit-full -i "feature_name={{FEATURE}}" -i "integration={{INTEGRATION}}"
+    specify workflow run speckit-full -i feature_name={{quote(FEATURE)}} -i integration={{quote(INTEGRATION)}}
 
 speckit-bugfix ISSUE INTEGRATION="codex":
-    specify workflow run speckit-bugfix -i "issue_number={{ISSUE}}" -i "integration={{INTEGRATION}}"
+    specify workflow run speckit-bugfix -i issue_number={{quote(ISSUE)}} -i integration={{quote(INTEGRATION)}}
 
 speckit-tinyspec FEATURE INTEGRATION="codex":
-    specify workflow run speckit-tinyspec -i "feature_name={{FEATURE}}" -i "integration={{INTEGRATION}}"
+    specify workflow run speckit-tinyspec -i feature_name={{quote(FEATURE)}} -i integration={{quote(INTEGRATION)}}
 
 speckit-resume RUN_ID:
-    specify workflow resume "{{RUN_ID}}"
+    specify workflow resume {{quote(RUN_ID)}}
 
 speckit-status:
     specify workflow status

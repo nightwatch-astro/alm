@@ -69,25 +69,37 @@ fn absolute_operand(token: &str, value: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    // `render` requires an absolute operand, and absoluteness is platform-defined:
+    // a POSIX literal has no drive prefix, so `is_absolute` is false on Windows.
+    #[cfg(windows)]
+    const ABS_DIR: &str = r"C:\mnt\library\project";
+    #[cfg(not(windows))]
+    const ABS_DIR: &str = "/mnt/library/project";
+
+    #[cfg(windows)]
+    const ABS_FILE: &str = r"C:\mnt\library\project\capture.fit";
+    #[cfg(not(windows))]
+    const ABS_FILE: &str = "/mnt/library/project/capture.fit";
+
     #[test]
     fn render_folder_token() {
         let tokens = &[ArgsToken::Folder];
-        let ctx = RenderContext { folder: Some("/mnt/library/project"), file: None };
-        assert_eq!(render(tokens, &ctx).unwrap(), vec!["/mnt/library/project"]);
+        let ctx = RenderContext { folder: Some(ABS_DIR), file: None };
+        assert_eq!(render(tokens, &ctx).unwrap(), vec![ABS_DIR]);
     }
 
     #[test]
     fn render_file_token() {
         let tokens = &[ArgsToken::File];
-        let ctx = RenderContext { folder: None, file: Some("/mnt/library/project/capture.fit") };
-        assert_eq!(render(tokens, &ctx).unwrap(), vec!["/mnt/library/project/capture.fit"]);
+        let ctx = RenderContext { folder: None, file: Some(ABS_FILE) };
+        assert_eq!(render(tokens, &ctx).unwrap(), vec![ABS_FILE]);
     }
 
     #[test]
     fn render_literal_token() {
         let tokens = &[ArgsToken::Literal("--open".to_owned()), ArgsToken::Folder];
-        let ctx = RenderContext { folder: Some("/a/b"), file: None };
-        assert_eq!(render(tokens, &ctx).unwrap(), vec!["--open", "/a/b"]);
+        let ctx = RenderContext { folder: Some(ABS_DIR), file: None };
+        assert_eq!(render(tokens, &ctx).unwrap(), vec!["--open", ABS_DIR]);
     }
 
     #[test]
@@ -119,13 +131,22 @@ mod tests {
         assert!(err.contains("{file}"), "err: {err}");
     }
 
+    // A rooted POSIX path lacks a drive prefix, so Windows must reject it rather
+    // than hand the tool a path the OS cannot resolve.
+    #[cfg(windows)]
+    #[test]
+    fn render_rejects_a_rooted_path_without_a_drive_prefix() {
+        let ctx = RenderContext { folder: Some("/mnt/library/project"), file: None };
+        assert!(render(&[ArgsToken::Folder], &ctx).is_err());
+    }
+
     #[test]
     fn render_siril_folder() {
         use crate::seed;
         let profile = seed::find("siril").unwrap();
-        let ctx = RenderContext { folder: Some("/mnt/lib/siril_project"), file: None };
+        let ctx = RenderContext { folder: Some(ABS_DIR), file: None };
         let argv = render(&profile.args_template, &ctx).unwrap();
-        assert_eq!(argv, vec!["/mnt/lib/siril_project"]);
+        assert_eq!(argv, vec![ABS_DIR]);
     }
 
     #[test]
@@ -134,7 +155,7 @@ mod tests {
         // args) rather than pass a broken {folder} token.
         use crate::seed;
         let profile = seed::find("pixinsight").unwrap();
-        let ctx = RenderContext { folder: Some("/mnt/lib/pi_project"), file: None };
+        let ctx = RenderContext { folder: Some(ABS_DIR), file: None };
         let argv = render(&profile.args_template, &ctx).unwrap();
         assert_eq!(argv, Vec::<String>::new());
     }
