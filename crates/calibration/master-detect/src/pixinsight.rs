@@ -12,21 +12,24 @@
 //!
 //! It also stores masters in paths like `masterDarks/masterDark.xisf`.
 //!
-//! Detection priority for `is_master`:
-//! 1. A present `STACKCNT`/`NCOMBINE` count decides on its own (`> 1` is a
-//!    master), and is reported as `stack_count_evidence`.
-//! 2. Otherwise, either `IMAGETYP` (lowercased) contains `"master"`, or the
-//!    file name or relative path carries a `master`-prefixed token or
-//!    `"_stacked"`.
+//! A master signature is `IMAGETYP` (lowercased) containing `"master"`, or a
+//! file name or relative path carrying a `master`-prefixed token or
+//! `"_stacked"`. Detection priority for `is_master`:
+//! 1. Where the signature is in `IMAGETYP` — or `IMAGETYP` is absent and the
+//!    path carries it — a present `STACKCNT`/`NCOMBINE` count decides (`> 1` is
+//!    a master) and is reported as `stack_count_evidence`.
+//! 2. Otherwise the signature alone decides and no header evidence is reported.
+//!    A plain base `IMAGETYP` next to a count is Siril's convention, which
+//!    `SirilDetector` owns however the file is named.
 //!
 //! The base frame type is determined by stripping "master" from `IMAGETYP`
 //! before parsing, so `"Master Dark"` → `"Dark"` → `FrameType::Dark`.
 //!
-//! If `IMAGETYP` is absent but the path strongly suggests a master
-//! (contains "master"), this detector still returns a result — but only if
-//! the path itself reveals the frame type (e.g. `"masterDarks/"`). In
-//! practice a PixInsight XISF will always carry `IMAGETYP`; the path fallback
-//! is a safety net for edge cases.
+//! If `IMAGETYP` is absent but the path carries a `master`-prefixed token or
+//! `"_stacked"`, this detector still returns a result — but only if the path
+//! itself reveals the frame type (e.g. `"masterDarks/"`). In practice a
+//! PixInsight XISF will always carry `IMAGETYP`; the path fallback is a safety
+//! net for edge cases.
 
 use crate::{
     parse_frame_type, path_looks_like_master, DetectInput, MasterDetection, MasterDetector,
@@ -49,15 +52,19 @@ impl MasterDetector for PixInsightDetector {
         // Determine whether the path signals a master (fallback).
         let path_has_master = path_looks_like_master(input.file_name, input.rel_path);
 
-        // A present STACKCNT/NCOMBINE count is authoritative and decides
-        // is_master on its own; the naming heuristics apply only when no
-        // header count is available.
-        // A present STACKCNT/NCOMBINE count is authoritative and decides
-        // is_master on its own; the naming heuristics apply only when no
-        // header count is available.
-        let is_master = match input.stack_count {
-            Some(n) => n > 1,
-            None => imagetyp_has_master || path_has_master,
+        let has_master_naming = imagetyp_has_master || path_has_master;
+
+        // A plain base IMAGETYP alongside STACKCNT/NCOMBINE is Siril's own
+        // signature, and a header pair outranks a file name: claiming the count
+        // there would outrank `SirilDetector` in `detect_master` and relabel a
+        // Siril master as PixInsight's. The count is this detector's evidence
+        // only where the master signature is in IMAGETYP, or IMAGETYP is absent
+        // and the path carries it.
+        let owns_header_count =
+            if input.imagetyp.is_some() { imagetyp_has_master } else { path_has_master };
+        let (is_master, stack_count_evidence) = match input.stack_count {
+            Some(n) if owns_header_count => (n > 1, true),
+            _ => (has_master_naming, false),
         };
 
         // Determine base frame type.
@@ -75,12 +82,7 @@ impl MasterDetector for PixInsightDetector {
             infer_frame_type_from_path(input.file_name, input.rel_path)?
         };
 
-        Some(MasterDetection {
-            frame_type,
-            is_master,
-            detector: self.id(),
-            stack_count_evidence: input.stack_count.is_some(),
-        })
+        Some(MasterDetection { frame_type, is_master, detector: self.id(), stack_count_evidence })
     }
 }
 
@@ -99,6 +101,7 @@ fn infer_frame_type_from_path(file_name: &str, rel_path: &str) -> Option<metadat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::detect_master;
     use metadata_core::FrameType;
 
     fn input<'a>(
@@ -183,15 +186,35 @@ mod tests {
     /// `SirilDetector` also reports a present count and answers first whenever
     /// `IMAGETYP` is parseable, which would leave this arm unexercised.
     #[test]
-    fn a_present_stack_count_decides_this_detector_on_its_own() {
-        let stacked = input(Some("DARK"), Some(30), "dark_030.fits", "calibration/darks/");
+    fn a_present_stack_count_decides_a_pixinsight_master_on_its_own() {
+        let stacked = input(Some("Master Dark"), Some(30), "masterDark.xisf", "masters/");
         let result = PixInsightDetector.detect(&stacked).unwrap();
         assert!(result.stack_count_evidence, "STACKCNT=30 is header evidence");
-        assert!(result.is_master, "STACKCNT=30 outranks a name with no master token");
+        assert!(result.is_master);
 
         let single = input(Some("Master Dark"), Some(1), "masterDark.xisf", "masters/");
         let result = PixInsightDetector.detect(&single).unwrap();
         assert!(result.stack_count_evidence);
         assert!(!result.is_master, "STACKCNT=1 outranks every master naming signal");
+    }
+
+    /// A plain base `IMAGETYP` plus a count is Siril's signature, not
+    /// PixInsight's, so this detector must not claim header evidence for it and
+    /// must not outrank `SirilDetector` in `detect_master`. A `master` token in
+    /// the file name does not transfer the count: a header pair outranks a name.
+    #[test]
+    fn a_plain_imagetyp_beside_a_count_is_not_this_detector_s_evidence() {
+        let unnamed = input(Some("DARK"), Some(30), "dark_030.fits", "calibration/darks/");
+        let result = PixInsightDetector.detect(&unnamed).unwrap();
+        assert!(!result.stack_count_evidence);
+        assert!(!result.is_master);
+        assert_eq!(detect_master(&unnamed).unwrap().detector, "siril");
+
+        let named = input(Some("LIGHT"), Some(1), "master_light_stackcnt_one.fits", "");
+        let result = PixInsightDetector.detect(&named).unwrap();
+        assert!(!result.stack_count_evidence, "a name must not transfer the count");
+        let arbitrated = detect_master(&named).unwrap();
+        assert_eq!(arbitrated.detector, "siril");
+        assert!(!arbitrated.is_master, "STACKCNT=1 is not a master whoever reports it");
     }
 }
