@@ -104,19 +104,26 @@ fn build_updater_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry, tauri_plugin
 ///    than the plugin's own 0.0.0.0. An off-loopback address opts one run into
 ///    cross-host validation (an agent in WSL or on another machine driving a
 ///    Windows host).
+///
+/// Layers 2 and 3 are decided by [`crate::bootstrap::mcp_bridge_bind_address`],
+/// which is where they are tested; this function only reads the environment and
+/// logs.
 #[cfg(feature = "dev-tools")]
 #[expect(
     clippy::cognitive_complexity,
     reason = "three `tracing` macro expansions, not branching logic"
 )]
 fn build_mcp_bridge_plugin() -> Option<tauri::plugin::TauriPlugin<tauri::Wry>> {
-    if !std::env::var("PV_MCP_BRIDGE_ENABLE").is_ok_and(|v| v == "1") {
+    let enable = std::env::var("PV_MCP_BRIDGE_ENABLE").ok();
+    let bind_var = std::env::var("PV_MCP_BRIDGE_BIND").ok();
+    let Some(bind) =
+        crate::bootstrap::mcp_bridge_bind_address(enable.as_deref(), bind_var.as_deref())
+    else {
         tracing::info!(
             "MCP bridge not started: set PV_MCP_BRIDGE_ENABLE=1 to open the agent-driving port"
         );
         return None;
-    }
-    let bind = std::env::var("PV_MCP_BRIDGE_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+    };
     if bind == "127.0.0.1" {
         tracing::info!(bind = %bind, "MCP bridge starting (PV_MCP_BRIDGE_ENABLE=1)");
     } else {
@@ -126,7 +133,7 @@ fn build_mcp_bridge_plugin() -> Option<tauri::plugin::TauriPlugin<tauri::Wry>> {
              reachable from that address"
         );
     }
-    Some(tauri_plugin_mcp_bridge::init_with_config(tauri_plugin_mcp_bridge::Config::new(&bind)))
+    Some(tauri_plugin_mcp_bridge::init_with_config(tauri_plugin_mcp_bridge::Config::new(bind)))
 }
 
 /// Build the Tauri `App` **without** starting the event loop.
