@@ -39,3 +39,9 @@ specs/**/contracts/*.generated.json text eol=lf
 # checksum (SHA-384 of file bytes) is identical on all platforms.
 *.sql text eol=lf
 *.rs text eol=lf
+
+# The bundled star-catalogue blobs are pinned by a SHA-256 of their exact bytes
+# in `crates/targeting/resolver/tests/bundled_seed_digest.rs`. A Windows checkout
+# would otherwise convert them to CRLF and fail that digest there — and only
+# there. The committed blobs are already LF, so the pinned digests are unchanged.
+assets/seed/*.json text eol=lf
