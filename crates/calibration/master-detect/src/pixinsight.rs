@@ -52,6 +52,9 @@ impl MasterDetector for PixInsightDetector {
         // A present STACKCNT/NCOMBINE count is authoritative and decides
         // is_master on its own; the naming heuristics apply only when no
         // header count is available.
+        // A present STACKCNT/NCOMBINE count is authoritative and decides
+        // is_master on its own; the naming heuristics apply only when no
+        // header count is available.
         let is_master = match input.stack_count {
             Some(n) => n > 1,
             None => imagetyp_has_master || path_has_master,
@@ -174,5 +177,21 @@ mod tests {
     fn pixinsight_no_imagetyp_no_master_path_returns_none() {
         let inp = input(None, None, "dark_001.fits", "calibration/darks/");
         assert!(PixInsightDetector.detect(&inp).is_none());
+    }
+
+    /// Asserted against the detector rather than `detect_master`, because
+    /// `SirilDetector` also reports a present count and answers first whenever
+    /// `IMAGETYP` is parseable, which would leave this arm unexercised.
+    #[test]
+    fn a_present_stack_count_decides_this_detector_on_its_own() {
+        let stacked = input(Some("DARK"), Some(30), "dark_030.fits", "calibration/darks/");
+        let result = PixInsightDetector.detect(&stacked).unwrap();
+        assert!(result.stack_count_evidence, "STACKCNT=30 is header evidence");
+        assert!(result.is_master, "STACKCNT=30 outranks a name with no master token");
+
+        let single = input(Some("Master Dark"), Some(1), "masterDark.xisf", "masters/");
+        let result = PixInsightDetector.detect(&single).unwrap();
+        assert!(result.stack_count_evidence);
+        assert!(!result.is_master, "STACKCNT=1 outranks every master naming signal");
     }
 }
