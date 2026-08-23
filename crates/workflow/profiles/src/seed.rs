@@ -135,9 +135,10 @@ mod tests {
 
     #[test]
     fn pixinsight_launches_bare_with_no_folder_arg() {
-        // PixInsight cannot open a bare folder path (bug #778): launch with
-        // no args and rely on `cwd` anchoring instead of {folder} (spec 011
-        // R-CwdContain, supports_open_folder=false path).
+        // PixInsight cannot open a bare folder path (bug #778), so it launches
+        // with no args (spec 011 R-CwdContain, supports_open_folder=false
+        // path). It sets a bundle id, so on macOS it takes the `open -b` arm,
+        // which applies no working directory at all (`launch.rs:159-183`).
         let p = find("pixinsight").expect("pixinsight must be seeded");
         assert!(!p.supports_open_folder);
         assert!(p.args_template.is_empty());

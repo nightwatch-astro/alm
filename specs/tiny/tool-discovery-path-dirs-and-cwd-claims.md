@@ -108,6 +108,21 @@ source-text assertion, not by execution.
     that describe the hint state that the tool receives no folder argument and
     that the project folder reaches it as a working directory only on the
     platform arms that apply one.
+11. The copies of the cwd-anchored claim named in the table below are corrected
+    or platform-qualified. This enumerates the copies this branch changes; it is
+    not a claim that the repository holds no other copy. The legacy 011 task
+    list is excluded: a repository guard refuses every write under that
+    filename because task state lives in beads. Remaining copies elsewhere in
+    spec 011 are tracked by `astro-plan-6kpeh`.
+
+    | Copy | Was |
+    | --- | --- |
+    | `specs/011-processing-tool-launch/data-model.md:38-45` | R-BundleId specified `open -b` with `cwd` anchored via the Tauri shell API |
+    | `specs/011-processing-tool-launch/spec.md:47-53` | PixInsight's Independent Test asserted a source-view-anchored working directory and a non-null PID on every platform |
+    | `specs/011-processing-tool-launch/research.md:96` | Siril's note said `cwd` is set, though Siril sets a bundle id |
+    | `specs/011-processing-tool-launch/research.md:99-101` | the working directory was "always set" |
+    | `crates/workflow/profiles/src/seed.rs:138-140` | the PixInsight seed test relied on `cwd` anchoring |
+    | `e2e-agentic-test/011-processing-tool-launch/tool-launch-containment/scenario.md:23-25` | quoted the retired hint string verbatim |
 
 ## Tasks
 
@@ -118,6 +133,9 @@ source-text assertion, not by execution.
 - [x] Reword `projects_tool_cwd_anchored_hint` in `en-GB.json` and `pt-BR.json`
 - [x] Correct the `seed.rs` comment; document the bundle arm at `launch.rs:159`
 - [x] Reword the two `tool-launch.ts` docstrings that repeat the same claim
+- [x] Correct the surviving design-artifact copies enumerated in requirement 11:
+      011 `data-model.md`, `spec.md`, `research.md`, the PixInsight seed test
+      comment, and the agentic e2e scenario's quoted hint string
 - [x] `cargo clippy -p workflow_profiles --all-targets`, `cargo nextest run -p
       workflow_profiles`, `cargo fmt --all --check`, desktop typecheck and vitest
 - [x] `cargo check -p workflow_profiles --target x86_64-unknown-linux-gnu
@@ -133,6 +151,21 @@ source-text assertion, not by execution.
       `crates/workflow/profiles/tests/spawn_program_paths.rs:40`, the guard test's
       own literals, so no executed `PATH`-style split outside `absolute_path_dirs`
       remains in the workspace
-- [x] Requirements 7-10 verified by reading the changed lines; no behaviour change
+- [x] Requirements 7-11 verified by reading the changed lines; no behaviour change
       and therefore no test
+- [x] A tripwire over the claim itself, excluding the guarded legacy task list:
+
+      ```
+      git grep -nEi 'working (directory|folder|dir).{0,30}(anchor|is always set)|anchor[a-z]*.{0,30}working (directory|folder|dir)|cwd[ `"]{1,4}anchor|anchor[a-z]*[ `"]{1,4}cwd|anchored to the project([^ ]| [^r])' \
+        -- . ':(exclude)specs/011-processing-tool-launch/tasks.md'
+      ```
+
+      matches 8 lines, every one of them legitimate: the four
+      `tool-launch.ts` occurrences naming the hint feature, `seed.rs:60` and
+      `research.md:97` for `planetary_suite`, which sets no bundle id and so
+      does receive the working directory, and the two lines of this file that
+      state the defect and the rule. A new unqualified claim lands in the match
+      set. This is a tripwire, not a proof: `git grep` is line-based, so a claim
+      wrapped across two lines can evade it, which is why requirement 11
+      enumerates rather than asserting coverage
 - [x] Touched-crate lint and test gates green; desktop typecheck and vitest green

@@ -46,9 +46,11 @@ Artifact Observation), which only fires when a launch happened.
 
 **Independent Test**: With PixInsight path configured in Settings and a
 PixInsight-bound project selected, click `Open in PixInsight`. PixInsight
-opens, its working directory or initial dialog is anchored to the project's
-generated source-view folder, and a `tool_launch` audit record appears with a
-non-null PID.
+opens and a `tool_launch` audit record appears. On Linux and Windows the
+process starts in the project's generated source-view folder and the record
+carries a non-null PID. On macOS PixInsight launches through its bundle id,
+which carries neither a working directory nor a PID, so the record's PID is
+null and no working-directory observable applies.
 
 **Acceptance Scenarios**:
 

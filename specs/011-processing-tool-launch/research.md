@@ -93,12 +93,14 @@ shape:
 | Tool             | `args_template`        | `supports_open_folder` | Notes                                                              |
 | ---------------- | ---------------------- | ---------------------- | ------------------------------------------------------------------ |
 | PixInsight       | `["{folder}"]`         | `true`                 | PixInsight opens the folder in the file explorer panel.            |
-| Siril            | `[]`                   | `false`                | Siril does not accept a folder arg; we set `cwd` only.             |
+| Siril            | `[]`                   | `false`                | Siril does not accept a folder arg. Sets a bundle id, so no `cwd`. |
 | Planetary Suite  | `[]`                   | `false`                | AutoStakkert! opens its own dialog; `cwd` anchors it.              |
 
-Working directory is always set to the resolved project working folder,
-regardless of whether the folder token is present in `args_template`.
-This is the "set cwd, optionally pass folder" behaviour FR-009 requires.
+Where a working directory is applied at all it is the resolved project working
+folder, regardless of whether the folder token is present in `args_template`.
+This is the "set cwd, optionally pass folder" behaviour FR-009 requires. The
+macOS `open -b` bundle-id arm applies none: Launch Services starts the app, so
+the caller's `current_dir` would set the cwd of `open` rather than of the tool.
 
 ### Alternatives Considered
 
