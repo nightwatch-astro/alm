@@ -28,6 +28,8 @@ pub enum KeyError {
          (see spec 018 observer_location; emit provenance.unreviewed)"
     )]
     ObserverLocationMissing,
+    #[error("pre-noon observing-night derivation falls before the supported date range")]
+    DateUnderflow,
 }
 
 /// Compute the local-solar-noon-bounded observing night for the given UTC
@@ -38,14 +40,17 @@ pub enum KeyError {
 /// last night until local solar noon).
 ///
 /// # Errors
-/// Returns [`KeyError::ObserverLocationMissing`] when `observer` is `None`.
+/// Returns [`KeyError::ObserverLocationMissing`] when `observer` is `None`, and
+/// [`KeyError::DateUnderflow`] when a pre-noon timestamp falls before
+/// [`Date::MIN`].
 pub fn observing_night(
     utc_capture_at: OffsetDateTime,
     observer: Option<&ObserverContext>,
 ) -> Result<String, KeyError> {
     let observer = observer.ok_or(KeyError::ObserverLocationMissing)?;
     let local = utc_capture_at.to_offset(observer.utc_offset);
-    let date = if local.hour() < 12 { previous_day(local.date()) } else { local.date() };
+    let date = crate::observing_night::noon_bounded_date(local.date(), local.hour())
+        .map_err(|_| KeyError::DateUnderflow)?;
     Ok(format_date_iso(date))
 }
 
@@ -69,7 +74,9 @@ impl SessionKey {
     /// not here. This method is the pure key-canonicalisation step.
     ///
     /// # Errors
-    /// Returns [`KeyError::ObserverLocationMissing`] when `observer` is `None`.
+    /// Returns [`KeyError::ObserverLocationMissing`] when `observer` is `None`,
+    /// and [`KeyError::DateUnderflow`] when a pre-noon timestamp falls before
+    /// [`Date::MIN`].
     pub fn new(
         target_id: &str,
         filter: &str,
@@ -134,10 +141,6 @@ pub struct SessionKeyParts {
     pub night: Option<String>,
 }
 
-fn previous_day(d: Date) -> Date {
-    d.previous_day().unwrap_or(d)
-}
-
 fn format_date_iso(d: Date) -> String {
     let month = u8::from(d.month());
     format!("{:04}-{:02}-{:02}", d.year(), month, d.day())
@@ -195,6 +198,58 @@ mod tests {
             observing_night(utc(2026, Month::March, 15, 21, 0), None),
             Err(KeyError::ObserverLocationMissing)
         ));
+    }
+
+    #[test]
+    fn pre_noon_on_the_minimum_date_refuses_instead_of_naming_that_date() {
+        let at_min = PrimitiveDateTime::new(Date::MIN, Time::from_hms(0, 0, 0).unwrap())
+            .assume_offset(UtcOffset::UTC);
+
+        assert!(matches!(
+            observing_night(at_min, Some(&observer(0))),
+            Err(KeyError::DateUnderflow)
+        ));
+    }
+
+    #[test]
+    fn at_noon_on_the_minimum_date_still_names_that_date() {
+        let at_min_noon = PrimitiveDateTime::new(Date::MIN, Time::from_hms(12, 0, 0).unwrap())
+            .assume_offset(UtcOffset::UTC);
+
+        let night = observing_night(at_min_noon, Some(&observer(0))).unwrap();
+        assert_eq!(night, format_date_iso(Date::MIN));
+    }
+
+    #[test]
+    fn both_derivations_name_the_same_date_for_a_pre_noon_negative_year() {
+        let local = PrimitiveDateTime::new(
+            Date::from_calendar_date(-1, Month::January, 1).unwrap(),
+            Time::from_hms(0, 0, 0).unwrap(),
+        )
+        .assume_offset(UtcOffset::UTC);
+
+        let via_key = observing_night(local, Some(&observer(0))).unwrap();
+        let via_typed =
+            crate::observing_night::ObservingNight::from_acquisition_timezone(local, "UTC")
+                .unwrap();
+
+        assert_eq!(via_key, format_date_iso(via_typed.date()));
+    }
+
+    #[test]
+    fn format_date_iso_pads_every_year_width_unchanged() {
+        assert_eq!(
+            format_date_iso(Date::from_calendar_date(7, Month::January, 2).unwrap()),
+            "0007-01-02"
+        );
+        assert_eq!(
+            format_date_iso(Date::from_calendar_date(-2, Month::January, 2).unwrap()),
+            "-002-01-02"
+        );
+        assert_eq!(
+            format_date_iso(Date::from_calendar_date(2026, Month::March, 15).unwrap()),
+            "2026-03-15"
+        );
     }
 
     #[test]
