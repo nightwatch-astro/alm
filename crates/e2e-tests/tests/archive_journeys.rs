@@ -164,17 +164,26 @@ async fn setup_archived_project(
         "expected at least 1 real archive item on the generated plan: {generate}"
     );
 
-    // 6. Apply — the real filesystem mutation, channel-free (spec 037).
-    // Auto-approves the still-`ready_for_review` plan and runs the same
-    // executor `plans.apply_real` uses, just without a progress `Channel`.
-    let apply: serde_json::Value =
-        app.invoke("plans_apply_direct", json!({ "planId": plan_id })).await?;
+    // 6. Approve — the explicit gate. `plans.apply.direct` requires the token
+    // this call mints; no apply path may mint its own (constitution §II).
+    let approve: serde_json::Value = app.invoke("plans_approve", json!({ "id": plan_id })).await?;
+    let approval_token = approve["approvalToken"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("plans.approve returned no approvalToken: {approve}"))?
+        .to_owned();
+
+    // 7. Apply — the real filesystem mutation, channel-free (spec 037). Runs
+    // the same executor `plans.apply_real` uses, just without a progress
+    // `Channel`.
+    let apply: serde_json::Value = app
+        .invoke("plans_apply_direct", json!({ "planId": plan_id, "approvalToken": approval_token }))
+        .await?;
     anyhow::ensure!(
         apply["planId"] == json!(plan_id) && apply["newState"] == "applying",
         "expected plans.apply.direct to start applying the generated archive plan: {apply}"
     );
 
-    // 7. Poll the real, durable apply status until the executor finishes.
+    // 8. Poll the real, durable apply status until the executor finishes.
     let status: serde_json::Value = app
         .invoke_until(
             "plans_apply_status",
@@ -197,7 +206,7 @@ async fn setup_archived_project(
         "expected at least 1 durably-recorded applied item: {status}"
     );
 
-    // 8. Real filesystem side effect: the source file moved out of the
+    // 9. Real filesystem side effect: the source file moved out of the
     // project folder and into the app-managed `.astro-plan-archive`
     // subtree (never a silent overwrite — constitution II).
     anyhow::ensure!(
@@ -215,7 +224,7 @@ async fn setup_archived_project(
         "expected a `.astro-plan-archive` subtree under the project folder after apply"
     );
 
-    // 9. C5 lifecycle closure: applying an `origin = archive` plan to a
+    // 10. C5 lifecycle closure: applying an `origin = archive` plan to a
     // clean `applied` terminal drives the owning project into `archived` —
     // the ONLY legitimate way to reach that state (`completed -> archived`
     // is plan-required, step 2 above never attempted it directly). Durable

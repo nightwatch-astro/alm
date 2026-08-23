@@ -352,13 +352,12 @@ pub(super) fn spawn_executor_run(params: SpawnExecutorParams) {
         op_emitter,
     } = params;
 
+    // The spawned task owns the RAII removal guard, so its `Drop` removes the
+    // registry entry on ANY exit — normal completion *or* an unwind if
+    // `execute_plan` panics mid-apply (FR-017 scenario 2). Removal is always
+    // that `Drop`; the pause branch below only moves it earlier, it never
+    // removes the entry by hand.
     tokio::spawn(async move {
-        // Own the RAII removal guard for the whole task scope. Its `Drop`
-        // removes the registry entry on ANY exit — normal completion *or* an
-        // unwind if `execute_plan` panics mid-apply (FR-017 scenario 2). This
-        // is the single removal site; there is no explicit `registry.remove`.
-        let _run_guard = run_guard;
-
         let callbacks = PlanApplyCallbacks::new(
             pool.clone(),
             bus.clone(),
@@ -410,6 +409,18 @@ pub(super) fn spawn_executor_run(params: SpawnExecutorParams) {
                 .await;
             }
             ApplyOutcome::Paused { reason, counts } => {
+                // Release the registry entry BEFORE the paused state becomes
+                // observable. `resume_plan` (lifecycle.rs, R-Concur-1) and
+                // `cancel_plan` (GF-5) both require that a paused plan holds
+                // no `ActiveRun`, and both are reached from the paused plan
+                // row or the `plan.applying.paused` event. Holding the claim
+                // across `handle_paused`'s writes made a resume that reacted
+                // to either one fail with `plan.invalid_state` ("already has
+                // an active apply run"), and made a cancel signal a
+                // cancellation token no executor was left to observe. The
+                // executor has stopped and this branch performs no filesystem
+                // work, so the path claim has nothing left to protect.
+                drop(run_guard);
                 super::terminal::handle_paused(
                     &pool,
                     &bus,
@@ -423,65 +434,4 @@ pub(super) fn spawn_executor_run(params: SpawnExecutorParams) {
             }
         }
     });
-}
-
-// ── apply_plan_channel_free ───────────────────────────────────────────────────
-
-/// Channel-free variant of [`apply_plan`] (spec 037 archive/cleanup apply).
-///
-/// `apply_plan` requires a caller-supplied `approval_token` (spec 025 A1) and
-/// is normally reached through the webview's `tauri::ipc::Channel`-carrying
-/// `plans.apply` command so live per-item progress can stream back. Two kinds
-/// of caller have no token in hand and no reason to build a `Channel`:
-///
-/// - The spec 037 Layer-2 WebDriver test harness, which drives the real
-///   backend via `window.__PV_E2E__.invoke(...)`. It *could* build a
-///   `Channel` — one is just `__CHANNEL__:${id}` from
-///   `__TAURI_INTERNALS__.transformCallback`, and the harness already runs
-///   arbitrary JS in the real webview — but doing so would mean reaching into
-///   Tauri-internal plumbing from a test, so the harness deliberately does
-///   not. This variant is the supported route instead.
-/// - Any archive/cleanup UI surface that only needs a fire-and-poll apply
-///   (poll `get_apply_status` for the durable terminal counts) rather than
-///   a live progress stream.
-///
-/// This mirrors the auto-approve-then-apply pattern `inbox_plan::
-/// apply_inbox_plan` already established for inbox plans, generalised to any
-/// plan id (no inbox-item link required): approve the plan if it is still
-/// `ready_for_review`, tolerate an already-`approved` plan by reusing its
-/// stored token, then start the same background executor as `apply_plan`
-/// with no progress sink. Constitution §II (reviewable filesystem mutation +
-/// audit) is preserved unchanged — this only removes the live-progress
-/// transport, not any approval, CAS, or audit step.
-///
-/// # Errors
-///
-/// - `plan.not_found` — plan not found.
-/// - `plan.invalid_state` — plan is not `ready_for_review`/`approved` (e.g.
-///   already applied/discarded/applying), or the approve step's non-empty
-///   items invariant failed.
-/// - `plan.conflict.overlap` — concurrent apply already running.
-pub async fn apply_plan_channel_free(
-    pool: &SqlitePool,
-    bus: &EventBus,
-    plan_id: &str,
-) -> Result<PlanApplyResponse, ContractError> {
-    let approve_resp = crate::plans::approve_plan(pool, bus, plan_id, "user").await;
-
-    let approval_token = match approve_resp {
-        Ok(resp) => resp.approval_token,
-        // Already approved (idempotent-ish) — fetch the stored token and carry
-        // through to apply_plan. Any other state (applying/applied/discarded/
-        // stale) surfaces the original error unchanged.
-        Err(e) if e.code == ErrorCode::PlanInvalidState => {
-            let plan_row = plans_repo::get_plan(pool, plan_id, false).await.map_err(db_err)?;
-            if plan_row.state != "approved" {
-                return Err(e);
-            }
-            plan_row.approval_token.unwrap_or_default()
-        }
-        Err(e) => return Err(e),
-    };
-
-    apply_plan(pool, bus, plan_id, &approval_token, None).await
 }

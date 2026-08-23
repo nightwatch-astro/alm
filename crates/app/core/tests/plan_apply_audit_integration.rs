@@ -737,16 +737,16 @@ async fn full_review_to_apply_audit_round_trip() {
     assert_eq!(status.items_failed, 0);
 }
 
-// ── Test: apply_plan_channel_free (spec 037 channel-free archive apply) ─────
+// ── Test: channel-free apply (spec 037 archive apply, no Channel) ─────
 
-/// `apply_plan_channel_free` auto-approves a still-`ready_for_review` archive
-/// plan, then applies it exactly like `apply_plan` — same FS move, same
-/// durable audit trail, same terminal counts via `get_apply_status`, and the
-/// same spec 017 C5 archive lifecycle closure. This is the E2E-harness- and
-/// UI-callable variant (spec 037 Journeys 6/7): no `tauri::ipc::Channel` and
-/// no pre-supplied approval token required.
+/// `apply_plan` with `event_sink: None` — the route `plans.apply.direct` takes
+/// (spec 037 Journeys 6/7) — applies an archive plan exactly like the
+/// Channel-carrying route: same FS move, same durable audit trail, same
+/// terminal counts via `get_apply_status`, and the same spec 017 C5 archive
+/// lifecycle closure. The approval token comes from an explicit `approve_plan`
+/// call by the caller, never from the apply path itself.
 #[tokio::test]
-async fn apply_plan_channel_free_auto_approves_and_moves_file() {
+async fn channel_free_apply_moves_file_after_explicit_approval() {
     let (db, _repo, bus) = support::setup().await;
     let plan_id = Uuid::new_v4().to_string();
     let project_id = Uuid::new_v4().to_string();
@@ -757,8 +757,8 @@ async fn apply_plan_channel_free_auto_approves_and_moves_file() {
     let dst = dir.path().join("archive/capture.fits");
     std::fs::write(&src, b"raw-light-frame").expect("write src");
 
-    // Seed a `ready_for_review` archive plan — deliberately NOT pre-approved;
-    // the channel-free path must perform the approve step itself.
+    // Seed a `ready_for_review` archive plan — deliberately NOT pre-approved,
+    // so the explicit approve step below is the only source of the token.
     plans_repo::insert_plan(
         db.pool(),
         &plans_repo::InsertPlan {
@@ -803,10 +803,14 @@ async fn apply_plan_channel_free_auto_approves_and_moves_file() {
         .await
         .expect("ready_for_review");
 
-    // Channel-free apply: no approval_token, no Channel.
-    let resp = app_core::plan_apply::apply_plan_channel_free(db.pool(), &bus, &plan_id)
+    let approval_token = app_core::plans::approve_plan(db.pool(), &bus, &plan_id, "user")
         .await
-        .expect("apply_plan_channel_free should auto-approve then apply");
+        .expect("approve_plan")
+        .approval_token;
+
+    let resp = app_core::plan_apply::apply_plan(db.pool(), &bus, &plan_id, &approval_token, None)
+        .await
+        .expect("channel-free apply of an approved plan");
     assert_eq!(resp.plan_id, plan_id);
     assert_eq!(resp.new_state, "applying");
     assert!(!resp.run_id.is_empty(), "run_id should be non-empty");
@@ -861,12 +865,10 @@ async fn apply_plan_channel_free_auto_approves_and_moves_file() {
     assert_eq!(archived[0].archived_via_plan_id.as_deref(), Some(plan_id.as_str()));
 }
 
-/// `apply_plan_channel_free` also handles a plan that is already `approved`
-/// (idempotent-ish reuse of the stored token) rather than only
-/// `ready_for_review` — mirrors `inbox_plan::apply_inbox_plan`'s tolerance of
-/// a caller that approved out-of-band.
+/// An absent approval token is rejected and mutates nothing. The channel-free
+/// apply path once minted its own token here, which made the gate unfailable.
 #[tokio::test]
-async fn apply_plan_channel_free_reuses_existing_approval() {
+async fn channel_free_apply_rejects_absent_token() {
     let (db, _repo, bus) = support::setup().await;
     let plan_id = Uuid::new_v4().to_string();
 
@@ -877,19 +879,50 @@ async fn apply_plan_channel_free_reuses_existing_approval() {
 
     seed_approved_plan_with_real_files(db.pool(), &plan_id, &src, &dst).await;
 
-    let resp = app_core::plan_apply::apply_plan_channel_free(db.pool(), &bus, &plan_id)
+    let err = app_core::plan_apply::apply_plan(db.pool(), &bus, &plan_id, "", None)
         .await
-        .expect("apply_plan_channel_free should reuse the existing approval");
-    assert_eq!(resp.new_state, "applying");
+        .expect_err("an absent approval token must not apply a plan");
+    assert_eq!(err.code, contracts_core::error_code::ErrorCode::PlanApprovalStale);
 
-    support::wait_plan_terminal(db.pool(), &plan_id).await;
+    assert!(src.exists(), "source must not move without an approval token");
+    assert!(!dst.exists(), "destination must not be created");
+    let plan = plans_repo::get_plan(db.pool(), &plan_id, false).await.expect("get_plan");
+    assert_eq!(plan.state, "approved", "plan state must be untouched");
+}
 
-    assert!(!src.exists(), "source should have been moved");
-    assert!(dst.exists(), "destination should exist");
+/// A token minted for a *different* plan is rejected: the gate compares
+/// against the token stored on the plan being applied.
+#[tokio::test]
+async fn channel_free_apply_rejects_foreign_token() {
+    let (db, _repo, bus) = support::setup().await;
+    let target_id = Uuid::new_v4().to_string();
+    let other_id = Uuid::new_v4().to_string();
 
-    let status = app_core::plan_apply::get_apply_status(db.pool(), &plan_id)
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("target.fits");
+    let dst = dir.path().join("processed/target.fits");
+    std::fs::write(&src, b"fits-content").expect("write src");
+    let other_src = dir.path().join("other.fits");
+    let other_dst = dir.path().join("processed/other.fits");
+    std::fs::write(&other_src, b"fits-content").expect("write other src");
+
+    seed_approved_plan_with_real_files(db.pool(), &target_id, &src, &dst).await;
+    seed_approved_plan_with_real_files(db.pool(), &other_id, &other_src, &other_dst).await;
+    // Re-approve the decoy through the real transition so its token is a
+    // genuine `approve_plan` product rather than the fixture's fixed string.
+    plans_repo::update_plan_state(db.pool(), &other_id, "ready_for_review")
         .await
-        .expect("get_apply_status");
-    assert_eq!(status.plan_state, "applied");
-    assert_eq!(status.items_applied, 1);
+        .expect("ready_for_review");
+    let foreign_token = app_core::plans::approve_plan(db.pool(), &bus, &other_id, "user")
+        .await
+        .expect("approve_plan")
+        .approval_token;
+
+    let err = app_core::plan_apply::apply_plan(db.pool(), &bus, &target_id, &foreign_token, None)
+        .await
+        .expect_err("a token minted for another plan must not apply this plan");
+    assert_eq!(err.code, contracts_core::error_code::ErrorCode::PlanApprovalStale);
+
+    assert!(src.exists(), "source must not move on a foreign token");
+    assert!(!dst.exists(), "destination must not be created");
 }
