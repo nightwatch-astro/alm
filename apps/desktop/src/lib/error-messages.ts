@@ -44,6 +44,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, () => string> = {
   'inbox.no_destination_root': m.err_inbox_no_destination_root,
   'inbox.destination_root_required': m.err_inbox_destination_root_required,
   'inbox.invalid_destination_root': m.err_inbox_invalid_destination_root,
+  'inbox.destination_collision': m.err_inbox_destination_collision,
   'inbox.missing_path_attributes': m.err_inbox_missing_path_attributes,
   'metadata.unreadable': m.err_metadata_unreadable,
   'classification.ambiguous': m.err_classification_ambiguous,

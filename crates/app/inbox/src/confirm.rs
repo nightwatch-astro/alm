@@ -59,6 +59,7 @@ use persistence_lifecycle::repositories::settings as settings_repo;
 use persistence_plans::repositories::plans as plans_repo;
 use serde_json::json;
 use sqlx::SqlitePool;
+use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 use app_core_errors::db_internal_ctx;
@@ -142,6 +143,7 @@ pub struct ResolvedDestination {
 /// - `classification.ambiguous` — action/classification mismatch or no classified files.
 /// - `classification.stale` — signature drift detected.
 /// - `pattern.unset` — naming pattern is unset or fails to resolve required tokens.
+/// - `inbox.destination_collision` — two files resolve onto one destination path.
 /// - `attribution.not_light_frame` — `chosen_attribution` was supplied for a
 ///   non-light item (spec 008 Q27 F-Framing-10).
 /// - `attribution.geometry_unavailable` — `chosen_attribution` requires
@@ -275,6 +277,9 @@ pub async fn confirm(
     // 8d. US9 gate: reject if any file is missing a path-load-bearing attribute.
     reject_if_missing_path_attrs(&missing_by_file)?;
 
+    // 8e. Self-collision gate: refuse before any plan row exists.
+    reject_if_destinations_collide(&resolved_items)?;
+
     // 10. Build the plan.
     // A move-only split is non-destructive from the user perspective but the
     // plans table CHECK constraint only accepts the canonical 'archive' | 'trash'
@@ -323,12 +328,31 @@ pub async fn confirm(
         insert_plan_items_batch(pool, &plan_id, &item.root_id, &resolved_items, &root_paths)
             .await?;
 
-    // 12. Transition plan to ready_for_review
+    // 12. Attribution apply-path (spec 008 Q27, F-Framing-10/6, FR-022): the
+    // plan row and its items now exist, so the pick can be persisted
+    // (`plans.chosen_framing_id`) for `ingest_sessions` to bind once the real
+    // session is created. Creates the framing/project the kind requires and
+    // honors the F-Framing-6 completed-project reopen.
+    //
+    // Ordered before the three writes below, not after: frame-to-framing
+    // attribution is a Tier-1 record (Constitution V) that the filesystem cannot
+    // re-derive, and those writes are what make the plan appliable. Running them
+    // first left a `ready_for_review` plan on a failed attribution, so the frames
+    // could move with the user's decision missing. The plan stays in `draft` on
+    // failure, which `plans.approve` refuses.
+    let attribution_applied = match (&item_geometry, &req.chosen_attribution) {
+        (Some(geometry), Some(chosen)) => {
+            attribution::apply_chosen_attribution(pool, bus, &plan_id, geometry, chosen).await?
+        }
+        _ => None,
+    };
+
+    // 13. Transition plan to ready_for_review
     plans_repo::update_plan_state(pool, &plan_id, PlanState::ReadyForReview.as_str())
         .await
         .map_err(|e| db_internal_ctx(e, "transition plan to ready_for_review"))?;
 
-    // 13. Create plan link and update item state
+    // 14. Create plan link and update item state
     inbox_repo::insert_plan_link(pool, &req.inbox_item_id, &plan_id)
         .await
         .map_err(|e| db_internal_ctx(e, "insert plan link"))?;
@@ -339,18 +363,6 @@ pub async fn confirm(
     inbox_repo::update_inbox_item_state(pool, &req.inbox_item_id, "plan_open")
         .await
         .map_err(|e| db_internal_ctx(e, "mark inbox item plan_open"))?;
-
-    // 14. Attribution apply-path (spec 008 Q27, F-Framing-10/6, FR-022): the
-    // plan now exists, so the pick can be persisted (`plans.chosen_framing_id`)
-    // for `ingest_sessions` to bind once the real session is created. Creates
-    // the framing/project the kind requires and honors the F-Framing-6
-    // completed-project reopen.
-    let attribution_applied = match (&item_geometry, &req.chosen_attribution) {
-        (Some(geometry), Some(chosen)) => {
-            attribution::apply_chosen_attribution(pool, bus, &plan_id, geometry, chosen).await?
-        }
-        _ => None,
-    };
 
     // 15. Publish `inventory.confirmed` (best-effort; durable writes above already
     //     succeeded — a bus failure must not surface as Fatal).
@@ -699,6 +711,67 @@ fn reject_if_missing_path_attrs(
         false,
     )
     .with_details(json!({ "files": files })))
+}
+
+/// Case-folded, NFC-normalized destination path, used as the collision key.
+///
+/// APFS and NTFS resolve two paths differing only in case to one file, and APFS
+/// also compares NFC and NFD spellings as equal, so a byte comparison would pass
+/// rows that name one file on the volumes this app targets.
+fn destination_key(dest_rel: &str) -> String {
+    dest_rel.nfc().collect::<String>().to_lowercase()
+}
+
+/// Fail with `InboxDestinationCollision` if two resolved rows claim one
+/// destination root and [`destination_key`].
+///
+/// A per-item overwrite check at apply time cannot catch a same-plan collision:
+/// nothing pre-existing is in the way when the first item runs. The executor
+/// then refuses the second item (`fs_executor::ops::move_op`,
+/// `conflict.destination_exists`), which leaves the item's frames half-moved
+/// with the plan failed partway. Constitution II puts that decision in the
+/// reviewable plan instead, so confirm refuses to build one.
+fn reject_if_destinations_collide(resolved: &[ResolvedRow]) -> Result<(), ContractError> {
+    let mut by_dest: BTreeMap<(&str, String), Vec<&ResolvedRow>> = BTreeMap::new();
+    for row in resolved {
+        by_dest
+            .entry((row.to_root_id.as_str(), destination_key(&row.dest_rel)))
+            .or_default()
+            .push(row);
+    }
+    let collisions: Vec<((&str, String), Vec<&ResolvedRow>)> =
+        by_dest.into_iter().filter(|(_, rows)| rows.len() > 1).collect();
+    if collisions.is_empty() {
+        return Ok(());
+    }
+
+    let details: Vec<serde_json::Value> = collisions
+        .iter()
+        .map(|((root_id, _), rows)| {
+            let items: Vec<serde_json::Value> = rows
+                .iter()
+                .map(|r| json!({ "sourcePath": r.source_rel, "toRelativePath": r.dest_rel }))
+                .collect();
+            json!({ "toRootId": root_id, "items": items })
+        })
+        .collect();
+    let summary = collisions
+        .iter()
+        .map(|(_, rows)| {
+            rows.iter()
+                .map(|r| format!("{} -> {}", r.source_rel, r.dest_rel))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    Err(ContractError::new(
+        ErrorCode::InboxDestinationCollision,
+        format!("These files claim one destination path, so the plan cannot be applied: {summary}"),
+        ErrorSeverity::Blocking,
+        false,
+    )
+    .with_details(json!({ "collisions": details })))
 }
 
 /// Publish `inventory.confirmed` to the event bus (spec 056).
@@ -1066,6 +1139,16 @@ mod tests {
         persistence_core::test_support::setup_db().await
     }
 
+    /// Count plans sitting in one lifecycle state. `ready_for_review` is the
+    /// only state `plans.approve` accepts, so it is the appliability probe.
+    async fn count_plans_in_state(pool: &SqlitePool, state: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM plans WHERE state = ?")
+            .bind(state)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
     /// Write a minimal single-block FITS file from the optional cards the
     /// destination-pattern tests care about. The `write_fits*` helpers below
     /// are thin presets over this.
@@ -1309,6 +1392,95 @@ mod tests {
 
         assert_eq!(resp.plan_state, "ready_for_review");
         assert_eq!(resp.items_total, 3);
+    }
+
+    /// Confirm one inbox item holding two light frames, one per session folder,
+    /// under identical pattern tokens. Returns the confirm error and asserts
+    /// that nothing appliable was left behind.
+    async fn confirm_two_session_frames(item_id: &str, names: (&str, &str)) -> ContractError {
+        let tmp = tempfile::tempdir().unwrap();
+        for (session, name) in [("session-a", names.0), ("session-b", names.1)] {
+            let dir = tmp.path().join(session);
+            std::fs::create_dir_all(&dir).unwrap();
+            write_fits(
+                &dir,
+                name,
+                "Light Frame",
+                Some("M42"),
+                Some("Ha"),
+                Some("2026-01-12T22:00:00"),
+            );
+        }
+
+        let db = test_db().await;
+        let files = [format!("session-a/{}", names.0), format!("session-b/{}", names.1)];
+        setup_classified_item(
+            &db,
+            item_id,
+            "classified",
+            Some("light"),
+            "sig-collide",
+            &[files[0].as_str(), files[1].as_str()],
+        )
+        .await;
+
+        let err = confirm(
+            db.pool(),
+            &make_bus(&db),
+            ConfirmRequest {
+                inbox_item_id: item_id.to_owned(),
+                content_signature: "sig-collide".to_owned(),
+                destructive_destination: None,
+                root_absolute_path: tmp.path().to_owned(),
+                root_id: None,
+                chosen_attribution: None,
+            },
+        )
+        .await
+        .expect_err("two files on one destination must not produce a plan");
+
+        assert_eq!(
+            count_plans_in_state(db.pool(), "ready_for_review").await,
+            0,
+            "the collision must not reach apply through a reviewable plan"
+        );
+        assert!(inbox_repo::get_plan_link(db.pool(), item_id).await.unwrap().is_none());
+        err
+    }
+
+    /// Two frames captured in different session folders share a basename and
+    /// carry identical pattern tokens, so the rendered destination is the same
+    /// path for both. Applying that plan fails partway: `move_op` refuses the
+    /// second item with `conflict.destination_exists`, leaving the item's frames
+    /// half-moved. Constitution II puts that decision in the reviewable plan, so
+    /// confirm must refuse to build one.
+    #[tokio::test]
+    async fn confirm_refuses_two_files_that_resolve_onto_one_destination() {
+        let err =
+            confirm_two_session_frames("item-collide", ("light_001.fits", "light_001.fits")).await;
+        assert_eq!(err.code, ErrorCode::InboxDestinationCollision);
+    }
+
+    /// The byte comparison this replaces treats each pair below as two paths.
+    /// APFS resolves both pairs to one file, NTFS the first. Only the case pair
+    /// is reachable end to end: the filesystem normalizes the Unicode pair
+    /// before `file_name()` sees it.
+    #[test]
+    fn destination_key_folds_case_and_normalizes_unicode() {
+        assert_ne!("m42/Light_001.fits", "m42/light_001.fits");
+        assert_eq!(destination_key("m42/Light_001.fits"), destination_key("m42/light_001.fits"));
+        assert_ne!("m42/cafe\u{301}.fits", "m42/caf\u{e9}.fits");
+        assert_eq!(destination_key("m42/cafe\u{301}.fits"), destination_key("m42/caf\u{e9}.fits"));
+    }
+
+    /// APFS and NTFS resolve two destinations differing only in case to one
+    /// file, so the gate compares case-folded keys rather than bytes.
+    #[tokio::test]
+    async fn confirm_refuses_two_files_whose_destinations_differ_only_in_case() {
+        let err =
+            confirm_two_session_frames("item-collide-case", ("light_001.fits", "LIGHT_001.fits"))
+                .await;
+        assert_eq!(err.code, ErrorCode::InboxDestinationCollision);
     }
 
     /// Build one classified sibling sub-item under `sg_id`.
@@ -3000,6 +3172,62 @@ mod tests {
             Some("framing-attr2"),
             "the apply-path must persist the pick on the plan confirm() itself created"
         );
+    }
+
+    /// Frame-to-framing attribution is a Tier-1 record (Constitution V): it
+    /// cannot be re-derived from the filesystem. A confirm whose attribution
+    /// fails must therefore leave nothing appliable behind, or the frames move
+    /// with the user's decision missing.
+    #[tokio::test]
+    async fn failed_attribution_leaves_no_appliable_plan() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_fits(
+            tmp.path(),
+            "light_001.fits",
+            "Light Frame",
+            Some("M42"),
+            Some("Ha"),
+            Some("2025-10-10T22:00:00"),
+        );
+        let db = test_db().await;
+        setup_classified_item(
+            &db,
+            "item-attr-fail",
+            "classified",
+            Some("light"),
+            "sig-attr-fail",
+            &["light_001.fits"],
+        )
+        .await;
+
+        let err = confirm(
+            db.pool(),
+            &make_bus(&db),
+            ConfirmRequest {
+                inbox_item_id: "item-attr-fail".to_owned(),
+                content_signature: "sig-attr-fail".to_owned(),
+                destructive_destination: None,
+                root_absolute_path: tmp.path().to_owned(),
+                root_id: None,
+                chosen_attribution: Some(contracts_core::framing::ChosenAttributionDto {
+                    kind: contracts_core::framing::ChosenAttributionKind::AddToFraming,
+                    project_id: None,
+                    framing_id: Some("framing-does-not-exist".to_owned()),
+                }),
+            },
+        )
+        .await
+        .expect_err("a failed Tier-1 attribution must fail the confirm");
+
+        assert_eq!(err.code, ErrorCode::FramingNotFound);
+        assert_eq!(
+            count_plans_in_state(db.pool(), "ready_for_review").await,
+            0,
+            "a failed attribution must leave no appliable plan"
+        );
+        assert!(inbox_repo::get_plan_link(db.pool(), "item-attr-fail").await.unwrap().is_none());
+        let item = inbox_repo::get_inbox_item(db.pool(), "item-attr-fail").await.unwrap();
+        assert_ne!(item.state, "plan_open");
     }
 
     // ── #1342: equipment resolution on the ingest path ────────────────────

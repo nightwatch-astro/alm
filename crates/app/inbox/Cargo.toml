@@ -48,6 +48,7 @@ simbad-resolver = "0.5.0"
 time = { workspace = true }
 tokio.workspace = true
 tracing = { workspace = true }
+unicode-normalization.workspace = true
 uuid = { workspace = true }
 
 [dev-dependencies]
