@@ -91,7 +91,7 @@ fn real_spawn_anchors_cwd_to_project_root_when_no_source_view() {
     let profile = seed::find("pixinsight").unwrap();
     assert!(!profile.supports_open_folder);
     let working_dir = resolve_working_folder(&project_root, None).unwrap();
-    let rendered = render(&profile.args_template, &RenderContext::default());
+    let rendered = render(&profile.args_template, &RenderContext::default()).unwrap();
 
     let observed = spawn_and_observe(&working_dir, &rendered, &tmp.path().join("pi.record"));
 
@@ -113,7 +113,8 @@ fn real_spawn_anchors_cwd_and_argv_to_source_view_folder() {
     let working_dir = resolve_working_folder(&project_root, Some("_source_view")).unwrap();
     let folder = working_dir.to_string_lossy().into_owned();
     let rendered =
-        render(&profile.args_template, &RenderContext { folder: Some(&folder), file: None });
+        render(&profile.args_template, &RenderContext { folder: Some(&folder), file: None })
+            .unwrap();
 
     let observed = spawn_and_observe(&working_dir, &rendered, &tmp.path().join("siril.record"));
 

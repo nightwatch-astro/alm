@@ -158,7 +158,7 @@ fn spawn_platform(req: SpawnRequest) -> Result<SpawnResult, LaunchError> {
 
     if let Some(ref bid) = req.bundle_id {
         // Use `open -b <bundle_id> --args <argv>` for .app bundles (R-BundleId).
-        let mut cmd = std::process::Command::new("open");
+        let mut cmd = std::process::Command::new("/usr/bin/open");
         cmd.args(["-b", bid.as_str()]);
         if !req.args.is_empty() {
             cmd.arg("--args");

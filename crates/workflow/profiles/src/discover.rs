@@ -59,7 +59,7 @@ fn spotlight_discover() -> Vec<DiscoveryResult> {
     let mut results: Vec<DiscoveryResult> = Vec::new();
     for &(tool_id, bundle_id, exe) in MACOS_TOOLS {
         let query = format!("kMDItemCFBundleIdentifier == '{bundle_id}'");
-        let Ok(out) = Command::new("mdfind").arg(&query).output() else { continue };
+        let Ok(out) = Command::new("/usr/bin/mdfind").arg(&query).output() else { continue };
         if !out.status.success() {
             continue;
         }
