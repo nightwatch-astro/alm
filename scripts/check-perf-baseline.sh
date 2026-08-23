@@ -60,7 +60,7 @@ BASELINE_FILE="$SCRIPT_DIR/perf-baseline.json"
 WALL_BUDGET_FACTOR="1.5"
 
 usage() {
-  echo "usage: $0 [--generate | --check]" >&2
+  echo "usage: $0 [--generate | --check | --self-test]" >&2
   exit 2
 }
 
@@ -130,22 +130,22 @@ generate() {
 }
 
 # ── Check mode ────────────────────────────────────────────────────────────────
-check() {
-  if [[ ! -f "$BASELINE_FILE" ]]; then
-    echo "ERROR: baseline missing: $BASELINE_FILE" >&2
-    echo "Run: scripts/check-perf-baseline.sh --generate" >&2
-    exit 2
-  fi
 
-  echo "Running perf-bench (PERF_N=${PERF_N:-500})…"
-  raw="$(PERF_N="${PERF_N:-500}" cargo run --release -p perf-bench 2>/dev/null)"
+# Scenarios the last compare_stream call actually compared against the baseline.
+# The OK line prints this so the verdict names the number it asserted.
+COMPARED=0
 
-  if [[ -z "$raw" ]]; then
-    echo "ERROR: perf-bench produced no output." >&2
-    exit 1
-  fi
-
-  fail=0
+# Compare perf-bench JSON lines ($1) against the baseline file ($2).
+#
+# Returns non-zero on a regression, on a scenario with no baseline entry, and on
+# an empty comparison. The last two are the fail-open cases: a scenario the
+# baseline does not know has no enforced budget, and a run that compares nothing
+# satisfies every budget it never read.
+compare_stream() {
+  local raw="$1" baseline_file="$2"
+  local fail=0 line scenario stmts wall field baseline_entry
+  local stmts_budget wall_budget stmts_timing_dependent wall_limit
+  COMPARED=0
 
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
@@ -159,16 +159,18 @@ check() {
     for field in stmts wall; do
       if [[ ! "${!field}" =~ ^-?[0-9]+$ ]]; then
         echo "ERROR: scenario '$scenario' reported a non-numeric $field='${!field}' — perf-bench output is malformed." >&2
-        exit 1
+        return 1
       fi
     done
 
     # Look up baseline entry for this scenario.
-    baseline_entry="$(jq -c --arg s "$scenario" '.[] | select(.scenario == $s)' "$BASELINE_FILE")"
+    baseline_entry="$(jq -c --arg s "$scenario" '.[] | select(.scenario == $s)' "$baseline_file")"
     if [[ -z "$baseline_entry" ]]; then
-      echo "WARN: scenario '$scenario' not found in baseline — skipping (run --generate to add it)."
+      echo "FAIL: scenario '$scenario' has no baseline entry, so its budget is unenforced (run --generate to add it)." >&2
+      fail=1
       continue
     fi
+    COMPARED=$((COMPARED + 1))
 
     stmts_budget="$(printf '%s' "$baseline_entry" | jq -r '.stmts_budget')"
     wall_budget="$(printf '%s' "$baseline_entry" | jq -r '.wall_ms_budget')"
@@ -199,17 +201,84 @@ check() {
 
   done <<< "$raw"
 
-  if [[ "$fail" -ne 0 ]]; then
+  if [[ "$COMPARED" -eq 0 ]]; then
+    echo "FAIL: 0 scenarios compared against $baseline_file — this gate measured nothing." >&2
+    fail=1
+  fi
+
+  return "$fail"
+}
+
+# Prove the compare refuses an empty comparison and an unbaselined scenario, and
+# still passes a scenario within budget.
+#
+# Runs on every --check invocation, before perf-bench: the failure it covers is a
+# silently green gate, which no later output would reveal.
+self_test() {
+  local tmp status=0 baseline
+  tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064  # expand the path now, not at trap time
+  trap "rm -rf '$tmp'" RETURN
+  baseline="$tmp/baseline.json"
+  echo '[{"scenario":"probe","stmts_budget":3,"wall_ms_budget":10}]' > "$baseline"
+
+  if compare_stream "" "$baseline" >/dev/null 2>&1; then
+    echo "FAIL: self-test: an empty perf-bench stream compared 0 scenarios and passed." >&2
+    status=1
+  fi
+
+  # The stream also carries a baselined scenario, so this case fails on the
+  # unenforced budget alone and not on the zero-comparison floor above.
+  if compare_stream '{"scenario":"probe","sqlx_stmts":3,"wall_ms":1}
+{"scenario":"unlisted","sqlx_stmts":1,"wall_ms":1}' "$baseline" >/dev/null 2>&1; then
+    echo "FAIL: self-test: a scenario absent from the baseline passed with no enforced budget." >&2
+    status=1
+  fi
+
+  if ! compare_stream '{"scenario":"probe","sqlx_stmts":3,"wall_ms":1}' "$baseline" >/dev/null 2>&1; then
+    echo "FAIL: self-test: a scenario within budget was rejected." >&2
+    status=1
+  fi
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "perf-baseline self-test: FAIL" >&2
+    return 1
+  fi
+  echo "perf-baseline self-test: PASS (an empty or unbaselined comparison is refused, not reported as no regressions)."
+}
+
+check() {
+  self_test >/dev/null || {
+    echo "FAIL: perf-baseline self-test failed; a passing verdict is not trustworthy." >&2
+    exit 1
+  }
+
+  if [[ ! -f "$BASELINE_FILE" ]]; then
+    echo "ERROR: baseline missing: $BASELINE_FILE" >&2
+    echo "Run: scripts/check-perf-baseline.sh --generate" >&2
+    exit 2
+  fi
+
+  echo "Running perf-bench (PERF_N=${PERF_N:-500})…"
+  local raw
+  raw="$(PERF_N="${PERF_N:-500}" cargo run --release -p perf-bench 2>/dev/null)"
+
+  if [[ -z "$raw" ]]; then
+    echo "ERROR: perf-bench produced no output." >&2
+    exit 1
+  fi
+
+  if ! compare_stream "$raw" "$BASELINE_FILE"; then
     echo "" >&2
-    echo "Perf regression gate FAILED: sqlx_stmts increased for one or more scenarios." >&2
-    echo "Inspect query counts in crates/tools/perf-bench/src/main.rs and reduce the" >&2
-    echo "regression, or run scripts/check-perf-baseline.sh --generate to re-baseline" >&2
-    echo "with a justification in the commit message." >&2
+    echo "Perf regression gate FAILED: a scenario regressed, is missing from the baseline," >&2
+    echo "or nothing was compared. Inspect query counts in crates/tools/perf-bench/src/main.rs" >&2
+    echo "and reduce the regression, or run scripts/check-perf-baseline.sh --generate to" >&2
+    echo "re-baseline with a justification in the commit message." >&2
     exit 1
   fi
 
   echo ""
-  echo "Perf baseline OK — no sqlx_stmts regressions."
+  echo "Perf baseline OK — $COMPARED scenario(s) compared, no sqlx_stmts regressions."
 }
 
 case "${1:-}" in
@@ -220,6 +289,9 @@ case "${1:-}" in
   ""|--check)
     cd "$ROOT"
     check
+    ;;
+  --self-test)
+    self_test
     ;;
   *)
     usage

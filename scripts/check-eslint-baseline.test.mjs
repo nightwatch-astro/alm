@@ -24,7 +24,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { baselineKey } from './check-eslint-baseline.mjs';
+import { baselineKey, lintedFileFloorError } from './check-eslint-baseline.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = path.join(here, 'check-eslint-baseline.mjs');
@@ -65,6 +65,18 @@ assertEqual(
   'relPath joined with the current platform path.sep',
 );
 
+// A lint run that covered no files must be refused, not reported as clean.
+assertEqual(
+  lintedFileFloorError(0, 'src/') === null,
+  false,
+  'a zero-file lint run must produce a floor error',
+);
+assertEqual(
+  lintedFileFloorError(1, 'src/'),
+  null,
+  'a lint run covering at least one file must pass the floor',
+);
+
 // Entry-point execution proof: spawn the script exactly as `pnpm lint` /
 // CI does (`node <path>`, no extra args) and assert it actually produced
 // output. This is the assertion that would have caught the
@@ -87,5 +99,5 @@ if (failures.length > 0) {
   console.error(`check-eslint-baseline.test.mjs FAILED:\n\n${failures.join('\n\n')}`);
   process.exitCode = 1;
 } else {
-  console.log('check-eslint-baseline.test.mjs: OK (4 assertions).');
+  console.log('check-eslint-baseline.test.mjs: OK (6 assertions).');
 }
