@@ -30,8 +30,9 @@ pub struct ChannelFrame {
     /// An empty or whitespace-only label is treated as an unfiltered / unknown
     /// channel and keyed as `""` to preserve the frame count.
     pub label: String,
-    /// Integration time for this frame in seconds. Must be ≥ 0.0; negative
-    /// values are clamped to 0.0 on insertion.
+    /// Integration time for this frame in seconds. Must be ≥ 0.0 and finite;
+    /// negative and non-finite values contribute 0.0 on insertion, and the
+    /// frame is still counted.
     pub exposure_s: f64,
 }
 
@@ -56,9 +57,15 @@ pub struct ChannelIntegration {
 
 impl ChannelIntegration {
     /// Add one frame's exposure to the running totals.
+    ///
+    /// A non-finite exposure contributes 0.0 and the frame is still counted:
+    /// `max(0.0)` neither filters `NaN` reliably nor filters `+inf` at all, so
+    /// one such frame would otherwise poison the channel total permanently.
     fn accumulate(&mut self, exposure_s: f64) {
         self.frame_count += 1;
-        self.total_exposure_s += exposure_s.max(0.0);
+        if exposure_s.is_finite() {
+            self.total_exposure_s += exposure_s.max(0.0);
+        }
     }
 }
 
@@ -187,6 +194,18 @@ mod tests {
         let ha = m.get("Ha").unwrap();
         assert_eq!(ha.frame_count, 3);
         assert!((ha.total_exposure_s - 900.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn non_finite_exposures_contribute_zero_but_stay_counted() {
+        let frames = vec![
+            ChannelFrame::new("Ha", 300.0),
+            ChannelFrame::new("Ha", f64::NAN),
+            ChannelFrame::new("Ha", f64::INFINITY),
+        ];
+        let ha = ChannelMap::from_frames(&frames).get("Ha").unwrap().clone();
+        assert_eq!(ha.frame_count, 3, "an unreadable exposure header must not lose the frame");
+        assert!((ha.total_exposure_s - 300.0).abs() < 1e-9);
     }
 
     #[test]

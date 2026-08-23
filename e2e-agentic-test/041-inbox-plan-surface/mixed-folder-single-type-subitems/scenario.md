@@ -34,7 +34,8 @@ already (spec 041 iteration 2, PR #315 lineage).
    with 2×light/Ha/300s + 2×light/Ha/120s + 2×dark/300s. Also create the
    empty **RECIPE-DEST** folder (`test-data\library-lights`).
 4. Launch the dev app with the bridge and E2E hooks
-   (`VITE_E2E=1`, dev overlay config, `--features dev-tools`, WS bridge on
+   (`VITE_E2E=1`, dev overlay config, `--features dev-tools`,
+   `PV_MCP_BRIDGE_ENABLE=1` to start the bridge, WS on
    `127.0.0.1:9223` unless `PV_MCP_BRIDGE_BIND` widens it), connect
    `driver_session` from WSL, and set the window to **1100×720** via
    `manage_window`.

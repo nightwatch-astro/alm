@@ -220,21 +220,25 @@ impl std::fmt::Display for ParseMarkerError {
 ///    from the project's `source_view_folder` DB column.
 /// 2. Otherwise fall back to the project root.
 ///
-/// Returns the resolved path as an `std::path::PathBuf`.
-#[must_use]
+/// The source-view folder is configuration, so it is resolved inside the project
+/// envelope rather than trusted: a relative `..` escaped the project root and an
+/// absolute value replaced it outright, taking every later project artifact
+/// (prepared view, manifest, notes) outside the project with it
+/// (astro-plan-3v3r.1.16).
+///
+/// # Errors
+///
+/// [`fs_pathsafe::contain::ContainmentError`] when the source-view folder does
+/// not resolve inside `project_root`.
 pub fn resolve_working_folder(
     project_root: &std::path::Path,
     source_view_folder: Option<&str>,
-) -> std::path::PathBuf {
-    if let Some(sv) = source_view_folder.filter(|s| !s.trim().is_empty()) {
-        let sv_path = std::path::Path::new(sv);
-        if sv_path.is_absolute() {
-            return sv_path.to_path_buf();
-        }
-        // Relative source-view path — join with the project root.
-        return project_root.join(sv_path);
+) -> Result<std::path::PathBuf, fs_pathsafe::contain::ContainmentError> {
+    match source_view_folder.filter(|s| !s.trim().is_empty()) {
+        Some(sv) => fs_pathsafe::contain::resolve_in_root(project_root, std::path::Path::new(sv))
+            .map(fs_pathsafe::contain::ContainedPath::into_path_buf),
+        None => Ok(project_root.to_path_buf()),
     }
-    project_root.to_path_buf()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -304,32 +308,64 @@ mod tests {
         assert!(ProcessingTool::parse("Photoshop").is_err());
     }
 
+    fn project_root() -> std::path::PathBuf {
+        fs_pathsafe::test_support::abs_path("/mnt/library/my_project")
+    }
+
     #[test]
     fn resolve_working_folder_uses_project_root_when_no_source_view() {
-        let root = std::path::Path::new("/mnt/library/my_project");
-        let result = resolve_working_folder(root, None);
+        let root = project_root();
+        let result = resolve_working_folder(&root, None).unwrap();
         assert_eq!(result, root);
     }
 
     #[test]
     fn resolve_working_folder_uses_source_view_when_absolute() {
-        let root = std::path::Path::new("/mnt/library/my_project");
-        let sv = "/mnt/library/my_project/_source_view";
-        let result = resolve_working_folder(root, Some(sv));
-        assert_eq!(result, std::path::Path::new(sv));
+        let root = project_root();
+        let sv = fs_pathsafe::test_support::abs("/mnt/library/my_project/_source_view");
+        let result = resolve_working_folder(&root, Some(&sv)).unwrap();
+        assert_eq!(result, std::path::Path::new(&sv));
     }
 
     #[test]
     fn resolve_working_folder_joins_relative_source_view() {
-        let root = std::path::Path::new("/mnt/library/my_project");
-        let result = resolve_working_folder(root, Some("_source_view"));
+        let root = project_root();
+        let result = resolve_working_folder(&root, Some("_source_view")).unwrap();
         assert_eq!(result, root.join("_source_view"));
     }
 
     #[test]
     fn resolve_working_folder_treats_blank_as_missing() {
-        let root = std::path::Path::new("/mnt/library/my_project");
-        let result = resolve_working_folder(root, Some("  "));
+        let root = project_root();
+        let result = resolve_working_folder(&root, Some("  ")).unwrap();
         assert_eq!(result, root);
+    }
+
+    /// astro-plan-3v3r.1.16: a relative source-view folder that traverses out of
+    /// the project takes every later project artifact with it.
+    #[test]
+    fn a_relative_source_view_folder_never_escapes_the_project_root() {
+        let root = project_root();
+        let err = resolve_working_folder(&root, Some("../../elsewhere")).unwrap_err();
+        assert!(matches!(err, fs_pathsafe::contain::ContainmentError::Escapes { .. }), "{err}");
+    }
+
+    /// astro-plan-3v3r.1.16: an absolute source-view folder replaced the project
+    /// root entirely, because `Path::join` discards the base.
+    #[test]
+    fn an_absolute_source_view_folder_must_not_replace_the_project_root() {
+        let root = project_root();
+        let outside = fs_pathsafe::test_support::abs("/etc");
+        let err = resolve_working_folder(&root, Some(&outside)).unwrap_err();
+        assert!(matches!(err, fs_pathsafe::contain::ContainmentError::Escapes { .. }), "{err}");
+    }
+
+    /// A source-view folder is resolved before it exists, so absence is not a
+    /// refusal: the verdict is lexical.
+    #[test]
+    fn a_source_view_folder_that_does_not_exist_yet_resolves() {
+        let root = project_root();
+        let result = resolve_working_folder(&root, Some("_source_view/not/created")).unwrap();
+        assert_eq!(result, root.join("_source_view/not/created"));
     }
 }

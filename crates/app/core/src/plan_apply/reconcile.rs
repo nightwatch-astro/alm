@@ -28,8 +28,8 @@ use domain_core::ids::{new_id, Timestamp};
 use sqlx::SqlitePool;
 
 use super::{apply_repo, resolve_root_path};
-use fs_executor::ops::lexical_normalize;
 use fs_executor::{classify, MutationShape, ReconcileVerdict};
+use fs_pathsafe::contain::normalize_utf8;
 
 /// Outcome of the boot reconciliation pass, consumed by the unclean-shutdown
 /// recovery prompt (kyo7.48).
@@ -167,7 +167,7 @@ fn resolve(
         return None;
     }
     let root = root_id.and_then(|rid| root_map.get(rid))?;
-    Some(lexical_normalize(&root.join(relative)))
+    Some(normalize_utf8(&root.join(relative)))
 }
 
 /// Resolve an archive item's destination from `archive_path`. When
@@ -182,8 +182,8 @@ fn resolve_archive(
         return None;
     }
     match item.from_root_id.as_deref().and_then(|rid| root_map.get(rid)) {
-        Some(root) => Some(lexical_normalize(&root.join(archive))),
-        None => Some(lexical_normalize(Utf8PathBuf::from(archive).as_path())),
+        Some(root) => Some(normalize_utf8(&root.join(archive))),
+        None => Some(normalize_utf8(Utf8PathBuf::from(archive).as_path())),
     }
 }
 

@@ -1601,7 +1601,7 @@ fn relative_destination_still_takes_library_root_fallback() {
 fn t023a_root_escape_gate_fires_when_library_root_is_set() {
     use fs_executor::ops::path_gate;
 
-    let root = Utf8PathBuf::from("/mnt/library");
+    let root = Utf8PathBuf::from(fs_pathsafe::test_support::abs("/mnt/library"));
     // A path that escapes the root via ".." — must be refused.
     let escaping_relative = Utf8PathBuf::from("../../etc/passwd");
 

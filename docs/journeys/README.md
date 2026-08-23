@@ -40,7 +40,8 @@ PlateVault ships as a Tauri v2 desktop app; the only real-app validation path
 today is the Windows build driven through the Tauri MCP bridge from WSL
 (`driver_session host=localhost port=9223`, mirrored WSL networking reaches
 Windows services via `localhost`). The bridge exists only in a build launched
-with `--features dev-tools`, and it binds `127.0.0.1` unless the launch sets
+with `--features dev-tools`, starts only when the launch sets
+`PV_MCP_BRIDGE_ENABLE=1`, and binds `127.0.0.1` unless the launch also sets
 `PV_MCP_BRIDGE_BIND`. `exclusive: true` because only one
 validator can hold the Windows checkout/app process at a time. The
 Vite/mockIPC runtime fakes backend responses and MUST NOT be used to

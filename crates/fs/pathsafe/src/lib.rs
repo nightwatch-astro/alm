@@ -19,7 +19,10 @@
 //! in depth for reparse-point kinds `is_symlink()` might not classify as a
 //! symlink — callers should treat any doubt as "skip".
 
+pub mod contain;
 pub mod export_dest;
+#[cfg(any(test, feature = "test-fixture"))]
+pub mod test_support;
 
 use std::fs::{self, Metadata};
 use std::io;

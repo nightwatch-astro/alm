@@ -498,9 +498,8 @@ pub async fn resume_plan(
 
     // Restart the executor over the remaining pending items (issue #575).
     // No live progress-channel caller for resume today (the contract has no
-    // `event_sink` parameter) — `op_emitter: None` matches
-    // `apply_plan_channel_free`'s no-live-progress mode; the durable audit
-    // trail above is unaffected.
+    // `event_sink` parameter) — `op_emitter: None` matches `apply_plan`'s
+    // `event_sink: None` mode; the durable audit trail above is unaffected.
     spawn_executor_run(SpawnExecutorParams {
         pool: pool.clone(),
         bus: bus.clone(),
