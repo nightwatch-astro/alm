@@ -56,7 +56,14 @@ pub struct ChannelIntegration {
 
 impl ChannelIntegration {
     /// Add one frame's exposure to the running totals.
+    ///
+    /// A non-finite exposure is skipped entirely, frame included: `max(0.0)`
+    /// neither filters `NaN` reliably nor filters `+inf` at all, and one such
+    /// frame would poison the channel total permanently.
     fn accumulate(&mut self, exposure_s: f64) {
+        if !exposure_s.is_finite() {
+            return;
+        }
         self.frame_count += 1;
         self.total_exposure_s += exposure_s.max(0.0);
     }
@@ -187,6 +194,18 @@ mod tests {
         let ha = m.get("Ha").unwrap();
         assert_eq!(ha.frame_count, 3);
         assert!((ha.total_exposure_s - 900.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn non_finite_exposures_are_skipped_and_not_counted() {
+        let frames = vec![
+            ChannelFrame::new("Ha", 300.0),
+            ChannelFrame::new("Ha", f64::NAN),
+            ChannelFrame::new("Ha", f64::INFINITY),
+        ];
+        let ha = ChannelMap::from_frames(&frames).get("Ha").unwrap().clone();
+        assert_eq!(ha.frame_count, 1);
+        assert!((ha.total_exposure_s - 300.0).abs() < 1e-9);
     }
 
     #[test]

@@ -333,9 +333,7 @@ pub async fn suggest(
     }
     // Display order stays nearest-first (FR-013) — `select_for_display` only
     // decided which candidates survive, not their order.
-    suggestions.sort_by(|a, b| {
-        a.separation_deg.partial_cmp(&b.separation_deg).unwrap_or(std::cmp::Ordering::Equal)
-    });
+    suggestions.sort_by(|a, b| a.separation_deg.total_cmp(&b.separation_deg));
 
     Ok(ConeSearchSuggestResponse {
         pointing: ConeSearchPointing {
@@ -384,14 +382,10 @@ fn in_field_indices(
 fn primary_index(candidates: &[ConeCandidate], in_field: &[usize]) -> Option<usize> {
     in_field.iter().copied().filter(|&i| !is_default_excluded(&candidates[i].identity)).min_by(
         |&a, &b| {
-            candidates[a]
-                .separation_deg
-                .partial_cmp(&candidates[b].separation_deg)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| {
-                    prominence_tier(&candidates[b].identity)
-                        .cmp(&prominence_tier(&candidates[a].identity))
-                })
+            candidates[a].separation_deg.total_cmp(&candidates[b].separation_deg).then_with(|| {
+                prominence_tier(&candidates[b].identity)
+                    .cmp(&prominence_tier(&candidates[a].identity))
+            })
         },
     )
 }
@@ -753,6 +747,26 @@ mod tests {
         ];
         let primary = primary_index(&candidates, &[0, 1]);
         assert_eq!(primary, Some(1), "NGC-tier must win the separation tie over niche");
+    }
+
+    #[test]
+    fn nan_separation_never_wins_the_primary_pick_or_depends_on_input_order() {
+        // `separation_deg` is copied straight off the resolver response and is
+        // never finiteness-checked, so a NaN reaches `primary_index`. Under a
+        // `partial_cmp(..).unwrap_or(Equal)` comparator every pair compares
+        // equal and `min_by` returns whichever candidate came first.
+        // Both candidates share a prominence tier, so the separation
+        // comparator is the only thing that can decide the pick.
+        let candidates = vec![
+            cone_candidate("NGC 1", simbad_resolver::ObjectType::Galaxy, "G", f64::NAN),
+            cone_candidate("NGC 2", simbad_resolver::ObjectType::Galaxy, "G", 0.5),
+        ];
+        assert_eq!(primary_index(&candidates, &[0, 1]), Some(1));
+        assert_eq!(
+            primary_index(&candidates, &[1, 0]),
+            Some(1),
+            "the finite-separation candidate must win regardless of input order"
+        );
     }
 
     #[test]

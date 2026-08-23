@@ -151,13 +151,9 @@ pub fn dedup_candidates(candidates: Vec<ConeCandidate>) -> Vec<ConeCandidate> {
         .map(|g| {
             g.into_iter()
                 .min_by(|a, b| {
-                    prominence_tier(&b.identity).cmp(&prominence_tier(&a.identity)).then_with(
-                        || {
-                            a.separation_deg
-                                .partial_cmp(&b.separation_deg)
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        },
-                    )
+                    prominence_tier(&b.identity)
+                        .cmp(&prominence_tier(&a.identity))
+                        .then_with(|| a.separation_deg.total_cmp(&b.separation_deg))
                 })
                 .expect("groups are never empty")
         })
@@ -202,12 +198,9 @@ pub fn select_for_display(
         (is_default_excluded(identity), std::cmp::Reverse(prominence_tier(identity)))
     };
     ranked.sort_by(|&a, &b| {
-        rank_key(a).cmp(&rank_key(b)).then_with(|| {
-            candidates[a]
-                .separation_deg
-                .partial_cmp(&candidates[b].separation_deg)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
+        rank_key(a)
+            .cmp(&rank_key(b))
+            .then_with(|| candidates[a].separation_deg.total_cmp(&candidates[b].separation_deg))
     });
     if ranked.len() > limit {
         if let Some(pos) = primary.and_then(|p| ranked.iter().position(|&i| i == p)) {
@@ -439,6 +432,76 @@ mod tests {
         assert!(
             selected.contains(&0),
             "the Messier-catalogued galaxy must survive the response-limit cut"
+        );
+    }
+
+    #[test]
+    fn nan_separation_neither_panics_nor_reorders_by_input_order() {
+        // `slice::sort_by` has an unconditional total-order detector, so a
+        // `partial_cmp(..).unwrap_or(Equal)` tie-break panics here rather than
+        // merely misordering. The candidate count is above the insertion-sort
+        // threshold so the detector actually runs.
+        let galaxy =
+            identity(Some(1), "M 51", None, ObjectType::Galaxy, "Sy2", &["M 51", "NGC 5194"]);
+        let mut candidates = vec![candidate(galaxy, 0.000_833)];
+        for n in 0..24 {
+            let designation = format!("[HL2008] {n}");
+            let niche = identity(
+                Some(100 + i64::from(n)),
+                &designation,
+                None,
+                ObjectType::EmissionNebula,
+                "HII",
+                &[&designation],
+            );
+            let sep = if n % 3 == 0 { f64::NAN } else { f64::from(n) * 0.0001 };
+            candidates.push(candidate(niche, sep));
+        }
+
+        let ascending: Vec<usize> = (0..candidates.len()).collect();
+        let descending: Vec<usize> = ascending.iter().rev().copied().collect();
+
+        let from_ascending = select_for_display(&candidates, &ascending, Some(0), 8);
+        let from_descending = select_for_display(&candidates, &descending, Some(0), 8);
+
+        assert!(
+            from_ascending.contains(&0),
+            "the Messier-catalogued galaxy must survive alongside NaN separations"
+        );
+        assert_eq!(
+            from_ascending, from_descending,
+            "selection must not depend on the order candidates arrived in"
+        );
+    }
+
+    #[test]
+    fn nan_separation_does_not_collapse_a_dedup_group_by_input_order() {
+        // `dedup_candidates` collapses each group with `min_by`, which does not
+        // panic but does return the first element when the comparator claims
+        // every pair is equal.
+        let designation = "NGC 5194";
+        let with_nan_first = vec![
+            candidate(
+                identity(Some(1), designation, None, ObjectType::Galaxy, "G", &[designation]),
+                f64::NAN,
+            ),
+            candidate(
+                identity(Some(1), designation, None, ObjectType::Galaxy, "G", &[designation]),
+                0.5,
+            ),
+        ];
+        let mut with_nan_last = with_nan_first.clone();
+        with_nan_last.reverse();
+
+        let first = dedup_candidates(with_nan_first);
+        let last = dedup_candidates(with_nan_last);
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(last.len(), 1);
+        assert_eq!(
+            first[0].separation_deg.is_nan(),
+            last[0].separation_deg.is_nan(),
+            "group collapse must not depend on where the NaN sat in the input"
         );
     }
 
