@@ -61,6 +61,7 @@ quick-xml = "0.41"
 sha2 = "0.10"
 tempfile = "3"
 unicode-normalization = "0.1"
+unicode-script = "0.5"
 unicode-security = "0.1"
 # Ratified stack (spec 002 2026-05-23 — wired with network access):
 #   sqlx 0.9 renamed runtime-tokio-rustls -> runtime-tokio + tls-rustls (two separate features).

@@ -5356,6 +5356,7 @@ dependencies = [
  "rstest",
  "thiserror 2.0.19",
  "unicode-normalization",
+ "unicode-script",
  "unicode-security",
 ]
 
