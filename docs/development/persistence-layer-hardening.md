@@ -69,9 +69,9 @@ not this table, as authoritative — it will drift as unrelated work lands.)
 
 - **sqlx 0.9** (sqlite, `runtime-tokio`, `tls-rustls`, `macros`, `migrate`,
   `uuid`, `time`, `json`) — async, ratified in spec 002.
-- Canonical store: SQLite. Migrations in `crates/persistence/db/migrations/`,
-  applied via `sqlx::migrate!("./migrations")`. Latest migration as of this
-  branch: `0050`.
+- Canonical store: SQLite. Migrations in `crates/persistence/core/migrations/`,
+  applied via `sqlx::migrate!("./migrations")`. Before 1.0 there is exactly one
+  migration, `0001_initial_schema.sql`, edited in place.
 
 ---
 
