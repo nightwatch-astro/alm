@@ -74,10 +74,11 @@ fn layout_resolve_err(
     let code = match e {
         ResolveError::PathTraversal { .. } => ErrorCode::PathTraversal,
         ResolveError::ReservedName { .. } => ErrorCode::PathReservedName,
-        ResolveError::Empty | ResolveError::UnknownToken { .. } => ErrorCode::PathInvalid,
-        ResolveError::UnicodeConfusable { .. } | ResolveError::PathTooLong { .. } => {
-            ErrorCode::PathInvalid
-        }
+        ResolveError::Empty
+        | ResolveError::UnknownToken { .. }
+        | ResolveError::UnicodeConfusable { .. }
+        | ResolveError::PathTooLong { .. }
+        | ResolveError::EmptySegment { .. } => ErrorCode::PathInvalid,
     };
     contracts_core::ContractError::new(
         code,
