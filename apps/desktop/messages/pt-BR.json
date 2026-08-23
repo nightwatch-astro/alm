@@ -1508,7 +1508,7 @@
   "projects_manifests_load_body_failed": "Não foi possível carregar o manifesto: {error}",
   "projects_tool_launched": "{tool} iniciado",
   "projects_tool_launch_failed": "Não foi possível iniciar {tool}: {error}",
-  "projects_tool_cwd_anchored_hint": "{tool} não aceita uma pasta para abrir — seu diretório de trabalho é fixado no projeto.",
+  "projects_tool_cwd_anchored_hint": "{tool} não aceita uma pasta para abrir — abra os arquivos do seu projeto dentro do aplicativo.",
   "projects_create_name_duplicate": "Já existe um projeto com este nome.",
   "projects_schema_name_required": "O nome do projeto é obrigatório.",
   "projects_schema_name_too_long": "O nome deve ter no máximo {max} caracteres.",

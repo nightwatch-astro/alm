@@ -158,6 +158,12 @@ fn spawn_platform(req: SpawnRequest) -> Result<SpawnResult, LaunchError> {
 
     if let Some(ref bid) = req.bundle_id {
         // Use `open -b <bundle_id> --args <argv>` for .app bundles (R-BundleId).
+        //
+        // `req.working_dir` is not applied and cannot be: Launch Services starts
+        // the app itself, so `current_dir` here would set the cwd of `open`, not
+        // of the tool (`tests/real_spawn_stub.rs:12-16`). Any user-facing text
+        // about the working folder must therefore not promise it for this arm,
+        // which every seeded profile with a `bundle_id` takes on macOS.
         let mut cmd = std::process::Command::new("/usr/bin/open");
         cmd.args(["-b", bid.as_str()]);
         if !req.args.is_empty() {

@@ -1567,7 +1567,7 @@
   "projects_manifests_load_body_failed": "Could not load manifest: {error}",
   "projects_tool_launched": "Launched {tool}",
   "projects_tool_launch_failed": "Could not launch {tool}: {error}",
-  "projects_tool_cwd_anchored_hint": "{tool} doesn't accept a folder to open — its working directory is anchored to the project instead.",
+  "projects_tool_cwd_anchored_hint": "{tool} doesn't accept a folder to open — open your project files from inside the app.",
   "projects_create_name_duplicate": "A project with this name already exists.",
   "projects_schema_name_required": "Project name is required.",
   "projects_schema_name_too_long": "Name must be {max} characters or fewer.",
