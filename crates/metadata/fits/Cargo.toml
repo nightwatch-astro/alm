@@ -11,5 +11,8 @@ path = "src/lib.rs"
 metadata_core = { path = "../core" }
 fits-header = "0.4.2"
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true
