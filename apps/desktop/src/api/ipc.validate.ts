@@ -11,6 +11,11 @@
 
 import { z } from 'zod';
 
+import { safeStringify } from '@/lib/safe-json';
+
+/** Stand-in for a payload `JSON.stringify` refuses (circular, `BigInt`). */
+const UNSERIALIZABLE = '<unserializable>';
+
 /** Zod schema for the mandatory `ContractError` envelope fields (T118). */
 export const ContractErrorSchema = z.object({
   code: z.string().min(1),
@@ -43,7 +48,13 @@ export function validateContractError(raw: unknown): ValidatedContractError {
   );
 }
 
-/** Thrown when an IPC payload fails zod validation (T118). */
+/**
+ * Thrown when an IPC payload fails zod validation (T118).
+ *
+ * The message is built with a guarded stringify: a raw payload that
+ * `JSON.stringify` refuses must not make the error reporter throw and lose the
+ * original failure.
+ */
 export class IpcPayloadValidationError extends Error {
   constructor(
     public readonly payloadType: string,
@@ -52,8 +63,8 @@ export class IpcPayloadValidationError extends Error {
   ) {
     super(
       `IPC payload validation failed for ${payloadType}: ` +
-        JSON.stringify(fieldErrors) +
-        ` — raw: ${JSON.stringify(raw)}`,
+        (safeStringify(fieldErrors) ?? UNSERIALIZABLE) +
+        ` — raw: ${safeStringify(raw) ?? UNSERIALIZABLE}`,
     );
     this.name = 'IpcPayloadValidationError';
   }
