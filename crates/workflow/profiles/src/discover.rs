@@ -205,8 +205,8 @@ fn resolve_executable(cmd: &str) -> Option<PathBuf> {
     if p.is_absolute() {
         return p.exists().then(|| p.to_path_buf());
     }
-    let path_var = std::env::var("PATH").ok()?;
-    path_var.split(':').map(|dir| Path::new(dir).join(cmd)).find(|c| c.exists())
+    let path_var = std::env::var_os("PATH")?;
+    absolute_path_dirs(&path_var).map(|dir| dir.join(cmd)).find(|c| c.exists())
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
@@ -355,13 +355,28 @@ fn probe_candidates(candidates: &[(&str, &str)]) -> Vec<DiscoveryResult> {
     results
 }
 
+/// Search directories from a `PATH`-style variable value, absolute ones only.
+///
+/// POSIX gives an empty `PATH` element the meaning "current working directory",
+/// so a leading, trailing or doubled separator would otherwise yield a candidate
+/// that `Path::exists` resolves against wherever the app was started from.
+/// `split_paths` turns an empty element into an empty path, which `is_absolute`
+/// rejects along with every other relative element.
+///
+/// The value is a parameter so tests need not mutate the process environment,
+/// which `unsafe_code = "forbid"` puts out of reach anyway.
+#[cfg(any(target_os = "linux", test))]
+fn absolute_path_dirs(path_var: &std::ffi::OsStr) -> impl Iterator<Item = PathBuf> + '_ {
+    std::env::split_paths(path_var).filter(|dir| dir.is_absolute())
+}
+
 #[cfg(target_os = "linux")]
 fn discover_from_path(names: &[(&'static str, &str)]) -> Vec<DiscoveryResult> {
-    let path_var = std::env::var("PATH").unwrap_or_default();
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
     let mut results = Vec::new();
-    for dir in path_var.split(':') {
+    for dir in absolute_path_dirs(&path_var) {
         for &(tool_id, exe_name) in names {
-            let p = Path::new(dir).join(exe_name);
+            let p = dir.join(exe_name);
             if p.exists() {
                 results.push(DiscoveryResult {
                     tool_id: tool_id.to_owned(),
@@ -411,5 +426,30 @@ mod tests {
     fn probe_nonexistent_returns_empty() {
         let results = probe_candidates(&[("pixinsight", "/no/such/path/PixInsight")]);
         assert!(results.is_empty());
+    }
+
+    /// `join_paths` writes the host separator, so the malformed shapes under test
+    /// are the host's own (`::` on Unix, `;;` on Windows).
+    fn path_var(dirs: &[&str]) -> std::ffi::OsString {
+        std::env::join_paths(dirs.iter().map(std::path::PathBuf::from))
+            .expect("fixture elements contain no path separator")
+    }
+
+    #[test]
+    fn absolute_path_dirs_drops_empty_and_relative_elements() {
+        let bin = fs_pathsafe::test_support::abs("/opt/astro/bin");
+        let local = fs_pathsafe::test_support::abs("/usr/local/bin");
+        // Leading, doubled and trailing separators, plus a relative element.
+        let var = path_var(&["", &bin, "", "tools/bin", &local, ""]);
+
+        let dirs: Vec<PathBuf> = absolute_path_dirs(&var).collect();
+
+        assert_eq!(dirs, vec![PathBuf::from(&bin), PathBuf::from(&local)]);
+    }
+
+    #[test]
+    fn absolute_path_dirs_yields_nothing_when_no_element_is_absolute() {
+        let var = path_var(&["", ".", "tools/bin", ""]);
+        assert_eq!(absolute_path_dirs(&var).count(), 0);
     }
 }

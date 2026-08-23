@@ -22,9 +22,11 @@ fn pixinsight_profile() -> ToolProfile {
         // robust path argument is a `.xosm` project file we never generate,
         // and running WBPP's automationMode would violate the PixInsight
         // processing boundary (Constitution III). Launch bare instead — the
-        // user opens their own files/project inside PixInsight. `cwd` is
-        // still anchored to the project folder (R-CwdContain), which is what
-        // drives the one-time "cwd anchored" hint (supports_open_folder=false).
+        // user opens their own files/project inside PixInsight, which is what
+        // the one-time launch hint says (supports_open_folder=false). The
+        // working folder reaches the tool only where the platform arm applies
+        // it, and `bundle_id` is set here, so on macOS `open -b` runs and
+        // Launch Services drops it (`launch::spawn_platform`).
         args_template: vec![],
         supports_open_folder: false,
         detach_strategy: DetachStrategy::OpenBundleId,
