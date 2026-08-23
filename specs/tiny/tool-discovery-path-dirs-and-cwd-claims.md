@@ -153,19 +153,26 @@ source-text assertion, not by execution.
       remains in the workspace
 - [x] Requirements 7-11 verified by reading the changed lines; no behaviour change
       and therefore no test
-- [x] A tripwire over the claim itself, excluding the guarded legacy task list:
+- [x] A tripwire over the claim itself. It excludes two paths: the guarded legacy
+      011 task list, and this file. This file states the claim in order to
+      describe and forbid it, and quotes the pattern itself, so leaving it in
+      scope makes the check match its own definition and ties the baseline to the
+      spec's wording rather than to the claims it is about. Run from the
+      repository root:
 
       ```
       git grep -nEi 'working (directory|folder|dir).{0,30}(anchor|is always set)|anchor[a-z]*.{0,30}working (directory|folder|dir)|cwd[ `"]{1,4}anchor|anchor[a-z]*[ `"]{1,4}cwd|anchored to the project([^ ]| [^r])' \
-        -- . ':(exclude)specs/011-processing-tool-launch/tasks.md'
+        -- . ':(exclude)specs/011-processing-tool-launch/tasks.md' \
+        ':(exclude)specs/tiny/tool-discovery-path-dirs-and-cwd-claims.md'
       ```
 
-      matches 8 lines, every one of them legitimate: the four
-      `tool-launch.ts` occurrences naming the hint feature, `seed.rs:60` and
-      `research.md:97` for `planetary_suite`, which sets no bundle id and so
-      does receive the working directory, and the two lines of this file that
-      state the defect and the rule. A new unqualified claim lands in the match
-      set. This is a tripwire, not a proof: `git grep` is line-based, so a claim
-      wrapped across two lines can evade it, which is why requirement 11
-      enumerates rather than asserting coverage
+      matches exactly 6 lines, every one of them legitimate: `tool-launch.ts`
+      lines 14, 86, 89 and 180, which name the hint feature rather than making a
+      claim, plus `seed.rs:60` and `research.md:97` for `planetary_suite`, which
+      sets no bundle id and so does receive the working directory. A new
+      unqualified claim lands in the match set. This is a tripwire, not a proof:
+      `git grep` is line-based, so a claim wrapped across two lines can evade it
+      — the legacy task list is exactly that case, matching on only its second
+      line — which is why requirement 11 enumerates rather than asserting
+      coverage
 - [x] Touched-crate lint and test gates green; desktop typecheck and vitest green
