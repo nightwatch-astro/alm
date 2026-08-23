@@ -221,8 +221,11 @@ Get-ChildItem <changed>.rs | ForEach-Object { $_.LastWriteTime = Get-Date }
 Then relaunch (`tauri dev` recompiles). A frontend-only change needs only a hard
 refresh (Ctrl+R). Confirm the binary mtime is newer than the source.
 
-**Connect the MCP bridge.** The bridge needs `--features dev-tools` and serves a
-WebSocket on `127.0.0.1:9223`. This host runs WSL in mirrored networking, so
+**Connect the MCP bridge.** The bridge needs `--features dev-tools` to be
+compiled in and `PV_MCP_BRIDGE_ENABLE=1` to start; without the variable a
+`dev-tools` build does not open the port, and the startup log says `MCP bridge
+not started`. It serves a WebSocket on `127.0.0.1:9223`. `scripts/win-native-dev.ps1
+-McpBridge` sets the variable. This host runs WSL in mirrored networking, so
 `localhost` reaches Windows loopback directly — connect with `driver_session
 host=localhost port=9223`. The old NAT gateway-IP lookup (`ip route show
 default`) is **obsolete** here; under NAT networking, set
@@ -231,6 +234,8 @@ bridge. Anything that reaches that address controls the app without
 authentication. Invoke a command directly with `webview_execute_js` →
 `window.__TAURI__.core.invoke('<snake_command>', {args})` (`ipc_execute_command`
 rejects many real commands but is fine for scripted backend probes).
+[`mcp-bridge.md`](mcp-bridge.md) covers the two variables and what a non-loopback
+bind exposes.
 
 **Native pickers can't be driven.** Relaunch with `VITE_E2E=1` to expose
 `data-testid="e2e-path-input-<kind>"` / `e2e-add-path-btn-<kind>` stand-ins
