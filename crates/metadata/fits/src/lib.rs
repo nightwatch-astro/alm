@@ -69,7 +69,8 @@ impl MetadataExtractor for FitsExtractor {
 
         // `fits-header` 0.4.2 lossy-decodes the block and then slices the
         // resulting `String` at fixed byte offsets (`parse.rs:38`, `:47`,
-        // `:92`, `:98`). A non-ASCII byte widens to a 3-byte U+FFFD, so those
+        // `:61`, `:92`, `:98`). A non-ASCII byte widens to a 3-byte U+FFFD, so
+        // those
         // offsets can land inside a char and panic. Containing that here
         // depends on panics unwinding: the release profile in the workspace
         // `Cargo.toml` deliberately keeps the default `panic = "unwind"`.
