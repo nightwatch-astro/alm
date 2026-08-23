@@ -352,13 +352,12 @@ pub(super) fn spawn_executor_run(params: SpawnExecutorParams) {
         op_emitter,
     } = params;
 
+    // The spawned task owns the RAII removal guard, so its `Drop` removes the
+    // registry entry on ANY exit — normal completion *or* an unwind if
+    // `execute_plan` panics mid-apply (FR-017 scenario 2). Removal is always
+    // that `Drop`; the pause branch below only moves it earlier, it never
+    // removes the entry by hand.
     tokio::spawn(async move {
-        // Own the RAII removal guard for the whole task scope. Its `Drop`
-        // removes the registry entry on ANY exit — normal completion *or* an
-        // unwind if `execute_plan` panics mid-apply (FR-017 scenario 2). This
-        // is the single removal site; there is no explicit `registry.remove`.
-        let _run_guard = run_guard;
-
         let callbacks = PlanApplyCallbacks::new(
             pool.clone(),
             bus.clone(),
@@ -410,6 +409,18 @@ pub(super) fn spawn_executor_run(params: SpawnExecutorParams) {
                 .await;
             }
             ApplyOutcome::Paused { reason, counts } => {
+                // Release the registry entry BEFORE the paused state becomes
+                // observable. `resume_plan` (lifecycle.rs, R-Concur-1) and
+                // `cancel_plan` (GF-5) both require that a paused plan holds
+                // no `ActiveRun`, and both are reached from the paused plan
+                // row or the `plan.applying.paused` event. Holding the claim
+                // across `handle_paused`'s writes made a resume that reacted
+                // to either one fail with `plan.invalid_state` ("already has
+                // an active apply run"), and made a cancel signal a
+                // cancellation token no executor was left to observe. The
+                // executor has stopped and this branch performs no filesystem
+                // work, so the path claim has nothing left to protect.
+                drop(run_guard);
                 super::terminal::handle_paused(
                     &pool,
                     &bus,
