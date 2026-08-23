@@ -19,11 +19,11 @@
 //! handle at all — including one that panics inside `fits-header` — yields
 //! [`MetadataExtractError::Parse`]; [`FitsExtractor::extract`] never panics.
 //!
-//! A silent mis-parse passes through this adapter undetected, because it does
-//! not validate that the header block is ASCII: `fits-header` lossy-decodes
-//! each card before slicing it at fixed offsets, so one invalid UTF-8 byte
-//! shifts every later field and can yield a wrong keyword and value with no
-//! panic and no error.
+//! This adapter does not validate that the header block is ASCII. `fits-header`
+//! slices each field from the raw 80 bytes of its card and lossy-decodes the
+//! slice, so an invalid UTF-8 byte garbles the one field that contains it and
+//! cannot shift any later field. Such a field still passes through undetected,
+//! with no panic and no error.
 #![allow(clippy::doc_markdown)]
 
 use std::io::{self, Read};
@@ -73,12 +73,11 @@ impl MetadataExtractor for FitsExtractor {
             msg: e.to_string(),
         })?;
 
-        // `fits-header` 0.4.2 lossy-decodes the block and then slices the
-        // resulting `String` at fixed byte offsets (`parse.rs:38`, `:47`,
-        // `:61`, `:92`, `:98`). A non-ASCII byte widens to a 3-byte U+FFFD, so
-        // those
-        // offsets can land inside a char and panic. Containing that here
-        // depends on panics unwinding: the release profile in the workspace
+        // `Header::parse` is third-party and unvendored, and the inbox scan runs
+        // it over every file it walks, so one panic would abort a whole scan
+        // rather than skip a file. No `fits-header` release currently panics on
+        // malformed bytes; this backstops the next one. Containing a panic here
+        // depends on it unwinding: the release profile in the workspace
         // `Cargo.toml` deliberately keeps the default `panic = "unwind"`.
         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             fits_header::Header::parse(&bytes)
@@ -376,20 +375,31 @@ mod tests {
         assert!(meta.image_typ.is_none());
     }
 
-    /// Regression for astro-plan-3v3r.20.33 / 20.16: a `.fits` file whose first
-    /// block is non-ASCII drives `fits-header` 0.4.2 into a non-char-boundary
-    /// slice, which in production unwinds out of the inbox scan.
+    /// Regression for astro-plan-3v3r.20.33 / 20.16, asserted against the parser
+    /// rather than the adapter so [`FitsExtractor::extract`]'s `catch_unwind`
+    /// cannot mask a reintroduced panic. `fits-header` 0.4.2 sliced its
+    /// lossy-decoded card at fixed offsets and panicked on this input.
     #[test]
-    fn malformed_header_bytes_are_an_error_not_a_panic() {
+    fn parser_itself_does_not_panic_on_a_non_ascii_block() {
+        let parsed = fits_header::Header::parse(&[0xffu8; BLOCK_SIZE]);
+        assert!(parsed.is_ok(), "expected a lenient parse, got {parsed:?}");
+    }
+
+    /// A block of non-ASCII bytes yields no recognised keywords rather than an
+    /// error: `fits-header` parsing is lenient by design.
+    #[test]
+    fn malformed_header_bytes_yield_no_keywords() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("corrupt.fits");
         std::fs::write(&path, [0xffu8; BLOCK_SIZE]).expect("write fixture");
 
-        let err = FitsExtractor.extract(&path).expect_err("malformed header must be an error");
-        assert!(
-            matches!(err, MetadataExtractError::Parse { .. }),
-            "expected a Parse error, got {err:?}"
-        );
+        let meta = FitsExtractor
+            .extract(&path)
+            .expect("a malformed header must not be an error")
+            .expect("a .fits extension must be supported");
+        assert!(meta.image_typ.is_none());
+        assert!(meta.object.is_none());
+        assert!(meta.date_obs.is_none());
     }
 
     #[test]

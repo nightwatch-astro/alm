@@ -214,8 +214,11 @@ fn is_xisf_extension(ext: &str) -> bool {
 /// Returns `Some(ScannedMasterFile)` when the file is identified as a master.
 /// Returns `None` when not a master or metadata is unreadable.
 fn try_detect_master(abs_path: &Path, rel_path: &str, ext: &str) -> Option<ScannedMasterFile> {
-    // Cached extract (F0): memoized by (path, mtime, size); unsupported
-    // extensions and unparseable files both surface as `Err` here.
+    // Cached extract (F0): memoized by (path, mtime, size). Unsupported
+    // extensions surface as `Err` here. A corrupt FITS header does not: the
+    // parser is lenient and reports no keywords, so such a file reaches
+    // `detect_master` below with every header field `None` and is classified
+    // from its path alone (astro-plan-z7997).
     let bundle = cached_extract(abs_path).ok()?;
 
     let image_typ_raw = bundle.image_typ.as_deref();
