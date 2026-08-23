@@ -50,6 +50,5 @@ export default defineConfig({
     // Exclude Playwright e2e specs and any node_modules.
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", "dist/**", "../../tests/e2e/**"],
-    passWithNoTests: true,
   },
 });
