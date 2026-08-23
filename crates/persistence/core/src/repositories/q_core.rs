@@ -103,6 +103,10 @@ pub async fn file_records_by_root(
 /// `json_each` compares decoded array elements, so an id containing `%`, `_`,
 /// or `"` matches itself and nothing else.
 ///
+/// `frame_ids` carries no `json_valid` CHECK and `json_each` raises on a
+/// malformed value, which fails the whole query rather than the one row. The
+/// `CASE` substitutes an empty array so a corrupt row is skipped instead.
+///
 /// # Errors
 /// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_acquisition_session_id_by_frame(
@@ -111,7 +115,9 @@ pub async fn find_acquisition_session_id_by_frame(
 ) -> DbResult<Option<String>> {
     let row: Option<(String,)> = sqlx::query_as(
         "SELECT id FROM acquisition_session \
-         WHERE EXISTS (SELECT 1 FROM json_each(acquisition_session.frame_ids) je \
+         WHERE EXISTS (SELECT 1 FROM json_each( \
+                           CASE WHEN json_valid(acquisition_session.frame_ids) \
+                                THEN acquisition_session.frame_ids ELSE '[]' END) je \
                        WHERE je.value = ?) \
          LIMIT 1",
     )
@@ -124,6 +130,9 @@ pub async fn find_acquisition_session_id_by_frame(
 /// `(session id, kind)` of the `calibration_session` whose `frame_ids` JSON
 /// array contains `frame_id` as an exact member.
 ///
+/// Guards `json_each` against a malformed `frame_ids` value for the reason
+/// given on [`find_acquisition_session_id_by_frame`].
+///
 /// # Errors
 /// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_calibration_session_by_frame(
@@ -132,7 +141,9 @@ pub async fn find_calibration_session_by_frame(
 ) -> DbResult<Option<(String, String)>> {
     let row: Option<(String, String)> = sqlx::query_as(
         "SELECT id, kind FROM calibration_session \
-         WHERE EXISTS (SELECT 1 FROM json_each(calibration_session.frame_ids) je \
+         WHERE EXISTS (SELECT 1 FROM json_each( \
+                           CASE WHEN json_valid(calibration_session.frame_ids) \
+                                THEN calibration_session.frame_ids ELSE '[]' END) je \
                        WHERE je.value = ?) \
          LIMIT 1",
     )
@@ -1304,5 +1315,44 @@ mod tests {
 
         let found = find_calibration_session_by_frame(db.pool(), "a_b").await.unwrap();
         assert_eq!(found, Some(("c-1".to_owned(), "dark".to_owned())));
+    }
+
+    /// `frame_ids` has no `json_valid` CHECK. An unguarded `json_each` raises
+    /// on a malformed row and fails the whole query, losing the sessions that
+    /// are intact.
+    #[tokio::test]
+    async fn acquisition_lookup_skips_malformed_frame_ids() {
+        let db = setup_db().await;
+        insert_acquisition_session(db.pool(), "s-bad", "oops").await;
+        insert_acquisition_session(db.pool(), "s-empty", "").await;
+        insert_acquisition_session(db.pool(), "s-good", r#"["f1"]"#).await;
+
+        let found = find_acquisition_session_id_by_frame(db.pool(), "f1")
+            .await
+            .expect("a corrupt row must not fail the lookup");
+        assert_eq!(found.as_deref(), Some("s-good"));
+    }
+
+    #[tokio::test]
+    async fn calibration_lookup_skips_malformed_frame_ids() {
+        let db = setup_db().await;
+        insert_calibration_session(db.pool(), "c-bad", "oops").await;
+        insert_calibration_session(db.pool(), "c-empty", "").await;
+        insert_calibration_session(db.pool(), "c-good", r#"["f1"]"#).await;
+
+        let found = find_calibration_session_by_frame(db.pool(), "f1")
+            .await
+            .expect("a corrupt row must not fail the lookup");
+        assert_eq!(found, Some(("c-good".to_owned(), "dark".to_owned())));
+    }
+
+    /// A repeated id in the array must not yield the session twice.
+    #[tokio::test]
+    async fn acquisition_lookup_returns_one_session_for_a_repeated_id() {
+        let db = setup_db().await;
+        insert_acquisition_session(db.pool(), "s-1", r#"["f1","f1"]"#).await;
+
+        let found = find_acquisition_session_id_by_frame(db.pool(), "f1").await.unwrap();
+        assert_eq!(found.as_deref(), Some("s-1"));
     }
 }
