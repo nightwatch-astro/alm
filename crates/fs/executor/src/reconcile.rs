@@ -52,6 +52,11 @@ pub enum ReconcileVerdict {
 /// The truth tables are the inverse of each operation's post-condition:
 /// a relocate leaves the source gone and the destination present; a remove
 /// leaves the source gone; a create leaves the destination present.
+///
+/// Presence means *an entry occupies the path*, not *the path resolves to a
+/// reachable target*: a dangling symlink is present. `Path::exists()` follows
+/// links and would report such an entry absent, healing a mutation that never
+/// completed.
 #[must_use]
 pub fn classify(
     shape: MutationShape,
@@ -62,7 +67,7 @@ pub fn classify(
         MutationShape::None => ReconcileVerdict::Completed,
         MutationShape::Relocate => match (source, destination) {
             (Some(src), Some(dst)) => {
-                match (src.exists(), dst.exists()) {
+                match (entry_present(src), entry_present(dst)) {
                     (false, true) => ReconcileVerdict::Completed,
                     (true, false) => ReconcileVerdict::NotStarted,
                     // Both present: a cross-volume copy that completed but whose
@@ -75,16 +80,25 @@ pub fn classify(
             _ => ReconcileVerdict::Ambiguous,
         },
         MutationShape::Remove => match source {
-            Some(src) if !src.exists() => ReconcileVerdict::Completed,
+            Some(src) if !entry_present(src) => ReconcileVerdict::Completed,
             Some(_) => ReconcileVerdict::NotStarted,
             None => ReconcileVerdict::Ambiguous,
         },
         MutationShape::Create => match destination {
-            Some(dst) if dst.exists() => ReconcileVerdict::Completed,
+            Some(dst) if entry_present(dst) => ReconcileVerdict::Completed,
             Some(_) => ReconcileVerdict::NotStarted,
             None => ReconcileVerdict::Ambiguous,
         },
     }
+}
+
+/// Whether an entry occupies `path`, without resolving it.
+///
+/// Matches `fs_pathsafe`'s reparse-aware probes and the link operation's
+/// pre-check: a dangling symlink or junction is an entry, so overwriting or
+/// re-running the mutation would still collide with it.
+fn entry_present(path: &Utf8Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
 }
 
 #[cfg(test)]
@@ -104,6 +118,64 @@ mod tests {
 
     fn absent(dir: &std::path::Path, name: &str) -> Utf8PathBuf {
         Utf8PathBuf::from_path_buf(dir.join(name)).unwrap()
+    }
+
+    /// An entry that occupies its path while resolving to nothing: the state
+    /// `Path::exists()` reports as absent.
+    ///
+    /// On Windows the reparse point is a junction created against a real
+    /// directory that is then removed — `mklink /J` needs no privilege, while
+    /// `symlink_file` does, and a junction cannot be created against a missing
+    /// target.
+    fn dangling_link(dir: &std::path::Path, name: &str) -> Utf8PathBuf {
+        let link = dir.join(name);
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.join("no_such_target"), &link).unwrap();
+
+        #[cfg(windows)]
+        {
+            let target = dir.join(format!("{name}_target"));
+            std::fs::create_dir(&target).unwrap();
+            let status = std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J", link.to_str().unwrap(), target.to_str().unwrap()])
+                .status()
+                .expect("mklink invocation failed");
+            assert!(status.success(), "mklink /J failed to create the test junction");
+            std::fs::remove_dir(&target).unwrap();
+        }
+
+        assert!(!link.exists(), "fixture must be dangling: exists() has to answer false");
+        assert!(
+            std::fs::symlink_metadata(&link).is_ok(),
+            "fixture must still occupy its path as an entry"
+        );
+        Utf8PathBuf::from_path_buf(link).unwrap()
+    }
+
+    #[test]
+    fn relocate_ambiguous_when_source_holds_a_dangling_link() {
+        let d = tmp();
+        let src = dangling_link(d.path(), "src");
+        let dst = touch(d.path(), "dst");
+        assert_eq!(
+            classify(MutationShape::Relocate, Some(&src), Some(&dst)),
+            ReconcileVerdict::Ambiguous
+        );
+    }
+
+    #[test]
+    fn remove_not_started_when_source_holds_a_dangling_link() {
+        let d = tmp();
+        let src = dangling_link(d.path(), "src");
+        assert_eq!(classify(MutationShape::Remove, Some(&src), None), ReconcileVerdict::NotStarted);
+    }
+
+    #[test]
+    fn create_completed_when_destination_is_a_dangling_link() {
+        let d = tmp();
+        let dst = dangling_link(d.path(), "dst");
+        assert_eq!(classify(MutationShape::Create, None, Some(&dst)), ReconcileVerdict::Completed);
     }
 
     #[test]
