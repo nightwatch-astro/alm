@@ -298,7 +298,13 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      # fetch-depth 2: the `Dead-caller ratchet` step below needs HEAD~1 on a main
+      # push, where `origin/main` is the commit just pushed and the ratchet's
+      # merge base is HEAD itself. The default depth-1 checkout has no HEAD~1 and
+      # the ratchet fails closed. Matches `dead-caller-main`.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       # Tauri's desktop_shell crate needs system webview libs to build on Linux.
       - name: Install Tauri Linux system deps
