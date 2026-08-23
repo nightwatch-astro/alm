@@ -75,17 +75,17 @@ two byte-different spellings as one location, the comparison sees two different
 components and reduces the match, so each divergence below refuses a path the
 filesystem would have accepted. None admits a path outside the root.
 
-| Divergence | Comparison behaviour | Verdict |
-|------------|----------------------|---------|
-| NTFS case: root `C:\Library`, path `C:\library\a` | components differ byte-wise | over-refuses (`Escapes`) |
-| Separators `\` and `/` on Windows | `std` treats both as component separators, so neither side is favoured | handled |
-| Verbatim `\\?\C:\Library` against `C:\Library` | the prefix component differs, so no component matches | over-refuses (`Escapes`) |
-| UNC `\\server\share` against a `Disk` prefix | prefix kinds differ | over-refuses (`Escapes`) |
-| Drive-relative `C:foo` | `is_absolute` is false | over-refuses (`RootNotAbsolute`) |
-| 8.3 short name `PROGRA~1` against the long name | components differ byte-wise | over-refuses (`Escapes`) |
-| Unicode NFC against NFD spelling of one filename | components differ byte-wise | over-refuses (`Escapes`) |
+| Divergence | Comparison behaviour | Verdict | Evidence |
+|------------|----------------------|---------|----------|
+| NTFS case: root `C:\Library`, path `C:\library\a` | components differ byte-wise | over-refuses (`Escapes`) | read from `resolve_in_root`; no test presents a case-divergent pair |
+| Separators `\` and `/` on Windows | `std` treats both as component separators, so neither side is favoured | handled | Windows lane: `contain.rs:229-233` asserts a `Path::join` result equals a forward-slash literal |
+| Verbatim `\\?\C:\Library` against `C:\Library` | the prefix component differs, so no component matches | over-refuses (`Escapes`) | read from `resolve_in_root`; no test executes this input |
+| UNC `\\server\share` against a `Disk` prefix | prefix kinds differ | over-refuses (`Escapes`) | read from `resolve_in_root`; no test executes this input |
+| Drive-relative `C:foo` | `is_absolute` is false | over-refuses (`RootNotAbsolute`) | Windows lane: `contain.rs:271-273` takes the same `is_absolute` branch through a bare relative root; `C:foo` itself is not executed |
+| 8.3 short name `PROGRA~1` against the long name | components differ byte-wise | over-refuses (`Escapes`) | read from `resolve_in_root`; no test executes this input |
+| Unicode NFC against NFD spelling of one filename | components differ byte-wise | over-refuses (`Escapes`) | read from `resolve_in_root`; no test executes this input |
 
-The six over-refusals in the table are intended behaviour, and none offers the
+Every over-refusal in the table is intended behaviour, and none offers the
 user a recovery path. The operation is refused, and re-spelling the input does
 not make it pass, because the stored root is the other side of the comparison.
 
@@ -157,7 +157,7 @@ assembly, not root-relative resolution, and stays where it is.
 |------|------|
 | `crates/fs/pathsafe/src/contain.rs` | Add: `ContainedPath`, `ContainmentError`, `resolve_in_root`, `resolve_unrooted`, `contained_in_any`, `normalize` |
 | `crates/fs/executor/src/ops/path_gate.rs` | Modify: `resolve_and_validate` delegates the join-and-contain step, symlink walk unchanged; `lexical_normalize` deleted so one normalizer remains |
-| `crates/app/core/src/plan_apply/{paths,reconcile}.rs` | Modify: use `contain::normalize_utf8`; the FR-017 overlap set is compared, never mutated, so an uncontained path is kept rather than refused |
+| `crates/app/core/src/plan_apply/{paths,reconcile}.rs` | Modify: use `contain::normalize_utf8`; the FR-017 overlap set is only compared, so an uncontained path is kept rather than refused |
 | `crates/fs/executor/src/run/loop_.rs` | Modify: resolve each side once and hand the resolved paths to `execute_item`, so no second root choice exists |
 | `crates/fs/executor/src/run/dispatch.rs` | Modify: `execute_item` consumes resolved paths, `resolve_item_path` deleted |
 | `crates/project/structure/src/lib.rs` | Modify: `resolve_working_folder` returns `Result` |
@@ -179,7 +179,7 @@ assembly, not root-relative resolution, and stays where it is.
 6. A launch whose working directory is outside every registered root, or which
    has no registered root at all, is refused with `cwd.outside_library_root`.
 7. `verify_cwd_containment`'s caller canonicalizes the roots and the working
-   folder through the same function, so the two sides carry the same Windows
+   folder through the same function, so the two sides have the same Windows
    prefix spelling.
 8. Fixture helpers that build platform-absolute roots are absent from a release
    build.
