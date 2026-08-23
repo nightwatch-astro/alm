@@ -109,6 +109,9 @@ schemars = { version = "1", features = ["uuid1"] }
 jsonschema = { version = "0.48", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Canonicalizes without the Windows `\\?\` verbatim prefix, so a canonicalized
+# path and a `canonicalize`-failed fallback compare with the same spelling.
+dunce = "1"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing", "serde", "serde-well-known"] }
 trash = "5.2"

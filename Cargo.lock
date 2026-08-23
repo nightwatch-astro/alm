@@ -107,6 +107,7 @@ dependencies = [
  "contracts_core",
  "dashmap",
  "domain_core",
+ "dunce",
  "filetime",
  "fs_executor",
  "fs_inventory",
@@ -2034,6 +2035,7 @@ name = "fs_pathsafe"
 version = "0.1.0"
 dependencies = [
  "camino",
+ "path-clean",
  "proptest",
  "safe-filename",
  "tempfile",
@@ -4794,6 +4796,7 @@ name = "project_structure"
 version = "0.1.0"
 dependencies = [
  "domain_core",
+ "fs_pathsafe",
  "serde",
  "serde_json",
  "tempfile",
@@ -8610,6 +8613,7 @@ dependencies = [
 name = "workflow_profiles"
 version = "0.1.0"
 dependencies = [
+ "fs_pathsafe",
  "itertools",
  "project_structure",
  "tempfile",
