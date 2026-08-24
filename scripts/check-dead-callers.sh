@@ -549,6 +549,12 @@ FIX
 # fixture main deletes `deleted_on_main` on a commit the branch never has, which
 # is the exact shape that reported 39 names on branches that never opened the
 # file.
+#
+# The main-push half covers the other shape: on a push to main `origin/main` is
+# the commit just pushed, the merge base degenerates to HEAD, and the base can
+# only come from HEAD~1. That shape turned main red for three consecutive pushes
+# (astro-plan-9tbwc) while this self-test stayed green, because only the
+# feature-branch shape was constructed.
 base_resolution_self_test() {
     local tmp up work branch_point resolved out rc=0
     tmp="$(mktemp -d)"
@@ -578,6 +584,16 @@ base_resolution_self_test() {
     git -C "$up" add -A
     git -C "$up" commit --quiet -m 'main drops deleted_on_main'
 
+    # The tip adds an untracked name, so a main-push run that resolves its base
+    # correctly has a violation to find, while one that compares the tip with
+    # itself finds nothing.
+    printf '# tracked by astro-plan-aaaa\nkept\n\npushed_untracked\n' \
+        >"$up/scripts/dead-callers-baseline.txt"
+    git -C "$up" add -A
+    git -C "$up" commit --quiet -m 'main push adds an untracked name'
+    local pushed_parent
+    pushed_parent="$(git -C "$up" rev-parse 'HEAD~1')"
+
     git clone --quiet --depth=1 "file://$up" "$work" >/dev/null 2>&1
     git -C "$work" fetch --quiet --depth=1 origin \
         '+refs/heads/feature:refs/remotes/origin/feature' >/dev/null 2>&1
@@ -600,7 +616,110 @@ base_resolution_self_test() {
         return 1
     fi
 
-    echo "OK: base-resolution self-test passed — the base is the branch point, not the ref tip."
+    # Main-push shape. `origin/main` IS the commit just pushed, so the merge base
+    # degenerates to HEAD and only HEAD~1 can serve as a base. A depth-1 checkout
+    # has no HEAD~1, so the gate has no base at all and fails closed; depth 2 is
+    # the shallowest checkout that resolves. The `fetch-depth: 2` on every ci.yml
+    # job running this script is load-bearing for that reason, not incidental.
+    local push_work
+    push_work="$tmp/push-depth1"
+    git clone --quiet --depth=1 "file://$up" "$push_work" >/dev/null 2>&1
+    if [ "$(git -C "$push_work" rev-parse HEAD)" \
+        != "$(git -C "$push_work" rev-parse origin/main)" ]; then
+        echo "FAIL: base-resolution self-test: the main-push fixture does not have origin/main == HEAD." >&2
+        return 1
+    fi
+
+    resolved="$(ROOT="$push_work" DEAD_CALLERS_BASE_REF=origin/main resolve_base_commit)"
+    if [ -n "$resolved" ]; then
+        echo "FAIL: base-resolution self-test: a depth-1 main push resolved a base it cannot have." >&2
+        echo "  expected: []" >&2
+        echo "  actual:   [$resolved]" >&2
+        return 1
+    fi
+
+    rc=0
+    out="$(ROOT="$push_work" SCRIPT_DIR="$push_work/scripts" \
+        BASELINE="$push_work/scripts/dead-callers-baseline.txt" \
+        DEAD_CALLERS_BASE_REF=origin/main CI=1 check_tracking_references 2>&1)" || rc=$?
+    if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'cannot resolve a base'; then
+        echo "FAIL: base-resolution self-test: a depth-1 main push did not fail closed on an unresolvable base." >&2
+        echo "  exit:   [$rc]" >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    push_work="$tmp/push-depth2"
+    git clone --quiet --depth=2 "file://$up" "$push_work" >/dev/null 2>&1
+    resolved="$(ROOT="$push_work" DEAD_CALLERS_BASE_REF=origin/main resolve_base_commit)"
+    if [ "$resolved" != "$pushed_parent" ]; then
+        echo "FAIL: base-resolution self-test: a depth-2 main push did not fall back to HEAD~1." >&2
+        echo "  expected: [$pushed_parent]" >&2
+        echo "  actual:   [$resolved]" >&2
+        return 1
+    fi
+
+    rc=0
+    out="$(ROOT="$push_work" SCRIPT_DIR="$push_work/scripts" \
+        BASELINE="$push_work/scripts/dead-callers-baseline.txt" \
+        DEAD_CALLERS_BASE_REF=origin/main CI=1 check_tracking_references 2>&1)" || rc=$?
+    if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'pushed_untracked'; then
+        echo "FAIL: base-resolution self-test: a depth-2 main push did not read the pushed commit's own additions." >&2
+        echo "  exit:   [$rc]" >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    echo "OK: base-resolution self-test passed — the base is the branch point on a branch, HEAD~1 on a main push, and a depth-1 main push fails closed."
+}
+
+# Require every ci.yml job that runs the ratchet to check out at least two
+# commits.
+#
+# Needed because the depth requirement is unobservable from inside the script:
+# the fixture cases above prove a depth-1 main push has no base and fails closed,
+# but nothing stops a workflow from checking out at depth 1 anyway. That is the
+# defect itself -- it reddened main for three consecutive pushes
+# (astro-plan-9tbwc, fixed in #1728) with every self-test green, because the depth
+# lives in the workflow while the failure surfaces here. `fetch-depth: 0` (full
+# history) also satisfies this.
+checkout_depth_self_test() {
+    local workflow report shallow
+    workflow="$ROOT/.github/workflows/ci.yml"
+    if [ ! -f "$workflow" ]; then
+        echo "FAIL: checkout-depth self-test: $workflow is missing." >&2
+        return 1
+    fi
+
+    # `job<TAB>depth` per job running the ratchet; `none` means the job pins no
+    # fetch-depth, and a job with several checkouts is judged on its shallowest.
+    report="$(awk '
+        /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+            job = $1; sub(/:$/, "", job); depth[job] = "none"; next
+        }
+        job == "" { next }
+        $1 == "fetch-depth:" {
+            if (depth[job] == "none" || $2 + 0 < depth[job] + 0) depth[job] = $2
+        }
+        /run:[[:space:]]*just dead-callers[[:space:]]*$/ { ratchet[job] = 1 }
+        END { for (j in ratchet) print j "\t" depth[j] }
+    ' "$workflow" | sort)"
+
+    if [ -z "$report" ]; then
+        echo "FAIL: checkout-depth self-test: no ci.yml job runs \`just dead-callers\`, so the depth requirement is unenforced." >&2
+        return 1
+    fi
+
+    shallow="$(printf '%s\n' "$report" | awk -F'\t' \
+        '$2 == "none" || ($2 + 0 > 0 && $2 + 0 < 2) { print "  " $1 " (fetch-depth: " $2 ")" }')"
+    if [ -n "$shallow" ]; then
+        echo "FAIL: checkout-depth self-test: these ci.yml jobs run the ratchet without HEAD~1:" >&2
+        printf '%s\n' "$shallow" >&2
+        echo "On a main push origin/main is the commit just pushed, so the base can only come from HEAD~1 and the ratchet fails closed without it. Set fetch-depth to 2 or more, or 0 for full history." >&2
+        return 1
+    fi
+
+    echo "OK: checkout-depth self-test passed — $(printf '%s\n' "$report" | grep -c . ) ci.yml job(s) running the ratchet check out HEAD~1."
 }
 
 # Fixture corpus: a live fn, a doc-comment-only fn, a test-only fn, one called
@@ -743,6 +862,7 @@ main() {
             self_test
             tracking_self_test
             base_resolution_self_test
+            checkout_depth_self_test
             return
             ;;
     esac
@@ -786,6 +906,11 @@ HDR
 
     base_resolution_self_test >/dev/null || {
         echo "FAIL: base-resolution self-test failed; the tracking check's base is not trustworthy." >&2
+        exit 1
+    }
+
+    checkout_depth_self_test >/dev/null || {
+        echo "FAIL: checkout-depth self-test failed; a workflow runs this ratchet on a checkout too shallow to resolve a base." >&2
         exit 1
     }
 

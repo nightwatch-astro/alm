@@ -1,3 +1,9 @@
+> **MIGRATED:** current truth now lives at
+> `docs/journeys/J05-project-lifecycle/journey.md`.
+> This delta is frozen legacy history: it records behavior as understood on
+> its own date and may not match current behavior.
+> See `docs/product/journeys/README.md`.
+
 # jval-docdrift — J05-project-lifecycle: Duplicate-name error fires at Create-time, not as-you-type
 
 Task: jval-docdrift · Status: observed-live-2026-07-14
