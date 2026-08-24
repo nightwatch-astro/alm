@@ -1,7 +1,7 @@
 ---
 id: J03
 title: Catalogue an already-organized folder without moving files
-version: 4
+version: 5
 status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
@@ -18,6 +18,7 @@ trace:
   - docs/development/windows-journeys/journey-11-framing-clustering-attribution.md
   - PR #938 (fixes #768 — destination-root picker was shown regardless of
     the item's source-root organization state)
+  - PR #1740 (explicit approval before an inbox plan applies)
   - spec-054-adaptive-detail-dock (FR-001, FR-003, FR-005 — shared adaptive
     dock: Inbox uses the same side-≥1400px/bottom-below placement, per-page
     Auto/Bottom/Right override, and drag-resizable side width as every other
@@ -127,10 +128,16 @@ hashes on disk are byte-for-byte unchanged from before confirm.
   no-op). If a file under review changed on disk after confirm, the item is
   refused as stale rather than silently catalogued with outdated metadata
   (same staleness gate the shared apply pipeline uses for move plans).
-- **Trace:** crates/fs/executor/src/ops/catalogue_op.rs; crates/fs/executor/
-  src/run.rs:620 (`ExecutorItemAction::Catalogue`); crates/app/core/src/
-  plan_apply.rs (stale/`item.stale` gate applies ahead of per-action
-  dispatch, action-agnostic).
+- **Expect (negative):** A catalogue plan is not applied without an approval
+  the user's own Apply gesture recorded: the same `plan.approval_required`
+  refusal as move-mode (J02/S7) applies, so a plan that appeared after the
+  render the user reviewed is refused rather than catalogued unseen.
+- **Trace:** `crates/fs/executor/src/ops/catalogue_op.rs`;
+  `crates/fs/executor/src/run/dispatch.rs:77`
+  (`ExecutorItemAction::Catalogue`); `crates/app/core/src/plan_apply/` (the
+  stale/`item.stale` gate applies ahead of per-action dispatch,
+  action-agnostic); `crates/app/core/src/inbox_plan.rs:202-212` (approval is
+  read, never minted); PR #1740.
 
 ### S5 — Mixed-root run routes independently per root {#S5}
 - **Do:** In the same Inbox session, the user confirms one item sourced from
@@ -185,3 +192,10 @@ provably closed — dropped rather than carried forward.
   the same single confirm call. Catalogue-mode and move-mode confirms
   present the picker identically.
   Evidence: issue #943, spec-008 US7/FR-019/FR-022/SC-008 · by: rust-pro
+
+- **Δ5** 2026-08-24 · S4 · behavior-change
+  Applying a catalogue plan now requires an approval recorded by the user's
+  own Apply gesture; an unapproved plan is refused with
+  `plan.approval_required`. Previously the inbox apply use case minted its
+  own approval, so any plan reachable by the command applied without one.
+  Evidence: PR #1740 (c0f7e10ea) · by: journey-scribe (intent-gated)

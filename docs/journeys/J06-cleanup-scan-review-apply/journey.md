@@ -1,7 +1,7 @@
 ---
 id: J06
 title: Reclaim disk space from processing outputs and raw sub-frames without losing anything protected
-version: 4
+version: 6
 status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
@@ -22,6 +22,8 @@ trace:
   - PR #894 (fixes #563)
   - PR #1190 (design-refresh handoff 06 — destructive-red token +
     Approve & apply variant scoped to delete-only plans)
+  - PR #1735 (trash-destination plans review as destructive)
+  - PR #1739 (unreadable frame attribution refuses raw-frame cleanup)
 ---
 
 ## Goal
@@ -81,23 +83,25 @@ ever touched without an acknowledged, reviewed step.
   "Approve & apply" is also disabled whenever the plan holds zero items;
   choosing "Discard" leaves disk untouched and returns cleanly. "Approve &
   apply" (`plan-review-approve-apply`) renders in the app's red destructive
-  style exactly when some plan item's action is `delete` — that is, when
-  cleanup policy assigned Delete to that item's data type. The destination
-  chosen at S2 does not affect this style: a System-trash plan's items carry
-  action `archive` and are rerouted to the trash only at apply time, so such
-  a plan renders in the neutral primary style even though applying it
-  removes the files from their original location (G6).
-- **Expect:** A plan carrying an item whose action is `delete` also shows a
-  destructive-confirm checkbox (`plan-review-confirm-destructive`, labelled
-  "I confirm these items may be deleted."). "Approve & apply" stays disabled
-  until it is checked, and checking it persists the confirmation per item so
-  it survives closing and reopening the review.
-- **Expect:** A System-trash plan shows neither the red destructive style
-  nor that checkbox, because both are keyed on item action `delete` rather
-  than on the plan's destination (G6).
-- **Expect (negative):** No item whose action is `delete` is ever applied
-  without a recorded confirmation: the executor refuses such an item with
-  `destructive_unconfirmed` and marks it `refused` rather than deleting it.
+  style exactly when applying the plan would remove a file from where it
+  lives now — either some item's action is `delete` (cleanup policy assigned
+  Delete to that item's data type) or the destination chosen at S2 is System
+  trash, which reroutes every `archive` item into the OS bin at apply time.
+- **Expect:** Such a plan also shows a destructive-confirm checkbox
+  (`plan-review-confirm-destructive`, labelled "I confirm these items may be
+  deleted."). "Approve & apply" stays disabled until it is checked, and
+  checking it persists the confirmation per item so it survives closing and
+  reopening the review. A System-trash plan is gated the same way as a
+  `delete` plan: the review overlay, the confirmation writer, and the apply
+  refuser all treat trash-destination `archive` items as destructive.
+- **Expect:** Each item's action pill renders in the danger style under the
+  same rule, so a trash-destination plan does not present its items as
+  ordinary moves.
+- **Expect (negative):** No destructive item is ever applied without a
+  recorded confirmation: the executor refuses such an item with
+  `destructive_unconfirmed` and marks it `refused` rather than removing it —
+  including a trash-destination `archive` item, whose effective executor
+  action is `Trash`.
 - **Expect (negative):** "Approve & apply" stays disabled while any protected
   item's acknowledgement is outstanding, or while the plan holds zero items —
   in both cases the overlay shows no explanatory text, only the disabled
@@ -107,20 +111,27 @@ ever touched without an acknowledged, reviewed step.
   and the session flow's Generate (S6) is disabled while no frame is
   selected — so this overlay state is unreachable via the documented S1–S4 /
   S5–S6 path; the server-side rejection is defense-in-depth only.
-- **Trace:** `PlanReviewOverlay` (`hasDestructiveItems` drives both the
-  button variant and the confirm gate; approve is disabled on
-  `plan.itemsTotal === 0` and the cleanup flow passes no `emptyReason`, so
-  no message renders for that case); `PlanProtectionGate`;
+- **Trace:** `apps/desktop/src/features/plans/PlanReviewOverlay.tsx:83-91`
+  (`isDestructiveItem` — `delete`, or `archive` with
+  `destructiveDestination === 'os_trash'`) feeding `:217` (button variant and
+  confirm gate) and `:446` (item pill); approve is disabled on
+  `plan.itemsTotal === 0` (`:544`) and the cleanup flow passes no
+  `emptyReason` (only `ProjectDetail.tsx:462`, the archive flow, does), so no
+  message renders for that case; `PlanProtectionGate`;
   `plans::approve::approve_plan` (rejects a zero-item plan with
   `plan.items.empty`, not reachable via the shipped UI); contract operation
-  `plans.confirm.destructive` → `confirm_plan_destructive_items`
-  (`plan_items.destructive_confirmed`); PR #1190
+  `plans.confirm.destructive` →
+  `crates/persistence/plans/src/repositories/plans.rs:356-363`
+  (`plan_items.destructive_confirmed`);
+  `crates/app/core/src/plan_apply/paths.rs:304-306` (apply-time refuser,
+  keyed on the effective action from the reroute at `:212-230`); PR #1190,
+  PR #1735
 
 ### S4 — Approve and apply {#S4}
 - **Do:** Click "Approve & apply" on a plan whose destination is Archive and
   that contains no protected item, checking the destructive-confirm box
   first if the plan carries any item whose action is `delete` (see Known
-  gaps for the Trash-destination and protected-item cases).
+  gaps for the Trash-destination apply path and the protected-item case).
 - **Expect:** Live per-item progress is shown ("Applying N of M…"); each
   item's outcome (succeeded/failed with reason) is visible afterward; the
   moved files are present at the Archive destination; re-scanning the
@@ -150,7 +161,17 @@ ever touched without an acknowledged, reviewed step.
   rather than the override being silently ignored in favor of the global
   default.
 - **Expect (negative):** No file is moved or altered by scanning.
-- **Trace:** `apps/desktop/src/features/sessions/RawFrameCleanupSection.tsx`;
+- **Expect (negative):** No candidate list is shown at all while any
+  session's frame-to-session attribution is unreadable, even for a different
+  session than the one being scanned: the scan is refused library-wide with a
+  red banner naming the affected session ids and telling the user to repair
+  or re-import those sessions. The refusal is blocking and non-retryable, and
+  the app offers no way to repair the session from inside the product (G10).
+- **Trace:** `apps/desktop/src/features/sessions/RawFrameCleanupSection.tsx`
+  (`:181-182` renders the refusal in a danger `Banner`);
+  `crates/app/core/src/cleanup_generator/raw_frames.rs:65-97`
+  (`refuse_unreadable_frame_attribution`, `internal.data`, blocking,
+  non-retryable) called from `scan_raw_frames` at `:148`;
   `crates/app/core/src/cleanup_generator.rs` `frame_protection_source` (PR
   #894 fixes #563 — a per-root override previously never reached
   session-attributed frames because resolution was keyed under the session
@@ -166,7 +187,14 @@ ever touched without an acknowledged, reviewed step.
   while no frame is selected.
 - **Expect (negative):** Nothing moves until the resulting plan is approved
   and applied.
-- **Trace:** `apps/desktop/src/features/inventory/store.ts` (`useGenerateRawFrameCleanupPlan`)
+- **Expect (negative):** No plan is generated while any session's
+  frame-to-session attribution is unreadable: generation is refused on the
+  same library-wide condition as the S5 scan, so a frame can never be absent
+  from the preview and present in the plan (or the reverse).
+- **Trace:** `apps/desktop/src/features/inventory/store.ts`
+  (`useGenerateRawFrameCleanupPlan`);
+  `crates/app/core/src/cleanup_generator/raw_frames.rs:229`
+  (`generate_raw_frame_plan` calls the same refusal)
 
 ## Success criteria
 - SC1: A project scan against an unchanged candidate set returns the same
@@ -186,11 +214,17 @@ ever touched without an acknowledged, reviewed step.
 - SC5: A session raw-frame scan preselects only non-protected frames and
   offers no selection control on protected frames (S5).
 - SC6: "Approve & apply" carries the red destructive style if and only if
-  the plan holds at least one item whose action is `delete`, independent of
-  the destination chosen at S2 (S3).
-- SC7: A plan holding a `delete` item cannot have that item applied unless
-  the destructive confirmation is recorded; an unconfirmed `delete` item
-  ends `refused` with `destructive_unconfirmed` rather than deleted (S3–S4).
+  applying the plan would remove a file from where it lives now — at least
+  one item's action is `delete`, or the destination chosen at S2 is System
+  trash (S3).
+- SC7: A destructive item cannot be applied unless the destructive
+  confirmation is recorded; an unconfirmed one ends `refused` with
+  `destructive_unconfirmed` rather than removed. This holds for a
+  trash-destination `archive` item as well as a `delete` item (S3–S4).
+- SC8: While any session's frame-to-session attribution is unreadable,
+  neither the raw sub-frame preview nor the raw sub-frame plan can be
+  produced anywhere in the library, and the user is told which sessions are
+  affected (S5–S6).
 
 ## Known gaps
 - G1: (dissolved 2026-07-15) — tracked as issue #741; trash destination fails every apply item.
@@ -198,11 +232,8 @@ ever touched without an acknowledged, reviewed step.
 - G3: (dissolved 2026-07-15) — tracked as issue #766; applied plans lack durable audit rows.
 - G4: (dissolved 2026-07-15) — tracked as issue #876; no free-space estimate at review.
 - G5: (dissolved 2026-07-15) — tracked as issue #780; reopen reconcile can misreport cleanup candidates.
-- G6: A System-trash plan gets neither the red destructive style nor the
-  destructive-confirm checkbox: both are keyed on item action `delete`, and
-  a trash plan's items carry action `archive` until apply reroutes them. A
-  plan that sends files to the OS trash therefore reviews as if it were a
-  move. Tracked as astro-plan-cricc.
+- G6: (dissolved 2026-08-24 by PR #1735 — astro-plan-cricc closed) — a
+  System-trash plan reviewed as if it were a move.
 - G7: The Archive-folder destination hint states the archive folder is
   reversible until emptied, which does not hold for policy-Delete items in
   the same plan. Tracked as astro-plan-8zz72.
@@ -212,6 +243,13 @@ ever touched without an acknowledged, reviewed step.
 - G9: The Trash-destination apply path and the protected-item
   acknowledgement path are not stepped in S1–S6; validating them needs a
   fixture with a protected candidate and an OS trash available.
+- G10: A session whose `frame_ids` is unreadable blocks raw sub-frame
+  cleanup for the whole library and there is no in-app repair or re-import
+  affordance to clear the condition, so S5–S6 dead-end until the database is
+  repaired outside the app. Tracked as astro-plan-dq9r3.
+- G11: A trash-destination plan still shows an archive path in the review
+  table's destination column, so the row text disagrees with what apply
+  does. Tracked as astro-plan-5jfcc.
 - Dropped: the legacy 2026-07-04 note that the cleanup review UI "requires
   PR #413 (open)" is stale — PR #413 merged 2026-07-04
   (`feat: review and safely apply project cleanup plans with live
@@ -240,3 +278,20 @@ ever touched without an acknowledged, reviewed step.
   confirmation persists per item, and the executor refuses an unconfirmed
   `delete` item as `destructive_unconfirmed` instead of removing the file.
   Evidence: PR #855 · by: journey-scribe (intent-gated)
+
+- **Δ5** 2026-08-24 · S3, S4, SC6, SC7 · behavior-change
+  A cleanup plan whose destination is System trash now reviews as
+  destructive: red "Approve & apply", danger item pills, and the
+  destructive-confirm checkbox, with apply refusing an unconfirmed item.
+  Previously such a plan reviewed as an ordinary move and skipped the gate
+  entirely (former G6).
+  Evidence: PR #1735 (3326320ba), astro-plan-cricc · by: journey-scribe
+  (intent-gated)
+
+- **Δ6** 2026-08-24 · S5, S6, +SC8 · behavior-change
+  A session whose frame-to-session attribution is unreadable now refuses
+  raw sub-frame cleanup for the entire library — both the preview and the
+  plan — naming the affected sessions, where such a session previously read
+  as having zero frames and its frames could be offered as candidates.
+  Evidence: PR #1739 (b747f21c8), astro-plan-l2s06 · by: journey-scribe
+  (intent-gated)
