@@ -15,7 +15,13 @@
  * 5. A zero-item plan cannot be approved (FR-014).
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -731,6 +737,97 @@ describe('PlanReviewOverlay (spec 017 WP-E)', () => {
       expect(approveBtn).toHaveAttribute('data-variant', 'destructive'),
     );
     expect(approveBtn).not.toHaveAttribute('data-variant', 'primary');
+  });
+
+  // A plan bound for the OS bin carries NO `delete` items: both generators
+  // always store `action = "archive"` and only apply time reroutes to trash
+  // (`plan_apply::paths::item_row_to_executor_item`). Judging destructiveness
+  // from the item action alone rendered such a plan neutral and gate-free
+  // while applying it removed the user's files (constitution II).
+  it('renders a trash-destination plan as destructive though every item action is archive', async () => {
+    mockProtectionCheck.mockResolvedValue(
+      ok(protectionCheck({ hasProtectedItems: false, protectedItems: [] })),
+    );
+    mockPlansGet.mockResolvedValue(
+      ok(
+        plan({
+          destructiveDestination: 'os_trash',
+          items: [item({ action: 'archive', to: '' })],
+        }),
+      ),
+    );
+    renderOverlay();
+
+    await screen.findByText('light_001.xisf');
+    const approveBtn = screen.getByTestId('plan-review-approve-apply');
+    await waitFor(() =>
+      expect(approveBtn).toHaveAttribute('data-variant', 'destructive'),
+    );
+    expect(approveBtn).not.toHaveAttribute('data-variant', 'primary');
+    // The row itself must read danger too, not just the footer button.
+    const actionPill = within(
+      screen.getByTestId('plan-review-item-0'),
+    ).getByText('archive');
+    expect(actionPill).toHaveAttribute('data-variant', 'danger');
+  });
+
+  it('blocks Approve & apply on a trash-destination archive plan until destructive-confirm succeeds', async () => {
+    mockProtectionCheck.mockResolvedValue(
+      ok(protectionCheck({ hasProtectedItems: false, protectedItems: [] })),
+    );
+    mockPlansGet.mockResolvedValue(
+      ok(
+        plan({
+          destructiveDestination: 'os_trash',
+          items: [item({ action: 'archive', to: '' })],
+        }),
+      ),
+    );
+    renderOverlay();
+
+    const approveBtn = await screen.findByTestId('plan-review-approve-apply');
+    const confirmBox = await screen.findByTestId(
+      'plan-review-confirm-destructive',
+    );
+    await waitFor(() => expect(approveBtn).toBeDisabled());
+    expect(confirmBox).not.toBeChecked();
+
+    fireEvent.click(confirmBox);
+    await waitFor(() =>
+      expect(mockPlansConfirmDestructive).toHaveBeenCalledWith('plan-1'),
+    );
+    await waitFor(() => expect(approveBtn).not.toBeDisabled());
+  });
+
+  it('keeps an archive-destination plan of archive items non-destructive and gate-free', async () => {
+    mockProtectionCheck.mockResolvedValue(
+      ok(protectionCheck({ hasProtectedItems: false, protectedItems: [] })),
+    );
+    mockPlansGet.mockResolvedValue(
+      ok(
+        plan({
+          destructiveDestination: 'archive',
+          items: [
+            item({ action: 'archive', to: '.astro-plan-archive/a.xisf' }),
+          ],
+        }),
+      ),
+    );
+    renderOverlay();
+
+    await screen.findByText('light_001.xisf');
+    const approveBtn = screen.getByTestId('plan-review-approve-apply');
+    await waitFor(() =>
+      expect(approveBtn).toHaveAttribute('data-variant', 'primary'),
+    );
+    expect(
+      screen.queryByTestId('plan-review-confirm-destructive'),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(approveBtn).not.toBeDisabled());
+    const actionPill = within(
+      screen.getByTestId('plan-review-item-0'),
+    ).getByText('archive');
+    expect(actionPill).toHaveAttribute('data-variant', 'info');
   });
 
   it('offers Cancel apply during a running apply and calls plan.cancel (US3/FR-009, issue #743)', async () => {
