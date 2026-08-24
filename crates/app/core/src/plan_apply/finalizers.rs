@@ -395,6 +395,79 @@ pub(super) async fn finalize_restore_lifecycle(
     }
 }
 
+/// Terminal step of a clean `origin = prepared_view_generation` apply: drive the
+/// owning project `ready → prepared`. This is the closure of the requires-plan
+/// gate on that edge (spec 009 research §Which edges trigger filesystem work:
+/// side effect "PreparedSource artifact creation", gating "approved plan
+/// required") — the artifact the edge requires has just been materialised, and
+/// `apply_transition` refuses the edge unconditionally, so without this closure
+/// no project can ever reach `prepared`.
+///
+/// Only `ready → prepared` is legal into `prepared` for a project
+/// (`domain_core::lifecycle::project::is_allowed`); an already-`prepared`
+/// project is a no-op, so re-applying a second generation plan is harmless.
+///
+/// Best-effort: the links already exist on disk, so a failure here must NOT
+/// fail the apply. Every failure is logged for an external watchdog (§II).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "prepared finalize: lifecycle transition per project entity with per-step logging"
+)]
+pub(super) async fn finalize_prepared_lifecycle(
+    pool: &SqlitePool,
+    bus: &EventBus,
+    project_id: &str,
+) {
+    use crate::lifecycle::lifecycle_use_case::{transition_lifecycle, TransitionCommand};
+    use domain_core::ids::EntityId;
+    use domain_core::lifecycle::data_asset::EntityType;
+    use persistence_lifecycle::repositories::lifecycle::SqliteLifecycleRepository;
+    use persistence_plans::repositories::projects as projects_repo;
+
+    let uuid = match uuid::Uuid::parse_str(project_id) {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::error!(%project_id, error=%e, "prepared lifecycle closure: project id is not a uuid");
+            return;
+        }
+    };
+
+    let current = match projects_repo::get_project(pool, project_id).await {
+        Ok(p) => p.lifecycle,
+        Err(e) => {
+            tracing::error!(%project_id, error=%e, "prepared lifecycle closure: project not found");
+            return;
+        }
+    };
+
+    if current == "prepared" {
+        return;
+    }
+
+    if current != "ready" {
+        tracing::warn!(
+            %project_id, from_state = %current,
+            "prepared lifecycle closure: source view applied outside 'ready'; leaving lifecycle unchanged"
+        );
+        return;
+    }
+
+    let repo = SqliteLifecycleRepository::new(pool.clone(), bus.clone());
+    let cmd = TransitionCommand {
+        entity_id: EntityId::from_uuid(uuid),
+        entity_type: EntityType::Project,
+        from_state: current,
+        to_state: "prepared".to_owned(),
+        trigger: "sourceview.plan.applied".to_owned(),
+        actor: "user".to_owned(),
+        request_id: EntityId::new(),
+    };
+
+    if let Err(e) = transition_lifecycle(&repo, bus, cmd).await {
+        tracing::error!(%project_id, error=%e, "prepared lifecycle closure: transition to prepared failed");
+    }
+}
+
 // ── Calibration master archive lifecycle closure (#886) ──────────────────────
 
 /// Terminal step of a successful `origin = calibration_master_archive` plan

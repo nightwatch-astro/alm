@@ -41,12 +41,12 @@ src/features/projects/CalibrationMatchPanel.tsx	127	alm/require-root-testid
 src/features/projects/ManifestsAccordion.tsx	125	alm/require-root-testid
 src/features/projects/ProjectBottomDetail.tsx	53	alm/require-root-testid
 src/features/projects/ProjectChannelsSection.tsx	36	alm/require-root-testid
-src/features/projects/ProjectDetail.tsx	138	alm/require-root-testid
+src/features/projects/ProjectDetail.tsx	143	alm/require-root-testid
 src/features/projects/ProjectSourcesSection.tsx	96	alm/require-root-testid
 src/features/projects/ProjectsPage.tsx	224	alm/require-root-testid
 src/features/projects/ProjectsTable.tsx	281	alm/require-root-testid
 src/features/projects/SessionSourcePicker.tsx	117	alm/require-root-testid
-src/features/projects/SourceViewsSection.tsx	206	alm/require-root-testid
+src/features/projects/SourceViewsSection.tsx	215	alm/require-root-testid
 src/features/projects/ToolLaunchesAccordion.tsx	209	alm/require-root-testid
 src/features/projects/edit/ChannelDriftBanner.tsx	31	alm/require-root-testid
 src/features/projects/edit/EditProjectPane.tsx	156	alm/require-root-testid

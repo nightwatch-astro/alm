@@ -1462,6 +1462,7 @@
   "projects_wizard_toast_view_project": "Ver projeto",
   "projects_wizard_toast_created_folders": "Projeto \"{name}\" criado — pastas do projeto criadas no disco.",
   "projects_wizard_toast_folders_failed": "Projeto \"{name}\" criado, mas a criação das pastas falhou. O plano de pastas permanece disponível para revisão.",
+  "projects_source_views_review_title": "Revisar plano de visualização de origem",
   "projects_source_views_removal_toast": "Plano de remoção criado. Revise e aplique o plano para concluir a remoção.",
   "projects_source_views_removal_failed": "Não foi possível criar o plano de remoção: {message}",
   "projects_source_views_regen_unresolved": " ({count} referências não resolvidas — revise o plano antes de aplicar)",
