@@ -3198,7 +3198,12 @@ SELECT
     cs.archived_via_plan_id                             AS archived_via_plan_id
 FROM calibration_session cs
 LEFT JOIN calibration_fingerprint cf ON cf.id = cs.id
-LEFT JOIN file_record fr ON fr.id = json_extract(cs.frame_ids, '$[0]')
+-- calibration_session.frame_ids carries no json_valid CHECK, and an unguarded
+-- json_extract raises on a malformed value, failing every SELECT against this
+-- view rather than the one corrupt row. The CASE substitutes an empty array so
+-- the row survives with a NULL frame_relative_path.
+LEFT JOIN file_record fr ON fr.id = json_extract(
+    CASE WHEN json_valid(cs.frame_ids) THEN cs.frame_ids ELSE '[]' END, '$[0]')
 WHERE cs.kind IN ('dark', 'flat', 'bias');
 
 CREATE VIEW ledger_view AS

@@ -178,6 +178,86 @@ async fn duplicate_source_link_rejected() {
     assert!(result.is_err());
 }
 
+// ── find_blockable_missing_sources (R-17/FR-052) ──────────────────────────
+
+/// Seeds a root plus one `file_record` in state `missing`. The query joins
+/// `json_each` and `file_record` with INNER joins, so an empty `file_record`
+/// lets SQLite return no rows without ever evaluating the JSON function.
+async fn seed_missing_frame(pool: &SqlitePool) {
+    sqlx::query(
+        "INSERT INTO library_root (id, label, current_path, kind, state, created_at)
+         VALUES ('root-1', 'Main', '/lib', 'local', 'active', '2026-06-01T00:00:00Z')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO file_record
+            (id, root_id, relative_path, size_bytes, mtime, state, first_seen_at, last_seen_at)
+         VALUES ('file-1', 'root-1', 'lights/light_001.fits', 1024, '2026-06-01T00:00:00Z',
+                 'missing', '2026-06-01T00:00:00Z', '2026-06-01T00:00:00Z')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn seed_acquisition_session(pool: &SqlitePool, id: &str, frame_ids: &str) {
+    sqlx::query(
+        "INSERT INTO acquisition_session (id, session_key, frame_ids, root_id, created_at)
+         VALUES (?, ?, ?, 'root-1', '2026-06-01T00:00:00Z')",
+    )
+    .bind(id)
+    .bind(id)
+    .bind(frame_ids)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// The one `frame_ids` site that MUST keep raising on malformed JSON. The caller
+/// reads the failure as an incomplete health check and leaves a durable retry
+/// marker; guarding it reports the corrupt session as having no missing sources,
+/// which leaves the project unblockable and writes no marker. Pins the raise so
+/// a later guard sweep cannot remove the signal without failing here.
+#[tokio::test]
+async fn find_blockable_missing_sources_raises_on_a_malformed_frame_ids_session() {
+    let db = setup().await;
+    seed_missing_frame(db.pool()).await;
+    // `acquisition_session.frame_ids` is `TEXT NOT NULL DEFAULT '[]'` with no
+    // `json_valid` CHECK, so a non-JSON value is storable.
+    seed_acquisition_session(db.pool(), "sess-corrupt", "oops").await;
+    seed_acquisition_session(db.pool(), "sess-ok", r#"["file-1"]"#).await;
+    insert_project(db.pool(), &InsertProject { lifecycle: "ready", ..project_a("p1") })
+        .await
+        .unwrap();
+    for (row_id, session_id) in [("src-1", "sess-corrupt"), ("src-2", "sess-ok")] {
+        insert_project_source(
+            db.pool(),
+            &InsertProjectSource {
+                id: row_id,
+                project_id: "p1",
+                inventory_session_id: session_id,
+                name_snapshot: "NGC7000 Ha",
+                frames_snapshot: 1,
+                filter_snapshot: "Ha",
+                exposure_snapshot: "60s",
+                linked_at: "2026-06-01T00:00:00Z",
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let err = find_blockable_missing_sources(db.pool())
+        .await
+        .expect_err("a malformed frame_ids row must fail the health check loudly");
+    assert!(
+        err.to_string().contains("malformed JSON"),
+        "expected a malformed-JSON raise, got: {err}"
+    );
+}
+
 // ── has_archived_raw_frames_for_project (F-Framing-6, Q25 warning) ────────
 
 async fn insert_applied_raw_frame_archive_item(pool: &SqlitePool, plan_id: &str, source_id: &str) {
