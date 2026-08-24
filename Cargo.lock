@@ -1862,9 +1862,9 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "fits-header"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9f03c8e9bb8afa98de1186e5237a70d2e907b239a9c1f0d523131402cc0b326"
+checksum = "969ed073af9c306b26221d182a258167934916fc249caf9f3fd08fe5bc091431"
 dependencies = [
  "skymath 0.6.0",
  "thiserror 2.0.19",

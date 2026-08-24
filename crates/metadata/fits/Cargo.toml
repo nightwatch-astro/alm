@@ -9,7 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 metadata_core = { path = "../core" }
-fits-header = "0.4.2"
+fits-header = "0.4.3"
 
 [dev-dependencies]
 tempfile = { workspace = true }
