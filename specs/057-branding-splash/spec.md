@@ -4,11 +4,30 @@
 
 **Created**: 2026-07-19
 
-**Status**: Implemented (post-hoc record, verified 2026-07-28). The splash window
-ships in `apps/desktop/src/splash/main.ts`, with the minimum-display and
-boot-ready handshake in `apps/desktop/src-tauri/src/lib.rs` (around lines
-119-258). This header claimed otherwise until the 2026-07-28 spec audit
-corrected it.
+**Status**: Partially implemented (post-hoc record; US1/US2/US4 verified 2026-07-28,
+US1 and US3 re-checked against `main` on 2026-08-24). The splash window ships in
+`apps/desktop/src/splash/main.ts`, and the boot-ready handshake is in
+`apps/desktop/src-tauri/src/lib.rs` (splash references at `:215`, `:218`, `:356`,
+`:364`, `:435`, `:437`, `:481`). This header read a blanket "Implemented" until
+2026-08-24; two of its claims were wrong.
+
+- **There is no minimum-display floor.** `apps/desktop/src/splash/main.ts:13` says so
+  outright, and no dwell constant exists under `apps/desktop/src-tauri/src/`
+  (`git grep -nEi 'min.?display|dwell' -- apps/desktop/src-tauri/src/` exits 1, no
+  matches). US1 acceptance scenario 2 and SC-002, which both
+  require the splash to stay up for at least 800 ms, are **not met**. The shipped design
+  gates the handover on migration completing before `app:boot-ready` fires instead.
+- **US3 is not implemented.** No switchable variant system exists
+  (`git grep -lniE 'splash.?variant|SplashVariant|mark.only|live.?status' -- apps/ crates/`
+  exits 1), and the status line is static: `pv-status-text` occurs once in the whole
+  repo, as literal text at `apps/desktop/splash.html:212`. The shipped splash renders one
+  fixed presentation — mark, wordmark, version and a static "Starting…" row
+  (`apps/desktop/splash.html:203-213`) — which is the *content* of variants 2 and 3
+  without the switchability, the live stage messages, or scenario 4's test-only dwell
+  override.
+
+Whether the 800 ms floor and US3 are still wanted is a product decision, tracked in
+`astro-plan-yzhd9`. Neither is beaded as work.
 
 **Input**: User description: "PlateVault logo system + native splash screen + docs brand alignment. Native splashscreen window shown at launch while the main window stays hidden; startup work (database open + migrations) runs while the splash is visible; splash closes when startup is complete AND a minimum 800 ms has elapsed. Extensible splash content variants (mark-only / mark+wordmark+version / mark+live-status) with a live startup-status channel. New logo designed externally in Claude Design (single-color-capable master SVG); replace stock app icons, placeholder favicon, About dialog, README header; align docs-site brand assets (favicon, og-image, hero, stale org link). Bundle identifier change explicitly out of scope."
 

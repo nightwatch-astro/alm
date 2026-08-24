@@ -1,7 +1,11 @@
 # Pending Implementation Questions — Spec 002 Foundation
 
 **Generated**: 2026-05-22 (autonomous step 7 of the SpecKit follow-up plan)
-**Status**: paused; awaiting user input before scaffolding new Rust code
+**Status**: closed 2026-05-23 — all of Q1–Q8 are ratified in
+[Resolution (2026-05-23)](#resolution-2026-05-23) at the foot of this file, and the ratified
+answers shipped. This is a historical record, not a live blocker on Rust work; the question
+text below states the options as they stood on 2026-05-22 and its recommendations were in
+several cases *not* the answer taken. Read the Resolution table first.
 
 ## Context
 

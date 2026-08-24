@@ -19,7 +19,7 @@ with the file's FITS `OBJECT` header value. That pipeline does not exist today.
   `RawFileMetadata.object` (`crates/metadata/core/src/lib.rs:216`). The value is
   already parsed; today it dead-ends in `crates/app/core/src/inbox/confirm.rs:349-354`
   where it only feeds naming-pattern token resolution (not the resolver).
-- `file_record` table — defined in migration `0002_lifecycle.sql:26`.
+- `file_record` table — defined in migration `crates/persistence/core/migrations/0001_initial_schema.sql:728`.
 
 ## The real gap
 
@@ -47,7 +47,7 @@ pipeline itself: ~2–3 days.
 
 The missing per-file ingest (file_record creation + lifecycle transitions) is a
 **spec-002 milestone** (spec-002 defines the `file_record` lifecycle states but not the
-process that creates/transitions rows). `0002_lifecycle.sql:32` even notes the
+process that creates/transitions rows). `crates/persistence/core/migrations/0001_initial_schema.sql:29` even notes the
 session↔file relational join was "deferred to T006". US4 should be wired as the final
 small step of that spec-002 ingest work, or a dedicated ingest spec — not inside spec
 035.
