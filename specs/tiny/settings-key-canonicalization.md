@@ -2,7 +2,7 @@
 
 **Branch**: 042-stdlib-adoption (implement after the in-progress main→042 merge is committed)
 **Date**: 2026-06-21
-**Status**: draft
+**Status**: implemented 2026-08-24 (landed with PR #1171; verified, not re-implemented)
 **Complexity**: small
 
 ## What
@@ -25,7 +25,7 @@ test-enforceable.
 | Old key | New key |
 |---------|---------|
 | `current_library_id` | `currentLibraryId` |
-| `plans.list.default_age_cutoff_days` | `plansListDefaultAgeCutoffDays` |
+| `plans.list.default_age_cutoff_days` | *(setting removed, not renamed — see below)* |
 | `calibration.dark_temp_tolerance` | `calibrationDarkTempTolerance` |
 | `calibration.prefill_suggestion` | `calibrationPrefillSuggestion` |
 | `calibration.dark.override_penalty` | `calibrationDarkOverridePenalty` |
@@ -40,7 +40,7 @@ test-enforceable.
 | File | Role |
 |------|------|
 | `crates/app/settings/src/descriptors.rs` | Modify — `key:` entries, `NOISY_KEYS`, `OVERRIDABLE_KEYS`, validation match arms |
-| `crates/persistence/db/src/repositories/settings.rs` | Modify — read/write key match arms + `PATTERNS_BY_TYPE_KEY` const |
+| `crates/persistence/lifecycle/src/repositories/settings.rs` | Modify — read/write key match arms + `PATTERNS_BY_TYPE_KEY` const (this spec was written against the pre-split path `crates/persistence/db/src/repositories/settings.rs`) |
 | `apps/desktop/src/features/settings/*` | Modify — any literal key references |
 | (repo-wide consumers) | Modify — crates/use-cases reading old keys (e.g. calibration, plans) — grep each old string |
 | `crates/app/settings/src/` tests | Add — guard test: every `SettingsState` wire field name ∈ key registry and vice versa |
@@ -62,14 +62,43 @@ test-enforceable.
 
 ## Tasks
 
-- [ ] Rename keys in `descriptors.rs` (entries, NOISY_KEYS, OVERRIDABLE_KEYS, validation)
-- [ ] Rename keys in persistence `settings.rs` (match arms + `PATTERNS_BY_TYPE_KEY`)
-- [ ] `rg` old strings repo-wide; update all consumers + `features/settings/*` literals
-- [ ] Add key↔wire-field guard test
-- [ ] `cargo clippy`/`test` for touched crates + `tsc`/`vitest` for settings frontend
+- [x] Rename keys in `descriptors.rs` (entries, NOISY_KEYS, OVERRIDABLE_KEYS, validation)
+- [x] Rename keys in persistence `settings.rs` (match arms + `PATTERNS_BY_TYPE_KEY`)
+- [x] `rg` old strings repo-wide; update all consumers + `features/settings/*` literals
+- [x] Add key↔wire-field guard test
+- [x] `cargo clippy`/`test` for touched crates + `tsc`/`vitest` for settings frontend
 
 ## Done When
 
-- [ ] All tasks checked off; no old key string anywhere (`rg` clean)
-- [ ] Guard test passes; touched-crate + settings-frontend gates green
-- [ ] No lint errors
+- [x] All tasks checked off; no old key string anywhere (`rg` clean)
+- [x] Guard test passes; touched-crate + settings-frontend gates green
+- [x] No lint errors
+
+## Outcome (verified 2026-08-24)
+
+Every key in `DESCRIPTORS` is the serde-camelCase wire name of its
+`SettingsState` field. Two independent guard tests bind the three sites that
+must agree, so a future drift is a test failure rather than a silently
+forgotten user setting:
+
+- `crates/app/settings/src/tests.rs:69` — descriptor registry ↔ `SettingsState`
+  wire field names, both directions.
+- `crates/persistence/lifecycle/src/repositories/settings.rs:631` — the
+  persistence hydration table (`APPLY_KEYS`) ↔ `SettingsState` wire field names.
+
+The compatibility decision is **reject, no shim**: an old dotted key is not
+accepted by validation (`crates/app/settings/src/tests.rs:633`,
+`:1035-1046`). `apply_key_to_state` ignores an unrecognised stored key rather
+than erroring (`crates/persistence/lifecycle/src/repositories/settings.rs:178-181`),
+which is what lets structured-path keys (`tools.*`, `workflow_profile.*`) live
+outside the static `SettingsState` bag.
+
+Two divergences from this spec as written:
+
+1. `plans.list.default_age_cutoff_days` has no canonical successor. The setting
+   was removed rather than renamed; neither the old key nor
+   `plansListDefaultAgeCutoffDays` appears in `crates/`, `apps/`, or
+   `packages/`.
+2. Settings keys are not enumerated in `packages/contracts`. They cross the
+   Tauri boundary as an opaque `key: String`, so the rename was not a schema
+   change.
