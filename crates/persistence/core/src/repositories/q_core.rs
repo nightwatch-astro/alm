@@ -698,7 +698,7 @@ pub async fn session_history(
         "SELECT at, trigger, actor
          FROM audit_log_entry
          WHERE entity_type = 'acquisition_session' AND entity_id = ?
-         ORDER BY at ASC",
+         ORDER BY at ASC, audit_id ASC",
     )
     .bind(session_id)
     .fetch_all(pool)

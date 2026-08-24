@@ -215,17 +215,19 @@ async fn chosen_framing_pick_materializes_as_session_membership_once_the_plan_ap
         targeting_resolver::simbad::ResolveCache::in_memory().unwrap(),
     );
     publish_applied(&bus, "plan-sc008").await;
+    // Waits for the framing membership, NOT for the `acquisition_session` row.
+    // Ingest writes the session first and binds the framing three awaits later
+    // (`ingest_sessions::ingest_light_frame`), so the session row appearing does
+    // not imply the binding has run: polling on it and then asserting the
+    // membership reads the intermediate state and fails as `None` (this test's
+    // own flake, astro-plan-b7h28).
     support::poll_until(
         || async {
-            let rows: Vec<(String,)> =
-                sqlx::query_as("SELECT id FROM acquisition_session").fetch_all(pool).await.unwrap();
-            if rows.is_empty() {
-                None
-            } else {
-                Some(())
-            }
+            let members =
+                framing_repo::list_session_ids_for_framing(pool, "framing-sc008").await.unwrap();
+            (!members.is_empty()).then_some(())
         },
-        "acquisition_session row never appeared after plan-sc008 apply-completed event",
+        "framing-sc008 never gained a session member after plan-sc008 apply-completed event",
     )
     .await;
 

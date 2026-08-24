@@ -448,10 +448,7 @@ impl LifecycleRepository for SqliteLifecycleRepository {
         let audit_id = AuditId::new();
         let applied_at = Timestamp::now_utc();
 
-        let applied_at_str = applied_at
-            .as_offset_date_time()
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let applied_at_str = applied_at.to_iso();
 
         // Atomic CAS: update only if current state matches expected from_state.
         let mut tx = self.pool.begin().await?;
@@ -558,10 +555,7 @@ impl LifecycleRepository for SqliteLifecycleRepository {
         // RFC3339 format cannot fail for a valid OffsetDateTime; panic on
         // the impossible case rather than silently corrupting audit-table
         // time ordering with a 1970 epoch sentinel.
-        let at_str = Timestamp::now_utc()
-            .as_offset_date_time()
-            .format(&time::format_description::well_known::Rfc3339)
-            .expect("Timestamp::now_utc must format as RFC3339");
+        let at_str = Timestamp::now_iso();
 
         // Payload carries the refusal code + message so consumers reading the
         // audit table can reconstruct the refusal envelope without joining
