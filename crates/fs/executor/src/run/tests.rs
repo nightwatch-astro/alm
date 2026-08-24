@@ -170,6 +170,113 @@ async fn destination_under_destination_root_is_allowed() {
     assert!(view_root.join("lights/frame.fits").exists());
 }
 
+fn make_archive_item(id: &str, src: &Utf8Path, archive_destination: &Utf8Path) -> ExecutorItem {
+    ExecutorItem {
+        id: id.to_owned(),
+        plan_id: "p1".to_owned(),
+        action: ExecutorItemAction::Archive {
+            archive_destination: archive_destination.to_path_buf(),
+        },
+        source_path: Some(src.to_path_buf()),
+        destination_path: None,
+        library_root: None,
+        destination_root: None,
+        cas_snapshot: CasSnapshot { approved_mtime: None, approved_size_bytes: None },
+        is_protected: false,
+        requires_destructive_confirm: false,
+        destructive_confirmed: false,
+        current_state: "pending".to_owned(),
+    }
+}
+
+/// astro-plan-zboex: the archive destination is a third destination field and
+/// was neither resolved nor gated, so it reached `move_file` and wrote outside
+/// the library root the user granted.
+#[tokio::test]
+async fn archive_destination_outside_the_library_root_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let outer = utf8(dir.path());
+    let root = outer.join("library");
+    std::fs::create_dir_all(&root).unwrap();
+    let src = root.join("frame.fits");
+    std::fs::write(&src, b"data").unwrap();
+
+    let mut item = make_archive_item(
+        "item-1",
+        Utf8Path::new("frame.fits"),
+        Utf8Path::new("../escaped/frame.fits"),
+    );
+    item.library_root = Some(root.clone());
+
+    let callbacks = FakeCallbacks::default();
+    let outcome = execute_plan(
+        vec![item],
+        &callbacks,
+        &CancellationToken::new(),
+        &SkipSet::new(),
+        &RetryQueue::new(),
+    )
+    .await;
+
+    let events = callbacks.events.lock().await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].new_state, "refused", "failure: {:?}", events[0].failure);
+    assert_eq!(
+        events[0].failure.as_ref().map(|f| f.code),
+        Some(crate::failure::FailureCode::RootEscape)
+    );
+    drop(events);
+
+    match outcome {
+        ApplyOutcome::Completed(counts) => assert_eq!(counts.failed, 1),
+        other => panic!("expected Completed, got {other:?}"),
+    }
+    assert!(src.exists(), "the source must be untouched");
+    assert!(
+        !outer.join("escaped/frame.fits").exists(),
+        "the archive must not have escaped the library root"
+    );
+}
+
+/// The companion direction: gating the third field must not refuse the ordinary
+/// root-relative archive destination both generators write.
+#[tokio::test]
+async fn archive_destination_under_the_library_root_is_applied() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = utf8(dir.path());
+    let src = root.join("frame.fits");
+    std::fs::write(&src, b"data").unwrap();
+
+    let mut item = make_archive_item(
+        "item-1",
+        Utf8Path::new("frame.fits"),
+        Utf8Path::new(".astro-plan-archive/p1/item-1-frame.fits"),
+    );
+    item.library_root = Some(root.clone());
+
+    let callbacks = FakeCallbacks::default();
+    let outcome = execute_plan(
+        vec![item],
+        &callbacks,
+        &CancellationToken::new(),
+        &SkipSet::new(),
+        &RetryQueue::new(),
+    )
+    .await;
+
+    let events = callbacks.events.lock().await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].new_state, "succeeded", "failure: {:?}", events[0].failure);
+    drop(events);
+
+    match outcome {
+        ApplyOutcome::Completed(counts) => assert_eq!(counts.succeeded, 1),
+        other => panic!("expected Completed, got {other:?}"),
+    }
+    assert!(!src.exists(), "the source must have moved");
+    assert!(root.join(".astro-plan-archive/p1/item-1-frame.fits").exists());
+}
+
 #[tokio::test]
 async fn item_in_failed_state_is_skipped_by_executor() {
     let item = ExecutorItem {
