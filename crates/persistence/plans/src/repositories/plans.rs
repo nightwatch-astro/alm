@@ -334,9 +334,14 @@ pub async fn list_plan_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<P
 }
 
 /// Set `destructive_confirmed = 1` on every item in `plan_id` that requires
-/// destructive confirmation (`action IN ('delete','trash')`, or the explicit
-/// `requires_destructive_confirm` override column — mirrors the derivation in
-/// `app_core::plan_apply::item_row_to_executor_item`).
+/// destructive confirmation: `action IN ('delete','trash')`, an
+/// `action = 'archive'` item whose plan carries
+/// `destructive_destination = 'trash'` (that reroute makes it a real OS-trash
+/// removal), or the explicit `requires_destructive_confirm` override column.
+/// Mirrors the derivation in
+/// `app_core::plan_apply::item_row_to_executor_item`, and MUST stay at least as
+/// wide as it: a narrower writer leaves items the executor refuses with
+/// `destructive_unconfirmed` even after the user confirmed the plan.
 ///
 /// This is the write half of the FR-003/D9 confirm gate: the executor
 /// (`fs_executor::run::execute_plan`) refuses any destructive item where
@@ -351,7 +356,11 @@ pub async fn confirm_plan_destructive_items(pool: &SqlitePool, plan_id: &str) ->
     let result = sqlx::query(
         "UPDATE plan_items SET destructive_confirmed = 1 \
          WHERE plan_id = ? AND destructive_confirmed = 0 \
-         AND (action IN ('delete', 'trash') OR requires_destructive_confirm = 1)",
+         AND (action IN ('delete', 'trash') OR requires_destructive_confirm = 1 \
+              OR (action = 'archive' AND EXISTS ( \
+                  SELECT 1 FROM plans p \
+                  WHERE p.id = plan_items.plan_id \
+                  AND p.destructive_destination = 'trash')))",
     )
     .bind(plan_id)
     .execute(pool)
