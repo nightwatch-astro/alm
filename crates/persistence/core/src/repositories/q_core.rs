@@ -153,6 +153,53 @@ pub async fn find_calibration_session_by_frame(
     Ok(row)
 }
 
+/// One stored JSON column whose value is not valid JSON.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MalformedJsonColumnRow {
+    pub table_name: String,
+    pub column_name: String,
+    pub row_id: String,
+}
+
+/// The `column_name` value carried by a session frame-attribution row, so
+/// callers can separate an unreadable Tier-1 attribution record from a merely
+/// unreadable equipment alias list.
+pub const FRAME_IDS_COLUMN: &str = "frame_ids";
+
+/// Every row whose JSON column is not valid JSON, across the four columns the
+/// `CASE WHEN json_valid(...)` guards read: `acquisition_session.frame_ids`,
+/// `calibration_session.frame_ids`, `cameras.aliases`, `telescopes.aliases`.
+///
+/// Those guards substitute an empty array, so a corrupt row reads as zero
+/// frames or zero aliases rather than failing its query. This is the only
+/// query that can tell the two apart, and callers whose result would otherwise
+/// be silently degraded must consult it.
+///
+/// `json_valid(NULL)` is `NULL`, so a NULL column is never reported malformed
+/// (all four columns are `NOT NULL` today).
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn list_malformed_json_columns(
+    pool: &SqlitePool,
+) -> DbResult<Vec<MalformedJsonColumnRow>> {
+    let rows = sqlx::query_as::<_, MalformedJsonColumnRow>(
+        "SELECT 'acquisition_session' AS table_name, 'frame_ids' AS column_name, id AS row_id \
+           FROM acquisition_session WHERE NOT json_valid(frame_ids) \
+         UNION ALL \
+         SELECT 'calibration_session', 'frame_ids', id \
+           FROM calibration_session WHERE NOT json_valid(frame_ids) \
+         UNION ALL \
+         SELECT 'cameras', 'aliases', id FROM cameras WHERE NOT json_valid(aliases) \
+         UNION ALL \
+         SELECT 'telescopes', 'aliases', id FROM telescopes WHERE NOT json_valid(aliases) \
+         ORDER BY table_name ASC, row_id ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// Mark a `file_record` row `missing`. Preserves the original call site's
 /// `last_seen_at = last_seen_at` no-op assignment (leaves the column
 /// untouched while still forming a valid `UPDATE`).
