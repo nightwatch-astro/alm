@@ -19,7 +19,7 @@ against a **real, file-backed SQLite database** created per test in a
 `#[tauri::command]` shells stay thin (they already are — they delegate to
 `app_core::*`), so tests target the use-case layer directly without booting any
 Tauri runtime. Tests live in crate-level `tests/` dirs (notably
-`crates/app/core/tests/`, `crates/persistence/db/tests/`) and run under
+`crates/app/core/tests/`, `crates/persistence/*/tests/`) and run under
 `cargo test --workspace`.
 
 **Rationale**: The command handlers are already thin adapters
@@ -63,6 +63,16 @@ function-level mock that would hide wiring bugs. Aligns with the recommendation'
 ---
 
 ## D3 — Layer 2 (E2E) approach on Linux & Windows: reuse the 033 scaffold
+
+> **Reconciliation note (2026-08-24)**: every `apps/desktop/e2e/` path named in
+> this decision has since been deleted. The tree existed when this research was
+> written; the WebdriverIO half went at `7a4f70446` (2026-06-20) and the
+> remaining Playwright real-backend half at `a504a7fce` (2026-07-11). Layer 2
+> now ships as the `thirtyfour` Rust suite under `crates/e2e-tests/tests/`
+> (shared fixtures in `crates/e2e-tests/tests/common/`), run by
+> `.github/workflows/e2e.yml` against the built `desktop_shell` under the `e2e`
+> feature. The separate Playwright suite at `tests/e2e/` is mock-mode only and
+> is not Layer 2. The decision text below is kept as written.
 
 **Decision**: Complete and reuse the existing real-backend E2E scaffold rather
 than rebuilding it. The scaffold already present:

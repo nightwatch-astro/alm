@@ -19,9 +19,11 @@ lives in beads.
 
 Superseding the original "NOT IMPLEMENTED" note: the functional core is built.
 Real crate `crates/workflow/artifacts/` (watcher, classifier, reconciler,
-rules), migration `0025_artifacts.sql`, repository
-`crates/persistence/db/src/repositories/artifacts.rs`, and app use-cases in
-`crates/app/lifecycle/src/artifact.rs` (`detect`/`list`/`classify_override`/
+rules), the artifact tables in
+`crates/persistence/core/migrations/0001_initial_schema.sql` (originally
+migration `0025_artifacts.sql`, since folded into the pre-1.0 baseline),
+repository `crates/persistence/plans/src/repositories/artifacts.rs`, and app
+use-cases in `crates/app/lifecycle/src/artifact/` (`detect`/`list`/`classify_override`/
 `mark_resolved`/`mark_missing`/`reattribute`/`complete_run`) are in place, with
 Tauri commands (`artifact_list`/`classify`/`mark_resolved`) + generated
 bindings, a live notify-rs OS watcher (`crates/fs/inventory/src/artifact_watcher.rs`),

@@ -307,7 +307,7 @@ Known offenders to fix first:
    `gain` are non-optional `f64` in the contract
    (`crates/contracts/core/src/calibration.rs:96,99`), forcing the app
    layer to collapse the nullable persistence row
-   (`crates/persistence/db/src/repositories/q_calibration.rs:93-94`) with
+   (`crates/persistence/calibration/src/repositories/q_calibration.rs:97-98`) with
    `unwrap_or(0.0)`
    (`crates/app/calibration/src/matching.rs:739,741,794,796`) even though
    the extraction model is already `Option`-typed
@@ -318,8 +318,9 @@ Known offenders to fix first:
    `CAST(NULL AS INTEGER) AS size_bytes` at `crates/persistence/core/migrations/0001_initial_schema.sql:3186`;
    it hardcoded `0 AS size_bytes` when this was written), flowing through the
    non-nullable row field
-   (`crates/persistence/db/src/repositories/q_calibration.rs:92`
-   `size_bytes: i64`) into the non-optional contract fields
+   (`crates/persistence/calibration/src/repositories/q_calibration.rs:96`,
+   `size_bytes: i64` when this was written, `Option<i64>` as of 2026-08-24)
+   into the non-optional contract fields
    (`crates/contracts/core/src/calibration.rs` `CalibrationMaster.size_bytes`
    / `MasterDetail.size_bytes: u64`). The `unwrap_or(0)` at
    `matching.rs:748,803` is only a sign-conversion fallback — removing it

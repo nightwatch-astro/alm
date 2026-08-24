@@ -23,7 +23,7 @@ Filesystem grouping follows domain ownership where a family is expected to grow:
   orchestration with desktop shell code.
 - `crates/project/structure` isolates the app-owned project envelope rules from
   future project lifecycle, manifests, and source-mapping crates.
-- `crates/persistence/db` isolates database dependencies from pure domain and
+- the `crates/persistence/` crates isolate database dependencies from pure domain and
   filesystem-planning tests.
 - `crates/workflow/profiles` leaves room for tool-specific profile crates such
   as `workflow/pixinsight` or `workflow/planetary` if the plan justifies them.

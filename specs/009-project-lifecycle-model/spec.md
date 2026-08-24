@@ -182,7 +182,7 @@ Eighteen allowed edges total (seventeen + `archived → ready`).
   through spec 017 (filesystem plan) / spec 025; `setProjectLifecycle` is a
   pure state write in the mockup.
 - Cross-spec audit fan-out via the persistence boundary
-  (`crates/persistence/db/`).
+  (the `crates/persistence/` crates).
 
 ## Iterations
 

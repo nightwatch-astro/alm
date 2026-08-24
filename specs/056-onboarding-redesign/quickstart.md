@@ -46,7 +46,7 @@ Three-layer onboarding replacing the spec 010 coach:
 
 See plan.md "Project Structure". New code: `crates/app/core/src/onboarding.rs`,
 `crates/contracts/core/src/onboarding.rs`,
-`crates/persistence/db/src/repositories/onboarding.rs`,
+`crates/persistence/lifecycle/src/repositories/onboarding.rs`,
 `apps/desktop/src-tauri/src/commands/onboarding.rs`,
 `apps/desktop/src/features/onboarding/`.
 

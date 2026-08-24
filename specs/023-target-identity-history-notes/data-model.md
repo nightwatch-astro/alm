@@ -96,7 +96,7 @@ TargetDetail {
 
 ## Storage Notes
 
-- Persisted by `crates/persistence/db`. Table sketch:
+- Persisted by `crates/persistence/targets`. Table sketch:
   - `target(id, primary_designation, notes, created_at, updated_at)`
   - `target_alias(target_id, alias_normalized, alias_display)` with UNIQUE
     on `alias_normalized`.
