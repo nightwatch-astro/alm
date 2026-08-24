@@ -5,7 +5,7 @@
 //!
 //! Entry points:
 //! - `get_inbox_plan`       — fetch the plan linked to an inbox item as `InboxPlanView`.
-//! - `apply_inbox_plan`     — auto-approve then apply the linked plan; on
+//! - `apply_inbox_plan`     — apply the plan the caller has already approved; on
 //!   success marks the inbox item `resolved`.
 //! - `apply_all_inbox_plans`— apply every `plan_open` item's plan; per-plan results.
 //! - `cancel_inbox_plan`    — discard the linked plan; item returns to `classified`.
@@ -48,6 +48,16 @@ fn no_plan_err(inbox_item_id: &str) -> ContractError {
     ContractError::new(
         ErrorCode::InboxItemNoPlan,
         format!("no linked plan found for inbox item {inbox_item_id}"),
+        ErrorSeverity::Blocking,
+        false,
+    )
+}
+
+/// Refusal for an inbox apply whose plan carries no approval (Constitution II).
+fn approval_required_err(plan_id: &str) -> ContractError {
+    ContractError::new(
+        ErrorCode::PlanApprovalRequired,
+        format!("plan {plan_id} is not approved; approve it before applying"),
         ErrorSeverity::Blocking,
         false,
     )
@@ -140,25 +150,34 @@ pub async fn get_inbox_plan(
 
 // ── apply_inbox_plan ──────────────────────────────────────────────────────────
 
-/// `inbox.plan.apply` — auto-approve and apply the plan linked to this inbox item.
+/// `inbox.plan.apply` — apply the already-approved plan linked to this inbox item.
 ///
 /// Pipeline:
 /// 1. Resolve the linked plan.
-/// 2. Auto-approve (`ready_for_review` → `approved`) so the executor can run.
+/// 2. Read the approval the caller recorded via `plans.approve`; refuse when absent.
 /// 3. Call the existing `apply_plan` executor (CAS, staleness, audit).
 /// 4. The plan listener already handles `resolved` transition when the plan
 ///    reaches `applied` state — we don't set it here to avoid double-write.
+///
+/// Constitution II: this path must never approve on the user's behalf. It once
+/// called `approve_plan(actor = "inbox.apply")` itself, which both attributed
+/// the approval to the code rather than the person and made the approval-token
+/// gate in `apply_plan` unable to fail for every inbox apply
+/// (`astro-plan-tykek`). The mkdir-only auto-apply path
+/// (`crate::plans::auto_apply`) remains the one documented exception, and it
+/// does not route through here.
 ///
 /// Staleness (FR-007): the executor's CAS check fires per-item and transitions
 /// stale items to `stale` state, which surfaces as `plan.stale` error code.
 ///
 /// # Errors
 ///
-/// - `inbox.item.not_found` — item not found.
-/// - `inbox.item.no_plan`   — no linked plan.
-/// - `plan.invalid_state`   — plan not in approvable state.
-/// - `plan.stale`           — one or more source files changed since planning.
-/// - `internal.database`    — DB failure.
+/// - `inbox.item.not_found`     — item not found.
+/// - `inbox.item.no_plan`       — no linked plan.
+/// - `plan.approval_required`   — the plan carries no approval.
+/// - `plan.invalid_state`       — plan cannot be applied from its current state.
+/// - `plan.stale`               — one or more source files changed since planning.
+/// - `internal.database`        — DB failure.
 pub async fn apply_inbox_plan(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -180,22 +199,12 @@ pub async fn apply_inbox_plan(
 
     let plan_id = link.plan_id;
 
-    // Auto-approve: transition ready_for_review → approved.
-    // This may fail if the plan is already approved (idempotent-ish) or in
-    // an incompatible state (e.g. already applied/discarded).
-    let approve_resp = crate::plans::approve_plan(pool, bus, &plan_id, "inbox.apply").await;
-
-    let approval_token = match approve_resp {
-        Ok(resp) => resp.approval_token,
-        // Already approved (idempotent-ish) — that's fine; the plan is in `approved`
-        // state, so fetch the stored token and carry through to apply_plan.
-        Err(e) if e.code == ErrorCode::PlanInvalidState => {
-            let plan_row =
-                plans_repo::get_plan(pool, &plan_id, false).await.map_err(db_err_internal)?;
-            plan_row.approval_token.unwrap_or_default()
-        }
-        Err(e) => return Err(e),
-    };
+    // Read the approval the caller recorded; never mint one here.
+    let plan_row = plans_repo::get_plan(pool, &plan_id, false).await.map_err(db_err_internal)?;
+    let approval_token = plan_row
+        .approval_token
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| approval_required_err(&plan_id))?;
 
     // Run the executor (CAS, audit, staleness).
     // The plan listener will catch `plan.applying.completed` and transition the
@@ -211,7 +220,8 @@ pub async fn apply_inbox_plan(
 ///
 /// Iterates items in `plan_open` state across roots, applies each plan
 /// sequentially. Returns per-plan results. Each action is individually audited
-/// by the executor.
+/// by the executor. A plan the caller has not approved is reported as a per-plan
+/// `plan.approval_required` error, not applied.
 ///
 /// # Errors
 ///
@@ -320,7 +330,8 @@ pub async fn list_open_inbox_plans(
 /// individual action. Iterates only the provided ids; ids that are not in
 /// `plan_open` state are reported as a per-item error (`plan.invalid_state`)
 /// rather than hard-failing the whole call, mirroring `apply_all_inbox_plans`'
-/// partial-failure semantics.
+/// partial-failure semantics. An id whose plan carries no approval is reported
+/// as `plan.approval_required`, not applied.
 ///
 /// # Errors
 /// Returns `internal.database` only if the membership query fails; per-plan
@@ -473,8 +484,13 @@ mod tests {
         f.write_all(&vec![b' '; pad]).unwrap();
     }
 
-    /// Set up a registered source + classified inbox item, returning (item_id, root_path).
-    async fn setup_classified_item(db: &Database) -> (String, PathBuf) {
+    /// Set up a registered source + classified inbox item, returning
+    /// `(item_id, root_path, tempdir)`.
+    ///
+    /// The `TempDir` is returned rather than dropped here: dropping it deletes
+    /// the fixture's files, so an apply test would run against a root that no
+    /// longer exists.
+    async fn setup_classified_item(db: &Database) -> (String, PathBuf, tempfile::TempDir) {
         let dir = tempdir().unwrap();
         let root_path = dir.path().to_path_buf();
         let item_dir = root_path.join("lights");
@@ -574,7 +590,7 @@ mod tests {
         .execute(db.pool())
         .await
         .unwrap();
-        (item_id.to_owned(), root_path)
+        (item_id.to_owned(), root_path, dir)
     }
 
     /// Confirm an item (creates the plan, sets state to plan_open).
@@ -598,7 +614,7 @@ mod tests {
     #[tokio::test]
     async fn confirm_creates_plan_link_and_plan_open_state() {
         let db = test_db().await;
-        let (item_id, root_path) = setup_classified_item(&db).await;
+        let (item_id, root_path, _dir) = setup_classified_item(&db).await;
 
         let plan_id = do_confirm(&db, &item_id, &root_path).await;
 
@@ -623,7 +639,7 @@ mod tests {
         let db = test_db().await;
         let bus = make_bus(db.pool());
         let _ = bus; // bus not needed for get
-        let (item_id, root_path) = setup_classified_item(&db).await;
+        let (item_id, root_path, _dir) = setup_classified_item(&db).await;
 
         let plan_id = do_confirm(&db, &item_id, &root_path).await;
 
@@ -638,7 +654,7 @@ mod tests {
     async fn cancel_inbox_plan_returns_to_classified() {
         let db = test_db().await;
         let bus = make_bus(db.pool());
-        let (item_id, root_path) = setup_classified_item(&db).await;
+        let (item_id, root_path, _dir) = setup_classified_item(&db).await;
 
         do_confirm(&db, &item_id, &root_path).await;
 
@@ -666,7 +682,7 @@ mod tests {
     async fn cancel_does_not_report_classified_without_a_frame_type_sc003() {
         let db = test_db().await;
         let bus = make_bus(db.pool());
-        let (item_id, root_path) = setup_classified_item(&db).await;
+        let (item_id, root_path, _dir) = setup_classified_item(&db).await;
 
         sqlx::query("UPDATE inbox_items SET frame_type = NULL WHERE id = ?")
             .bind(&item_id)
@@ -689,7 +705,7 @@ mod tests {
     #[tokio::test]
     async fn get_inbox_plan_errors_when_no_plan_linked() {
         let db = test_db().await;
-        let (item_id, _) = setup_classified_item(&db).await;
+        let (item_id, _, _dir) = setup_classified_item(&db).await;
 
         let err = get_inbox_plan(db.pool(), &item_id).await.unwrap_err();
         assert_eq!(err.code, ErrorCode::InboxItemNoPlan);
@@ -701,7 +717,7 @@ mod tests {
     async fn cancel_inbox_plan_errors_when_no_plan_linked() {
         let db = test_db().await;
         let bus = make_bus(db.pool());
-        let (item_id, _) = setup_classified_item(&db).await;
+        let (item_id, _, _dir) = setup_classified_item(&db).await;
 
         let err = cancel_inbox_plan(db.pool(), &bus, &item_id).await.unwrap_err();
         assert_eq!(err.code, ErrorCode::InboxItemNoPlan);
@@ -851,7 +867,7 @@ mod tests {
     #[tokio::test]
     async fn list_open_keeps_confirmed_placeholder_with_materialized_sub_item() {
         let db = test_db().await;
-        let (item_id, root_path) = setup_classified_item(&db).await;
+        let (item_id, root_path, _dir) = setup_classified_item(&db).await;
 
         // Give the placeholder a source group and materialize the single-type
         // sub-item classify would have written for it.
@@ -917,7 +933,7 @@ mod tests {
     #[tokio::test]
     async fn list_open_reaches_a_confirmed_sub_item_of_a_split_folder() {
         let db = test_db().await;
-        let (placeholder_id, root_path) = setup_classified_item(&db).await;
+        let (placeholder_id, root_path, _dir) = setup_classified_item(&db).await;
         let root_id = "root-plan-test";
 
         inbox_repo::upsert_inbox_source_group(
@@ -1010,8 +1026,12 @@ mod tests {
 
         let (id_a, root_a) = setup_classified_item_suffixed(&db, "a").await;
         let (id_b, root_b) = setup_classified_item_suffixed(&db, "b").await;
-        do_confirm(&db, &id_a, &root_a).await;
+        let plan_a = do_confirm(&db, &id_a, &root_a).await;
         do_confirm(&db, &id_b, &root_b).await;
+
+        // The production sequence: the user's Apply gesture records the approval
+        // (`plans.approve`) before the batch apply runs.
+        crate::plans::approve_plan(db.pool(), &bus, &plan_a, "user").await.unwrap();
 
         let resp =
             apply_selected_inbox_plans(db.pool(), &bus, std::slice::from_ref(&id_a)).await.unwrap();
@@ -1053,5 +1073,68 @@ mod tests {
         assert_eq!(r.inbox_item_id, item_id);
         assert!(r.error.is_some(), "non-plan_open id should yield a per-item error");
         assert_eq!(r.error.as_deref(), Some("plan.invalid_state"));
+    }
+
+    // ── Constitution II: application is explicit (astro-plan-tykek) ──────────
+
+    /// The production inbox apply must refuse a plan the user never approved.
+    ///
+    /// `inbox.confirm` leaves the plan at `ready_for_review`. Before the fix this
+    /// path minted its own approval, so no inbox apply could ever be refused.
+    #[tokio::test]
+    async fn apply_inbox_plan_refuses_a_plan_the_user_never_approved() {
+        let db = test_db().await;
+        let bus = make_bus(db.pool());
+        let (item_id, root_path, _dir) = setup_classified_item(&db).await;
+
+        let plan_id = do_confirm(&db, &item_id, &root_path).await;
+
+        let err = apply_inbox_plan(db.pool(), &bus, &item_id)
+            .await
+            .expect_err("an unapproved plan must not apply");
+        assert_eq!(err.code, ErrorCode::PlanApprovalRequired);
+
+        let row = plans_repo::get_plan(db.pool(), &plan_id, false).await.unwrap();
+        assert_eq!(
+            row.state, "ready_for_review",
+            "the refused plan must stay reviewable, not advance to applying"
+        );
+        assert!(row.approval_token.is_none(), "the refusal must not record an approval");
+    }
+
+    /// The same call succeeds once the user's approval is on record, so the
+    /// refusal above gates on the approval rather than on the inbox path itself.
+    #[tokio::test]
+    async fn apply_inbox_plan_applies_after_an_explicit_approval() {
+        let db = test_db().await;
+        let bus = make_bus(db.pool());
+        let (item_id, root_path, _dir) = setup_classified_item(&db).await;
+
+        let plan_id = do_confirm(&db, &item_id, &root_path).await;
+        crate::plans::approve_plan(db.pool(), &bus, &plan_id, "user").await.unwrap();
+
+        let resp =
+            apply_inbox_plan(db.pool(), &bus, &item_id).await.expect("an approved plan must apply");
+        assert_eq!(resp.plan_id, plan_id);
+        assert_ne!(
+            resp.new_state, "ready_for_review",
+            "the approved plan must leave the review state"
+        );
+    }
+
+    /// The batch path the Inbox UI actually calls inherits the same refusal.
+    #[tokio::test]
+    async fn apply_selected_refuses_a_plan_the_user_never_approved() {
+        let db = test_db().await;
+        let bus = make_bus(db.pool());
+        let (item_id, root_path) = setup_classified_item_suffixed(&db, "unapproved").await;
+        do_confirm(&db, &item_id, &root_path).await;
+
+        let resp = apply_selected_inbox_plans(db.pool(), &bus, std::slice::from_ref(&item_id))
+            .await
+            .unwrap();
+
+        assert_eq!(resp.results.len(), 1);
+        assert_eq!(resp.results[0].error.as_deref(), Some("plan.approval_required"));
     }
 }

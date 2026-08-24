@@ -214,7 +214,7 @@ export function InboxPage() {
     applyProgress,
     progressPlanId,
     planBusy,
-  } = useInboxPlanApplyFlow(refreshAll, viewResultAction);
+  } = useInboxPlanApplyFlow(refreshAll, viewResultAction, openPlans);
 
   // Stage B: plan review overlay open/close state.
   const [planOverlayOpen, setPlanOverlayOpen] = useState(false);

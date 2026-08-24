@@ -23,7 +23,8 @@ use std::path::Path;
 
 use app_core::calibration::masters_list;
 use app_core::inbox::confirm::{confirm, ConfirmRequest};
-use app_core::inbox_plan::apply_inbox_plan;
+use app_core::inbox_plan::{apply_inbox_plan, get_inbox_plan};
+use app_core::plans::approve_plan;
 use audit::bus::EventBus;
 use persistence_core::Database;
 use persistence_inbox::repositories::inbox::{
@@ -181,6 +182,11 @@ async fn insert_master_inbox_item(
 /// Drive apply to completion. The plan listener (started by the caller before
 /// apply) consumes `plan.applying.completed` and registers the master.
 async fn apply_and_register(db: &Database, bus: &EventBus, item_id: &str) {
+    // Constitution II (astro-plan-tykek): the apply path refuses a plan the user
+    // has not approved, so record the approval the UI's Apply gesture records.
+    let plan_id = get_inbox_plan(db.pool(), item_id).await.unwrap().plan_id;
+    approve_plan(db.pool(), bus, &plan_id, "user").await.unwrap();
+
     let resp = apply_inbox_plan(db.pool(), bus, item_id).await.unwrap();
     // The executor finishes, publishes TOPIC_PLAN_APPLYING_COMPLETED, then the
     // plan listener runs its registration callback asynchronously. Poll for the

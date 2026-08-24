@@ -1612,15 +1612,16 @@ export const commands = {
 	 */
 	inboxPlan: (inboxItemId: string) => typedError<InboxPlanView_Serialize, string>(__TAURI_INVOKE("inbox_plan", { inboxItemId })),
 	/**
-	 *  `inbox.plan.apply` — approve + apply the plan for a single inbox item.
+	 *  `inbox.plan.apply` — apply the approved plan for a single inbox item.
 	 * 
-	 *  The use-case auto-approves the plan (which `inbox.confirm` leaves at
-	 *  `ready_for_review`) before calling `apply_plan`.  The plan listener
-	 *  transitions the inbox item state once the executor completes.
+	 *  `inbox.confirm` leaves the plan at `ready_for_review`; the caller must record
+	 *  the user's approval with `plans.approve` first. The plan listener transitions
+	 *  the inbox item state once the executor completes.
 	 * 
 	 *  # Errors
-	 *  Returns a string error on failure, including `plan.stale` when per-item
-	 *  CAS detects a file changed since the plan was created.
+	 *  Returns a string error on failure, including `plan.approval_required` when the
+	 *  plan carries no approval and `plan.stale` when per-item CAS detects a file
+	 *  changed since the plan was created.
 	 */
 	inboxPlanApply: (inboxItemId: string) => typedError<PlanApplyResponse, string>(__TAURI_INVOKE("inbox_plan_apply", { inboxItemId })),
 	/**

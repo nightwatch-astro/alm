@@ -147,7 +147,7 @@ async fn reconcile_drops_externally_deleted_frame_from_real_ui_count() -> anyhow
         .ok_or_else(|| anyhow::anyhow!("inbox.classify returned no contentSignature: {classify}"))?
         .to_owned();
 
-    let _confirm: serde_json::Value = app
+    let confirm: serde_json::Value = app
         .invoke(
             "inbox_confirm",
             json!({
@@ -162,6 +162,10 @@ async fn reconcile_drops_externally_deleted_frame_from_real_ui_count() -> anyhow
         )
         .await?;
 
+    // Constitution II (astro-plan-tykek): `inbox.plan.apply` refuses a plan the
+    // caller has not approved, mirroring the UI's approve-then-apply gesture.
+    let _: serde_json::Value =
+        app.invoke("plans_approve", json!({ "id": confirm["planId"] })).await?;
     let _apply: serde_json::Value =
         app.invoke("inbox_plan_apply", json!({ "inboxItemId": inbox_item_id })).await?;
     anyhow::ensure!(

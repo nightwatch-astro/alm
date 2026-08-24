@@ -49,10 +49,12 @@ where
 /// Auto-approve and start applying a freshly persisted plan when (and only
 /// when) it qualifies under [`plan_qualifies_for_mkdir_auto_apply`].
 ///
+/// This is the ONLY path permitted to approve without a user gesture; the Inbox
+/// apply pipeline used to do the same and no longer does (`astro-plan-tykek`).
+///
 /// Returns `Ok(None)` when the plan does not qualify — the normal review flow
 /// is untouched. When it qualifies, this drives the SAME [`super::approve_plan`] and
-/// [`crate::plan_apply::apply_plan`] use-cases as the manual path (mirroring
-/// the Inbox pipeline in `crate::inbox_plan::apply_inbox_plan`), so the plan
+/// [`crate::plan_apply::apply_plan`] use-cases as the manual path, so the plan
 /// row, the `plan.approved` audit event (actor [`AUTO_APPLY_MKDIR_ACTOR`]),
 /// the per-item apply audit records, and the failure handling are identical
 /// to a user-clicked apply. A failed auto-apply surfaces exactly like a
