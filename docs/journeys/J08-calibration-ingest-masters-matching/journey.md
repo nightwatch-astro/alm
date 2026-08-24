@@ -272,13 +272,15 @@ assigned through an explicit, confirmable action — never silently.
 ## Known gaps
 - G1: Masters never get per-file metadata rows, so a master item's
   pre-confirm Inbox detail has nothing to evaluate the required-attribute gate
-  against; the detail says so rather than implying certainty (S1). The
-  data-model fix is still open.
+  against; the detail says so rather than implying certainty (S1). Tracked as
+  astro-plan-lbfho.
 - G2: A corrupt session blocks raw sub-frame cleanup library-wide with no
   in-app repair path (J06/G10, astro-plan-dq9r3). It does not block this
   journey's lists (S3), but a library in that state cannot complete J06.
-- G3: Out of scope: `dark_flat` and `bad_pixel_map` kinds are never matched
-  in v1 by design, so no step covers them.
+- G3: Out of scope: no step covers the `dark_flat` or `bad_pixel_map` kinds.
+  `crates/calibration/core/src/lib.rs:39-40` records that `DarkFlat` is
+  reserved for forward compatibility and MUST NOT be matched, suggested, or
+  assigned in v1, and `:299` returns no evaluation for it.
 - G4: The camera-body dimension (S6) is validatable only with fixtures whose
   headers carry a `CAMERAID` with a real serial segment — a vendor-dependent
   shape (Player One writes one, ZWO writes the bare model or an empty trailing

@@ -7,7 +7,7 @@ last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [setup, data-sources]
 interfaces: [desktop-ui]
-trace: [docs/product/journeys/J01-first-run-setup-data-sources/journey.md, docs/product/journeys/J01-first-run-setup-data-sources/deltas/2026-07-14-jval-docdrift.md, docs/product/journeys/J01-first-run-setup-data-sources/deltas/2026-07-14-q15-t123.md, docs/product/journeys/J01-first-run-setup-data-sources/deltas/2026-07-14-q15-t125.md, docs/development/journey-run-2026-07-14.md, PR-440, PR-686, PR-404, PR-405, PR-826, issue-647, spec-030 FR-130-FR-134, PR #872, PR #893, PR #894, PR #908, PR #907, PR #903, PR #901, PR #904, PR #911, PR #925, PR #1176, PR #1185, spec-061 FR-004, spec-061 FR-005, PR #1719 (an unparsable FITS/XISF header is an error, not a crash)]
+trace: [docs/product/journeys/J01-first-run-setup-data-sources/journey.md, docs/product/journeys/J01-first-run-setup-data-sources/deltas/2026-07-14-jval-docdrift.md, docs/product/journeys/J01-first-run-setup-data-sources/deltas/2026-07-14-q15-t123.md, docs/product/journeys/J01-first-run-setup-data-sources/deltas/2026-07-14-q15-t125.md, docs/development/journey-run-2026-07-14.md, PR-440, PR-686, PR-404, PR-405, PR-826, issue-647, spec-030 FR-130-FR-134, PR #872, PR #893, PR #894, PR #908, PR #907, PR #903, PR #901, PR #904, PR #911, PR #925, PR #1176, PR #1185, spec-061 FR-004, spec-061 FR-005, PR #1719, PR #1733, PR #1737 (an unparsable FITS/XISF header is an error, not a crash)]
 ---
 
 ## Goal
@@ -246,10 +246,14 @@ produces both a visible answer-back and a durable audit record.
   damaged file, or a non-astronomical one that merely carries the extension —
   becomes a metadata error for that file and the scan continues over the rest
   of the folder.
-- **Trace (robustness):** `crates/metadata/fits/src/lib.rs:83` and
-  `crates/metadata/xisf/src/lib.rs:60` (header parsing runs under
-  `catch_unwind`; a caught panic becomes `MetadataExtractError::Parse`, which
-  every caller already handles); PR #1719.
+- **Trace (robustness):** `crates/metadata/fits/Cargo.toml:12`
+  (`fits-header = "0.4.3"` — each field is sliced from the raw card bytes, so no
+  offset can land inside a multi-byte character; PR #1733);
+  `crates/metadata/fits/src/lib.rs:83` and `crates/metadata/xisf/src/lib.rs:60`
+  (parsing additionally runs under `catch_unwind`, so any surviving panic
+  becomes `MetadataExtractError::Parse`, which every caller already handles;
+  PR #1719); `crates/metadata/fits/src/lib.rs:98-106` (a header in which no
+  keyword is recognised is an error rather than empty metadata; PR #1737).
 - **Trace:** `apps/desktop/src/features/setup/steps/StepScan.tsx` (PR #893
   fixes #704 — scanning an already-registered row via the path-as-rootId
   fallback previously failed the `registered_sources` join and orphaned
@@ -452,7 +456,12 @@ produces both a visible answer-back and a durable audit record.
 
 - **Δ9** 2026-08-24 · S7 · behavior-change
   A file whose FITS or XISF header cannot be parsed now reports a metadata
-  error for that file instead of crashing the app: an inbox or source scan over
-  one damaged file previously took the whole app down, because the header
-  parser panicked on a byte offset inside a multi-byte character.
-  Evidence: PR #1719 (54615f80e) · by: journey-scribe (intent-gated)
+  error for that file instead of crashing the app: a scan over one damaged file
+  previously took the whole app down, because the header parser sliced a
+  lossy-decoded card at a byte offset that could land inside a multi-byte
+  character. #1719 caught the panic and turned it into that error; #1733 fixed
+  the parser itself, so the panic no longer occurs; #1737 kept the outcome an
+  error once the fixed parser started returning such a header as empty
+  metadata.
+  Evidence: PR #1719 (54615f80e), PR #1733 (f91e60fee), PR #1737 (c7f23e22b) ·
+  by: journey-scribe (intent-gated)

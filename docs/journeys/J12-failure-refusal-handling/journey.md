@@ -315,13 +315,14 @@ control, or a raw error code.
 - G1: (dissolved 2026-07-15) — tracked as issues #647 and #766; plan-apply outcomes lack durable audit rows.
 - G2: The cleanup flow forwards no empty-plan diagnostic, so a zero-item
   cleanup plan still reviews as a disabled Approve with no explanation — the
-  mechanism S2 describes exists but only the archive flow uses it.
+  mechanism S2 describes exists but only the archive flow uses it. Tracked as
+  astro-plan-w6xop.
 - G3: Executor failure codes and pause reasons reach the user as raw
   identifiers (`item.stale`, `destructive_unconfirmed`, `root_escape`): the
   message catalogue maps only the archive/trash-side codes
   (`err_os_trash_permission_denied`, `err_path_permission_denied`). J12's
   Goal ("never a raw error code") is therefore not met for the executor
-  family stepped at S6.
+  family stepped at S6. Tracked as astro-plan-e4w3k.
 - G4: S6's environment branches (`volume.unavailable`, `disk.full`,
   `permission.denied`, `source.locked`) and S7 require OS-level setup —
   unplugging a volume, filling a disk, killing the process mid-apply — that

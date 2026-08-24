@@ -250,7 +250,7 @@ refused item either retried or explicitly abandoned.
   a selection of undetected files never trips it, and the undo snapshot skips
   files with no prior type, so no undo banner appears for that selection. This
   is the selection P1 describes, so J11's own precondition reaches the
-  unguarded path.
+  unguarded path. Tracked as astro-plan-ij9km.
 - G5: (G1's subject, re-verified 2026-08-24) There is still no affordance that
   clears a manual frame-type override back to the scanner's detected value.
   The only reversal is the S2 undo banner, which
