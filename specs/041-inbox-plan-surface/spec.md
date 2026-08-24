@@ -25,7 +25,14 @@
 
 **Updated**: 2026-06-23
 
-**Status**: Implemented — confirm pipeline + reviewable plan surface + apply (59/59 tasks); iteration-1 added single-type sub-items at ingest + destination model (PR #315). Supersedes spec 005; absorbed parts of specs 025/045.
+**Status**: Implemented — confirm pipeline + reviewable plan surface + apply (59/59 tasks); iteration-1 added single-type sub-items at ingest + destination model (PR #315). Supersedes spec 005; absorbed parts of specs 025/045. FR-006a/b/c (the explicit
+approval gate on apply) were **added to this document 2026-08-24**, after the
+59/59 count: the behaviour shipped in PR #1740 (`c0f7e10ea`) but the spec was
+silent on it, so the count does not cover them. The gate is live at
+`crates/app/core/src/inbox_plan.rs:207` (refuses with `plan.approval_required`),
+documented at `:162-168`/`:177`/`:224`/`:334`, asserted at `:1138`, with token
+verification in `crates/app/core/src/plan_apply/paths.rs:122-149` and both codes in
+`crates/contracts/core/src/error_code.rs:169`/`:171`.
 
 **Input**: User description: "Rework the inbox confirmation experience and the file-organization plan model so confirming an item produces a visible, reviewable plan; the review surface is structured (no overflowing pills, multi-level grouping) and shows per-file metadata; users can override header-derived values beyond frame type and apply overrides to a multi-selection; and whether files are moved or catalogued in place depends on where they came from (inbox vs already-organized library root)."
 
@@ -379,7 +386,10 @@ As a user, I want the app to extract the additional header fields the new groupi
 - **FR-004**: "View plan" and plan review MUST keep the user within the inbox surface and MUST NOT navigate to the Archive page or any unrelated page.
 - **FR-005**: Applying a plan MUST execute its actions, MUST never overwrite existing files silently, and MUST write an audit record for each attempted action and its outcome.
 - **FR-006**: Users MUST be able to review the full plan and cancel a plan before applying, leaving all files untouched.
-- **FR-007**: The system MUST refuse to apply a plan whose source files have changed since the plan was generated, and MUST surface the staleness to the user.
+- **FR-006a**: Applying an inbox plan MUST require an explicit user approval recorded before apply (the approval token spec 017 issues and spec 025 FR-001 requires). The inbox apply path MUST NOT mint an approval on the user's behalf. A plan carrying no approval MUST be refused with `plan.approval_required` and MUST NOT be applied. Under `inbox.plan.apply_all` and `inbox.plan.apply_selected` this is a per-plan result rather than a whole-batch failure: an unapproved plan is reported individually and the remaining plans still apply.
+- **FR-006b**: The recorded approval MUST be handed to the shared apply executor for verification, so an absent, empty, or mismatched token — a plan re-approved or tampered with since the user approved it — is refused with `plan.approval.stale` (spec 025 FR-011). There is no approval TTL.
+- **FR-006c**: The one exception is the mkdir-only auto-apply path (`plans::auto_apply`), which creates directories, moves no user file, and does not route through inbox apply. Every path that moves or catalogues a user file is bound by FR-006a.
+- **FR-007**: The system MUST refuse to apply a plan whose source files have changed since the plan was generated, and MUST surface the staleness to the user. This staleness (`plan.stale`, raised per item by the executor's content check) is distinct from the approval staleness of FR-006b.
 
 **Structured, groupable review + metadata (US2)**
 

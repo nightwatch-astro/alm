@@ -1,7 +1,11 @@
 # Implementation Plan: Token Pattern Builder
 
 **Feature**: `015-token-pattern-builder`
-**Status**: Draft
+**Status**: Implemented (post-hoc record, verified 2026-08-24) — agrees with
+`spec.md`'s Implemented header, which was previously contradicted here. Resolver
+`crates/patterns/src/resolver.rs`, validator `crates/patterns/src/validator.rs`,
+builder UI shipped renamed as
+`apps/desktop/src/features/settings/NamingStructure.tsx`.
 **Constitution check**: passes — local-first metadata, reviewable mutation (resolver feeds plans, never applies directly), PixInsight boundary preserved (no image processing), research-led vocabulary, portable contracts via JSON Schema.
 
 ## Goal
