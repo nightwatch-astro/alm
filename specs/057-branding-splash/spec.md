@@ -22,7 +22,7 @@ US1 and US3 re-checked against `main` on 2026-08-24). The splash window ships in
   exits 1), and the status line is static: `pv-status-text` occurs once in the whole
   repo, as literal text at `apps/desktop/splash.html:212`. The shipped splash renders one
   fixed presentation — mark, wordmark, version and a static "Starting…" row
-  (`apps/desktop/splash.html:203-213`) — which is the *content* of variants 2 and 3
+  (`apps/desktop/splash.html:199-213`) — which is the *content* of variants 2 and 3
   without the switchability, the live stage messages, or scenario 4's test-only dwell
   override.
 
