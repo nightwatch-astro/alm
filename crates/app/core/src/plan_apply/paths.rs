@@ -294,10 +294,16 @@ pub(super) fn item_row_to_executor_item(
 
     let is_protected = row.protection == "protected";
 
-    // T020: `requires_destructive_confirm` is derived from action type,
-    // independent of `is_protected`. Replaces the old `confirm_required = is_protected` inversion.
-    let requires_destructive_confirm = matches!(row.action.as_str(), "delete" | "trash")
-        || row.requires_destructive_confirm.unwrap_or(0) != 0;
+    // T020: `requires_destructive_confirm` is derived from the EFFECTIVE
+    // executor action, independent of `is_protected`. Reading `row.action`
+    // instead would miss an `action = "archive"` item that the plan-level
+    // `destructive_destination = "trash"` reroute above turned into a real
+    // OS-trash removal, letting it past the executor's confirm gate
+    // unconfirmed. `persistence_plans::repositories::plans::confirm_plan_destructive_items`
+    // is the write half and MUST stay at least as wide as this predicate.
+    let requires_destructive_confirm =
+        matches!(action, ExecutorItemAction::Delete | ExecutorItemAction::Trash { .. })
+            || row.requires_destructive_confirm.unwrap_or(0) != 0;
 
     // T023a: `destructive_confirmed` is now a real DB column (migration 0033).
     let destructive_confirmed = row.destructive_confirmed != 0;
