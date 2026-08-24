@@ -70,7 +70,10 @@ test-enforceable.
 
 ## Done When
 
-- [x] All tasks checked off; no old key string anywhere (`rg` clean)
+- [x] All tasks checked off; no old key survives as a **wire key**. `rg` is
+      deliberately **not** clean — the old strings remain in 5 files as Rust
+      snake_case field identifiers and as negative-test literals, enumerated
+      under Outcome below.
 - [x] Guard test passes; touched-crate + settings-frontend gates green
 - [x] No lint errors
 
@@ -85,6 +88,20 @@ forgotten user setting:
   wire field names, both directions.
 - `crates/persistence/lifecycle/src/repositories/settings.rs:631` — the
   persistence hydration table (`APPLY_KEYS`) ↔ `SettingsState` wire field names.
+
+### The 5 files that still match an old key string, and why each is correct
+
+Grepping the 10 old keys across `crates/`, `apps/`, and `packages/` returns 5
+files. None contains an old **wire key**; every hit is one of three legitimate
+shapes, so a future grep should not refile this spec:
+
+| File | Hits | Shape |
+|------|------|-------|
+| `crates/domain/core/src/settings.rs` | `:148`, `:182`, `:289`, `:298` | `SettingsState` field declarations and defaults. Rust identifiers are snake_case; serde `rename_all = "camelCase"` produces the wire key. |
+| `crates/app/settings/src/descriptors.rs` | `:285-287`, `:414-420` | Field access inside `apply`/`default` closures — reading `s.current_library_id` / `s.patterns_by_type`, not a key string. |
+| `crates/persistence/lifecycle/src/repositories/settings.rs` | `:206`, `:215` | `settings_key_table!` rows pairing the camelCase **key** with its snake_case **field**; `PATTERNS_BY_TYPE_KEY` is `"patternsByType"` at `:25`. |
+| `crates/app/settings/src/ingestion.rs` | `:11` | A doc comment naming the `get_patterns_by_type` function. |
+| `crates/app/settings/src/tests.rs` | `:633`, `:1035-1046` | Negative tests asserting the old dotted keys are rejected. These must keep the old literals to test anything. |
 
 The compatibility decision is **reject, no shim**: an old dotted key is not
 accepted by validation (`crates/app/settings/src/tests.rs:633`,
