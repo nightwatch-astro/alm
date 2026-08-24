@@ -176,6 +176,16 @@ impl Timestamp {
         iso_fixed_micros(OffsetDateTime::now_utc())
     }
 
+    /// Render this instant in the same form [`Timestamp::now_iso`] produces.
+    ///
+    /// Use this for any value bound to a column an `ORDER BY` touches:
+    /// formatting with `well_known::Rfc3339` instead yields a variable-width
+    /// fraction, which does not sort chronologically as TEXT.
+    #[must_use]
+    pub fn to_iso(self) -> String {
+        iso_fixed_micros(self.0)
+    }
+
     #[must_use]
     pub const fn from_offset_date_time(value: OffsetDateTime) -> Self {
         Self(value)

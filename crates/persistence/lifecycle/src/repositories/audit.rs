@@ -225,7 +225,9 @@ pub async fn insert_audit_entry(pool: &SqlitePool, entry: &AuditLogEntry) -> DbR
 
 #[cfg(test)]
 mod tests {
-    use super::{count_audit_entries, list_audit_entries, AuditLogFilter};
+    use audit_types::AuditLogEntry;
+
+    use super::{count_audit_entries, insert_audit_entry, list_audit_entries, AuditLogFilter};
     use sqlx::SqlitePool;
 
     async fn make_pool() -> SqlitePool {
@@ -284,6 +286,56 @@ mod tests {
         .execute(pool)
         .await
         .expect("insert audit_log_entry row");
+    }
+
+    fn entry_at(audit_id: uuid::Uuid, at: time::OffsetDateTime) -> AuditLogEntry {
+        AuditLogEntry {
+            audit_id: domain_core::ids::AuditId::from_uuid(audit_id),
+            entity_type: domain_core::lifecycle::EntityType::Project,
+            entity_id: domain_core::ids::EntityId::from_uuid(uuid::Uuid::nil()),
+            from_state: None,
+            to_state: None,
+            trigger: "confirm".to_owned(),
+            actor: "user".to_owned(),
+            outcome: audit_types::Outcome::Applied,
+            severity: audit_types::Severity::Workflow,
+            request_id: domain_core::ids::EntityId::from_uuid(uuid::Uuid::nil()),
+            at: domain_core::ids::Timestamp::from_offset_date_time(at),
+            payload: None,
+            reason_code: None,
+        }
+    }
+
+    /// `list_audit_entries` advertises newest-first, and it gets that only from
+    /// a TEXT `ORDER BY at DESC`. A writer that trims trailing zeros from the
+    /// subsecond fraction renders these two instants `.1Z` and `.15Z`, and
+    /// `.1Z` > `.15Z` as text, so the OLDER row would come back first
+    /// (astro-plan-b7h28).
+    #[tokio::test]
+    async fn list_is_newest_first_when_the_two_rows_differ_in_subsecond_width() {
+        let pool = make_pool().await;
+        let base = time::OffsetDateTime::from_unix_timestamp(1_752_000_000)
+            .expect("fixed unix timestamp is in range");
+        let older = uuid::Uuid::from_u128(1);
+        let newer = uuid::Uuid::from_u128(2);
+
+        insert_audit_entry(&pool, &entry_at(older, base + time::Duration::milliseconds(100)))
+            .await
+            .expect("insert older entry");
+        insert_audit_entry(&pool, &entry_at(newer, base + time::Duration::milliseconds(150)))
+            .await
+            .expect("insert newer entry");
+
+        let rows = list_audit_entries(&pool, &AuditLogFilter::default())
+            .await
+            .expect("list audit entries");
+
+        let ids: Vec<&str> = rows.iter().map(|r| r.audit_id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![newer.to_string().as_str(), older.to_string().as_str()],
+            "newest-first must hold across subsecond widths"
+        );
     }
 
     #[tokio::test]

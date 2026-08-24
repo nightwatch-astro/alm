@@ -7,6 +7,7 @@
 //! these without creating cross-sub-crate edges.
 
 use audit_types::AuditLogEntry;
+use domain_core::ids::Timestamp;
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::DbResult;
@@ -20,11 +21,7 @@ use crate::DbResult;
 /// # Errors
 /// Returns `persistence_core::DbError` if the insert fails.
 pub async fn insert_audit_entry(pool: &SqlitePool, entry: &AuditLogEntry) -> DbResult<()> {
-    let at_str = entry
-        .at
-        .as_offset_date_time()
-        .format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+    let at_str = entry.at.to_iso();
     let payload_str = entry.payload.as_ref().map(std::string::ToString::to_string);
 
     sqlx::query(
@@ -61,11 +58,7 @@ pub async fn insert_audit_entry_conn(
     conn: &mut SqliteConnection,
     entry: &AuditLogEntry,
 ) -> DbResult<()> {
-    let at_str = entry
-        .at
-        .as_offset_date_time()
-        .format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+    let at_str = entry.at.to_iso();
     let payload_str = entry.payload.as_ref().map(std::string::ToString::to_string);
 
     sqlx::query(
@@ -121,14 +114,11 @@ pub async fn insert_project_auto_transition_conn(
     to_state: &str,
     trigger: &str,
 ) -> DbResult<()> {
-    use time::format_description::well_known::Rfc3339;
     use uuid::Uuid;
 
     let audit_id = Uuid::new_v4().to_string();
     let request_id = Uuid::new_v4().to_string();
-    let at = time::OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+    let at = Timestamp::now_iso();
 
     sqlx::query(
         "INSERT INTO audit_log_entry \
