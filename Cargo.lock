@@ -107,9 +107,11 @@ dependencies = [
  "contracts_core",
  "dashmap",
  "domain_core",
+ "dunce",
  "filetime",
  "fs_executor",
  "fs_inventory",
+ "fs_pathsafe",
  "hex",
  "patterns",
  "persistence_calibration",
@@ -220,6 +222,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "unicode-normalization",
  "uuid",
 ]
 
@@ -259,6 +262,7 @@ dependencies = [
  "domain_core",
  "fs_executor",
  "fs_inventory",
+ "fs_pathsafe",
  "hex",
  "patterns",
  "persistence_calibration",
@@ -854,6 +858,7 @@ dependencies = [
 name = "calibration_core"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "serde",
  "serde_json",
  "skymath 0.7.2",
@@ -1421,6 +1426,7 @@ dependencies = [
  "contracts_core",
  "domain_core",
  "fs_inventory",
+ "fs_pathsafe",
  "futures-util",
  "persistence_core",
  "persistence_inbox",
@@ -1856,9 +1862,9 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "fits-header"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9f03c8e9bb8afa98de1186e5237a70d2e907b239a9c1f0d523131402cc0b326"
+checksum = "969ed073af9c306b26221d182a258167934916fc249caf9f3fd08fe5bc091431"
 dependencies = [
  "skymath 0.6.0",
  "thiserror 2.0.19",
@@ -2029,7 +2035,9 @@ name = "fs_pathsafe"
 version = "0.1.0"
 dependencies = [
  "camino",
+ "path-clean",
  "proptest",
+ "safe-filename",
  "tempfile",
 ]
 
@@ -3469,6 +3477,7 @@ version = "0.1.0"
 dependencies = [
  "fits-header",
  "metadata_core",
+ "tempfile",
 ]
 
 [[package]]
@@ -4788,6 +4797,7 @@ name = "project_structure"
 version = "0.1.0"
 dependencies = [
  "domain_core",
+ "fs_pathsafe",
  "serde",
  "serde_json",
  "tempfile",
@@ -5346,6 +5356,7 @@ dependencies = [
  "rstest",
  "thiserror 2.0.19",
  "unicode-normalization",
+ "unicode-script",
  "unicode-security",
 ]
 
@@ -6488,6 +6499,7 @@ dependencies = [
  "persistence_targets",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "simbad-resolver",
  "skymath 0.7.2",
  "sqlx",
@@ -8604,6 +8616,7 @@ dependencies = [
 name = "workflow_profiles"
 version = "0.1.0"
 dependencies = [
+ "fs_pathsafe",
  "itertools",
  "project_structure",
  "tempfile",

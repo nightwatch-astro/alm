@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 
-use safe_filename::{sanitize_token_value, SanitizeError};
+use safe_filename::{sanitize_token_value, step4_reserved_name_check, SanitizeError};
 
 use crate::registry::{TokenRegistry, TokenTransform};
 use crate::validator::{validate, ValidationWarning};
@@ -98,6 +98,10 @@ pub enum ResolveError {
     /// (data-model.md `pattern.invalid`).
     #[error("path length violated: resolved_length={resolved_length}, segment_length_bytes={segment_length_bytes}")]
     PathTooLong { resolved_length: usize, segment_length_bytes: usize },
+    /// A literal pattern segment sanitized to nothing, so the pattern names a
+    /// path level that cannot be rendered (data-model.md `pattern.invalid`).
+    #[error("pattern segment is empty after sanitization: {value}")]
+    EmptySegment { value: String },
 }
 
 // ── resolve ───────────────────────────────────────────────────────────────
@@ -133,39 +137,12 @@ pub fn resolve(
     for part in pattern {
         match part.kind.as_str() {
             "token" => {
-                let def = registry
-                    .get(&part.value)
-                    .ok_or_else(|| ResolveError::UnknownToken { token: part.value.clone() })?;
-
-                // Look up the source field in the metadata bundle.
-                let raw_opt = metadata.get(def.source_field).filter(|s| !s.is_empty());
-
-                let (raw, is_fallback) =
-                    if let Some(v) = raw_opt { (v.as_str(), false) } else { (def.fallback, true) };
-
-                if is_fallback {
-                    missing_tokens.push(part.value.clone());
-                }
-
-                // Apply transform before sanitize (some transforms can produce
-                // different chars; sanitize runs after).
-                let transformed = apply_transform(raw, def.transform);
-
-                // Sanitize.
-                let sanitized =
-                    sanitize_token_value(&part.value, &transformed).map_err(map_sanitize_error)?;
-
-                // If sanitize ate the entire value, use the fallback.
-                let final_value = if sanitized.is_empty() {
-                    if !is_fallback {
-                        missing_tokens.push(part.value.clone());
-                    }
-                    def.fallback.to_owned()
-                } else {
-                    sanitized
-                };
-
-                parts.push(final_value);
+                parts.push(resolve_one_token(
+                    &part.value,
+                    metadata,
+                    registry,
+                    &mut missing_tokens,
+                )?);
             }
             "separator" => {
                 // Separators are already validated; emit as-is.
@@ -178,35 +155,8 @@ pub fn resolve(
     // 3. Assemble relative path.
     let relative_path: String = parts.concat();
 
-    // 4a. Traversal guard on assembled path: check each `/`-delimited segment.
-    for segment in relative_path.split('/') {
-        if segment == ".." || segment == "." {
-            return Err(ResolveError::PathTraversal { segment: segment.to_owned() });
-        }
-    }
-
-    // 4b. Per-segment byte-length check and reserved-name check.
-    for segment in relative_path.split('/') {
-        if segment.is_empty() {
-            continue; // Leading/trailing slash produces empty segments — skip.
-        }
-        let byte_len = segment.len();
-        if byte_len > config.max_segment_bytes() {
-            return Err(ResolveError::PathTooLong {
-                resolved_length: relative_path.chars().count(),
-                segment_length_bytes: byte_len,
-            });
-        }
-    }
-
-    // 4c. Total length check.
-    let total_chars = relative_path.chars().count();
-    if total_chars > config.max_path_chars() {
-        return Err(ResolveError::PathTooLong {
-            resolved_length: total_chars,
-            segment_length_bytes: 0,
-        });
-    }
+    // 4. Traversal guard and length caps on the assembled path.
+    check_assembled_path(&relative_path, config)?;
 
     Ok(ResolveResult { relative_path, missing_tokens, warnings: validation.warnings })
 }
@@ -244,7 +194,8 @@ pub fn resolve_v1(
 ///   is pushed onto `missing_tokens`.
 /// - Literal text is sanitized for filesystem safety (same pipeline as token
 ///   values) and emitted verbatim; literals are **never** added to
-///   `missing_tokens`.
+///   `missing_tokens`. A literal the sanitizer empties is a hard error, since a
+///   literal has no fallback and a dropped segment loses a named path level.
 ///
 /// `relative_path` follows the same convention as [`resolve`]: forward-slash
 /// joined, no leading slash, and no empty trailing segment (a trailing `/` in
@@ -285,21 +236,34 @@ fn resolve_pattern_str_with(
             // joined path has no empty components (matches resolve()).
             continue;
         }
-        let resolved = resolve_segment(raw_segment, bundle, registry, &mut missing_tokens)?;
-        // A segment that sanitizes to empty (e.g. a literal of only dots) is
-        // dropped rather than producing an empty path component.
-        if !resolved.is_empty() {
-            segments.push(resolved);
-        }
+        segments.push(resolve_segment(raw_segment, bundle, registry, &mut missing_tokens)?);
     }
 
     let relative_path = segments.join("/");
 
-    // Length caps — identical policy to resolve().
+    check_assembled_path(&relative_path, config)?;
+
+    Ok(ResolveResult { relative_path, missing_tokens, warnings: Vec::new() })
+}
+
+/// Traversal, reserved-name, and length checks applied to an assembled relative
+/// path.
+///
+/// Per-piece sanitization cannot see what only appears once the pieces are
+/// joined: a segment built as literal `CO` plus a token resolving to `N` is the
+/// device name `CON`, and no per-piece step-4 call sees it. Both resolvers
+/// therefore re-check the assembled string, and they must apply the same policy
+/// -- a resolver that skips this hands its caller a destination that escapes the
+/// root it was resolved against.
+fn check_assembled_path(relative_path: &str, config: &ResolverConfig) -> Result<(), ResolveError> {
     for segment in relative_path.split('/') {
-        if segment.is_empty() {
-            continue;
+        if segment == ".." || segment == "." {
+            return Err(ResolveError::PathTraversal { segment: segment.to_owned() });
         }
+        if segment.is_empty() {
+            continue; // Leading/trailing slash produces empty segments — skip.
+        }
+        step4_reserved_name_check(segment).map_err(map_sanitize_error)?;
         let byte_len = segment.len();
         if byte_len > config.max_segment_bytes() {
             return Err(ResolveError::PathTooLong {
@@ -308,6 +272,7 @@ fn resolve_pattern_str_with(
             });
         }
     }
+
     let total_chars = relative_path.chars().count();
     if total_chars > config.max_path_chars() {
         return Err(ResolveError::PathTooLong {
@@ -316,13 +281,14 @@ fn resolve_pattern_str_with(
         });
     }
 
-    Ok(ResolveResult { relative_path, missing_tokens, warnings: Vec::new() })
+    Ok(())
 }
 
 /// Resolve one `/`-delimited segment that may interleave `{token}` placeholders
 /// with literal text. Tokens append their resolved value; literal runs are
 /// sanitized and appended verbatim. The result is the concatenation of the
-/// pieces (a segment never contains an internal `/`).
+/// pieces, and never contains an internal `/` — step 2 of the sanitize pipeline
+/// substitutes one, so no resolved value can introduce a path level.
 fn resolve_segment(
     segment: &str,
     bundle: &MetadataBundle,
@@ -392,20 +358,26 @@ fn resolve_one_token(
     }
 
     let transformed = apply_transform(raw, def.transform);
-    let sanitized = sanitize_token_value(token_name, &transformed).map_err(map_sanitize_error)?;
-
-    if sanitized.is_empty() {
-        if !is_fallback {
-            missing_tokens.push(token_name.to_owned());
+    match sanitize_token_value(token_name, &transformed) {
+        Ok(sanitized) => Ok(sanitized),
+        // A value the sanitizer consumed entirely takes the registry fallback,
+        // so plan generation reports a missing token rather than failing.
+        Err(SanitizeError::EmptyAfterSanitize { .. }) => {
+            if !is_fallback {
+                missing_tokens.push(token_name.to_owned());
+            }
+            Ok(def.fallback.to_owned())
         }
-        Ok(def.fallback.to_owned())
-    } else {
-        Ok(sanitized)
+        Err(e) => Err(map_sanitize_error(e)),
     }
 }
 
 /// Sanitize a literal pattern run through the same filesystem-safety pipeline
 /// used for token values (traversal/reserved-name/confusable rejection).
+///
+/// A literal has no registry fallback, so an emptied literal is a hard error:
+/// the alternative is a pattern segment that silently disappears from the
+/// rendered path.
 fn sanitize_literal(literal: &str) -> Result<String, ResolveError> {
     sanitize_token_value("literal", literal).map_err(map_sanitize_error)
 }
@@ -444,6 +416,7 @@ fn map_sanitize_error(e: SanitizeError) -> ResolveError {
         SanitizeError::UnicodeConfusable { token, value } => {
             ResolveError::UnicodeConfusable { token, value }
         }
+        SanitizeError::EmptyAfterSanitize { value, .. } => ResolveError::EmptySegment { value },
     }
 }
 
@@ -817,16 +790,16 @@ mod tests {
         assert!(matches!(err, ResolveError::UnicodeConfusable { .. }));
     }
 
+    /// astro-plan-3v3r.1.23: a literal segment made entirely of dots is not
+    /// `.`/`..` (so it passes the traversal check) but step 2's dot-trim
+    /// collapses it to empty. A literal has no fallback, so the pattern names a
+    /// path level that cannot be rendered and the resolve is refused rather than
+    /// silently dropping the level.
     #[test]
-    fn pattern_str_literal_all_dots_segment_dropped() {
-        // A literal segment made entirely of dots is not `.`/`..` (so it
-        // passes the traversal check) but step2's dot-trim collapses it to
-        // empty — it is dropped rather than producing an empty path
-        // component, mirroring the "sanitizes to empty" fallback rule used
-        // for tokens.
+    fn pattern_str_literal_all_dots_segment_rejected() {
         let bundle = meta(&[("exposure", "300s")]);
-        let r = resolve_pattern_str("masters/.../{exposure}/", &bundle).unwrap();
-        assert_eq!(r.relative_path, "masters/300s");
+        let err = resolve_pattern_str("masters/.../{exposure}/", &bundle).unwrap_err();
+        assert!(matches!(err, ResolveError::EmptySegment { .. }));
     }
 
     #[test]
@@ -837,6 +810,95 @@ mod tests {
         let bundle = meta(&[]);
         let err = resolve_pattern_str("masters/./x/", &bundle).unwrap_err();
         assert!(matches!(err, ResolveError::PathTraversal { .. }));
+    }
+
+    /// astro-plan-3v3r.9.10 + .20.24: a token value carrying `../` used to reach
+    /// the assembled-path traversal check, because `safe-filename` deferred
+    /// separators to the resolver. Step 2 now substitutes `/`, so the value
+    /// cannot express a traversal or a second path level at all — it stays one
+    /// segment. `check_assembled_path` is kept as the guard for the length caps
+    /// and for any future composition that reintroduces a separator.
+    #[test]
+    fn pattern_str_token_value_cannot_add_a_level_or_traverse() {
+        let bundle = meta(&[("filter", "Ha/../../etc")]);
+        let r = resolve_pattern_str("flats/{filter}/", &bundle).unwrap();
+        assert_eq!(r.relative_path, "flats/Ha_.._.._etc");
+        assert_eq!(r.relative_path.split('/').count(), 2);
+    }
+
+    /// The same value through `resolve`, pinning that both resolvers answer
+    /// alike -- the original defect was the divergence.
+    #[test]
+    fn token_value_separators_neutralized_alike_by_both_resolvers() {
+        let bundle = meta(&[("filter", "Ha/../../etc")]);
+        let via_parts = resolve_v1(&[tok("f", "filter")], &bundle).unwrap();
+        let via_pattern_str = resolve_pattern_str("{filter}", &bundle).unwrap();
+        assert_eq!(via_parts.relative_path, "Ha_.._.._etc");
+        assert_eq!(via_pattern_str.relative_path, via_parts.relative_path);
+    }
+
+    /// astro-plan-3v3r.20.24 at the caller's level: the shipped pattern shape
+    /// with a dual-narrowband `FILTER` header must render the pattern's own
+    /// number of levels, not one more.
+    #[test]
+    fn pattern_str_slash_in_metadata_does_not_add_a_level() {
+        let bundle = meta(&[("target", "M42"), ("filter", "Ha/OIII"), ("date", "2026-08-23")]);
+        let r = resolve_pattern_str("{target}/{filter}/{date}/", &bundle).unwrap();
+        assert_eq!(r.relative_path, "M42/Ha_OIII/2026-08-23");
+        assert_eq!(r.relative_path.split('/').count(), 3);
+    }
+
+    /// astro-plan-3v3r.20.24, the injectivity half: two different metadata
+    /// tuples used to render the same path, because the `/` inside a value was
+    /// indistinguishable from the pattern's own separator.
+    #[test]
+    fn pattern_str_distinct_metadata_tuples_render_distinct_paths() {
+        let pattern = "{target}/{filter}/";
+        let split_in_target = meta(&[("target", "M42/Trapezium"), ("filter", "Ha")]);
+        let split_in_filter = meta(&[("target", "M42"), ("filter", "Trapezium/Ha")]);
+        let a = resolve_pattern_str(pattern, &split_in_target).unwrap();
+        let b = resolve_pattern_str(pattern, &split_in_filter).unwrap();
+        assert_eq!(a.relative_path, "M42_Trapezium/Ha");
+        assert_eq!(b.relative_path, "M42/Trapezium_Ha");
+        assert_ne!(a.relative_path, b.relative_path);
+    }
+
+    /// astro-plan-3v3r.1.22 at the composition level: step 4 runs on each piece,
+    /// so a device name assembled from a literal plus a token was seen by no
+    /// per-piece check. `check_assembled_path` closes it.
+    #[test]
+    fn pattern_str_reserved_name_assembled_from_literal_and_token_rejected() {
+        let bundle = meta(&[("filter", "N")]);
+        let err = resolve_pattern_str("masters/CO{filter}/", &bundle).unwrap_err();
+        assert!(matches!(err, ResolveError::ReservedName { .. }));
+    }
+
+    /// astro-plan-3v3r.1.23, token lane: an emptied token value keeps the
+    /// registry fallback and is reported, so plan generation does not fail.
+    #[test]
+    fn pattern_str_token_emptied_by_sanitize_falls_back_and_reports() {
+        let bundle = meta(&[("target", "..."), ("filter", "Ha")]);
+        let r = resolve_pattern_str("{target}/{filter}/", &bundle).unwrap();
+        assert_eq!(r.relative_path, "unclassified/Ha");
+        assert!(r.missing_tokens.contains(&"target".to_owned()));
+    }
+
+    /// astro-plan-3v3r.8.39 at the caller's level: the pattern preview and
+    /// source-view lanes both go through here, and both refused this name.
+    #[test]
+    fn pattern_str_accepts_greek_bayer_target_name() {
+        let bundle = meta(&[("target", "α Centauri"), ("filter", "Ha")]);
+        let r = resolve_pattern_str("{target}/{filter}/", &bundle).unwrap();
+        assert_eq!(r.relative_path, "α Centauri/Ha");
+    }
+
+    /// The spoof direction at the caller's level, so the relaxation cannot be
+    /// widened later without a failing test.
+    #[test]
+    fn pattern_str_still_rejects_cyrillic_homoglyph_target_name() {
+        let bundle = meta(&[("target", "M\u{0430}sters"), ("filter", "Ha")]);
+        let err = resolve_pattern_str("{target}/{filter}/", &bundle).unwrap_err();
+        assert!(matches!(err, ResolveError::UnicodeConfusable { .. }));
     }
 
     #[test]

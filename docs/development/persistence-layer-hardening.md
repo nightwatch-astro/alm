@@ -69,9 +69,9 @@ not this table, as authoritative — it will drift as unrelated work lands.)
 
 - **sqlx 0.9** (sqlite, `runtime-tokio`, `tls-rustls`, `macros`, `migrate`,
   `uuid`, `time`, `json`) — async, ratified in spec 002.
-- Canonical store: SQLite. Migrations in `crates/persistence/db/migrations/`,
-  applied via `sqlx::migrate!("./migrations")`. Latest migration as of this
-  branch: `0050`.
+- Canonical store: SQLite. Migrations in `crates/persistence/core/migrations/`,
+  applied via `sqlx::migrate!("./migrations")`. Before 1.0 there is exactly one
+  migration, `0001_initial_schema.sql`, edited in place.
 
 ---
 
@@ -122,8 +122,10 @@ So the **authoritative** guard is `scripts/check-db-boundary.sh`, and clippy is 
   - `query_builder_example.rs` (the reference module).
 - For each remaining file, counts query/exec sites
   (`sqlx::query | query_as | query_scalar | .fetch_(one|all|optional) |
-  .execute(`) that appear **before** the first `#[cfg(test)]` line. Inline unit
-  test modules are not production code and are excluded.
+  .execute(`) outside every inline `#[cfg(test)]` item's own brace scope. Unit
+  test modules are not production code, but production code *following* one in
+  the same file still counts, and a comment or blank line between the attribute
+  and the item it applies to does not break the exemption.
 - **Now sealed at zero (2026-07-11).** `scripts/db-boundary-baseline.txt` is
   empty, so the check fails (exit 1) on **any** production query site outside
   `persistence/db`. It also rejects a non-empty (hand-edited) baseline

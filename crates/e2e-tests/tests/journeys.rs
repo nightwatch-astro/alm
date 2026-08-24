@@ -706,11 +706,16 @@ async fn cleanup_plan_review() -> anyhow::Result<()> {
         approve["planId"] == json!(plan_id) && approve["newState"] == "approved",
         "expected plans.approve to move the generated plan to approved: {approve}"
     );
+    let approval_token = approve["approvalToken"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("plans.approve returned no approvalToken: {approve}"))?
+        .to_owned();
 
-    // Apply — the real filesystem mutation (channel-free, spec 037). Tolerates
-    // the plan already being `approved` (reuses the stored token).
-    let apply: serde_json::Value =
-        app.invoke("plans_apply_direct", json!({ "planId": plan_id })).await?;
+    // Apply — the real filesystem mutation (channel-free, spec 037). The token
+    // minted by the approve call above is the gate; no apply path mints its own.
+    let apply: serde_json::Value = app
+        .invoke("plans_apply_direct", json!({ "planId": plan_id, "approvalToken": approval_token }))
+        .await?;
     anyhow::ensure!(
         apply["planId"] == json!(plan_id) && apply["newState"] == "applying",
         "expected plans.apply.direct to start applying the approved plan: {apply}"

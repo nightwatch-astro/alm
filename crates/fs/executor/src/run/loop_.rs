@@ -12,7 +12,7 @@ use crate::failure::{FailureCode, PlanItemFailure, RollbackOutcome};
 use crate::ops::cas_check::check_cas;
 use crate::ops::path_gate;
 
-use super::dispatch::execute_item;
+use super::dispatch::{execute_item, ResolvedItemPaths};
 use super::{
     ApplyOutcome, CancellationToken, ExecutorCallbacks, ExecutorItem, ExecutorItemAction,
     ItemProgressEvent, RetryQueue, SkipSet, TerminalCounts,
@@ -145,6 +145,42 @@ async fn drive_plan<C: ExecutorCallbacks>(
     }
 
     ApplyOutcome::Completed(counts)
+}
+
+/// Path-resolution gate (FR-001/002, D8, T018): resolve and validate both sides
+/// of an item once, before any filesystem CAS or mutation.
+///
+/// The resolved paths are what `dispatch::execute_item` operates on. This is the
+/// only place in the executor that chooses a root or performs a join: a second
+/// resolution downstream is how a destination gated against `destination_root`
+/// reached `mkdir`/`link`/`move` joined onto `library_root` instead
+/// (astro-plan-3v3r.1.12). `destination_root` still takes precedence over
+/// `library_root` (#765), and the fallback now exists exactly once.
+///
+/// A side with no root is refused unless it carries an absolute, already-normal
+/// path, which is the legacy mode for items storing a pre-resolved destination
+/// (`fs_pathsafe::contain::resolve_unrooted`).
+fn resolve_item_paths(item: &ExecutorItem) -> Result<ResolvedItemPaths, PlanItemFailure> {
+    Ok(ResolvedItemPaths {
+        source: resolve_side(item.source_path.as_deref(), item.library_root.as_deref())?,
+        destination: resolve_side(
+            item.destination_path.as_deref(),
+            item.destination_root.as_deref().or(item.library_root.as_deref()),
+        )?,
+    })
+}
+
+fn resolve_side(
+    path: Option<&camino::Utf8Path>,
+    root: Option<&camino::Utf8Path>,
+) -> Result<Option<Utf8PathBuf>, PlanItemFailure> {
+    match (path, root) {
+        (None, _) => Ok(None),
+        (Some(path), Some(root)) => path_gate::resolve_and_validate(root, path).map(|r| Some(r.0)),
+        (Some(path), None) => fs_pathsafe::contain::resolve_unrooted_utf8(path)
+            .map(Some)
+            .map_err(|e| path_gate::containment_failure(&e)),
+    }
 }
 
 /// Outcome of one retry-queue drain pass.
@@ -386,45 +422,31 @@ async fn process_single_item<C: ExecutorCallbacks>(
         callbacks.on_item_start(&item.id).await;
     }
 
-    // Path-resolution gate (FR-001/002, D8, T018): resolve + validate source path
-    // against the library root before any filesystem CAS or mutation.
-    if let (Some(ref src_rel), Some(ref root)) = (&item.source_path, &item.library_root) {
-        match path_gate::resolve_and_validate(root, src_rel) {
-            Err(gate_failure) => {
-                let audit_reason = gate_failure.code.as_str().to_owned();
-                let triggers_pause = gate_failure.code.triggers_pause();
-                callbacks
-                    .on_item_progress(ItemProgressEvent::terminal(
-                        item.id.clone(),
-                        "applying",
-                        "refused",
-                        Some(gate_failure),
-                        Some(audit_reason),
-                    ))
-                    .await;
-                counts.failed += 1;
-                if triggers_pause {
-                    return ItemOutcome::Pause("path.invalid".to_owned());
-                }
-                return ItemOutcome::Continue;
+    let resolved_paths = match resolve_item_paths(item) {
+        Ok(paths) => paths,
+        Err(gate_failure) => {
+            let audit_reason = gate_failure.code.as_str().to_owned();
+            let triggers_pause = gate_failure.code.triggers_pause();
+            callbacks
+                .on_item_progress(ItemProgressEvent::terminal(
+                    item.id.clone(),
+                    "applying",
+                    "refused",
+                    Some(gate_failure),
+                    Some(audit_reason),
+                ))
+                .await;
+            counts.failed += 1;
+            if triggers_pause {
+                return ItemOutcome::Pause("path.invalid".to_owned());
             }
-            Ok(_resolved) => {
-                // Path is safe; the resolved absolute path will be used by execute_item.
-            }
+            return ItemOutcome::Continue;
         }
-    }
+    };
 
-    // Per-item FS CAS revalidation (R-FS-1).
-    // Use the library-root-resolved path if available; otherwise use the raw path (legacy).
-    let resolved_source_for_cas: Option<Utf8PathBuf> =
-        if let (Some(ref src_rel), Some(ref root)) = (&item.source_path, &item.library_root) {
-            // Already validated above; re-resolve (cheap lexical op).
-            path_gate::resolve_and_validate(root, src_rel).ok().map(|r| r.0)
-        } else {
-            item.source_path.clone()
-        };
-
-    if let Some(ref src) = resolved_source_for_cas {
+    // Per-item FS CAS revalidation (R-FS-1) against the same resolved path the
+    // mutation will use, so the snapshot cannot be checked on a different file.
+    if let Some(ref src) = resolved_paths.source {
         if let Err(stale_failure) = check_cas(src, &item.cas_snapshot) {
             let triggers_pause = stale_failure.code.triggers_pause();
             let failure_clone = stale_failure.clone();
@@ -478,21 +500,22 @@ async fn process_single_item<C: ExecutorCallbacks>(
     // dedicated blocking thread pool and yields the worker thread back to the
     // runtime until the fs op completes.
     let item_for_blocking = item.clone();
-    let op_result = tokio::task::spawn_blocking(move || execute_item(&item_for_blocking))
-        .await
-        .unwrap_or_else(|join_err| {
-            // The blocking task panicked. Surface it as an internal failure
-            // rather than propagating the panic through the executor loop.
-            Err((
-                PlanItemFailure::with_code(
-                    FailureCode::Unknown,
-                    format!("filesystem worker task failed: {join_err}"),
-                ),
-                false,
-                RollbackOutcome::NotApplicable,
-                None,
-            ))
-        });
+    let op_result =
+        tokio::task::spawn_blocking(move || execute_item(&item_for_blocking, &resolved_paths))
+            .await
+            .unwrap_or_else(|join_err| {
+                // The blocking task panicked. Surface it as an internal failure
+                // rather than propagating the panic through the executor loop.
+                Err((
+                    PlanItemFailure::with_code(
+                        FailureCode::Unknown,
+                        format!("filesystem worker task failed: {join_err}"),
+                    ),
+                    false,
+                    RollbackOutcome::NotApplicable,
+                    None,
+                ))
+            });
 
     match op_result {
         Ok(()) => {

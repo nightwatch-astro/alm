@@ -161,6 +161,39 @@ find_rs_files() {
     fi
 }
 
+# Files the last require_source_roots call enumerated; printed by the OK line so
+# the verdict names the corpus it was derived from.
+SCANNED_FILES=0
+
+# Refuse a source root that enumerates nothing.
+#
+# The dead set is "definitions no line mentions", so an empty enumeration yields
+# an empty set and the gate prints OK over zero files. find_rs_files runs inside
+# command substitution at every call site, where its exit status is discarded, so
+# the floor is asserted here rather than in the walk.
+require_source_roots() {
+    local failed=0 root n
+    SCANNED_FILES=0
+    for root in "$@"; do
+        if [ ! -d "$root" ]; then
+            echo "FATAL: source root missing: $root" >&2
+            failed=1
+            continue
+        fi
+        n="$(find "$root" -type f -name '*.rs' -not -path '*/tests/*' | grep -c . || true)"
+        if [ "$n" -eq 0 ]; then
+            echo "FATAL: source root enumerated 0 production .rs files: $root" >&2
+            failed=1
+            continue
+        fi
+        SCANNED_FILES=$((SCANNED_FILES + n))
+    done
+    if [ "$failed" -ne 0 ]; then
+        echo "The source tree moved or the walk is broken; this gate cannot report zero dead functions until that is fixed." >&2
+        return 1
+    fi
+}
+
 # Emit the sorted list of module-level `pub fn` names in $1 (a crates/ root)
 # that no production line outside their own definition mentions.
 collect_dead() {
@@ -212,6 +245,13 @@ collect_dead() {
         | xargs -0 grep -hE '^pub (async )?fn [a-z_0-9]+' \
         | sed -E 's/^pub (async )?fn ([a-z_0-9]+).*/\2/' \
         | sort -u > "$defs"
+
+    # Zero definitions produce zero dead names, which is the same output as a
+    # fully-called tree.
+    if [ "$(grep -c . < "$defs" || true)" -eq 0 ]; then
+        echo "FATAL: 0 module-level pub fn definitions found under $crates_root; the walk or the definition pattern is broken." >&2
+        return 1
+    fi
 
     # shellcheck disable=SC2016  # the awk program is literal, not shell-expanded
     find_rs_files "${roots[@]}" -type f -name '*.rs' -not -path '*/tests/*' \
@@ -676,7 +716,25 @@ PROBE
         echo "  actual:   $got" >&2
         return 1
     fi
-    echo "OK: self-test passed — detector flags test-only and doc-only functions, not called ones."
+    mkdir -p "$tmp/emptyroot"
+    if (require_source_roots "$tmp/emptyroot") >/dev/null 2>&1; then
+        echo "FAIL: self-test: require_source_roots accepted a root holding 0 .rs files." >&2
+        return 1
+    fi
+
+    if (require_source_roots "$tmp/absent") >/dev/null 2>&1; then
+        echo "FAIL: self-test: require_source_roots accepted a missing root." >&2
+        return 1
+    fi
+
+    mkdir -p "$tmp/nodefs/probe/src"
+    echo 'fn private_only() -> bool { true }' > "$tmp/nodefs/probe/src/lib.rs"
+    if collect_dead "$tmp/nodefs" "$tmp/none" >/dev/null 2>&1; then
+        echo "FAIL: self-test: collect_dead reported zero dead functions from a corpus with 0 pub fn definitions." >&2
+        return 1
+    fi
+
+    echo "OK: self-test passed — detector flags test-only and doc-only functions, not called ones; an empty corpus is refused."
 }
 
 main() {
@@ -688,6 +746,8 @@ main() {
             return
             ;;
     esac
+
+    require_source_roots "$ROOT/crates" "$ROOT/apps/desktop/src-tauri/src" || exit 2
 
     local dead
     dead="$(collect_dead "$ROOT/crates" "$ROOT/apps/desktop/src-tauri/src")"
@@ -760,7 +820,7 @@ EOF
 
     check_tracking_references || exit 1
 
-    echo "OK: no new dead pub fns ($(printf '%s\n' "$dead" | grep -c . || true) baselined)."
+    echo "OK: no new dead pub fns across $SCANNED_FILES scanned file(s) ($(printf '%s\n' "$dead" | grep -c . || true) baselined)."
 }
 
 main "$@"

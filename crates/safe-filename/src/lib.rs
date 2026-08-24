@@ -13,12 +13,16 @@
 //!
 //! Steps (applied in order):
 //! 1. NFC normalization + strip C0/C1 controls, format chars, bidi overrides.
-//! 2. OS character substitution: Windows reserved chars → `_`, trim
+//! 2. OS character substitution: Windows reserved chars and `/` → `_`, trim
 //!    leading/trailing whitespace and dots.
 //! 3. Path-traversal rejection: `.` or `..`.
 //! 4. Windows reserved device-name rejection (CON, PRN, AUX, NUL, COM1–9,
-//!    LPT1–9), case-insensitive, on all platforms.
-//! 5. Unicode confusables detection via `unicode-security` (mixed-script).
+//!    LPT1–9) on the pre-first-dot stem, case-insensitive, on all platforms.
+//! 5. Unicode confusables detection via `unicode-security` (mixed-script),
+//!    relaxed to admit a mixed Latin/Greek value.
+//!
+//! A successful [`sanitize_token_value`] returns exactly one usable path
+//! segment: the result never contains a separator and is never empty.
 //!
 //! Each step is exposed individually so a caller can run them in sequence and
 //! surface the first hard error, or call [`sanitize_token_value`] for the full
@@ -27,6 +31,7 @@
 //! sanitizer in a filesystem path-pattern resolver).
 
 use unicode_normalization::UnicodeNormalization;
+use unicode_script::{Script, UnicodeScript};
 use unicode_security::MixedScript;
 
 // ── Sanitize errors ────────────────────────────────────────────────────────
@@ -43,6 +48,10 @@ pub enum SanitizeError {
     /// Token value contains Unicode confusables or disallowed characters.
     #[error("Unicode confusables or disallowed chars in token {token}: {value}")]
     UnicodeConfusable { token: String, value: String },
+    /// Steps 1 and 2 together consumed the whole value, leaving nothing usable
+    /// as a path segment.
+    #[error("token {token} is empty after sanitization: {value}")]
+    EmptyAfterSanitize { token: String, value: String },
 }
 
 // ── Step 1: NFC + strip disallowed code-points ─────────────────────────────
@@ -93,15 +102,16 @@ pub fn step1_normalize_and_strip(input: &str) -> String {
 /// `/` and `\` are path delimiters; `?`, `*`, `"`, `<`, `>`, `|`, `:` are
 /// Windows-reserved. They are mapped to `_`.
 fn is_windows_reserved_char(c: char) -> bool {
-    matches!(c, '\\' | ':' | '?' | '*' | '"' | '<' | '>' | '|')
+    matches!(c, '/' | '\\' | ':' | '?' | '*' | '"' | '<' | '>' | '|')
 }
 
 /// Step 2: Replace Windows-reserved characters with `_`, then trim leading/
 /// trailing whitespace and dots.
 ///
-/// The `/` separator is **not** substituted here — segment splitting is done
-/// by the resolver before calling sanitize. Individual token values should
-/// never contain `/`; if they do the resolver will catch path-traversal issues.
+/// `/` is substituted here, which is what makes a sanitized value exactly one
+/// path segment rather than however many its content implies. Callers that
+/// split a multi-segment pattern do so *before* sanitizing each piece, so a
+/// literal directory level in a pattern is unaffected.
 #[must_use]
 pub fn step2_substitute_reserved_chars(input: &str) -> String {
     let substituted: String =
@@ -137,13 +147,18 @@ static WINDOWS_RESERVED_NAMES: &[&str] = &[
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
-/// Step 4: Return an error if the segment (after prior sanitization) matches
-/// a Windows reserved device name, case-insensitively.
+/// Step 4: Return an error if the segment (after prior sanitization) names a
+/// Windows reserved device, case-insensitively.
+///
+/// Windows resolves a device name from the text before the **first** dot, so
+/// `CON.fits` and `NUL.xisf` name devices just as `CON` does. The comparison is
+/// therefore on that stem, not on the whole segment.
 ///
 /// # Errors
 /// Returns [`SanitizeError::ReservedName`] when the segment is a reserved name.
 pub fn step4_reserved_name_check(segment: &str) -> Result<(), SanitizeError> {
-    let upper = segment.to_uppercase();
+    let stem = segment.split('.').next().unwrap_or(segment);
+    let upper = stem.to_uppercase();
     if WINDOWS_RESERVED_NAMES.contains(&upper.as_str()) {
         return Err(SanitizeError::ReservedName { segment: segment.to_owned() });
     }
@@ -152,17 +167,29 @@ pub fn step4_reserved_name_check(segment: &str) -> Result<(), SanitizeError> {
 
 // ── Step 5: Unicode confusables check ──────────────────────────────────────
 
+/// Scripts a value may mix freely: Latin and Greek, plus the script-neutral
+/// `Common` and `Inherited` (digits, punctuation, combining marks).
+///
+/// Bayer designations attach a Greek letter to a Latin constellation name, so
+/// `α Centauri` is a legitimate catalogue name that a plain mixed-script
+/// rejection refuses. Admitting this one pair also admits a Latin/Greek
+/// homoglyph (Greek ο against Latin o); no other script pair is admitted.
+fn is_astronomy_script(c: char) -> bool {
+    matches!(c.script(), Script::Latin | Script::Greek | Script::Common | Script::Inherited)
+}
+
 /// Step 5: Check the sanitized value for Unicode confusables using the
-/// `unicode-security` crate's mixed-script confusable detection.
+/// `unicode-security` crate's mixed-script confusable detection, relaxed to
+/// admit a value mixing only Latin and Greek.
 ///
 /// # Errors
-/// Returns [`SanitizeError::UnicodeConfusable`] when the value is detected as
-/// a confusable by the `unicode-security` mixed-script profile.
+/// Returns [`SanitizeError::UnicodeConfusable`] when the value mixes scripts
+/// beyond the Latin/Greek pair.
 pub fn step5_confusables_check(token_name: &str, value: &str) -> Result<(), SanitizeError> {
     // The unicode-security crate checks whether a string is "safe" from the
     // mixed-script confusables perspective (Unicode TR #39 §4).
     // `MixedScript::is_single_script` is implemented on `&str`.
-    if !value.is_ascii() && !value.is_single_script() {
+    if !value.is_ascii() && !value.is_single_script() && !value.chars().all(is_astronomy_script) {
         return Err(SanitizeError::UnicodeConfusable {
             token: token_name.to_owned(),
             value: value.to_owned(),
@@ -175,17 +202,26 @@ pub fn step5_confusables_check(token_name: &str, value: &str) -> Result<(), Sani
 
 /// Run the full sanitize pipeline on a token value.
 ///
-/// Returns the cleaned value on success. Returns the first hard error
-/// (`PathTraversal`, `ReservedName`, or `UnicodeConfusable`) encountered.
+/// Returns exactly one usable path segment on success: never empty, never
+/// containing a separator. Returns the first hard error encountered.
 ///
 /// # Errors
-/// Returns a [`SanitizeError`] if any step rejects the value.
+/// Returns a [`SanitizeError`] if any step rejects the value, including
+/// [`SanitizeError::EmptyAfterSanitize`] when the steps consume it entirely.
+/// Reporting that as an error rather than `Ok("")` is what keeps the emptiness
+/// check off every caller.
 pub fn sanitize_token_value(token_name: &str, raw: &str) -> Result<String, SanitizeError> {
     let s = step1_normalize_and_strip(raw);
     // Step 3 (traversal check) must run BEFORE step 2 so that `.` / `..` are
     // caught before step 2's dot-trimming collapses them to an empty string.
     step3_traversal_check(&s)?;
     let s = step2_substitute_reserved_chars(&s);
+    if s.is_empty() {
+        return Err(SanitizeError::EmptyAfterSanitize {
+            token: token_name.to_owned(),
+            value: raw.to_owned(),
+        });
+    }
     step4_reserved_name_check(&s)?;
     step5_confusables_check(token_name, &s)?;
     Ok(s)
@@ -237,9 +273,22 @@ mod tests {
     #[case("glob*", "glob_")] // asterisk → _
     #[case(".hidden.", "hidden")] // leading/trailing dots trimmed
     #[case("trailing ", "trailing")] // trailing space trimmed
-    #[case("NGC-7000_Ha", "NGC-7000_Ha")] // inner hyphen/underscore preserved
+    #[case("NGC-7000_Ha", "NGC-7000_Ha")]
+    // inner hyphen/underscore preserved
+    // astro-plan-3v3r.20.24: `/` is substituted, so a value cannot add a level.
+    #[case("Ha/OIII", "Ha_OIII")] // dual-narrowband FILTER header
+    #[case("M42/Trapezium", "M42_Trapezium")] // OBJECT header with a slash
+    #[case("a/b/c", "a_b_c")] // every separator, not just the first
     fn step2_substitute_reserved_chars_cases(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(step2_substitute_reserved_chars(input), expected);
+    }
+
+    /// astro-plan-3v3r.20.24: the pipeline's output is exactly one segment.
+    #[test]
+    fn sanitize_token_value_never_yields_a_separator() {
+        let out = sanitize_token_value("filter", "Ha/OIII").unwrap();
+        assert_eq!(out, "Ha_OIII");
+        assert!(!out.contains('/'));
     }
 
     // ── Step 3: traversal check ────────────────────────────────────────────
@@ -268,7 +317,16 @@ mod tests {
     #[case("COM9", true)] // numbered device
     #[case("lpt1", true)] // lowercase numbered device
     #[case("CONtrast", false)] // CON prefix is not reserved
-    #[case("NGC7000", false)] // normal name
+    #[case("NGC7000", false)]
+    // normal name
+    // astro-plan-3v3r.1.22: Windows resolves a device name from the text before
+    // the FIRST dot, so an extension does not make the segment a filename.
+    #[case("CON.fits", true)] // device name with an extension
+    #[case("nul.xisf", true)] // lowercase, with an extension
+    #[case("COM1.json", true)] // numbered device with an extension
+    #[case("CON.foo.json", true)] // `file_stem` would keep `CON.foo` and pass
+    #[case("CONtrast.fits", false)] // a real filename whose stem is not a device
+    #[case("NGC7000.fits", false)] // ordinary astronomy filename
     fn step4_reserved_name_check_cases(#[case] segment: &str, #[case] expect_err: bool) {
         let result = step4_reserved_name_check(segment);
         if expect_err {
@@ -283,9 +341,28 @@ mod tests {
     /// Table-driven step-5 cases: pure ASCII and single-script non-ASCII pass.
     #[rstest]
     #[case("NGC7000")] // pure ASCII
-    #[case("Andromède")] // single-script Latin (accented)
+    #[case("Andromède")]
+    // single-script Latin (accented)
+    // astro-plan-3v3r.8.39: a Bayer designation attaches a Greek letter to a
+    // Latin constellation name; refusing it refuses a real catalogue name.
+    #[case("α Centauri")] // Greek U+03B1 + Latin — the recorded harness vector
+    #[case("β Cygni")] // second Bayer name, Greek + Latin
+    #[case("μ Cephei")] // Greek + Latin
     fn step5_confusables_check_allows(#[case] value: &str) {
         assert!(step5_confusables_check("target", value).is_ok());
+    }
+
+    /// astro-plan-3v3r.8.39, the other direction: relaxing the rule to the
+    /// Latin/Greek pair must not admit a homoglyph spoof from another script.
+    #[rstest]
+    #[case("mаsters")] // Cyrillic а (U+0430) inside an otherwise Latin word
+    #[case("Аndromeda")] // Cyrillic А (U+0410) leading a Latin word
+    #[case("M42\u{0430}")] // Cyrillic а appended to an ASCII designation
+    fn step5_confusables_check_rejects_cross_script_homoglyphs(#[case] value: &str) {
+        assert!(matches!(
+            step5_confusables_check("target", value),
+            Err(SanitizeError::UnicodeConfusable { .. })
+        ));
     }
 
     // ── Full pipeline ──────────────────────────────────────────────────────
@@ -313,6 +390,35 @@ mod tests {
     fn full_pipeline_reserved_name_rejected() {
         let err = sanitize_token_value("target", "CON").unwrap_err();
         assert!(matches!(err, SanitizeError::ReservedName { .. }));
+    }
+
+    /// astro-plan-3v3r.1.23: the pipeline reports "nothing left" as an error, so
+    /// the emptiness check does not fall to every caller.
+    #[rstest]
+    #[case("...")] // dot-only
+    #[case("  ..  ")] // padded traversal
+    #[case("   ")] // whitespace-only
+    #[case(". . .")] // dots and spaces, trimmed from both ends
+    #[case("\u{200B}")] // a value that is only a stripped format character
+    fn full_pipeline_empty_after_sanitize_is_an_error(#[case] raw: &str) {
+        assert!(matches!(
+            sanitize_token_value("target", raw),
+            Err(SanitizeError::EmptyAfterSanitize { .. })
+        ));
+    }
+
+    /// astro-plan-3v3r.1.22 through the whole pipeline, not only step 4.
+    #[test]
+    fn full_pipeline_reserved_name_with_extension_rejected() {
+        let err = sanitize_token_value("target", "CON.fits").unwrap_err();
+        assert!(matches!(err, SanitizeError::ReservedName { .. }));
+    }
+
+    /// astro-plan-3v3r.8.39 through the whole pipeline.
+    #[test]
+    fn full_pipeline_accepts_greek_bayer_name() {
+        let out = sanitize_token_value("target", "α Centauri").unwrap();
+        assert_eq!(out, "α Centauri");
     }
 
     // ── Property tests ─────────────────────────────────────────────────────
@@ -370,6 +476,10 @@ mod tests {
             if let Ok(out) = sanitize_token_value("target", &s) {
                 prop_assert!(out.chars().all(|c| !is_windows_reserved_char(c)));
                 prop_assert!(out != "." && out != "..");
+                // The one-segment contract: a success is never empty and never
+                // spans a separator, for every input.
+                prop_assert!(!out.is_empty());
+                prop_assert!(!out.contains('/'));
             }
         }
 

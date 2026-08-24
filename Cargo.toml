@@ -61,6 +61,7 @@ quick-xml = "0.41"
 sha2 = "0.10"
 tempfile = "3"
 unicode-normalization = "0.1"
+unicode-script = "0.5"
 unicode-security = "0.1"
 # Ratified stack (spec 002 2026-05-23 — wired with network access):
 #   sqlx 0.9 renamed runtime-tokio-rustls -> runtime-tokio + tls-rustls (two separate features).
@@ -82,7 +83,8 @@ tauri-build = { version = "2.6", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 # Tauri MCP bridge plugin (@hypothesi). Dev-only surface, an optional dependency
-# of desktop_shell behind its `dev-tools` feature; runs a WebSocket server on
+# of desktop_shell behind its `dev-tools` feature; started only when
+# PV_MCP_BRIDGE_ENABLE=1, then runs a WebSocket server on
 # 127.0.0.1:9223 (PV_MCP_BRIDGE_BIND overrides the address) for the
 # @hypothesi/tauri-mcp-server MCP server. Requires the dev-only tauri.dev.conf.json
 # overlay (withGlobalTauri).
@@ -108,6 +110,9 @@ schemars = { version = "1", features = ["uuid1"] }
 jsonschema = { version = "0.48", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Canonicalizes without the Windows `\\?\` verbatim prefix, so a canonicalized
+# path and a `canonicalize`-failed fallback compare with the same spelling.
+dunce = "1"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing", "serde", "serde-well-known"] }
 trash = "5.2"

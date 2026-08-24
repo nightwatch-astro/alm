@@ -33,6 +33,7 @@ skymath = "0.7.2"
 contracts_core = { path = "../../../crates/contracts/core" }
 domain_core = { path = "../../../crates/domain/core" }
 fs_inventory = { path = "../../../crates/fs/inventory" }
+fs_pathsafe = { path = "../../../crates/fs/pathsafe" }
 persistence_core = { path = "../../../crates/persistence/core" }
 persistence_inbox = { path = "../../../crates/persistence/inbox" }
 persistence_lifecycle = { path = "../../../crates/persistence/lifecycle" }

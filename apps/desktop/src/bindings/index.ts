@@ -743,27 +743,28 @@ export const commands = {
 	/**
 	 *  `plans.apply.direct` — channel-free variant of `plans.apply` (spec 037).
 	 * 
-	 *  Auto-approves the plan if it is still `ready_for_review`, then runs the
-	 *  same background executor and writes the same durable audit trail as
-	 *  `plans_apply_real` — it just takes no `tauri::ipc::Channel`, so it can be
-	 *  invoked directly by the Layer-2 `WebDriver` E2E bridge (which could build
-	 *  a `Channel`, but should not have to reach into Tauri internals to do it)
-	 *  or by any UI surface that only needs a fire-and-poll apply (poll
-	 *  `plans.apply.status` for the durable terminal counts) rather than a live
-	 *  progress stream.
+	 *  Runs the same background executor, the same approval-token gate, and the
+	 *  same durable audit trail as `plans_apply_real` — it just takes no
+	 *  `tauri::ipc::Channel`, so it can be invoked directly by the Layer-2
+	 *  `WebDriver` E2E bridge (which could build a `Channel`, but should not have
+	 *  to reach into Tauri internals to do it) or by any UI surface that only
+	 *  needs a fire-and-poll apply (poll `plans.apply.status` for the durable
+	 *  terminal counts) rather than a live progress stream.
 	 * 
-	 *  Intended for archive/cleanup plans, which — unlike inbox plans — have no
-	 *  `inbox.plan.apply` channel-free equivalent to route through.
+	 *  The caller supplies the `approval_token` returned by `plans.approve`. This
+	 *  command must never mint that token itself: the gate in `apply_plan` is the
+	 *  only evidence that a human approved the plan (constitution §II).
 	 * 
 	 *  # Errors
 	 * 
 	 *  Returns `Err(ContractError)` with:
 	 *  - `"plan.not_found"` — plan not found.
-	 *  - `"plan.invalid_state"` — plan is not `ready_for_review`/`approved` (e.g.
-	 *    already applied/discarded/applying), or has no items.
+	 *  - `"plan.invalid_state"` — plan is not `approved` (e.g. still
+	 *    `ready_for_review`, or already applied/discarded/applying).
+	 *  - `"plan.approval.stale"` — approval token absent, or not this plan's.
 	 *  - `"plan.conflict.overlap"` — concurrent apply already running.
 	 */
-	plansApplyDirect: (planId: string) => typedError<PlanApplyResponse, ContractError_Serialize>(__TAURI_INVOKE("plans_apply_direct", { planId })),
+	plansApplyDirect: (planId: string, approvalToken: string) => typedError<PlanApplyResponse, ContractError_Serialize>(__TAURI_INVOKE("plans_apply_direct", { planId, approvalToken })),
 	/**
 	 *  `plans.cancel` — cancel an in-flight apply (US3, T033).
 	 * 
@@ -878,8 +879,13 @@ export const commands = {
 	 *  a file (mirrors `log.export`). Streams backend-side; only the path and count
 	 *  cross IPC.
 	 * 
+	 *  The destination passes `fs_pathsafe::export_dest`, so an existing file is
+	 *  refused rather than replaced and the write cannot leave the canonicalized
+	 *  parent directory.
+	 * 
 	 *  # Errors
-	 *  Returns `Err(ContractError)` on database or filesystem failure.
+	 *  Returns `Err(ContractError)` on a refused destination, database failure, or
+	 *  filesystem failure.
 	 */
 	auditExport: (filePath: string, filters: {
 	entityType?: string | null,
@@ -922,8 +928,8 @@ export const commands = {
 	 *  `log.export` — export filtered log entries to a JSON file.
 	 * 
 	 *  # Errors
-	 *  Returns `Err(String)` with code `"path.parent.missing"`, `"path.write.denied"`,
-	 *  `"range.invalid"`, or `"format.unsupported"`.
+	 *  Returns `Err(ContractError)` with code `path.parent.missing`,
+	 *  `path.write.denied`, `range.invalid`, or `format.unsupported`.
 	 */
 	logExport: (requestId: string, filePath: string, format: string | null, levelMin: "debug" | "info" | "warn" | "error" | null, since: string | null, until: string | null, includeDiagnostics: boolean | null) => typedError<LogExportResponse_Serialize, ContractError_Serialize>(__TAURI_INVOKE("log_export", { requestId, filePath, format, levelMin, since, until, includeDiagnostics })),
 	/**
@@ -3867,7 +3873,13 @@ export type ErrorCode = "validation.request_envelope_invalid" | "dev_mode.disabl
  *  Cross-cutting across categories — an inbox root inside a light-frames
  *  root is still an overlap.
  */
-"path.overlaps_existing" | "inbox.item.not_found" | "inbox.has.open.plan" | "inbox.item.no_plan" | "inbox.no_destination_root" | "inbox.destination_root_required" | "inbox.invalid_destination_root" | "inbox.missing_path_attributes" | "metadata.unreadable" | "classification.ambiguous" | "classification.stale" | "pattern.unset" | "pattern.empty" | "pattern.invalid" | "pattern.invalid.unicode" | "token.unknown" | "file.not_found" | "note.content_too_large" | "session.not_found" | "session.mixed_state" | "operation.handler_duplicate" | "operation.not_found" | 
+"path.overlaps_existing" | "inbox.item.not_found" | "inbox.has.open.plan" | "inbox.item.no_plan" | "inbox.no_destination_root" | "inbox.destination_root_required" | "inbox.invalid_destination_root" | "inbox.missing_path_attributes" | 
+/**
+ *  `inbox.confirm`: two or more source files resolve onto one destination
+ *  path, so the plan cannot be applied without one item claiming another's
+ *  path. Refused at plan-build time (Constitution II).
+ */
+"inbox.destination_collision" | "metadata.unreadable" | "classification.ambiguous" | "classification.stale" | "pattern.unset" | "pattern.empty" | "pattern.invalid" | "pattern.invalid.unicode" | "token.unknown" | "file.not_found" | "note.content_too_large" | "session.not_found" | "session.mixed_state" | "operation.handler_duplicate" | "operation.not_found" | 
 /**  Plan approval is outstanding (sent as `ContractError`, not `TransitionError`). */
 "plan.approval_required" | "plan.approval.stale" | 
 /**

@@ -41,6 +41,11 @@ pub struct PlanRow {
     pub approved_at: Option<String>,
     pub discarded_at: Option<String>,
     pub created_at: String,
+    /// Absolute root every item destination in this plan must resolve under
+    /// (migration 0003). `None` leaves the executor's destination gate
+    /// inactive, which is the behaviour for every plan type that does not set
+    /// it.
+    pub destination_root: Option<String>,
 }
 
 /// Flat row returned from the `plan_items` table.
@@ -271,22 +276,22 @@ pub async fn list_plans(
     created_after: Option<&str>,
     limit: i64,
 ) -> DbResult<Vec<PlanRow>> {
-    // Build a dynamic query. SQLite does not support array binding, so we
-    // validate the filter values (already validated by the use case) and
-    // interpolate a fixed IN clause.
+    // SQLite does not support array binding, so the IN clauses are built from
+    // the filter lengths only. No caller bytes reach the SQL text; every filter
+    // value is bound below, in the order the placeholders appear.
+    let placeholders = |n: usize| -> String { vec!["?"; n].join(",") };
+
     let state_clause = if state_filter.is_empty() {
         // Default: all non-discarded states.
         "state != 'discarded'".to_owned()
     } else {
-        let quoted: Vec<String> = state_filter.iter().map(|s| format!("'{s}'")).collect();
-        format!("state IN ({})", quoted.join(","))
+        format!("state IN ({})", placeholders(state_filter.len()))
     };
 
     let origin_clause = if origin_filter.is_empty() {
         String::new()
     } else {
-        let quoted: Vec<String> = origin_filter.iter().map(|s| format!("'{s}'")).collect();
-        format!("AND origin IN ({})", quoted.join(","))
+        format!("AND origin IN ({})", placeholders(origin_filter.len()))
     };
 
     let date_clause = if created_after.is_some() { "AND created_at >= ?" } else { "" };
@@ -302,6 +307,12 @@ pub async fn list_plans(
     );
 
     let mut q = sqlx::query_as::<_, PlanRow>(sqlx::AssertSqlSafe(&*sql));
+    for state in state_filter {
+        q = q.bind(state);
+    }
+    for origin in origin_filter {
+        q = q.bind(origin);
+    }
     if let Some(after) = created_after {
         q = q.bind(after);
     }
@@ -323,9 +334,14 @@ pub async fn list_plan_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<P
 }
 
 /// Set `destructive_confirmed = 1` on every item in `plan_id` that requires
-/// destructive confirmation (`action IN ('delete','trash')`, or the explicit
-/// `requires_destructive_confirm` override column — mirrors the derivation in
-/// `app_core::plan_apply::item_row_to_executor_item`).
+/// destructive confirmation: `action IN ('delete','trash')`, an
+/// `action = 'archive'` item whose plan carries
+/// `destructive_destination = 'trash'` (that reroute makes it a real OS-trash
+/// removal), or the explicit `requires_destructive_confirm` override column.
+/// Mirrors the derivation in
+/// `app_core::plan_apply::item_row_to_executor_item`, and MUST stay at least as
+/// wide as it: a narrower writer leaves items the executor refuses with
+/// `destructive_unconfirmed` even after the user confirmed the plan.
 ///
 /// This is the write half of the FR-003/D9 confirm gate: the executor
 /// (`fs_executor::run::execute_plan`) refuses any destructive item where
@@ -340,12 +356,40 @@ pub async fn confirm_plan_destructive_items(pool: &SqlitePool, plan_id: &str) ->
     let result = sqlx::query(
         "UPDATE plan_items SET destructive_confirmed = 1 \
          WHERE plan_id = ? AND destructive_confirmed = 0 \
-         AND (action IN ('delete', 'trash') OR requires_destructive_confirm = 1)",
+         AND (action IN ('delete', 'trash') OR requires_destructive_confirm = 1 \
+              OR (action = 'archive' AND EXISTS ( \
+                  SELECT 1 FROM plans p \
+                  WHERE p.id = plan_items.plan_id \
+                  AND p.destructive_destination = 'trash')))",
     )
     .bind(plan_id)
     .execute(pool)
     .await?;
     Ok(result.rows_affected())
+}
+
+/// Record the absolute destination root every item in `plan_id` must resolve
+/// under (migration 0003).
+///
+/// # Errors
+///
+/// Returns [`persistence_core::DbError::NotFound`] if no plan with `plan_id`
+/// exists, or [`persistence_core::DbError::Database`] on connection failure.
+pub async fn set_destination_root(
+    pool: &SqlitePool,
+    plan_id: &str,
+    destination_root: &str,
+) -> DbResult<()> {
+    let rows = sqlx::query("UPDATE plans SET destination_root = ? WHERE id = ?")
+        .bind(destination_root)
+        .bind(plan_id)
+        .execute(pool)
+        .await?
+        .rows_affected();
+    if rows == 0 {
+        return Err(persistence_core::DbError::NotFound(format!("plan {plan_id}")));
+    }
+    Ok(())
 }
 
 /// Update the plan state.
@@ -696,6 +740,49 @@ mod tests {
         let rows = list_plans(db.pool(), &["draft".to_owned()], &[], None, 100).await.unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "p1");
+    }
+
+    /// State, origin, and `created_after` placeholders appear in that order in
+    /// the SQL text; a bind order that disagrees silently returns wrong rows.
+    #[tokio::test]
+    async fn list_plans_combines_state_origin_and_created_after_filters() {
+        let db = setup_db().await;
+        for (id, origin) in [("p-keep", "cleanup"), ("p-origin", "archive"), ("p-state", "cleanup")]
+        {
+            let mut plan = sample_plan(id);
+            plan.origin = origin;
+            plan.plan_type = origin;
+            insert_plan(db.pool(), &plan).await.unwrap();
+        }
+        update_plan_state(db.pool(), "p-state", "ready_for_review").await.unwrap();
+
+        let rows = list_plans(
+            db.pool(),
+            &["draft".to_owned()],
+            &["cleanup".to_owned()],
+            Some("2000-01-01T00:00:00Z"),
+            100,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["p-keep"]);
+    }
+
+    /// Filter values are bound, so SQL metacharacters are matched as data and
+    /// cannot extend the WHERE clause past the non-discarded default.
+    #[tokio::test]
+    async fn list_plans_filter_values_cannot_inject_sql() {
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p1")).await.unwrap();
+        insert_plan(db.pool(), &sample_plan("p2")).await.unwrap();
+        soft_delete_plan(db.pool(), "p2", "2026-06-01T00:00:00Z").await.unwrap();
+
+        let rows = list_plans(db.pool(), &["draft') OR 1=1 --".to_owned()], &[], None, 100)
+            .await
+            .expect("a hostile filter value is data, not SQL");
+
+        assert!(rows.is_empty(), "no plan has that literal state");
     }
 
     #[tokio::test]
