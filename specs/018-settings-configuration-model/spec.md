@@ -5,9 +5,10 @@
 > the catalog settings surface becomes the SIMBAD resolver settings (endpoint, enable/disable, cache).
 > All other settings are unaffected.
 
-> **See Spec 030**: UI implementation of this feature must follow
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md)
-> for layout, navigation, and component patterns.
+> **See Spec 032**: UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns. Spec 030 (UI Audit &
+> Revision), cited here previously, is superseded as of 2026-06-11.
 
 **Feature Branch**: `018-settings-configuration-model`  
 **Created**: 2026-05-09  
