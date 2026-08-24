@@ -10,9 +10,11 @@
 > The mixed-vs-single detection intent here remains the conceptual origin; the
 > implementation lives in 041.
 
-> **UI Revised**: The UI design in this spec has been revised by
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md).
-> When implementing, follow spec 030 for layout, navigation, and component patterns.
+> **UI Revised**: The UI design in this spec was revised by
+> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md), which is
+> superseded as of 2026-06-11. UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns.
 
 **Feature Branch**: `005-inbox-mixed-folder-split`  
 **Created**: 2026-05-09  
