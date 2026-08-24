@@ -16,6 +16,7 @@ CREATE TABLE acquisition_fingerprint (
     rotation_deg          REAL,
     binning               TEXT,
     optic_train           TEXT,
+    camera_body_id        TEXT,   -- CAMERAID body identity; NULL when the vendor writes no serial
     observing_night_date  TEXT,   -- YYYY-MM-DD local observing night
     has_observer_location INTEGER NOT NULL DEFAULT 0,
     has_exposure_start_utc INTEGER NOT NULL DEFAULT 0
@@ -205,6 +206,7 @@ CREATE TABLE calibration_fingerprint (
     rotation_deg          REAL,
     binning               TEXT,
     optic_train           TEXT,
+    camera_body_id        TEXT,   -- CAMERAID body identity; NULL when the vendor writes no serial
     source_session_id     TEXT,   -- originating capture session (for same_session reason)
     observing_night_date  TEXT    -- YYYY-MM-DD local observing night
 );

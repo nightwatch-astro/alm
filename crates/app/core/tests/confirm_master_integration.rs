@@ -74,11 +74,26 @@ async fn test_db(dest_root: &Path) -> Database {
 
 /// Write a minimal FITS file (single 2880-byte block).
 fn write_fits(dir: &Path, name: &str, imagetyp: &str) {
+    write_fits_with_camera(dir, name, imagetyp, None);
+}
+
+/// `camera` writes an `INSTRUME`/`CAMERAID` pair, which the master-registration
+/// path reduces to `calibration_fingerprint.camera_body_id`.
+fn write_fits_with_camera(dir: &Path, name: &str, imagetyp: &str, camera: Option<(&str, &str)>) {
     let mut block = vec![b' '; 2880];
-    let card = format!("IMAGETYP= '{imagetyp:<8}'");
-    let bytes = card.as_bytes();
-    block[..bytes.len().min(80)].copy_from_slice(&bytes[..bytes.len().min(80)]);
-    block[80..83].copy_from_slice(b"END");
+    let mut idx = 0usize;
+    let mut write_card = |card: &str| {
+        let bytes = card.as_bytes();
+        let len = bytes.len().min(80);
+        block[idx * 80..idx * 80 + len].copy_from_slice(&bytes[..len]);
+        idx += 1;
+    };
+    write_card(&format!("IMAGETYP= '{imagetyp:<8}'"));
+    if let Some((instrume, cameraid)) = camera {
+        write_card(&format!("INSTRUME= '{instrume}'"));
+        write_card(&format!("CAMERAID= '{cameraid}'"));
+    }
+    block[idx * 80..idx * 80 + 3].copy_from_slice(b"END");
     let path = dir.join(name);
     let mut f = std::fs::File::create(path).unwrap();
     f.write_all(&block).unwrap();
@@ -218,7 +233,12 @@ async fn apply_and_register(db: &Database, bus: &EventBus, item_id: &str) {
 #[tokio::test]
 async fn confirm_master_creates_plan_then_registers_at_apply() {
     let tmp = tempfile::tempdir().unwrap();
-    write_fits(tmp.path(), "masterDark_300s.fits", "DARK");
+    write_fits_with_camera(
+        tmp.path(),
+        "masterDark_300s.fits",
+        "DARK",
+        Some(("Poseidon-C PRO", "Player One_CAMD2282B4C061209000")),
+    );
 
     let db = test_db(&tmp.path().join("dest")).await;
     let bus = EventBus::with_pool(db.pool().clone());
@@ -289,6 +309,20 @@ async fn confirm_master_creates_plan_then_registers_at_apply() {
             .await
             .unwrap();
     assert_eq!(source_id.as_deref(), Some(item_id));
+
+    // astro-plan-ugux2: the master-registration path must derive the body id
+    // from the master frame's own CAMERAID, normalized the way
+    // `sessions::camera_body_id` normalizes.
+    let camera_body_id: Option<String> =
+        sqlx::query_scalar("SELECT camera_body_id FROM calibration_fingerprint LIMIT 1")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+    assert_eq!(
+        camera_body_id.as_deref(),
+        Some("player one_camd2282b4c061209000"),
+        "CAMERAID must reach the master fingerprint through the real registration derivation"
+    );
 }
 
 /// US4 master parity: a master from an ORGANIZED source produces a `catalogue`

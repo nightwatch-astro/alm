@@ -188,6 +188,7 @@ async fn compute_compatible_sessions(
             rotation_deg: row.rotation_deg,
             binning: row.binning,
             optic_train: row.optic_train,
+            camera_body_id: row.camera_body_id,
             observing_night_date: row.observing_night_date,
             has_observer_location: row.has_observer_location.unwrap_or(0) != 0,
             has_exposure_start_utc: row.has_exposure_start_utc.unwrap_or(0) != 0,

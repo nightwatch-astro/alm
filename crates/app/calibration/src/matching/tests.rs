@@ -857,6 +857,7 @@ async fn load_config_relaxes_gain_and_binning_hard_rules_from_tolerances_table()
         rotation_deg: None,
         binning: None,
         optic_train: None,
+        camera_body_id: None,
         source_session_id: None,
         observing_night_date: None,
     };
@@ -871,6 +872,7 @@ async fn load_config_relaxes_gain_and_binning_hard_rules_from_tolerances_table()
         rotation_deg: Some(0.0),
         binning: Some("2x2".to_owned()),
         optic_train: Some("train-a".to_owned()),
+        camera_body_id: None,
         source_session_id: None,
         observing_night_date: None,
     };

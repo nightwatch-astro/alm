@@ -3,12 +3,14 @@
 
 //! Acquisition and calibration session modeling boundaries.
 
+pub mod camera_body;
 pub mod clustering;
 pub mod identity;
 pub mod key;
 pub mod observing_night;
 pub mod optic_train;
 
+pub use camera_body::camera_body_id;
 pub use clustering::{
     angular_separation_deg, circular_mean_deg, derive_clustering, fov_diagonal_deg,
     rotation_axial_distance_deg, Assignment, ClusteringResult, ExistingFraming, NewFramingGroup,

@@ -38,6 +38,61 @@ pub fn hard_rule_string(session_val: Option<&str>, master_val: Option<&str>) -> 
 /// toggle costs the same wherever it is set.
 pub const RELAXED_HARD_RULE_PENALTY: f64 = 0.2;
 
+/// Confidence penalty when exactly one of the light session and the master
+/// carries a camera body id, so the match is made without body agreement
+/// (constitution II: an inferred match carries a confidence level).
+///
+/// A constant rather than a [`crate::ranking::MatchingRuleConfig`] field: that
+/// struct is filled from settings keys with no construction-time validation, so
+/// a configurable penalty would be one more unvalidated float reaching the
+/// scorer.
+pub const UNKNOWN_CAMERA_BODY_PENALTY: f64 = 0.1;
+
+/// Whether two camera body ids are positive proof of different hardware.
+///
+/// Only two present-and-different identifiers qualify. An absent identifier is
+/// the majority case — most vendors emit no `CAMERAID` serial at all — and is
+/// never a conflict. Shared by [`optional_camera_rule`] and
+/// `assign::collect_hard_violations` so an override's violation list agrees
+/// with what `suggest` excluded.
+#[must_use]
+pub fn camera_bodies_conflict(session_val: Option<&str>, master_val: Option<&str>) -> bool {
+    matches!((session_val, master_val), (Some(s), Some(m)) if s != m)
+}
+
+/// Optional camera-body dimension shared by `bias`/`dark`/`flat`.
+///
+/// `None` excludes the candidate: two known, different bodies cannot calibrate
+/// each other. Both ids absent skips the dimension entirely and costs nothing,
+/// keeping every camera that writes no serial on its previous score. Exactly one
+/// id present keeps the candidate at [`UNKNOWN_CAMERA_BODY_PENALTY`], recording
+/// a `metadata_missing` entry so the unproven body agreement is visible rather
+/// than assumed.
+///
+/// The dimension is string equality throughout, so no numeric delta exists to be
+/// NaN or negative, and the penalty is a constant that cannot raise confidence.
+pub fn optional_camera_rule(
+    session_val: Option<&str>,
+    master_val: Option<&str>,
+    matched: &mut Vec<MatchedDim>,
+    mismatched: &mut Vec<MismatchedDim>,
+) -> Option<f64> {
+    if camera_bodies_conflict(session_val, master_val) {
+        return None;
+    }
+    match (session_val, master_val) {
+        (Some(s), Some(_)) => {
+            matched.push(MatchedDim::exact_string(Dimension::Camera, s));
+            Some(0.0)
+        }
+        (None, None) => Some(0.0),
+        _ => {
+            mismatched.push(MismatchedDim::metadata_missing(Dimension::Camera));
+            Some(UNKNOWN_CAMERA_BODY_PENALTY)
+        }
+    }
+}
+
 /// Numeric hard rule that the user can relax, shared by the gain and offset
 /// comparisons in `bias`/`dark`/`flat`.
 ///

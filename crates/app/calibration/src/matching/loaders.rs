@@ -48,6 +48,7 @@ pub(super) async fn load_session(
             rotation_deg: r.rotation_deg,
             binning: r.binning,
             optic_train: r.optic_train,
+            camera_body_id: r.camera_body_id,
             observing_night_date: r.observing_night_date,
             has_observer_location: r.has_observer_location.unwrap_or(0) != 0,
             has_exposure_start_utc: r.has_exposure_start_utc.unwrap_or(0) != 0,
@@ -102,6 +103,7 @@ pub(super) async fn load_masters(
                 rotation_deg: r.rotation_deg,
                 binning: r.binning,
                 optic_train: r.optic_train,
+                camera_body_id: r.camera_body_id,
                 source_session_id: r.source_session_id,
                 observing_night_date: r.observing_night_date,
             })
@@ -133,6 +135,7 @@ pub(super) async fn load_master_by_id(
             rotation_deg: r.rotation_deg,
             binning: r.binning,
             optic_train: r.optic_train,
+            camera_body_id: r.camera_body_id,
             source_session_id: r.source_session_id,
             observing_night_date: r.observing_night_date,
         })
