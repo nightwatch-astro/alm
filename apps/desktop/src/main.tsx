@@ -54,8 +54,12 @@ if (import.meta.env.VITE_DEV_TOOLS === 'true') {
 }
 
 // Feature 037 US3: expose a real IPC invoke bridge for the WebdriverIO E2E
-// journeys. `withGlobalTauri` is off, so `window.__TAURI__` is unavailable in the
-// webview; this gives the journeys a way to assert UI -> real-backend round-trips
+// journeys. `withGlobalTauri` is absent from `tauri.conf.json` and the E2E build
+// does not merge the `tauri.dev.conf.json` overlay that sets it, so
+// `window.__TAURI__` is unavailable in the E2E webview — but it IS present under
+// that overlay (docs/development/mcp-bridge.md), so its absence is a property of
+// this build path, not of the app.
+// This gives the journeys a way to assert UI -> real-backend round-trips
 // (e.g. `roots_list`) over the *real* IPC path. VITE_E2E is statically falsy in
 // production builds, so this branch and the ipc chunk reference are tree-shaken
 // out (mirrors the VITE_DEV_TOOLS gate above and the VITE_E2E path override).
