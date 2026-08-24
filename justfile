@@ -11,6 +11,7 @@ test:
     node scripts/check-eslint-baseline.test.mjs
     node scripts/check-mock-baseline.test.mjs
     node scripts/check-orphan-ve-modules.test.mjs
+    node scripts/precommit-verify.test.mjs
 
 # Lint and format. This recipe is the single local definition of the lint set;
 # the root package.json `lint` script delegates here so the two cannot drift.
@@ -36,6 +37,12 @@ lint:
     # protection policy. That comparison is offline; the live-protection
     # comparison after it skips with a NOTE when there is no network or token.
     bash scripts/check-required-contexts.sh
+
+# Run pre-commit over specific paths and FAIL if no hook looked at any of them.
+# Prefer this over a bare `pre-commit run --files ...`, which exits 0 when the
+# config's global `exclude:` drops every path given.
+precommit *FILES:
+    bash scripts/precommit-verify.sh {{FILES}}
 
 # Build the Rust workspace and package workspaces when present.
 build:

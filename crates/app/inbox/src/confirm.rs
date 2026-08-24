@@ -336,7 +336,7 @@ pub async fn confirm(
     //
     // Ordered before the three writes below, not after: frame-to-framing
     // attribution is a Tier-1 record (Constitution V) that the filesystem cannot
-    // re-derive, and those writes are what make the plan appliable. Running them
+    // re-derive, and those writes are what leave the plan ready to apply. Running them
     // first left a `ready_for_review` plan on a failed attribution, so the frames
     // could move with the user's decision missing. The plan stays in `draft` on
     // failure, which `plans.approve` refuses.
@@ -1396,7 +1396,7 @@ mod tests {
 
     /// Confirm one inbox item holding two light frames, one per session folder,
     /// under identical pattern tokens. Returns the confirm error and asserts
-    /// that nothing appliable was left behind.
+    /// that no plan was left ready to apply.
     async fn confirm_two_session_frames(item_id: &str, names: (&str, &str)) -> ContractError {
         let tmp = tempfile::tempdir().unwrap();
         for (session, name) in [("session-a", names.0), ("session-b", names.1)] {
@@ -3176,10 +3176,10 @@ mod tests {
 
     /// Frame-to-framing attribution is a Tier-1 record (Constitution V): it
     /// cannot be re-derived from the filesystem. A confirm whose attribution
-    /// fails must therefore leave nothing appliable behind, or the frames move
+    /// fails must therefore leave no plan ready to apply, or the frames move
     /// with the user's decision missing.
     #[tokio::test]
-    async fn failed_attribution_leaves_no_appliable_plan() {
+    async fn failed_attribution_leaves_no_plan_ready_to_apply() {
         let tmp = tempfile::tempdir().unwrap();
         write_fits(
             tmp.path(),
@@ -3223,7 +3223,7 @@ mod tests {
         assert_eq!(
             count_plans_in_state(db.pool(), "ready_for_review").await,
             0,
-            "a failed attribution must leave no appliable plan"
+            "a failed attribution must leave no plan ready to apply"
         );
         assert!(inbox_repo::get_plan_link(db.pool(), "item-attr-fail").await.unwrap().is_none());
         let item = inbox_repo::get_inbox_item(db.pool(), "item-attr-fail").await.unwrap();

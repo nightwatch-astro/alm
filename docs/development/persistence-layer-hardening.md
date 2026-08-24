@@ -122,8 +122,10 @@ So the **authoritative** guard is `scripts/check-db-boundary.sh`, and clippy is 
   - `query_builder_example.rs` (the reference module).
 - For each remaining file, counts query/exec sites
   (`sqlx::query | query_as | query_scalar | .fetch_(one|all|optional) |
-  .execute(`) that appear **before** the first `#[cfg(test)]` line. Inline unit
-  test modules are not production code and are excluded.
+  .execute(`) outside every inline `#[cfg(test)]` item's own brace scope. Unit
+  test modules are not production code, but production code *following* one in
+  the same file still counts, and a comment or blank line between the attribute
+  and the item it applies to does not break the exemption.
 - **Now sealed at zero (2026-07-11).** `scripts/db-boundary-baseline.txt` is
   empty, so the check fails (exit 1) on **any** production query site outside
   `persistence/db`. It also rejects a non-empty (hand-edited) baseline

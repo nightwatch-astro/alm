@@ -215,10 +215,10 @@ fn is_xisf_extension(ext: &str) -> bool {
 /// Returns `None` when not a master or metadata is unreadable.
 fn try_detect_master(abs_path: &Path, rel_path: &str, ext: &str) -> Option<ScannedMasterFile> {
     // Cached extract (F0): memoized by (path, mtime, size). Unsupported
-    // extensions surface as `Err` here. A corrupt FITS header does not: the
-    // parser is lenient and reports no keywords, so such a file reaches
-    // `detect_master` below with every header field `None` and is classified
-    // from its path alone (astro-plan-z7997).
+    // extensions and headers in which no keyword is readable surface as `Err`
+    // here, so such a file is declined outright rather than path-inferred. A
+    // readable header that merely lacks `IMAGETYP` still reaches
+    // `detect_master` below and may be classified from its path.
     let bundle = cached_extract(abs_path).ok()?;
 
     let image_typ_raw = bundle.image_typ.as_deref();
@@ -893,6 +893,40 @@ mod tests {
         let items = scan_root(tmp.path(), &ScanOptions::default()).unwrap().items;
         assert_eq!(items.len(), 1);
         assert!(items[0].masters.is_empty(), "dummy file cannot be a master");
+    }
+
+    /// A master-shaped file name never outranks an unreadable header: the
+    /// extractor rejects a header with no recognisable keyword, so no
+    /// path-only inference runs (astro-plan-z7997).
+    #[test]
+    fn corrupt_master_named_fits_is_not_detected_as_a_master() {
+        let tmp = tmpdir();
+        let folder = tmp.path().join("calibration");
+        fs::create_dir_all(&folder).unwrap();
+        write_file(&folder, "masterDark.fits", &[0xffu8; 2880]);
+
+        let items = scan_root(tmp.path(), &ScanOptions::default()).unwrap().items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            items[0].masters.is_empty(),
+            "a corrupt header carries no evidence for master detection"
+        );
+    }
+
+    /// The neighbouring case the z7997 rejection must not swallow: a valid
+    /// header without `IMAGETYP` still reaches path inference.
+    #[test]
+    fn keywordless_imagetyp_master_still_infers_frame_type_from_path() {
+        let tmp = tmpdir();
+        let folder = tmp.path().join("calibration");
+        fs::create_dir_all(&folder).unwrap();
+        write_realistic_fits(&folder, "masterDark.fits", None, None);
+
+        let items = scan_root(tmp.path(), &ScanOptions::default()).unwrap().items;
+        assert_eq!(items.len(), 1);
+        let master = items[0].masters.first().expect("path inference must still detect a master");
+        assert_eq!(master.detection.frame_type, FrameType::Dark);
+        assert!(!master.detection.stack_count_evidence, "no header integration count present");
     }
 
     /// Constitution §I regression: a symlinked subdirectory reachable from the
