@@ -7,29 +7,52 @@
 **Status**: Implemented (post-hoc record, verified 2026-08-24 against `origin/main`
 a52c637f2). Both layers and all five user stories ship:
 
-- **Layer 1, real-backend integration**: `crates/e2e-tests/` with 15 entries under
-  `crates/e2e-tests/tests/` (archive, calibration UI, cleanup protection gate,
-  inbox UI, inventory, journeys, lifecycle UI, onboarding, plan-review overlay,
-  sessions, settings, smoke, source view, targets, plus `common/`).
-- **Layer 2, full-stack end-to-end**: `tests/e2e/` with 39 tracked files —
-  Playwright specs plus `tests/e2e/support/`. The real-UI variant runs through
-  `desktop_shell` under the `e2e` feature with `thirtyfour` +
-  `tauri-plugin-webdriver` (no per-OS external WebDriver).
-- **US2, cross-platform automation**: `.github/workflows/e2e.yml` ("Real-UI E2E
-  (thirtyfour + nextest + tauri-plugin-webdriver)") builds and runs on
-  `ubuntu-latest`, `windows-latest` and `macos-latest`;
-  `.github/workflows/ci.yml` carries the fast mock-mode `ui-e2e` lane and its
-  `ui-e2e-gate`.
+Three distinct test populations exist; they are **not** interchangeable, and the
+CI tier names do not match this document's layer names (see the note at the head
+of `contracts/coverage-matrix.md`).
+
+- **Layer 1, real-backend integration**: the `integration` matrix job in
+  `.github/workflows/ci.yml` ("Unit + integration (L1+L2)"), exercising core logic
+  against real SQLite and a real temporary filesystem with the network mocked at
+  its outermost boundary.
+- **Layer 2, full-stack end-to-end**: the **`thirtyfour` Rust journey suite** —
+  **30** tests across 14 files under `crates/e2e-tests/tests/` (plus `common/`),
+  driving the built `desktop_shell` under the `e2e` feature via
+  `tauri-plugin-webdriver`, with no per-OS external WebDriver. All 30 are
+  `#[ignore]`d in-source, so `cargo test --workspace` never runs them; they run only
+  through `.github/workflows/e2e.yml`.
+- **Mock-mode UI regression** (neither spec layer): **38** Playwright `.spec.ts`
+  files under `tests/e2e/`, plus `tests/e2e/support/`. Run by the `ui-e2e` job in
+  `ci.yml` ("UI mock-mode (Playwright) — run") on `ubuntu-latest`, frontend-gated,
+  with `ui-e2e-gate` publishing the required context. These drive the UI against
+  in-process mocks, **not** a real backend, so they do not satisfy Layer 2.
+- **US2, cross-platform automation** — what runs **by default** versus what is
+  opt-in (`.github/workflows/e2e.yml:14-35`):
+  - Every `pull_request` and `merge_group` entry: a Tier-1 real-UI **smoke subset**
+    on `ubuntu-latest` only. Required context "Real-UI smoke (L3) — ubuntu-latest".
+  - Every push to `main`: the Tier-2 full matrix, `ubuntu-latest` (4 shards) +
+    `windows-latest` (3 shards). Windows is deliberately off PRs as the slow and
+    historically flaky leg.
+  - `macos-latest`: **opt-in only.** It runs on an explicit `workflow_dispatch` with
+    `run_macos=true`, which defaults to `false` (`:163-168`, gated at `:303`). It is
+    skipped on ordinary PR and main-push runs, so the spec's "across Windows, Linux,
+    and macOS" is met on Linux and Windows automatically and on macOS on request.
 - **US4, one-command local execution**: `apps/desktop/package.json`
-  `test:e2e` (`playwright test`) and `test:e2e:real`
+  `test:e2e` (`playwright test`, mock mode) and `test:e2e:real`
   (`scripts/run-e2e-real.sh`); `just test-e2e`.
 - **US5, standing convention**: `.claude/rules/22-astro-build-run.md:32` documents
   the two layers as the project's default way of working and points at
   `contracts/coverage-matrix.md`, which is maintained per feature area.
 
 Correction of record: an earlier audit concluded Layer 2 had not shipped by
-checking `apps/desktop/e2e`, which has never existed. The Playwright tree is
-`tests/e2e/`.
+checking `apps/desktop/e2e`. That path **did** exist — added 2026-06-19/20 across
+`329c6d11d`, `db56e34ee`, `695f668b6` and `e3793a598`, holding
+`playwright.real-backend.config.ts`, `real-backend/*.spec.ts`, `helpers/` and a
+`README.md` — and was removed across `e3793a598`, `7a4f70446` (2026-06-20, which
+standardized real-UI E2E on `tauri-plugin-webdriver` and retired wdio) and
+`a504a7fce` (2026-07-11). So the audit cited a deleted path, not one that never
+existed. Its `research.md` citations of `apps/desktop/e2e/helpers/*.ts` are stale
+records of that tree, not planned paths.
 
 **Input**: User description: "Full integration testing of our app: exercise the real application (real data store, real command/IPC dispatch, real side effects) rather than mocked stubs, covering all currently implemented features, across Windows, Linux, and macOS, in both CI/CD and during local development. Update the project instructions so this is the standing convention."
 
