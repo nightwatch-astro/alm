@@ -4,8 +4,10 @@
 
 **Created**: 2026-07-17
 
-**Status**: Implemented
-and task generation
+**Status**: Implemented (verified 2026-08-24: self-hosted Inter statics at
+`apps/desktop/src/assets/fonts/Inter-*.woff2` per FR-001, and FR-006 engine zoom at
+`apps/desktop/src/data/theme.ts` with `apps/desktop/src/data/theme.zoom.test.ts` and the
+Settings control in `apps/desktop/src/features/settings/General.tsx`)
 
 **Input**: User report: "the app's text looks jagged and hard to read on
 Windows, and font usage feels inconsistent; also evaluate a larger default and

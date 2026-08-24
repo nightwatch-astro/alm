@@ -60,9 +60,18 @@ the existing spec-035 model; no new external surface beyond documented contracts
 
 - **Gen-1 (0002) is DEFERRED** (user decision 2026-06-19): removing the singular `target`
   table is entangled with the dormant original schema generation (singular `project`,
-  `catalog_equivalence`, NOT-NULL FK chains). Leave `0002_lifecycle.sql` untouched; this
+  `catalog_equivalence`, NOT-NULL FK chains). Leave the gen-1 objects untouched; this
   spec only ensures gen-1 `target` has no live reader (drop the inventory join, §B). The
-  0002 original-generation cleanup is a separate future spec.
+  original-generation cleanup is a separate future spec.
+
+  Reconciled 2026-08-24: the numbered migration chain named throughout this plan no longer
+  exists. Every schema object now lives in the single editable baseline
+  `crates/persistence/core/migrations/0001_initial_schema.sql`, per decision bead `adr-1`; gen-1
+  `target` is at `:2914` and `acquisition_session.target_id` at `:28`. The gen-2 tables this
+  spec removed (`targets`, `target_aliases`, `target_catalog_refs`, `catalog_equivalences`)
+  are absent from the baseline. Editing the baseline in place changes the version-1 checksum,
+  so every existing development database fails to open and must be recreated — see
+  `docs/development/database-baseline-and-migrations.md`.
 - Delete `0017_targets.sql` entirely (whole file is gen-2 target schema).
 - Delete `0027_target_identity.sql` entirely (whole file is gen-2 target extensions: the
   `targets.notes`/`updated_at` ALTERs, `target_aliases`, and the FK columns
