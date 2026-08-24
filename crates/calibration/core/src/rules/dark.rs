@@ -51,6 +51,14 @@ pub fn evaluate(
         &mut mismatched,
     )?;
 
+    // ── Optional hard rule: camera body ───────────────────────────────────────
+    confidence -= crate::rules::optional_camera_rule(
+        session.camera_body_id.as_deref(),
+        master.camera_body_id.as_deref(),
+        &mut matched,
+        &mut mismatched,
+    )?;
+
     // ── Soft rule: exposure (±tolerance%) ─────────────────────────────────────
     let exp_cfg = config.dark_exposure_config();
     match (session.exposure_s, master.exposure_s) {
@@ -164,6 +172,7 @@ mod tests {
             rotation_deg: None,
             binning: None,
             optic_train: None,
+            camera_body_id: None,
             source_session_id: None,
             observing_night_date: None,
         }

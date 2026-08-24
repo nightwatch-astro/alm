@@ -473,6 +473,7 @@ async fn write_master_fingerprint(
             temp_c: dims.temp_c,
             binning: dims.binning.as_deref(),
             optic_train: dims.optic_train.as_deref(),
+            camera_body_id: dims.camera_body_id.as_deref(),
         },
     )
     .await
@@ -488,6 +489,7 @@ struct MasterFingerprintDims {
     temp_c: Option<f64>,
     binning: Option<String>,
     optic_train: Option<String>,
+    camera_body_id: Option<String>,
 }
 
 /// Read the applied master frame's header for the dimensions
@@ -527,6 +529,10 @@ async fn read_master_fingerprint_dims(
             meta.telescop.as_deref(),
             meta.instrume.as_deref(),
             meta.focal_length_mm,
+        ),
+        camera_body_id: sessions::camera_body_id(
+            meta.cameraid.as_deref(),
+            meta.instrume.as_deref(),
         ),
     }
 }

@@ -107,6 +107,9 @@ pub struct InsertCalibrationFingerprint<'a> {
     pub binning: Option<&'a str>,
     /// Hard-rule dimension for flat matching.
     pub optic_train: Option<&'a str>,
+    /// Optional dimension for every calibration kind: two present-and-different
+    /// body ids exclude the candidate, absent on either side does not.
+    pub camera_body_id: Option<&'a str>,
 }
 
 /// Idempotency guard for master registration: does a `calibration_session`
@@ -162,8 +165,8 @@ pub async fn insert_calibration_fingerprint(
     sqlx::query(
         "INSERT INTO calibration_fingerprint
             (id, calibration_type, exposure_s, filter_name, gain, offset_val,
-             temp_c, binning, optic_train)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             temp_c, binning, optic_train, camera_body_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(fp.calibration_session_id)
     .bind(fp.calibration_type)
@@ -174,6 +177,7 @@ pub async fn insert_calibration_fingerprint(
     .bind(fp.temp_c)
     .bind(fp.binning)
     .bind(fp.optic_train)
+    .bind(fp.camera_body_id)
     .execute(pool)
     .await?;
     Ok(())

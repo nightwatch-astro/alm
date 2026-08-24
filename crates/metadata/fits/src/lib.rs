@@ -11,8 +11,8 @@
 //!
 //! This extractor reads only the header keywords required for inbox
 //! classification: `IMAGETYP`, `FILTER`, `OBJECT`, `EXPTIME`, `EXPOSURE`,
-//! `GAIN`, `XBINNING`, `YBINNING`, `NAXIS1`, `NAXIS2`, `INSTRUME`, `TELESCOP`,
-//! `DATE-OBS`.
+//! `GAIN`, `XBINNING`, `YBINNING`, `NAXIS1`, `NAXIS2`, `INSTRUME`, `CAMERAID`,
+//! `TELESCOP`, `DATE-OBS`.
 //!
 //! No cfitsio or heavy C dependencies — `fits-header` is pure Rust. A header
 //! missing individual keywords still yields `Ok`, with `None` for each absent
@@ -191,6 +191,7 @@ fn parse_header(header: &Header) -> RawFileMetadata {
     meta.naxis1 = get(header, "NAXIS1");
     meta.naxis2 = get(header, "NAXIS2");
     meta.instrume = get_str(header, "INSTRUME");
+    meta.cameraid = get_str(header, "CAMERAID");
     meta.telescop = get_str(header, "TELESCOP");
     meta.date_obs = get_str(header, "DATE-OBS");
 

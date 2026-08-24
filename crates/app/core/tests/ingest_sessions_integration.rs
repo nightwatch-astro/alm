@@ -613,6 +613,7 @@ async fn ingested_session_matches_a_calibration_master() {
             temp_c: Some(-10.0),
             binning: Some("1x1"),
             optic_train: None,
+            camera_body_id: None,
         },
     )
     .await

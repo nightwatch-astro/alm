@@ -142,6 +142,7 @@ fn parse_header(header: &Header) -> RawFileMetadata {
     meta.naxis1 = non_empty(get_str(header, "NAXIS1"));
     meta.naxis2 = non_empty(get_str(header, "NAXIS2"));
     meta.instrume = non_empty(get_str(header, "INSTRUME"));
+    meta.cameraid = non_empty(get_str(header, "CAMERAID"));
     meta.telescop = non_empty(get_str(header, "TELESCOP"));
     meta.date_obs = non_empty(get_str(header, "DATE-OBS"));
 

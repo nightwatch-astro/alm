@@ -62,6 +62,14 @@ pub fn evaluate(
         _ => return None,
     }
 
+    // ── Optional hard rule: camera body ───────────────────────────────────────
+    confidence -= crate::rules::optional_camera_rule(
+        session.camera_body_id.as_deref(),
+        master.camera_body_id.as_deref(),
+        &mut matched,
+        &mut mismatched,
+    )?;
+
     // ── Hard rule: gain (exact, no tolerance — 2026-05-23 decision) ───────────
     confidence -= crate::rules::relaxable_numeric(
         Dimension::Gain,
@@ -189,6 +197,7 @@ mod tests {
             rotation_deg: Some(rotation),
             binning: Some(binning.to_owned()),
             optic_train: Some(optic_train.to_owned()),
+            camera_body_id: None,
             source_session_id: None,
             observing_night_date: Some(night.to_owned()),
         }

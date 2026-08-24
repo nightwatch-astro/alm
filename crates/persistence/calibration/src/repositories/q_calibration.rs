@@ -61,6 +61,7 @@ pub struct AcquisitionFingerprintRow {
     pub rotation_deg: Option<f64>,
     pub binning: Option<String>,
     pub optic_train: Option<String>,
+    pub camera_body_id: Option<String>,
     pub observing_night_date: Option<String>,
     pub has_observer_location: Option<i64>,
     pub has_exposure_start_utc: Option<i64>,
@@ -79,6 +80,7 @@ pub struct CalibrationFingerprintRow {
     pub rotation_deg: Option<f64>,
     pub binning: Option<String>,
     pub optic_train: Option<String>,
+    pub camera_body_id: Option<String>,
     pub source_session_id: Option<String>,
     pub observing_night_date: Option<String>,
 }
@@ -137,7 +139,8 @@ pub async fn get_acquisition_fingerprint(
         "
         SELECT id, session_type, gain, offset_val, exposure_s,
                temp_c, filter_name, rotation_deg, binning, optic_train,
-               observing_night_date, has_observer_location, has_exposure_start_utc
+               camera_body_id, observing_night_date, has_observer_location,
+               has_exposure_start_utc
         FROM acquisition_fingerprint
         WHERE id = ?
         ",
@@ -160,6 +163,7 @@ pub struct UpsertAcquisitionFingerprint<'a> {
     pub rotation_deg: Option<f64>,
     pub binning: Option<&'a str>,
     pub optic_train: Option<&'a str>,
+    pub camera_body_id: Option<&'a str>,
     pub observing_night_date: Option<&'a str>,
     pub has_observer_location: bool,
     pub has_exposure_start_utc: bool,
@@ -188,9 +192,9 @@ pub async fn upsert_acquisition_fingerprint(
         "
         INSERT INTO acquisition_fingerprint
             (id, session_type, gain, offset_val, exposure_s, temp_c, filter_name,
-             rotation_deg, binning, optic_train, observing_night_date,
-             has_observer_location, has_exposure_start_utc)
-        VALUES (?, 'light', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             rotation_deg, binning, optic_train, camera_body_id,
+             observing_night_date, has_observer_location, has_exposure_start_utc)
+        VALUES (?, 'light', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             gain                   = COALESCE(gain, excluded.gain),
             offset_val             = COALESCE(offset_val, excluded.offset_val),
@@ -200,6 +204,7 @@ pub async fn upsert_acquisition_fingerprint(
             rotation_deg           = COALESCE(rotation_deg, excluded.rotation_deg),
             binning                = COALESCE(binning, excluded.binning),
             optic_train            = COALESCE(optic_train, excluded.optic_train),
+            camera_body_id         = COALESCE(camera_body_id, excluded.camera_body_id),
             observing_night_date   = COALESCE(observing_night_date, excluded.observing_night_date),
             has_observer_location  = MAX(has_observer_location, excluded.has_observer_location),
             has_exposure_start_utc = MAX(has_exposure_start_utc, excluded.has_exposure_start_utc)
@@ -214,6 +219,7 @@ pub async fn upsert_acquisition_fingerprint(
     .bind(fp.rotation_deg)
     .bind(fp.binning)
     .bind(fp.optic_train)
+    .bind(fp.camera_body_id)
     .bind(fp.observing_night_date)
     .bind(i64::from(fp.has_observer_location))
     .bind(i64::from(fp.has_exposure_start_utc))
@@ -234,7 +240,8 @@ pub async fn list_light_acquisition_fingerprints(
         "
         SELECT id, session_type, gain, offset_val, exposure_s,
                temp_c, filter_name, rotation_deg, binning, optic_train,
-               observing_night_date, has_observer_location, has_exposure_start_utc
+               camera_body_id, observing_night_date, has_observer_location,
+               has_exposure_start_utc
         FROM acquisition_fingerprint
         WHERE session_type = 'light'
         ",
@@ -258,7 +265,7 @@ pub async fn list_calibration_fingerprints(
         "
         SELECT id, calibration_type, gain, offset_val, exposure_s,
                temp_c, filter_name, rotation_deg, binning, optic_train,
-               source_session_id, observing_night_date
+               camera_body_id, source_session_id, observing_night_date
         FROM calibration_fingerprint
         WHERE calibration_type IN ('dark', 'flat', 'bias')
         ",
@@ -280,7 +287,7 @@ pub async fn get_calibration_fingerprint(
         "
         SELECT id, calibration_type, gain, offset_val, exposure_s,
                temp_c, filter_name, rotation_deg, binning, optic_train,
-               source_session_id, observing_night_date
+               camera_body_id, source_session_id, observing_night_date
         FROM calibration_fingerprint
         WHERE id = ?
         ",

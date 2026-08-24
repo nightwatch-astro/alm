@@ -54,6 +54,14 @@ pub fn evaluate(
         &mut mismatched,
     )?;
 
+    // ── Optional hard rule: camera body ───────────────────────────────────────
+    confidence -= crate::rules::optional_camera_rule(
+        session.camera_body_id.as_deref(),
+        master.camera_body_id.as_deref(),
+        &mut matched,
+        &mut mismatched,
+    )?;
+
     // ── Soft rule: master age (±age_limit_days) ───────────────────────────────
     confidence -= crate::rules::apply_age_rule(
         session.observing_night_date.as_deref(),
@@ -102,6 +110,7 @@ mod tests {
             rotation_deg: None,
             binning: None,
             optic_train: None,
+            camera_body_id: None,
             source_session_id: None,
             observing_night_date: None,
         }

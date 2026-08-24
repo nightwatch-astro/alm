@@ -364,6 +364,8 @@ async fn backfill_session_fingerprint(
         meta.instrume.as_deref(),
         meta.focal_length_mm,
     );
+    let camera_body_id =
+        sessions::camera_body_id(meta.cameraid.as_deref(), meta.instrume.as_deref());
 
     // Sensor set-point first: it is the temperature a calibration master is
     // matched on, with the measured CCD reading as the fallback.
@@ -390,6 +392,7 @@ async fn backfill_session_fingerprint(
             rotation_deg: meta.rotator_angle_deg,
             binning: (!binning.is_empty()).then_some(binning.as_str()),
             optic_train: optic_train.as_deref(),
+            camera_body_id: camera_body_id.as_deref(),
             observing_night_date: observing_night_date.as_deref(),
             // R11: ingest always uses the UTC observing-night fallback, so no
             // frame can assert a real observer location (mirrors

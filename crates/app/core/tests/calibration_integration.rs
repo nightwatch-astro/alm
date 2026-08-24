@@ -207,6 +207,73 @@ async fn suggest_returns_candidates_when_master_matches() {
     );
 }
 
+/// astro-plan-ugux2 end-to-end: the `camera_body_id` column must survive the
+/// round trip through `acquisition_fingerprint`/`calibration_fingerprint` and the
+/// matcher loaders, so a master captured with a different physical body is
+/// excluded rather than silently offered. Two masters differ only in body id.
+#[tokio::test]
+async fn suggest_excludes_a_master_from_a_different_camera_body() {
+    let (db, _repo, _bus) = support::setup().await;
+    let pool = db.pool();
+
+    async fn set_session_body(pool: &sqlx::SqlitePool, id: &str, body: &str) {
+        sqlx::query("UPDATE acquisition_fingerprint SET camera_body_id = ? WHERE id = ?")
+            .bind(body)
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("set session camera_body_id failed: {e}"));
+    }
+
+    async fn set_master_body(pool: &sqlx::SqlitePool, id: &str, body: &str) {
+        sqlx::query("UPDATE calibration_fingerprint SET camera_body_id = ? WHERE id = ?")
+            .bind(body)
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("set master camera_body_id failed: {e}"));
+    }
+
+    let session_id = Uuid::new_v4().to_string();
+    let same_body_master = Uuid::new_v4().to_string();
+    let other_body_master = Uuid::new_v4().to_string();
+
+    insert_acq_session(pool, &session_id).await;
+    insert_acq_fingerprint(pool, &session_id, 100.0, 10.0, -10.0, "1x1").await;
+    set_session_body(pool, &session_id, "player one_serial-a").await;
+
+    for (master_id, body) in
+        [(&same_body_master, "player one_serial-a"), (&other_body_master, "player one_serial-b")]
+    {
+        insert_cal_session(pool, master_id, "dark").await;
+        insert_cal_fingerprint(pool, master_id, "dark", 100.0, 10.0, -10.0, "1x1").await;
+        set_master_body(pool, master_id, body).await;
+    }
+
+    let resp = suggest(
+        pool,
+        CalibrationMatchSuggestRequest {
+            contract_version: SUGGEST_CONTRACT_VERSION.to_owned(),
+            request_id: Uuid::new_v4().to_string(),
+            session_id: session_id.clone(),
+            calibration_types: Some(vec![CalibrationType::Dark]),
+        },
+    )
+    .await
+    .expect("suggest should not return Err");
+
+    assert_eq!(resp.status, "success", "expected success, got: {:?}", resp.error);
+    let matches = resp.matches.expect("expected Some(matches)");
+    assert!(
+        matches.iter().any(|m| m.master_id == same_body_master),
+        "the master from the same body was not offered: {matches:?}"
+    );
+    assert!(
+        !matches.iter().any(|m| m.master_id == other_body_master),
+        "a master from a different camera body was offered: {matches:?}"
+    );
+}
+
 /// T134 (Q16 / FR-136) regression: calibration matching runs on the
 /// Option-typed domain `SessionInfo`/`MasterInfo`, loaded straight from
 /// `acquisition_fingerprint`/`calibration_fingerprint` — never through the
