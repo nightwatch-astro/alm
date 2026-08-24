@@ -1,7 +1,7 @@
 ---
 id: J02
 title: Move newly-arrived frames from an inbox drop folder into the library
-version: 5
+version: 8
 status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
@@ -35,6 +35,8 @@ trace:
   - specs/058-inbox-drop-parent-items/sc-009-boundary.md (SC-009 is knowingly
     NOT delivered by spec 058; the supersession mechanism lands in
     specs/tiny/reclassify-split-per-item-and-rederivation.md, PR #1097)
+  - PR #1740 (explicit approval before an inbox plan applies)
+  - PR #1724 (one pattern token renders one folder level)
   - spec-054-adaptive-detail-dock (FR-001, FR-003, FR-005 — shared adaptive
     dock: Inbox uses the same side-≥1400px/bottom-below placement, per-page
     Auto/Bottom/Right override, and drag-resizable side width as every other
@@ -273,10 +275,33 @@ explicit, reviewed plan, and the action is visible in the audit history.
   single-item and apply-all/apply-selected flows. Files move to the path
   resolved from the per-frame-type folder pattern (e.g.
   `{target}/{filter}/{date}/light/`).
+- **Expect:** One pattern token always renders exactly one folder level, no
+  matter what the metadata says: a `FILTER` of `Ha/OIII` or an `OBJECT` of
+  `M42/Trapezium` lands in a single folder whose name contains no separator,
+  so the applied path has the depth the reviewed plan showed. A target name
+  carrying a Greek letter (`α Centauri`) resolves to its own folder rather
+  than falling back.
+- **Trace (paths):** `crates/safe-filename/src/lib.rs:105` (`/` is
+  substituted like every other reserved character), `:210-220`
+  (`EmptyAfterSanitize` instead of an empty segment); PR #1724.
+- **Expect:** The Apply gesture stays one click: applying records the user's
+  approval for exactly the plans that were on screen, then applies them.
 - **Expect (negative):** A plan whose source file changed on disk since it
   was confirmed refuses to apply rather than silently applying an outdated
   action list. A destination collision is refused rather than silently
   overwritten.
+- **Expect (negative):** No inbox plan is ever applied without an approval
+  the user's own gesture recorded: a plan carrying no approval is refused
+  with `plan.approval_required` and nothing moves. A plan that appeared after
+  the render the user reviewed is therefore refused rather than applied
+  unseen — in an apply-all it is reported in the failed count, not moved.
+- **Trace (approval):** `crates/app/core/src/inbox_plan.rs:202-212` (reads
+  the recorded approval, never mints one; `:56-59`
+  `ErrorCode::PlanApprovalRequired`);
+  `apps/desktop/src/features/inbox/useInboxPlanApplyFlow.ts:97`, `:131-133`
+  (batch handlers approve the displayed plans only); the mkdir-only
+  `plans::auto_apply` path remains the one documented auto-apply exception;
+  PR #1740.
 - **Trace (correction):** the backend apply response
   (`InboxPlanApplyResult { inboxItemId, planId, state, error }`) carries a
   per-item error, but no inbox UI code renders it per item — only an
@@ -287,9 +312,11 @@ explicit, reviewed plan, and the action is visible in the audit history.
   "View session" post-apply link claim — no such affordance found in
   `PlanPanel.tsx`/`PlanApprovalOverlay.tsx`/`usePlanApplyProgress.ts` or
   the message catalog. Stale-source refusal is confirmed via the executor
-  CAS check (`crates/fs/executor/src/run.rs::check_cas`); destination
-  collision refusal is confirmed via `ErrorCode::PathCollision` +
-  "never overwrite silently" (`crates/fs/executor/src/run.rs`).
+  CAS check (`crates/fs/executor/src/ops/cas_check.rs:43`, called from
+  `run/loop_.rs:467`); destination-collision refusal is confirmed via
+  `FailureCode::ConflictDestinationExists`
+  (`crates/fs/executor/src/failure.rs:63`, `:113`, `:178` — a destination that
+  already exists is an item failure, never an overwrite).
 
 ### S8 — Verify the applied outcome {#S8}
 - **Do:** Return to the inbox queue and to the audit history after an
@@ -404,3 +431,19 @@ explicit, reviewed plan, and the action is visible in the audit history.
   by: journey-scribe (intent-gated) · IMPLEMENTED on
   spec/058-inbox-drop-parent-items (PR #1194); Layer-3 journeys green in CI
   on both Linux and Windows
+
+- **Δ7** 2026-08-24 · S7 · behavior-change
+  Applying an inbox plan now requires an approval recorded by the user's own
+  gesture: the Apply / Apply all controls approve exactly the plans they
+  displayed and the backend refuses an unapproved plan with
+  `plan.approval_required`. Previously the apply use case minted its own
+  approval, so a plan that appeared after the render was applied unseen and
+  the audit record credited the approval to the code.
+  Evidence: PR #1740 (c0f7e10ea) · by: journey-scribe (intent-gated)
+
+- **Δ8** 2026-08-24 · S7 · behavior-change
+  A metadata value containing `/` no longer adds a folder level to the
+  applied destination — one token renders one segment — a dots-only literal
+  segment no longer vanishes, and a Greek-letter target name such as
+  `α Centauri` is accepted instead of being rejected as mixed-script.
+  Evidence: PR #1724 (7b6867f04) · by: journey-scribe (intent-gated)

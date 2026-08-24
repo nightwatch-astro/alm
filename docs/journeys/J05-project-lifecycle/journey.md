@@ -1,7 +1,7 @@
 ---
 id: J05
 title: Run a project from creation through tool launch and output tracking
-version: 4
+version: 5
 status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
@@ -17,6 +17,8 @@ trace:
   - deltas/2026-07-14-jval-docdrift.md (folded as correction)
   - spec-054-adaptive-detail-dock (FR-004, FR-011 — unified adaptive dock,
     1100×720 bottom-mode usability)
+  - PR #1725 (absolute-PATH auto-detect; the macOS working-folder claim
+    corrected in the product)
 ---
 
 ## Goal
@@ -112,14 +114,29 @@ safe-by-construction or was explicitly reviewed.
 ### S5 — Launch the processing tool {#S5}
 - **Do:** With a tool executable configured, choose "Open in {tool}" from
   the project.
-- **Expect:** The tool process launches against the project's working
-  directory without changing the project's lifecycle state.
+- **Expect:** The tool process launches without changing the project's
+  lifecycle state. Whether the project's working folder reaches the tool
+  depends on how the tool is started: a launch that runs the executable
+  directly starts it in that folder, while a macOS launch of an `.app` bundle
+  goes through Launch Services, which ignores the caller's folder — every
+  seeded macOS profile takes that arm. The one-time hint shown for such a tool
+  says only that the tool takes no folder to open, and no longer tells the user
+  the working folder is anchored to the project.
 - **Expect (negative):** If the project's working directory would resolve
   outside every registered library root, the launch is refused with a
   plain explanation instead of spawning into an unexpected location. If the
   OS itself fails to spawn the process, that failure is reported plainly,
   not swallowed.
-- **Trace:** e2e-agentic-test/011-processing-tool-launch/tool-launch-containment/scenario.md
+- **Expect (negative):** Auto-detecting a tool's executable never offers a
+  path that depends on where the app happened to be started: only absolute
+  `PATH` directories are searched, so an empty `PATH` element cannot produce a
+  candidate resolved against the current folder.
+- **Trace:** e2e-agentic-test/011-processing-tool-launch/tool-launch-containment/scenario.md;
+  `crates/workflow/profiles/src/launch.rs:12` (the macOS `open -b` arm),
+  `:159-166` (`working_dir` is not applied and cannot be), `:148`, `:187`,
+  `:198` (`current_dir` on the direct-exec arms); hint string
+  `projects_tool_cwd_anchored_hint`
+  (`apps/desktop/messages/en-GB.json:1570`); PR #1725.
 
 ### S6 — Observe artifacts the tool produces {#S6}
 - **Do:** Leave the project open while the processing tool writes files
@@ -181,3 +198,12 @@ safe-by-construction or was explicitly reviewed.
   Sessions and the setup wizard — previously Projects showed a decimal-hours
   variant ("1.5h") for the same quantity.
   Evidence: PR #1288 (refs #631) · by: journey-scribe (intent-gated)
+
+- **Δ5** 2026-08-24 · S5 · behavior-change
+  Tool auto-detect now searches only absolute `PATH` directories, so it can no
+  longer suggest an executable path that resolves against whatever folder the
+  app was started from. On macOS the one-time hint no longer claims the tool
+  starts in the project folder: a bundle launch goes through Launch Services,
+  which ignores the caller's folder, and the hint now says only that the tool
+  takes no folder to open.
+  Evidence: PR #1725 (079da6535) · by: journey-scribe (intent-gated)

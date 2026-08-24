@@ -4,13 +4,32 @@
 
 **Created**: 2026-07-04
 
-**Status**: Draft
+**Status**: Implemented (post-hoc record, verified 2026-08-24 — surfaces for all
+six user stories located on `origin/main` a52c637f2; per-FR verification was not
+performed, so treat individual FRs as unconfirmed rather than closed). US1 engine
+`apps/desktop/src/features/targets/planner-astronomy.ts:256`
+`computeNightObservability` with `usableAltDeg` now a prop defaulting to
+`USABLE_ALT_DEG` (`TargetsTable.tsx:203`, `TargetDetail.tsx:88`); US2
+`PlannerDatePicker.tsx`; US3 `features/settings/ObservingSites.tsx` over the
+`observerSites` setting (`crates/app/settings/src/descriptors.rs`); US4 per-site
+`twilight` / `minHorizonAltDeg` in that same descriptor; US5
+`features/targets/astro/lunar-separation.ts` plus the registered
+`target_moon_opposition_batch` command (`bootstrap/specta.rs:138`, `:265`); US6
+first-run default site `features/setup/steps/StepSite.tsx`. Supporting modules
+`astro/observing-night.ts`, `astro/opposition.ts`, `astro/best-moon-date.ts` and
+`astro/row-planning.ts`, each with a colocated `.test.ts`.
+
+**Implementation location** (resolved after the fact; this spec deliberately left
+it to plan/research): the ephemeris engine is **frontend TypeScript** under
+`apps/desktop/src/features/targets/`, not a Rust crate. There is no observer-site
+Tauri command; sites are a settings key described in
+`crates/app/settings/src/descriptors.rs`.
 
 **Input**: User description: "Give the Targets planner real, per-site, per-date observability. For each deep-sky target (and the Moon), compute where it is in the sky over a chosen night from a chosen observing site: altitude over time, when it transits, when it rises/sets, its best imaging date, and its geometry against the Moon — so the planner can show real max-altitude, altitude sparkline, visible-tonight, imaging-time and per-filter moon-free time instead of placeholders. Let the user keep several named observing sites, pick which is active, choose how dark 'night' must be and how low the horizon reaches, set the lowest usable altitude, and plan any date — with a default site created in the first-run wizard so the planner works out of the box."
 
 ## Context & Motivation
 
-The Targets planner table and the target detail view already expose columns and an altitude graph for observability — maximum altitude, an altitude sparkline over the night, a "visible tonight" flag, imaging time above a usable altitude, transit / best-date, Moon distance, and a filter recommendation — but those values are currently driven by placeholder logic. The usable-altitude cutoff is a hardcoded constant (`USABLE_ALT_DEG`), there is no real observing site behind the numbers, "tonight" is the only planning horizon, and the Moon figure is not a real angular separation. The planner looks like a planning tool without yet being one.
+The Targets planner table and the target detail view already expose columns and an altitude graph for observability — maximum altitude, an altitude sparkline over the night, a "visible tonight" flag, imaging time above a usable altitude, transit / best-date, Moon distance, and a filter recommendation — but at the time this spec was written those values were driven by placeholder logic: the usable-altitude cutoff was a hardcoded constant (`USABLE_ALT_DEG`), there was no real observing site behind the numbers, "tonight" was the only planning horizon, and the Moon figure was not a real angular separation. The planner looked like a planning tool without yet being one. (All four conditions have since been removed — see the Status header.)
 
 This feature (Track B) provides the real **ephemeris and observer-location engine** behind those surfaces: given an observing site and a date, it computes where each target is over the night — altitude samples, transit, rise, set, best imaging date — and the Moon's real geometry over that night (its altitude and its angular separation from each target). From that geometry it derives the total imaging time above the usable altitude and, integrating the filter track's per-band Moon-avoidance rule over the night, a **per-filter moon-free imaging time**. It also introduces the user-facing model the engine needs: multiple named observing sites with a default and an active choice, a per-site definition of how dark "night" must be and how low the horizon reaches, a configurable usable-altitude threshold, and a **default site created in the first-run wizard** so the planner is populated from the start.
 
