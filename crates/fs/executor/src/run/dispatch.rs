@@ -30,6 +30,12 @@ pub(super) type OpError = (PlanItemFailure, bool, RollbackOutcome, Option<String
 pub(super) struct ResolvedItemPaths {
     pub(super) source: Option<Utf8PathBuf>,
     pub(super) destination: Option<Utf8PathBuf>,
+    /// The archive destination carried by `Archive`/`Trash`, resolved against
+    /// the same root as the source.
+    ///
+    /// A third destination field reached `move_file` unresolved and ungated
+    /// while only the two named sides were gated (astro-plan-zboex).
+    pub(super) archive_destination: Option<Utf8PathBuf>,
 }
 
 pub(super) fn execute_item(item: &ExecutorItem, paths: &ResolvedItemPaths) -> Result<(), OpError> {
@@ -46,16 +52,17 @@ pub(super) fn execute_item(item: &ExecutorItem, paths: &ResolvedItemPaths) -> Re
                 .map_err(|(f, r)| (f, r.rollback_attempted, r.rollback_outcome, r.rollback_message))
         }
 
-        ExecutorItemAction::Archive { archive_destination } => {
+        ExecutorItemAction::Archive { .. } => {
             let src = require_resolved_path(resolved_src, "source")?;
-            // archive_destination is already absolute (pre-computed at plan generation).
-            archive_op::archive_file(src, archive_destination)
+            let dst =
+                require_resolved_path(paths.archive_destination.as_deref(), "archive destination")?;
+            archive_op::archive_file(src, dst)
                 .map_err(|(f, r)| (f, r.rollback_attempted, r.rollback_outcome, r.rollback_message))
         }
 
-        ExecutorItemAction::Trash { fallback_archive_destination } => {
+        ExecutorItemAction::Trash { .. } => {
             let src = require_resolved_path(resolved_src, "source")?;
-            trash_op::trash_file(src, fallback_archive_destination.as_deref())
+            trash_op::trash_file(src, paths.archive_destination.as_deref())
                 .map(|_| ()) // discard TrashResult (audit_reason recorded by caller)
                 .map_err(|(f, r)| (f, r.rollback_attempted, r.rollback_outcome, r.rollback_message))
         }

@@ -160,13 +160,30 @@ async fn drive_plan<C: ExecutorCallbacks>(
 /// A side with no root is refused unless it carries an absolute, already-normal
 /// path, which is the legacy mode for items storing a pre-resolved destination
 /// (`fs_pathsafe::contain::resolve_unrooted`).
+///
+/// The archive destination carried inside the `Archive`/`Trash` action is a
+/// third side and is resolved here too: gating only the two named sides let it
+/// reach `move_file` unresolved (astro-plan-zboex). It is governed by the
+/// SOURCE root, because both generators derive it as a sibling of the source
+/// (`app_projects::prepared_views::compute_archive_destination`) and the
+/// archive-management side resolves the same stored column against
+/// `from_root_id` (`app_core::plans::archive::resolve_archive_abs_path`).
 fn resolve_item_paths(item: &ExecutorItem) -> Result<ResolvedItemPaths, PlanItemFailure> {
+    let archive_destination = match &item.action {
+        ExecutorItemAction::Archive { archive_destination } => Some(archive_destination.as_path()),
+        ExecutorItemAction::Trash { fallback_archive_destination } => {
+            fallback_archive_destination.as_deref()
+        }
+        _ => None,
+    };
+
     Ok(ResolvedItemPaths {
         source: resolve_side(item.source_path.as_deref(), item.library_root.as_deref())?,
         destination: resolve_side(
             item.destination_path.as_deref(),
             item.destination_root.as_deref().or(item.library_root.as_deref()),
         )?,
+        archive_destination: resolve_side(archive_destination, item.library_root.as_deref())?,
     })
 }
 
