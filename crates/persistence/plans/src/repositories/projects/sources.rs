@@ -53,7 +53,9 @@ pub async fn find_blockable_missing_sources(pool: &SqlitePool) -> DbResult<Vec<(
          FROM project_sources ps
          JOIN projects p ON p.id = ps.project_id
          JOIN acquisition_session s ON s.id = ps.inventory_session_id
-         JOIN json_each(s.frame_ids) je
+         JOIN json_each(
+                  CASE WHEN json_valid(s.frame_ids)
+                       THEN s.frame_ids ELSE '[]' END) je
          JOIN file_record fr ON fr.id = je.value
          WHERE fr.state = 'missing'
            AND p.lifecycle IN ('setup_incomplete', 'ready', 'prepared', 'processing')

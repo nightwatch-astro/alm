@@ -158,11 +158,16 @@ pub async fn list_sessions_for_root(
             'acquisition'                               AS session_kind,
             'light'                                     AS frame_type,
             (SELECT COUNT(*)
-               FROM json_each(acs.frame_ids) je
+               FROM json_each(
+                        CASE WHEN json_valid(acs.frame_ids)
+                             THEN acs.frame_ids ELSE '[]' END) je
                LEFT JOIN file_record fr ON fr.id = je.value
               WHERE fr.state IS NULL OR fr.state != 'missing')
                                                         AS frame_count,
-            json_extract(acs.frame_ids, '$[0]')         AS first_frame_id,
+            json_extract(
+                CASE WHEN json_valid(acs.frame_ids)
+                     THEN acs.frame_ids ELSE '[]' END, '$[0]')
+                                                        AS first_frame_id,
             acs.target_id                               AS target_id,
             NULL                                        AS target_name,
             acs.created_at                              AS created_at,
@@ -189,11 +194,16 @@ pub async fn list_sessions_for_root(
             'calibration'                               AS session_kind,
             cs.kind                                     AS frame_type,
             (SELECT COUNT(*)
-               FROM json_each(cs.frame_ids) je
+               FROM json_each(
+                        CASE WHEN json_valid(cs.frame_ids)
+                             THEN cs.frame_ids ELSE '[]' END) je
                LEFT JOIN file_record fr ON fr.id = je.value
               WHERE fr.state IS NULL OR fr.state != 'missing')
                                                         AS frame_count,
-            json_extract(cs.frame_ids, '$[0]')          AS first_frame_id,
+            json_extract(
+                CASE WHEN json_valid(cs.frame_ids)
+                     THEN cs.frame_ids ELSE '[]' END, '$[0]')
+                                                        AS first_frame_id,
             NULL                                        AS target_id,
             NULL                                        AS target_name,
             cs.created_at                               AS created_at,
@@ -346,7 +356,9 @@ pub async fn get_session_context_by_ids(
              af.filter_name                                      AS filter,
              af.observing_night_date                             AS acquisition_night,
              (SELECT COUNT(*)
-                FROM json_each(acs.frame_ids) je
+                FROM json_each(
+                         CASE WHEN json_valid(acs.frame_ids)
+                              THEN acs.frame_ids ELSE '[]' END) je
                 LEFT JOIN file_record fr ON fr.id = je.value
                WHERE fr.state IS NULL OR fr.state != 'missing')  AS frame_count
          FROM acquisition_session acs
@@ -418,7 +430,9 @@ pub async fn list_session_cameras(
                  UNION ALL
                  SELECT id, frame_ids FROM calibration_session WHERE id IN ({placeholders})
              ) s
-             JOIN json_each(s.frame_ids) je
+             JOIN json_each(
+                      CASE WHEN json_valid(s.frame_ids)
+                           THEN s.frame_ids ELSE '[]' END) je
              JOIN file_record fr ON fr.id = je.value AND fr.state != 'missing'
              LEFT JOIN inbox_items ii ON ii.root_id = fr.root_id
              LEFT JOIN inbox_file_metadata ifm
@@ -1169,5 +1183,219 @@ mod tests {
             rows.iter().any(|r| r.id == "cal-ob-0"),
             "real cal row must be present (old bug: pop() dropped it)"
         );
+    }
+
+    // ── malformed `frame_ids` tolerance ───────────────────────────────────────
+    //
+    // `frame_ids` is `TEXT NOT NULL DEFAULT '[]'` with no `json_valid` CHECK, so
+    // a corrupt value is storable. An unguarded SQLite JSON function over it
+    // raises "malformed JSON", which fails the whole SELECT rather than the one
+    // bad row. Each test below keeps `file_record` populated and asserts the
+    // intact row's projected values, so the query planner cannot prune the
+    // `json_each` join away and leave the assertion vacuous.
+
+    const MALFORMED: &str = "oops";
+
+    async fn insert_root(pool: &SqlitePool, root_id: &str) {
+        sqlx::query(
+            "INSERT INTO library_root (id, label, kind, current_path, state, created_at) \
+             VALUES (?, 'Lib', 'local', ?, 'active', '2026-01-01T00:00:00Z')",
+        )
+        .bind(root_id)
+        .bind(format!("/lib/{root_id}"))
+        .execute(pool)
+        .await
+        .expect("insert library_root");
+    }
+
+    async fn insert_file_record(pool: &SqlitePool, id: &str, root_id: &str, relative_path: &str) {
+        sqlx::query(
+            "INSERT INTO file_record \
+                (id, root_id, relative_path, size_bytes, mtime, state, first_seen_at, last_seen_at) \
+             VALUES (?, ?, ?, 100, 't0', 'classified', 't0', 't0')",
+        )
+        .bind(id)
+        .bind(root_id)
+        .bind(relative_path)
+        .execute(pool)
+        .await
+        .expect("insert file_record");
+    }
+
+    #[tokio::test]
+    async fn list_sessions_for_root_acquisition_tolerates_malformed_frame_ids() {
+        let db = setup_db().await;
+        insert_root(db.pool(), "root-amj").await;
+        insert_file_record(db.pool(), "amj-1", "root-amj", "amj-1.fits").await;
+
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, root_id, frame_ids, created_at) \
+             VALUES ('acq-amj-ok', 'k', 'root-amj', '[\"amj-1\"]', '2026-01-02T00:00:00Z')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, root_id, frame_ids, created_at) \
+             VALUES ('acq-amj-bad', 'k', 'root-amj', ?, '2026-01-01T00:00:00Z')",
+        )
+        .bind(MALFORMED)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        let (rows, _) = list_sessions_for_root(db.pool(), "root-amj", &InventoryFilters::default())
+            .await
+            .expect("malformed frame_ids must not fail the acquisition projection");
+
+        assert_eq!(rows.len(), 2, "the corrupt row is projected, not dropped");
+
+        let ok = rows.iter().find(|r| r.id == "acq-amj-ok").expect("intact row missing");
+        assert_eq!(ok.frame_count, 1, "intact row still counts its live frame");
+        assert_eq!(ok.first_frame_id.as_deref(), Some("amj-1"));
+
+        let bad = rows.iter().find(|r| r.id == "acq-amj-bad").expect("corrupt row missing");
+        assert_eq!(bad.frame_count, 0, "corrupt frame_ids reads as an empty array");
+        assert!(bad.first_frame_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_sessions_for_root_calibration_tolerates_malformed_frame_ids() {
+        let db = setup_db().await;
+        insert_root(db.pool(), "root-cmj").await;
+        insert_file_record(db.pool(), "cmj-1", "root-cmj", "cmj-1.fits").await;
+
+        // No acquisition session under this root, so the acquisition branch of
+        // `list_sessions_for_root` never evaluates its own JSON expressions —
+        // a failure here can only come from the calibration branch.
+        sqlx::query(
+            "INSERT INTO calibration_session \
+                (id, session_key, root_id, frame_ids, kind, created_at) \
+             VALUES ('cal-cmj-ok', 'k', 'root-cmj', '[\"cmj-1\"]', 'dark', '2026-01-02T00:00:00Z')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO calibration_session \
+                (id, session_key, root_id, frame_ids, kind, created_at) \
+             VALUES ('cal-cmj-bad', 'k', 'root-cmj', ?, 'flat', '2026-01-01T00:00:00Z')",
+        )
+        .bind(MALFORMED)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        let (rows, _) = list_sessions_for_root(db.pool(), "root-cmj", &InventoryFilters::default())
+            .await
+            .expect("malformed frame_ids must not fail the calibration projection");
+
+        assert_eq!(rows.len(), 2, "the corrupt row is projected, not dropped");
+
+        let ok = rows.iter().find(|r| r.id == "cal-cmj-ok").expect("intact row missing");
+        assert_eq!(ok.frame_count, 1, "intact row still counts its live frame");
+        assert_eq!(ok.first_frame_id.as_deref(), Some("cmj-1"));
+        assert_eq!(ok.frame_type, "dark");
+
+        let bad = rows.iter().find(|r| r.id == "cal-cmj-bad").expect("corrupt row missing");
+        assert_eq!(bad.frame_count, 0, "corrupt frame_ids reads as an empty array");
+        assert!(bad.first_frame_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn session_context_tolerates_malformed_frame_ids() {
+        let db = setup_db().await;
+        insert_root(db.pool(), "root-smj").await;
+        insert_file_record(db.pool(), "smj-1", "root-smj", "smj-1.fits").await;
+        insert_file_record(db.pool(), "smj-2", "root-smj", "smj-2.fits").await;
+
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, root_id, frame_ids, created_at) \
+             VALUES ('acq-smj-ok', 'k', 'root-smj', '[\"smj-1\",\"smj-2\"]', '2026-01-02T00:00:00Z')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, root_id, frame_ids, created_at) \
+             VALUES ('acq-smj-bad', 'k', 'root-smj', ?, '2026-01-01T00:00:00Z')",
+        )
+        .bind(MALFORMED)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        let ids = vec!["acq-smj-ok".to_owned(), "acq-smj-bad".to_owned()];
+        let mut rows = get_session_context_by_ids(db.pool(), &ids)
+            .await
+            .expect("malformed frame_ids must not fail the context batch");
+        rows.sort_by(|a, b| a.id.cmp(&b.id));
+
+        assert_eq!(rows.len(), 2, "the corrupt row is returned, not dropped");
+        assert_eq!(rows[0].id, "acq-smj-bad");
+        assert_eq!(rows[0].frame_count, 0, "corrupt frame_ids reads as an empty array");
+        assert_eq!(rows[1].id, "acq-smj-ok");
+        assert_eq!(rows[1].frame_count, 2, "intact row still counts both live frames");
+    }
+
+    #[tokio::test]
+    async fn session_cameras_tolerate_malformed_frame_ids() {
+        let db = setup_db().await;
+        insert_root(db.pool(), "root-kmj").await;
+        insert_file_record(db.pool(), "kmj-1", "root-kmj", "M31/Ha/kmj-1.fits").await;
+        insert_file_record(db.pool(), "kmj-2", "root-kmj", "M31/Ha/kmj-2.fits").await;
+
+        sqlx::query(
+            "INSERT INTO inbox_items \
+                (id, root_id, relative_path, file_count, discovered_at, last_scanned_at, state) \
+             VALUES ('ii-kmj', 'root-kmj', 'M31/Ha', 2, \
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'resolved')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        for id in ["kmj-1", "kmj-2"] {
+            sqlx::query(
+                "INSERT INTO inbox_file_metadata \
+                    (id, inbox_item_id, relative_file_path, instrume) \
+                 VALUES (?, 'ii-kmj', ?, 'ASI2600MM Pro')",
+            )
+            .bind(format!("ifm-{id}"))
+            .bind(format!("M31/Ha/{id}.fits"))
+            .execute(db.pool())
+            .await
+            .unwrap();
+        }
+
+        // Intact rows go in the acquisition branch of the UNION and the corrupt
+        // row in the calibration branch, so both branches are evaluated.
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, root_id, frame_ids, created_at) \
+             VALUES ('acq-kmj-ok', 'k', 'root-kmj', '[\"kmj-1\",\"kmj-2\"]', '2026-01-02T00:00:00Z')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO calibration_session \
+                (id, session_key, root_id, frame_ids, kind, created_at) \
+             VALUES ('cal-kmj-bad', 'k', 'root-kmj', ?, 'dark', '2026-01-01T00:00:00Z')",
+        )
+        .bind(MALFORMED)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        let ids = vec!["acq-kmj-ok".to_owned(), "cal-kmj-bad".to_owned()];
+        let rows = list_session_cameras(db.pool(), &ids)
+            .await
+            .expect("malformed frame_ids must not fail the camera rollup");
+
+        // `json_each` is INNER-joined here, so the corrupt session contributes
+        // no frames and therefore no camera row at all.
+        assert_eq!(rows.len(), 1, "only the intact session resolves a camera: {rows:?}");
+        assert_eq!(rows[0].session_id, "acq-kmj-ok");
+        assert_eq!(rows[0].camera, "ASI2600MM Pro");
+        assert_eq!(rows[0].frame_count, 2, "both live frames vote for the camera");
     }
 }
