@@ -6,7 +6,7 @@ Principle: reuse existing tables. This feature adds **no** new frame/session tab
 
 ## Entities
 
-### Per-frame inventory entry — existing `file_record` (`0002_lifecycle.sql:25-39`)
+### Per-frame inventory entry — existing `file_record` (`crates/persistence/core/migrations/0001_initial_schema.sql:728-739`)
 
 No schema change required. Semantics this feature enforces:
 

@@ -24,18 +24,17 @@ Repository evidence at HEAD establishes these constraints:
 - `acquisition_session.frame_ids` and `calibration_session.frame_ids` are JSON
   arrays. `project_sources` is a mutable relational exact-session link, not an
   immutable project-membership revision
-  (`crates/persistence/core/migrations/0002_lifecycle.sql:53`,
-  `crates/persistence/core/migrations/0018_projects.sql:35`).
+  (`crates/persistence/core/migrations/0001_initial_schema.sql:2009`).
 - The framing model mutates one `framing` row and one live membership join.
   Deleting or reassigning membership loses the accepted topology that preceded
-  it (`crates/persistence/core/migrations/0064_framing.sql:29`,
+  it (`crates/persistence/core/migrations/0001_initial_schema.sql:916`,
   `crates/persistence/core/src/repositories/framing.rs:168`).
 - Registered cameras, telescopes, and optical trains have stable IDs. Camera
   aliases are stored as JSON and resolved with exact alias values
-  (`crates/persistence/core/migrations/0007_equipment.sql:12`,
+  (`crates/persistence/core/migrations/0001_initial_schema.sql:467-470`,
   `crates/persistence/core/src/repositories/equipment.rs:245`).
 - Calibration fingerprints store nullable scalar metadata and support dark,
-  flat, and bias (`crates/persistence/core/migrations/0023_calibration_fingerprints.sql:14`).
+  flat, and bias (`crates/persistence/core/migrations/0001_initial_schema.sql:198`).
 - Dark-flat is reserved in domain and contract enums, but it remains reachable
   in Inbox classification, grouping, override, and display helpers
   (`crates/metadata/core/src/lib.rs:24`,
@@ -169,10 +168,10 @@ scoped to that optical profile. It is not a global `filters.id`.
 
 - The existing metadata table has one nullable column per known field but no
   durable mapping from capture software to field meaning
-  (`crates/persistence/core/migrations/0049_inbox_single_type.sql:222`).
+  (`crates/persistence/core/migrations/0001_initial_schema.sql:1020`).
 - The registered-equipment IDs provide stable anchors while aliases absorb
   capture-software spelling differences
-  (`crates/persistence/core/migrations/0007_equipment.sql:10`).
+  (`crates/persistence/core/migrations/0001_initial_schema.sql:467`).
 - Explicit value states preserve the specification's absent-versus-known
   matching rules.
 
@@ -238,7 +237,7 @@ this feature; selection hands exact source sessions to the external processor.
   (`crates/calibration/core/src/rules/bias.rs:16`).
 - Existing fingerprints lack separate X/Y binning, readout state, raster,
   cooling mode, distributions, and policy provenance
-  (`crates/persistence/core/migrations/0023_calibration_fingerprints.sql:14`).
+  (`crates/persistence/core/migrations/0001_initial_schema.sql:198`).
 
 ## D5 — Dark-flat detection terminates before Inbox materialization
 
@@ -309,7 +308,7 @@ configuration hash changes.
 - Lineage writes check for cycles before accepting a split or merge.
 - Existing `framing` and `framing_session` data need no compatibility bridge
   because the feature assumes resettable development databases
-  (`crates/persistence/core/migrations/0064_framing.sql:58`).
+  (`crates/persistence/core/migrations/0001_initial_schema.sql:941`).
 
 ## D7 — Normalized SQLite remains the topology store
 
@@ -523,7 +522,7 @@ not delete or reinterpret the predecessor's historical entries.
 - Exact pins prevent background relation changes from altering processing
   inputs.
 - Prepared views demonstrate the existing reproducible per-item projection
-  boundary (`crates/persistence/core/migrations/0029_prepared_source_views.sql:86`).
+  boundary (`crates/persistence/core/migrations/0001_initial_schema.sql:1804`).
 - Extension tables preserve one executor and one set of filesystem safety
   semantics.
 

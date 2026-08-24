@@ -237,7 +237,7 @@ Target shape (constitution §II fields):
 | before → after (optional) | Value pair for settings/protection changes |
 
 Mapping onto the existing `audit_log_entry` table
-(`crates/persistence/db/migrations/0002_lifecycle.sql`):
+(`crates/persistence/core/migrations/0001_initial_schema.sql:130-143`):
 
 - `at` → timestamp; `actor` unchanged; `trigger` → action.
 - `from_state` / `to_state` are subsumed by the optional before→after pair
@@ -250,7 +250,7 @@ Mapping onto the existing `audit_log_entry` table
 ### Migration shape (T120)
 
 Consistent with existing schema conventions (TEXT columns, named
-`idx_audit_*` indexes; `0002_lifecycle.sql`):
+`idx_audit_*` indexes; `crates/persistence/core/migrations/0001_initial_schema.sql:2990-3007`):
 
 - Add nullable column `reason_code TEXT` — the machine-readable
   reason/code for `refused`/`failed` outcomes; NULL for `applied`.
@@ -314,9 +314,9 @@ Known offenders to fix first:
    (`crates/metadata/core/src/lib.rs:221,223`). These fields become
    nullable.
 2. **Master size** — the zero lives in SQL, not the mapping layer:
-   `calibration_master_view` hardcodes `0 AS size_bytes`
-   (`crates/persistence/db/migrations/0041_calibration_fingerprint_indices.sql:51`,
-   with a comment admitting no size column exists), flowing through the
+   `calibration_master_view` supplies no real size (as of 2026-08-24 it selects
+   `CAST(NULL AS INTEGER) AS size_bytes` at `crates/persistence/core/migrations/0001_initial_schema.sql:3186`;
+   it hardcoded `0 AS size_bytes` when this was written), flowing through the
    non-nullable row field
    (`crates/persistence/db/src/repositories/q_calibration.rs:92`
    `size_bytes: i64`) into the non-optional contract fields
