@@ -10,6 +10,7 @@
 #   2. the resolved default feature graph of `desktop_shell` pulls neither
 #      feature and neither gated plugin crate
 #   3. no shipped capability file grants a permission from a gated plugin
+#   4. no config the build reads by filename sets `withGlobalTauri`
 #
 # Exit 0 requires a positive determination from every check. Each one first
 # asserts that its input exists and that its query returned a record it can
@@ -78,6 +79,28 @@ if [ "${#CAPABILITIES[@]}" -eq 0 ]; then
   fail "no capability file matches $CAPABILITY_GLOB, so no grant was read"
 elif grep -lE "\"($GATED_PERMISSIONS)" "${CAPABILITIES[@]}" | grep -q .; then
   fail "a shipped capability file grants a gated plugin permission"
+fi
+
+# --- 4. config: no filename-addressed config sets withGlobalTauri ---
+# `withGlobalTauri` exposes every command handler to page JavaScript. It is
+# compiled in by `generate_context!` from `tauri.conf.json` plus the
+# per-platform overlays plus the `TAURI_CONFIG` env var, so a build that passes
+# neither `--config` nor `TAURI_CONFIG` can only pick it up from these files.
+# `tauri.dev.conf.json` is deliberately not among them: no build reads it by
+# name (see docs/development/mcp-bridge.md).
+SHIPPED_CONFIG_BASE=apps/desktop/src-tauri/tauri.conf.json
+# Brace expansion ignores `nullglob`, so filter to what exists.
+SHIPPED_CONFIGS=()
+for candidate in \
+  "$SHIPPED_CONFIG_BASE" \
+  apps/desktop/src-tauri/tauri.{macos,linux,windows,android,ios}.conf.json{,5} \
+  apps/desktop/src-tauri/Tauri{,.macos,.linux,.windows,.android,.ios}.toml; do
+  [ -f "$candidate" ] && SHIPPED_CONFIGS+=("$candidate")
+done
+if [ ! -f "$SHIPPED_CONFIG_BASE" ]; then
+  fail "$SHIPPED_CONFIG_BASE is missing, so no shipped config was read"
+elif grep -lEi '"?with_?global_?tauri"?' "${SHIPPED_CONFIGS[@]}" | grep -q .; then
+  fail "a config the build reads by filename sets withGlobalTauri"
 fi
 
 if [ "$FAILED" -ne 0 ]; then

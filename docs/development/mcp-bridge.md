@@ -30,6 +30,52 @@ PV_MCP_BRIDGE_ENABLE=1 pnpm tauri dev --config src-tauri/tauri.dev.conf.json --f
 The `tauri.dev.conf.json` overlay also enables `withGlobalTauri`, which
 `webview_execute_js` needs to reach command handlers.
 
+### Build the binary without the Tauri CLI
+
+`generate_context!` compiles `withGlobalTauri` in rather than reading it at
+startup: it embeds the global API script only when the config it sees has the
+flag set (`tauri-codegen/src/context.rs`, `config.app.with_global_tauri`). That
+config comes from three places:
+
+- `apps/desktop/src-tauri/tauri.conf.json`
+- the per-platform overlays, such as `tauri.windows.conf.json`
+- the `TAURI_CONFIG` environment variable, merged over both
+
+`tauri.dev.conf.json` is none of those. The `--config` flag of the Tauri CLI is
+what puts its contents into `TAURI_CONFIG`.
+
+So a plain `cargo build -p desktop_shell --features dev-tools` produces a binary
+with **no** `window.__TAURI__`. The bridge still starts and still answers
+`get_window_info`, but every `webview_execute_js` call times out, because the
+result-return the plugin injects goes through `window.__TAURI__`. Merge the
+overlay explicitly to get a drivable binary:
+
+```sh
+cd apps/desktop/src-tauri
+TAURI_CONFIG="$(cat tauri.dev.conf.json)" \
+  cargo build -p desktop_shell --features dev-tools
+```
+
+```powershell
+cd apps\desktop\src-tauri
+$env:TAURI_CONFIG = Get-Content -Raw tauri.dev.conf.json
+cargo build -p desktop_shell --features dev-tools
+```
+
+`TAURI_CONFIG` is a `rerun-if-env-changed` input, so switching it in or out
+rebuilds `desktop_shell` rather than reusing the previous binary. Before you
+launch, confirm that the build picked the overlay up. The global API script is a
+literal in the binary:
+
+```sh
+grep -ac __TAURI_IIFE__ target/debug/desktop_shell   # 1 with the overlay, 0 without
+```
+
+A debug binary loads the UI from `devUrl` (`http://localhost:5173`), so Vite must
+stay up for as long as the app does. On Windows, `Start-Process` over SSH reaps
+both Vite and the app when the SSH session closes, so launch each under
+`schtasks` or another session-persistent launcher.
+
 ### Windows host, WSL client
 
 `scripts\win-native-dev.ps1 -McpBridge` launches the same overlay and sets the
