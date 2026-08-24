@@ -215,8 +215,13 @@ async fn seed_acquisition_session(pool: &SqlitePool, id: &str, frame_ids: &str) 
     .unwrap();
 }
 
+/// The one `frame_ids` site that MUST keep raising on malformed JSON. The caller
+/// reads the failure as an incomplete health check and leaves a durable retry
+/// marker; guarding it reports the corrupt session as having no missing sources,
+/// which leaves the project unblockable and writes no marker. Pins the raise so
+/// a later guard sweep cannot remove the signal without failing here.
 #[tokio::test]
-async fn find_blockable_missing_sources_survives_a_malformed_frame_ids_session() {
+async fn find_blockable_missing_sources_raises_on_a_malformed_frame_ids_session() {
     let db = setup().await;
     seed_missing_frame(db.pool()).await;
     // `acquisition_session.frame_ids` is `TEXT NOT NULL DEFAULT '[]'` with no
@@ -244,10 +249,13 @@ async fn find_blockable_missing_sources_survives_a_malformed_frame_ids_session()
         .unwrap();
     }
 
-    let rows = find_blockable_missing_sources(db.pool())
+    let err = find_blockable_missing_sources(db.pool())
         .await
-        .expect("a malformed frame_ids row must not fail the whole query");
-    assert_eq!(rows, vec![("p1".to_owned(), "sess-ok".to_owned())]);
+        .expect_err("a malformed frame_ids row must fail the health check loudly");
+    assert!(
+        err.to_string().contains("malformed JSON"),
+        "expected a malformed-JSON raise, got: {err}"
+    );
 }
 
 // ── has_archived_raw_frames_for_project (F-Framing-6, Q25 warning) ────────

@@ -44,6 +44,15 @@ pub async fn list_project_ids_for_session(
 /// The explicit lifecycle list mirrors the canonical `ProjectState -> Blocked`
 /// edges. In particular, `completed` remains terminal for automatic blocking.
 ///
+/// `json_each(s.frame_ids)` is deliberately NOT wrapped in the
+/// `CASE WHEN json_valid(...)` guard applied to every other `frame_ids` query.
+/// Raising on a malformed value is the contract here: the caller treats the
+/// failure as an incomplete health check and leaves a durable retry marker, so
+/// a corrupt session is retried rather than silently reported as having no
+/// missing sources. Guarding it makes the project unblockable and writes no
+/// marker; `crates/app/core/tests/project_source_missing_block.rs:216` sets
+/// `frame_ids` to `'{'` on purpose and asserts both halves of that contract.
+///
 /// # Errors
 ///
 /// Returns `persistence_core::DbError::Database` on query failure.
@@ -53,9 +62,7 @@ pub async fn find_blockable_missing_sources(pool: &SqlitePool) -> DbResult<Vec<(
          FROM project_sources ps
          JOIN projects p ON p.id = ps.project_id
          JOIN acquisition_session s ON s.id = ps.inventory_session_id
-         JOIN json_each(
-                  CASE WHEN json_valid(s.frame_ids)
-                       THEN s.frame_ids ELSE '[]' END) je
+         JOIN json_each(s.frame_ids) je
          JOIN file_record fr ON fr.id = je.value
          WHERE fr.state = 'missing'
            AND p.lifecycle IN ('setup_incomplete', 'ready', 'prepared', 'processing')
