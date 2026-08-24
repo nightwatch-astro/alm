@@ -63,7 +63,7 @@ DetachStrategy = "spawn_detached"   // Windows default
 
 ## ToolLaunch
 
-Persisted in SQLite via `crates/persistence/db/`; one row per launch
+Persisted in SQLite via the `crates/persistence/` crates; one row per launch
 attempt (success or failure that reached the spawn step).
 
 ```

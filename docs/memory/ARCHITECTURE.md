@@ -1,6 +1,6 @@
 # Architecture
 
-Last reviewed: 2026-05-26
+Last reviewed: 2026-05-26 (crate paths re-derived 2026-08-24)
 
 ## System Overview
 
@@ -20,7 +20,10 @@ UI-to-core boundary; Tauri commands are the first adapter.
 - **crates/domain/core/** — pure domain types and invariants.
 - **crates/app/core/** — use-case orchestration (register source, complete
   first run, etc.). Thin layer over persistence + validation.
-- **crates/persistence/db/** — SQLite via sqlx. Migrations, repository
+- **crates/persistence/** — SQLite via sqlx, split per bounded context
+  (`core`, `calibration`, `inbox`, `lifecycle`, `plans`, `sessions`, `targets`,
+  `topology`). `core` owns the pool, migrations, and shared write primitives;
+  the rest own repositories. Repository
   pattern. Single `alm.db` at platform data dir.
 - **crates/contracts/core/** — Rust DTOs matching JSON Schema contracts.
   All types derive `specta::Type` for binding generation.
@@ -44,7 +47,7 @@ UI-to-core boundary; Tauri commands are the first adapter.
 
 - **@tauri-apps/plugin-dialog** — native OS directory picker.
 - **sqlx + SQLite** — local persistence. Migrations in
-  `crates/persistence/db/migrations/`.
+  `crates/persistence/core/migrations/`.
 - **specta + tauri-specta** — TS binding generation from Rust types.
 - **PixInsight/WBPP** — external; ALM prepares inputs but never calls it.
 

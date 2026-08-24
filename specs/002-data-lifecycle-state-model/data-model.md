@@ -4,7 +4,7 @@
 
 This document defines the canonical entity tables, invariants, and lifecycle
 transition graphs that anchor the Rust port in `crates/domain/core/`,
-`crates/audit/`, and `crates/persistence/db/`. State family names and
+`crates/audit/`, and the `crates/persistence/` crates. State family names and
 transition graphs are frozen from `research.md` §1–§2; entities are anchored
 on `Data Asset` per spec.md FR-007.
 

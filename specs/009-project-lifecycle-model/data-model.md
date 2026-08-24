@@ -211,7 +211,7 @@ responses small.
 
 ## Storage Notes
 
-- Persisted in the SQLite store managed by `crates/persistence/db/`.
+- Persisted in the SQLite store managed by the `crates/persistence/` crates.
 - `lifecycle`, `blockedReason.kind`, and `lastAction.when` are indexed for
   filter and sort.
 - `lastAction` is denormalized; `crates/audit/` retains the durable record.

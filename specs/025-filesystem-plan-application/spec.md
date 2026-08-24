@@ -16,7 +16,7 @@
 The real plan-apply path shipped through
 [Spec 041 — Inbox Plan Surface](../041-inbox-plan-surface/spec.md):
 `crates/app/core/src/plan_apply.rs`,
-`crates/persistence/db/src/repositories/plan_apply.rs`,
+`crates/persistence/plans/src/repositories/plan_apply.rs`,
 `crates/app/inbox/src/plan_listener.rs`, with audit coverage in
 `crates/app/core/tests/plan_apply_audit_integration.rs`.
 
