@@ -207,6 +207,26 @@ async fn suggest_returns_candidates_when_master_matches() {
     );
 }
 
+/// Set `camera_body_id` on an existing `acquisition_fingerprint` row.
+async fn set_session_body(pool: &sqlx::SqlitePool, id: &str, body: &str) {
+    sqlx::query("UPDATE acquisition_fingerprint SET camera_body_id = ? WHERE id = ?")
+        .bind(body)
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap_or_else(|e| panic!("set session camera_body_id failed: {e}"));
+}
+
+/// Set `camera_body_id` on an existing `calibration_fingerprint` row.
+async fn set_master_body(pool: &sqlx::SqlitePool, id: &str, body: &str) {
+    sqlx::query("UPDATE calibration_fingerprint SET camera_body_id = ? WHERE id = ?")
+        .bind(body)
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap_or_else(|e| panic!("set master camera_body_id failed: {e}"));
+}
+
 /// astro-plan-ugux2 end-to-end: the `camera_body_id` column must survive the
 /// round trip through `acquisition_fingerprint`/`calibration_fingerprint` and the
 /// matcher loaders, so a master captured with a different physical body is
@@ -215,24 +235,6 @@ async fn suggest_returns_candidates_when_master_matches() {
 async fn suggest_excludes_a_master_from_a_different_camera_body() {
     let (db, _repo, _bus) = support::setup().await;
     let pool = db.pool();
-
-    async fn set_session_body(pool: &sqlx::SqlitePool, id: &str, body: &str) {
-        sqlx::query("UPDATE acquisition_fingerprint SET camera_body_id = ? WHERE id = ?")
-            .bind(body)
-            .bind(id)
-            .execute(pool)
-            .await
-            .unwrap_or_else(|e| panic!("set session camera_body_id failed: {e}"));
-    }
-
-    async fn set_master_body(pool: &sqlx::SqlitePool, id: &str, body: &str) {
-        sqlx::query("UPDATE calibration_fingerprint SET camera_body_id = ? WHERE id = ?")
-            .bind(body)
-            .bind(id)
-            .execute(pool)
-            .await
-            .unwrap_or_else(|e| panic!("set master camera_body_id failed: {e}"));
-    }
 
     let session_id = Uuid::new_v4().to_string();
     let same_body_master = Uuid::new_v4().to_string();
