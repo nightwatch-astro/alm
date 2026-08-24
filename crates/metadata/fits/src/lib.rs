@@ -14,10 +14,11 @@
 //! `GAIN`, `XBINNING`, `YBINNING`, `NAXIS1`, `NAXIS2`, `INSTRUME`, `TELESCOP`,
 //! `DATE-OBS`.
 //!
-//! No cfitsio or heavy C dependencies — `fits-header` is pure Rust. A missing
-//! keyword yields `None` rather than an error. A header the parser cannot
-//! handle at all — including one that panics inside `fits-header` — yields
-//! [`MetadataExtractError::Parse`]; [`FitsExtractor::extract`] never panics.
+//! No cfitsio or heavy C dependencies — `fits-header` is pure Rust. A header
+//! missing individual keywords still yields `Ok`, with `None` for each absent
+//! field. A header in which the parser recognises no keyword at all yields
+//! [`MetadataExtractError::Parse`], as does one that panics inside
+//! `fits-header`; [`FitsExtractor::extract`] never panics.
 //!
 //! This adapter does not validate that the header block is ASCII. `fits-header`
 //! slices each field from the raw 80 bytes of its card and lossy-decodes the
@@ -94,6 +95,16 @@ impl MetadataExtractor for FitsExtractor {
             msg: e.to_string(),
         })?;
 
+        // A header whose every card is opaque to the parser carries no evidence
+        // at all. Returning it as `Ok` would let callers fall back to path-based
+        // inference and report a filename guess as header-backed fact.
+        if header.iter().all(|r| r.keyword().is_none()) {
+            return Err(MetadataExtractError::Parse {
+                path: path.display().to_string(),
+                msg: "the FITS header carries no readable keyword".to_owned(),
+            });
+        }
+
         Ok(Some(parse_header(&header)))
     }
 
@@ -139,8 +150,8 @@ fn read_header_bytes(mut reader: impl Read) -> io::Result<Vec<u8>> {
 
 /// Typed keyword read that never hard-errors: a duplicated keyword
 /// (`FitsError::AmbiguousKeyword`) falls back to its first occurrence instead
-/// of surfacing an error, preserving this extractor's "always `None`, never
-/// `Err`" contract for corrupt/odd files.
+/// of surfacing an error. Per-field reads are always `None`, never `Err`;
+/// rejecting a wholly unreadable header is [`FitsExtractor::extract`]'s job.
 fn get<T: FromCard>(header: &Header, key: &str) -> Option<T> {
     match header.get::<T>(key) {
         Ok(v) => v,
@@ -385,21 +396,39 @@ mod tests {
         assert!(parsed.is_ok(), "expected a lenient parse, got {parsed:?}");
     }
 
-    /// A block of non-ASCII bytes yields no recognised keywords rather than an
-    /// error: `fits-header` parsing is lenient by design.
+    /// `fits-header` parses a block of non-ASCII bytes leniently into opaque
+    /// cards; the adapter rejects it because no keyword is recognised.
     #[test]
-    fn malformed_header_bytes_yield_no_keywords() {
+    fn malformed_header_bytes_are_a_parse_error() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("corrupt.fits");
         std::fs::write(&path, [0xffu8; BLOCK_SIZE]).expect("write fixture");
 
+        let err = FitsExtractor
+            .extract(&path)
+            .expect_err("a header with no readable keyword must be an error");
+        assert!(matches!(err, MetadataExtractError::Parse { .. }), "got {err:?}");
+    }
+
+    /// A readable header that simply lacks `IMAGETYP` stays `Ok`: the
+    /// keywordless-header rejection must not swallow a valid header whose
+    /// individual keywords are absent.
+    #[test]
+    fn header_without_imagetyp_is_extracted() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("no_imagetyp.fits");
+        let block = build_fits_header(&[
+            "SIMPLE  =                    T",
+            "BITPIX  =                   16",
+            "NAXIS   =                    0",
+        ]);
+        std::fs::write(&path, &block).expect("write fixture");
+
         let meta = FitsExtractor
             .extract(&path)
-            .expect("a malformed header must not be an error")
+            .expect("a readable header must not be an error")
             .expect("a .fits extension must be supported");
         assert!(meta.image_typ.is_none());
-        assert!(meta.object.is_none());
-        assert!(meta.date_obs.is_none());
     }
 
     #[test]
