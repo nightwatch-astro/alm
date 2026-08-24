@@ -26,10 +26,10 @@
  * all — a layout defect tracked as astro-plan-ltlo, not something this spec
  * locks in.
  *
- * Mock wiring: `tools_list` has no mock handler, so `useToolProfiles()`
- * degrades to no profile and `toolLaunchDisabledReason()` returns
- * `not_configured` — the same path `project_lifecycle_surfaces.spec.ts`
- * documents.
+ * Mock wiring: `tools_list` seeds every profile unconfigured, so
+ * `toolLaunchDisabledReason()` returns `not_configured` — the same path
+ * `project_lifecycle_surfaces.spec.ts` documents. The save step that flips a
+ * profile to configured is covered by `settings_tool_enablement.spec.ts`.
  */
 import {
   test,
