@@ -70,8 +70,24 @@ export interface PlanReviewOverlayProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function actionPillVariant(action: PlanItemDetail_Serialize['action']) {
-  return action === 'delete' ? ('danger' as const) : ('info' as const);
+/**
+ * Whether applying this item removes the user's file from where it lives now.
+ *
+ * Both `cleanup_generator` and `archive_generator` always store
+ * `action = "archive"` for a destructive-but-reversible item; the reroute to
+ * the OS bin is a plan-level choice honoured only at apply time
+ * (`plan_apply::paths::item_row_to_executor_item`). So a plan that WILL send
+ * files to the OS bin carries zero `delete` items, and action alone cannot
+ * decide destructiveness.
+ */
+function isDestructiveItem(
+  item: PlanItemDetail_Serialize,
+  plan: PlanDetail_Serialize | undefined,
+): boolean {
+  if (item.action === 'delete') return true;
+  return (
+    item.action === 'archive' && plan?.destructiveDestination === 'os_trash'
+  );
 }
 
 /**
@@ -194,12 +210,12 @@ export function PlanReviewOverlay({
     reset: resetApply,
   } = usePlanApplyProgress();
 
-  // Destructive-confirm gate (FR-003, D9, issue #741): `delete` items are
+  // Destructive-confirm gate (FR-003, D9, issue #741): destructive items are
   // permanently refused at apply time until `destructive_confirmed` is set.
   // Plan-level (not per-item — `PlanItemDetail` carries no such flag; the
   // gate mirrors the existing plan-wide protection gate above it).
-  const hasDestructiveItems = (plan?.items ?? []).some(
-    (item) => item.action === 'delete',
+  const hasDestructiveItems = (plan?.items ?? []).some((item) =>
+    isDestructiveItem(item, plan),
   );
   const [destructiveConfirmed, setDestructiveConfirmed] = useState(false);
   const [confirmingDestructive, setConfirmingDestructive] = useState(false);
@@ -426,7 +442,11 @@ export function PlanReviewOverlay({
         ? 'pv-plan-review__row--protected'
         : undefined,
     name: item.name,
-    action: <Pill variant={actionPillVariant(item.action)}>{item.action}</Pill>,
+    action: (
+      <Pill variant={isDestructiveItem(item, plan) ? 'danger' : 'info'}>
+        {item.action}
+      </Pill>
+    ),
     from: <span className="pv-mono">{item.from}</span>,
     to:
       item.action === 'delete' ? (

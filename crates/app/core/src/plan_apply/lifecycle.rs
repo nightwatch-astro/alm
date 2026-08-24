@@ -753,8 +753,12 @@ pub async fn retry_plan_item(
 
 // ── confirm_plan_destructive_items ────────────────────────────────────────────
 
-/// Confirm every destructive (delete/trash) item in a plan, persisting
+/// Confirm every destructive item in a plan, persisting
 /// `plan_items.destructive_confirmed = 1` (FR-003, D9, issue #741).
+///
+/// "Destructive" covers a `delete` action and an `archive` action whose plan
+/// carries `destructive_destination = 'trash'`: the latter is rerouted to the
+/// OS trash at apply time, so the stored action alone understates it.
 ///
 /// This is the write half of the executor's destructive-confirm gate
 /// (`fs_executor::run::execute_plan`'s `destructive_unconfirmed` refusal,

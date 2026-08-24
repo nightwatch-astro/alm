@@ -1142,6 +1142,11 @@ async fn archive_action_item_with_trash_destination_really_trashes() {
     .await
     .unwrap();
 
+    // The trash reroute makes this item destructive, so it now has to clear the
+    // executor's confirm gate like any other trash item.
+    let confirmed = confirm_plan_destructive_items(db.pool(), "p-trash-e2e").await.unwrap();
+    assert_eq!(confirmed, 1, "the archive-on-trash item must be confirmable");
+
     repo::update_plan_state(db.pool(), "p-trash-e2e", "ready_for_review").await.unwrap();
     repo::set_approved(db.pool(), "p-trash-e2e", "2026-06-01T00:00:00Z", "test-token")
         .await
@@ -1238,6 +1243,224 @@ async fn archive_action_item_with_archive_destination_stays_archived() {
     assert_eq!(plan.state, "applied");
     let items = repo::list_plan_items(db.pool(), "p-archive-e2e").await.unwrap();
     assert_eq!(items[0].item_state, "succeeded");
+}
+
+/// Builds an `action = "archive"` row, the only shape a generator ever stores
+/// for a destructive-but-reversible item.
+fn archive_row(id: &str) -> plans_repo::PlanItemRow {
+    plans_repo::PlanItemRow {
+        id: id.to_owned(),
+        plan_id: "plan-confirm-derivation".to_owned(),
+        item_index: 1,
+        name: "intermediate.fits".to_owned(),
+        action: "archive".to_owned(),
+        from_root_id: None,
+        from_relative_path: "raw/intermediate.fits".to_owned(),
+        to_root_id: None,
+        to_relative_path: String::new(),
+        reason: "test".to_owned(),
+        protection: "normal".to_owned(),
+        linked_entity: None,
+        item_state: "pending".to_owned(),
+        failure_reason: None,
+        provenance: None,
+        approved_mtime: None,
+        approved_size_bytes: None,
+        archive_path: None,
+        created_at: "2026-08-23T00:00:00Z".to_owned(),
+        source_id: None,
+        category: None,
+        requires_destructive_confirm: None,
+        resolved_pattern: None,
+        destructive_confirmed: 0,
+    }
+}
+
+/// The confirm-gate half of the trash-reroute fix: `requires_destructive_confirm`
+/// must follow the EFFECTIVE executor action, so an `action = "archive"` item on
+/// a `destructive_destination = "trash"` plan is gated, while the same row on an
+/// `"archive"` plan is not (the archive arm is a real move, not a removal).
+#[test]
+fn archive_item_requires_confirm_only_under_a_trash_destination() {
+    let root_map: HashMap<String, Utf8PathBuf> = HashMap::new();
+
+    let trashed = item_row_to_executor_item(&archive_row("item-trash"), &root_map, "trash", None);
+    assert!(
+        matches!(trashed.action, ExecutorItemAction::Trash { .. }),
+        "sanity: a trash-destination plan reroutes the archive item to Trash"
+    );
+    assert!(
+        trashed.requires_destructive_confirm,
+        "an archive item rerouted to OS trash removes the file and must be gated on confirmation"
+    );
+
+    let archived =
+        item_row_to_executor_item(&archive_row("item-archive"), &root_map, "archive", None);
+    assert!(
+        matches!(archived.action, ExecutorItemAction::Archive { .. }),
+        "sanity: an archive-destination plan keeps the archive action"
+    );
+    assert!(
+        !archived.requires_destructive_confirm,
+        "archiving is a reversible move — gating it would demand confirmation for every archive \
+         plan"
+    );
+}
+
+/// The writer half, which must stay at least as wide as the refuser above: a
+/// user who confirms a trash plan has to actually clear the gate for its
+/// archive-action items, and confirming an archive plan must still flip nothing.
+#[tokio::test]
+async fn confirm_covers_archive_items_only_under_a_trash_destination() {
+    let (db, _bus) = setup().await;
+
+    for (plan_id, destination) in [("p-cw-trash", "trash"), ("p-cw-archive", "archive")] {
+        repo::insert_plan(
+            db.pool(),
+            &repo::InsertPlan {
+                id: plan_id,
+                title: "Test",
+                origin: "cleanup",
+                origin_path: None,
+                plan_type: "cleanup",
+                destructive_destination: destination,
+                parent_plan_id: None,
+                total_bytes_required: 0,
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_plan_item(
+            db.pool(),
+            &repo::InsertPlanItem {
+                id: &format!("{plan_id}-item-0"),
+                plan_id,
+                item_index: 1,
+                name: "intermediate.fits",
+                action: "archive",
+                from_root_id: None,
+                from_relative_path: &format!("{plan_id}/raw/intermediate.fits"),
+                to_root_id: None,
+                to_relative_path: &format!("{plan_id}/archive/intermediate.fits"),
+                reason: "test",
+                protection: "normal",
+                linked_entity: None,
+                provenance_json: None,
+                archive_path: None,
+                source_id: None,
+                category: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let trash_confirmed = confirm_plan_destructive_items(db.pool(), "p-cw-trash").await.unwrap();
+    assert_eq!(
+        trash_confirmed, 1,
+        "the confirm writer must cover every item the executor gates, or a confirmed trash plan \
+         refuses all of its items"
+    );
+    let trash_items = repo::list_plan_items(db.pool(), "p-cw-trash").await.unwrap();
+    assert_eq!(trash_items[0].destructive_confirmed, 1);
+
+    let archive_confirmed =
+        confirm_plan_destructive_items(db.pool(), "p-cw-archive").await.unwrap();
+    assert_eq!(
+        archive_confirmed, 0,
+        "an archive-destination plan has nothing destructive to confirm"
+    );
+    let archive_items = repo::list_plan_items(db.pool(), "p-cw-archive").await.unwrap();
+    assert_eq!(archive_items[0].destructive_confirmed, 0);
+
+    // Idempotent: the widened predicate must not re-count a confirmed item.
+    let again = confirm_plan_destructive_items(db.pool(), "p-cw-trash").await.unwrap();
+    assert_eq!(again, 0);
+}
+
+/// End-to-end sibling of `archive_action_item_with_trash_destination_really_trashes`:
+/// the same plan shape WITHOUT a confirm call must be refused before
+/// `trash::delete` is reached, so the file is still on disk afterwards. The fake
+/// trash guard turns a leaked removal into a deleted file rather than a real
+/// OS-Trash move, keeping the assertion observable in a headless run.
+#[tokio::test]
+async fn unconfirmed_archive_item_under_trash_destination_is_refused_before_trashing() {
+    let _fake_trash = fs_executor::ops::trash_op::fake::FakeTrashGuard::new();
+
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("intermediate.fits");
+    std::fs::write(&file_path, b"data").unwrap();
+    let abs = file_path.to_str().unwrap();
+
+    let (db, bus) = setup().await;
+    repo::insert_plan(
+        db.pool(),
+        &repo::InsertPlan {
+            id: "p-trash-unconfirmed",
+            title: "Test",
+            origin: "cleanup",
+            origin_path: None,
+            plan_type: "cleanup",
+            destructive_destination: "trash",
+            parent_plan_id: None,
+            total_bytes_required: 0,
+        },
+    )
+    .await
+    .unwrap();
+    repo::insert_plan_item(
+        db.pool(),
+        &repo::InsertPlanItem {
+            id: "p-trash-unconfirmed-item-0",
+            plan_id: "p-trash-unconfirmed",
+            item_index: 1,
+            name: "intermediate.fits",
+            action: "archive",
+            from_root_id: None,
+            from_relative_path: abs,
+            to_root_id: None,
+            to_relative_path: "",
+            reason: "test",
+            protection: "normal",
+            linked_entity: None,
+            provenance_json: None,
+            archive_path: None,
+            source_id: None,
+            category: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    repo::update_plan_state(db.pool(), "p-trash-unconfirmed", "ready_for_review").await.unwrap();
+    repo::set_approved(db.pool(), "p-trash-unconfirmed", "2026-06-01T00:00:00Z", "test-token")
+        .await
+        .unwrap();
+
+    apply_plan(db.pool(), &bus, "p-trash-unconfirmed", "test-token", None).await.unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+
+    assert!(
+        file_path.exists(),
+        "an unconfirmed archive-on-trash item must never reach trash::delete"
+    );
+
+    let failure_code: Option<String> = sqlx::query_scalar(
+        "SELECT failure_code FROM plan_apply_events \
+         WHERE plan_id = ? AND item_id = ? AND failure_code IS NOT NULL \
+         ORDER BY rowid DESC LIMIT 1",
+    )
+    .bind("p-trash-unconfirmed")
+    .bind("p-trash-unconfirmed-item-0")
+    .fetch_optional(db.pool())
+    .await
+    .unwrap()
+    .flatten();
+    assert_eq!(
+        failure_code.as_deref(),
+        Some(FailureCode::DestructiveUnconfirmed.as_str()),
+        "the refusal must be recorded as destructive_unconfirmed"
+    );
 }
 
 /// #766: one durable `audit_log_entry` row per succeeded plan_item
