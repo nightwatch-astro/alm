@@ -1,7 +1,7 @@
 ---
 id: J07
 title: Archive a completed project, then trash or permanently delete it
-version: 5
+version: 6
 status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
@@ -22,6 +22,7 @@ trace:
   - spec-054-adaptive-detail-dock (FR-004 — shared adaptive dock)
   - PR #1190 (design-refresh handoff 06 — Approve & apply variant scoped to
     delete-only plans)
+  - PR #1738 (archive destination containment)
 ---
 
 ## Goal
@@ -76,9 +77,10 @@ user typing the literal word `DELETE`.
 - **Do:** Approve and apply the reviewed plan.
 - **Expect:** "Approve & apply" (`plan-review-approve-apply`) renders in the
   app's neutral primary style, not the red destructive style: the shared
-  plan-review overlay (also used by J06) derives that style from
-  `hasDestructiveItems`, true only when some plan item's action is `delete`,
-  and an archive plan's items all carry action `archive`.
+  plan-review overlay (also used by J06) styles an item destructive when its
+  action is `delete`, or when the plan's destination is the OS bin. An
+  archive plan's items all carry action `archive` and its destination is the
+  archive folder, so neither holds.
 - **Expect:** Files move into an app-managed, collision-free archive folder
   scoped to this plan (`.astro-plan-archive/<planId>/…`, a documented
   deviation from the originally specced token-pattern destination, D24).
@@ -88,6 +90,20 @@ user typing the literal word `DELETE`.
   unchanged and the Edit pane stays editable.
 - **Expect (negative):** Apply never overwrites an existing file at the
   destination.
+- **Expect (negative):** No file is ever written outside the library root the
+  project's files live under, even if the plan's stored archive destination
+  points there: apply refuses such an item, marks it `refused` with
+  `root_escape` (or `path.invalid` for an unrooted relative destination),
+  keeps the file where it is, and carries on with the plan's remaining items
+  rather than pausing the run. A refused item leaves the project's lifecycle
+  unchanged.
+- **Trace:** `crates/fs/executor/src/run/loop_.rs:171-188`
+  (`resolve_item_paths` resolves the archive destination against the source
+  root through the same gate as the other two sides), refusal codes at
+  `crates/fs/executor/src/ops/path_gate.rs:125-132`, refusal handling and
+  run continuation at `crates/fs/executor/src/run/loop_.rs:442-461`
+  (`triggers_pause` is false for both codes,
+  `crates/fs/executor/src/failure.rs:168-170`); PR #1738.
 
 ### S4 — Find the archived project on the Archive page {#S4}
 - **Do:** Open Archive; search by name, reason, or original path; sort by
@@ -231,6 +247,9 @@ user typing the literal word `DELETE`.
   with no OS-trash copy and no app restore path (S7).
 - SC8: Applying a generated restore plan returns every restored item to the
   path it was archived from, or fails that item with a stated reason (S5a).
+- SC9: Every file written by an applied archive plan lies under the library
+  root its source lay under; an item that would write outside it ends
+  `refused` with zero bytes written and does not stop the run (S3).
 
 ## Known gaps
 
@@ -281,3 +300,14 @@ user typing the literal word `DELETE`.
   delete removes it from disk with no trash copy and no rollback. Both
   previously recorded only an audit event and left every file in place.
   Evidence: PR #883 (issue #732) · by: journey-scribe (intent-gated)
+
+- **Δ6** 2026-08-24 · S3, +SC9 · behavior-change
+  An archive plan item whose stored archive destination resolves outside the
+  library root is now refused at apply with `root_escape` (or `path.invalid`
+  when it has no root and a relative destination) and the file stays put;
+  previously that destination was never resolved against any root, so a
+  relative value was written relative to the process working directory and an
+  absolute one was written wherever it pointed, and the item recorded as
+  succeeded.
+  Evidence: PR #1738 (de30f13c8), astro-plan-zboex · by: journey-scribe
+  (intent-gated)
