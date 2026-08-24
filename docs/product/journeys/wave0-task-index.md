@@ -1,3 +1,8 @@
+> **MIGRATED:** current truth now lives under `docs/journeys/`, whose
+> `INDEX.md` is the generated routing table. This file is frozen legacy
+> history from the pre-migration campaign and may not match current
+> behavior. See `docs/product/journeys/README.md`.
+
 # Wave 0 — task index (reviewer view)
 
 One row per Wave-0 grilling task (Q15 T120–T127, Q16 T128–T134, Q27 F-Framing-1..11). "Impacted journeys" links the per-journey × task delta file. Tasks with no journey impact carry an indirect-risk note and no delta files. Per-journey rerun unions live in `INDEX.md`.

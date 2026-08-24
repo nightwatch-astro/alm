@@ -1,3 +1,8 @@
+> **MIGRATED:** current truth now lives under `docs/journeys/`, whose
+> `INDEX.md` is the generated routing table. This file is frozen legacy
+> history from the pre-migration campaign and may not match current
+> behavior. See `docs/product/journeys/README.md`.
+
 # Wave 0 rerun plan — per-journey state
 
 For each journey Wave 0 touches: the union of stages needing rerun, which tasks trigger each, the minimal rerun set, and coverage gaps. This is the sheet the team executes: rerun only the listed stages, not whole journeys. Stage labels are quoted from `JNN-slug/journey.md`; NEW stages (behavior Wave 0 introduces that no current journey stage covers) are flagged **journey doc update needed**.
