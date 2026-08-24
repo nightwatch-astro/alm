@@ -133,8 +133,13 @@ count_file() {
     }
 
     # Line after a #[cfg(test)] attribute decides how far the exemption reaches.
+    #
+    # Blank lines and full-line comments compile to nothing, so they do not end the
+    # search for the attributed item. Only `//` comments are recognised here: a
+    # multi-line `/* */` between the attribute and its item ends the exemption early,
+    # which over-counts rather than under-counts.
     pending {
-      if ($0 ~ /^[[:space:]]*#\[/) { next }        # stacked attributes
+      if ($0 ~ /^[[:space:]]*(#\[|\/\/)/ || $0 ~ /^[[:space:]]*$/) { next }
       pending = 0
       if ($0 ~ /\{/) { skipping = 1 }              # braced item: skip its scope
       next                                         # else `mod x;` — just this line
@@ -277,6 +282,8 @@ self_test() {
     'tracing_target|0|if event.metadata().target() == "sqlx::query" { n += 1; }'
     'doc_mention|0|/// Wraps sqlx::query_as::<_, Row>() for callers.'
     'cfg_test_scope|0|#[cfg(test)]\nmod tests {\n    fn t() { sqlx::query("SELECT 1"); }\n}'
+    'cfg_test_comment_before_attr|0|#[cfg(test)]\n// why this module allows the lint\n#[allow(clippy::too_many_lines)]\nmod tests {\n    fn t() { sqlx::query("SELECT 1"); }\n}'
+    'cfg_test_blank_before_item|0|#[cfg(test)]\n\nmod tests {\n    fn t() { sqlx::query("SELECT 1"); }\n}'
     'after_cfg_test|1|#[cfg(test)]\nmod tests {\n    fn t() {}\n}\nfn prod() { sqlx::query("SELECT 1"); }'
   )
 
