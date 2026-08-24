@@ -1,7 +1,8 @@
 # Data Model: Source View Generation
 
 **Spec**: `specs/049-source-view-generation/spec.md`
-**Status**: Planned
+**Status**: Implemented (post-hoc record, corrected 2026-08-24) — see `spec.md`'s
+status header for the per-user-story evidence.
 
 This feature is the **generation** counterpart of spec 026 and **reuses** its
 entities. It adds no new durable table. The reused entities and the delta are

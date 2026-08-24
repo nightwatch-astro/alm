@@ -4,14 +4,21 @@
 
 **Created**: 2026-06-19
 
-**Status**: Draft
+**Status**: Draft — **remains open**, but rescoped 2026-08-24 against `origin/main`
+a52c637f2. `apps/desktop/src/api/commands.ts` was deleted (1673 lines) at
+`54b56d284` (2026-07-05, PR #439) and the switcher this spec proposed now exists
+as `apps/desktop/src/api/ipc.ts:61`. The remaining subject is **24** hand-written
+wrappers in two feature modules, not ~90 in `commands.ts`: see the rescoped
+Background below.
 
 **Input**: Remove the hand-written `apps/desktop/src/api/commands.ts` `invoke()` wrappers and migrate the desktop app to call the generated tauri-specta bindings directly, eliminating the IPC name/payload drift bug class while preserving mock mode and the dev-tools recording proxy.
 
 ## Background
 
-The desktop app talks to the Rust backend through ~90 hand-written `invoke('<name>', <payload>)`
-wrappers in `commands.ts`. The generated tauri-specta bindings (`bindings/index.ts`,
+### As written (2026-06-19)
+
+The desktop app talked to the Rust backend through ~90 hand-written
+`invoke('<name>', <payload>)` wrappers in `apps/desktop/src/api/commands.ts`. The generated tauri-specta bindings (`bindings/index.ts`,
 `export const commands`) already describe every command's exact name and camelCase payload
 shape, but the wrappers re-declare both by hand and silently drift. Because mock mode
 (`VITE_USE_MOCKS`) short-circuits `invoke()`, drift is invisible on Linux/CI and only surfaces
@@ -24,6 +31,27 @@ on a real Windows build. Three drift incidents shipped this cycle:
 
 The guard prevents regressions but the wrappers remain the root cause. This feature removes
 them so the generated bindings are the single source of truth.
+
+### Rescoped (2026-08-24, verified against `origin/main` a52c637f2)
+
+`commands.ts` no longer exists — it was deleted, 1673 lines, at `54b56d284`
+(2026-07-05, PR #439), sixteen days after this spec was created. The switcher this
+spec proposed shipped as `apps/desktop/src/api/ipc.ts:61`.
+
+The remaining subject is **24** hand-written `invoke()` wrappers in two feature
+IPC modules, both importing `invoke` from the switcher (`@/api/ipc`):
+
+- `apps/desktop/src/features/sessions/sessionsGroupsIpc.ts` — 15
+- `apps/desktop/src/features/calibration/calibrationHandoffIpc.ts` — 9
+
+So US1's Independent Test does **not** yet pass. Two further `invoke(` sites are
+**not** in scope and must not be counted as wrappers:
+
+- `apps/desktop/src/dev/ContractsPage.tsx:142` — a deliberate *dynamic*
+  `invoke(cmd, …)` replaying a recorded call, which is the spec-021 dev-tools
+  surface this migration is required to preserve (and is `dev-tools`-gated).
+- `apps/desktop/src/data/logSubscription.ts:52` — a comment, not a call; that
+  module already routes through the generated binding.
 
 ### Constraint that makes this non-trivial
 

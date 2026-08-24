@@ -4,18 +4,43 @@
 
 **Created**: 2026-06-19
 
-**Status**: Draft
+**Status**: Implemented (post-hoc record, verified 2026-08-24 against `origin/main`
+a52c637f2). Both layers and all five user stories ship:
+
+- **Layer 1, real-backend integration**: `crates/e2e-tests/` with 15 entries under
+  `crates/e2e-tests/tests/` (archive, calibration UI, cleanup protection gate,
+  inbox UI, inventory, journeys, lifecycle UI, onboarding, plan-review overlay,
+  sessions, settings, smoke, source view, targets, plus `common/`).
+- **Layer 2, full-stack end-to-end**: `tests/e2e/` with 39 tracked files —
+  Playwright specs plus `tests/e2e/support/`. The real-UI variant runs through
+  `desktop_shell` under the `e2e` feature with `thirtyfour` +
+  `tauri-plugin-webdriver` (no per-OS external WebDriver).
+- **US2, cross-platform automation**: `.github/workflows/e2e.yml` ("Real-UI E2E
+  (thirtyfour + nextest + tauri-plugin-webdriver)") builds and runs on
+  `ubuntu-latest`, `windows-latest` and `macos-latest`;
+  `.github/workflows/ci.yml` carries the fast mock-mode `ui-e2e` lane and its
+  `ui-e2e-gate`.
+- **US4, one-command local execution**: `apps/desktop/package.json`
+  `test:e2e` (`playwright test`) and `test:e2e:real`
+  (`scripts/run-e2e-real.sh`); `just test-e2e`.
+- **US5, standing convention**: `.claude/rules/22-astro-build-run.md:32` documents
+  the two layers as the project's default way of working and points at
+  `contracts/coverage-matrix.md`, which is maintained per feature area.
+
+Correction of record: an earlier audit concluded Layer 2 had not shipped by
+checking `apps/desktop/e2e`, which has never existed. The Playwright tree is
+`tests/e2e/`.
 
 **Input**: User description: "Full integration testing of our app: exercise the real application (real data store, real command/IPC dispatch, real side effects) rather than mocked stubs, covering all currently implemented features, across Windows, Linux, and macOS, in both CI/CD and during local development. Update the project instructions so this is the standing convention."
 
 ## Overview
 
-Today the automated tests prove that individual pieces work in isolation: pure
-domain logic is unit-tested, and the desktop UI is tested against an in-process
-mock that fakes every backend response. Nothing exercises the **real** running
-application — real data store, real command dispatch and serialization, real
-filesystem and network side effects — as a user actually experiences it. That
-gap means a whole class of failures (command wiring, payload shape mismatches,
+When this spec was written, the automated tests proved only that individual pieces
+work in isolation: pure domain logic was unit-tested, and the desktop UI was
+tested against an in-process mock that faked every backend response. Nothing
+exercised the **real** running application — real data store, real command
+dispatch and serialization, real filesystem and network side effects — as a user
+actually experiences it. That gap meant a whole class of failures (command wiring, payload shape mismatches,
 data-store migrations, state injection, UI↔backend contract drift) can pass all
 existing checks and still break the shipped product. Several such failures have
 already reached real builds and were only caught by hand on one developer's
