@@ -16,6 +16,7 @@
 //! Constitution §I: read/write SQLite metadata only; no filesystem mutations.
 //! Constitution §V: SQLite is the durable record.
 
+use domain_core::ids::Timestamp;
 use sqlx::SqlitePool;
 
 use persistence_core::DbResult;
@@ -223,7 +224,7 @@ pub async fn insert_resolution_audit(
     trigger: &str,
     actor: &str,
     request_id: &str,
-    at: &str,
+    at: Timestamp,
     payload: &str,
 ) -> DbResult<()> {
     persistence_core::repositories::audit_writes::insert_resolution_audit(
@@ -417,7 +418,7 @@ mod tests {
             "target.resolved",
             "system",
             "req-1",
-            "2026-01-01T00:00:00Z",
+            Timestamp::now_utc(),
             "{}",
         )
         .await

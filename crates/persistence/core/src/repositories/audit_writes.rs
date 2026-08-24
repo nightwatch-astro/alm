@@ -151,7 +151,7 @@ pub async fn insert_resolution_audit(
     trigger: &str,
     actor: &str,
     request_id: &str,
-    at: &str,
+    at: Timestamp,
     payload: &str,
 ) -> DbResult<()> {
     sqlx::query(
@@ -165,7 +165,7 @@ pub async fn insert_resolution_audit(
     .bind(trigger)
     .bind(actor)
     .bind(request_id)
-    .bind(at)
+    .bind(at.to_iso())
     .bind(payload)
     .execute(pool)
     .await?;

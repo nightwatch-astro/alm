@@ -306,6 +306,35 @@ mod tests {
         }
     }
 
+    /// `AuditLogFilter::from` becomes a TEXT `at >= ?`, so a trimmed fraction
+    /// changes which rows the range admits, with no visible symptom. An entry at
+    /// `.1Z` compares as `>= .150000Z`, because `Z` > `5`, so a row from before
+    /// the lower bound is returned as though it were inside the range
+    /// (astro-plan-b7h28).
+    #[tokio::test]
+    async fn from_bound_excludes_an_entry_written_before_it() {
+        let pool = make_pool().await;
+        let base = time::OffsetDateTime::from_unix_timestamp(1_752_000_000)
+            .expect("fixed unix timestamp is in range");
+        let before = base + time::Duration::milliseconds(100);
+        let bound = base + time::Duration::milliseconds(150);
+
+        insert_audit_entry(&pool, &entry_at(uuid::Uuid::from_u128(1), before))
+            .await
+            .expect("insert entry before the bound");
+
+        let filter = AuditLogFilter {
+            from: Some(domain_core::ids::Timestamp::from_offset_date_time(bound).to_iso()),
+            ..AuditLogFilter::default()
+        };
+        let rows = list_audit_entries(&pool, &filter).await.expect("list audit entries");
+
+        assert!(
+            rows.is_empty(),
+            "an entry written before the `from` bound must not be inside the range"
+        );
+    }
+
     /// `list_audit_entries` advertises newest-first, and it gets that only from
     /// a TEXT `ORDER BY at DESC`. A writer that trims trailing zeros from the
     /// subsecond fraction renders these two instants `.1Z` and `.15Z`, and
