@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [cleanup, projects, sessions, plans]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration journey.md @ git 66026463
   - deltas/2026-07-14-jval-docdrift.md (folded — PR #413 status verified)

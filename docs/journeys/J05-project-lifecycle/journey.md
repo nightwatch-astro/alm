@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [projects, plans, audit]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration journey.md @ git 66026463
   - e2e-agentic-test/008-project-create-onboard-edit/*

@@ -6,7 +6,7 @@ status: active
 last_reviewed: 2026-07-24
 actors: [astrophotographer]
 surfaces: [settings]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration journey.md @ git 42c596d6
   - specs/051-tauri-shell-integration/spec.md US10 (FR-029..FR-032, SC-009)
