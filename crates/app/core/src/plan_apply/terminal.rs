@@ -9,11 +9,11 @@
 use super::{
     apply_repo, audit_item_cancelled, deterministic_entity_id, finalize_archive_lifecycle,
     finalize_calibration_master_archive, finalize_calibration_master_restore,
-    finalize_project_create_manifest, finalize_restore_lifecycle, finalize_view_generation,
-    finalize_view_regeneration, finalize_view_removal, json, new_id, AuditLogEntry, EntityType,
-    EventBus, OpEventEmitter, OperationEventType, OperationStatus, Outcome, PlanApplyingCompleted,
-    PlanApplyingPaused, Severity, Source, SqlitePool, TerminalCounts, Timestamp,
-    TOPIC_PLAN_APPLYING_COMPLETED, TOPIC_PLAN_APPLYING_PAUSED,
+    finalize_prepared_lifecycle, finalize_project_create_manifest, finalize_restore_lifecycle,
+    finalize_view_generation, finalize_view_regeneration, finalize_view_removal, json, new_id,
+    AuditLogEntry, EntityType, EventBus, OpEventEmitter, OperationEventType, OperationStatus,
+    Outcome, PlanApplyingCompleted, PlanApplyingPaused, Severity, Source, SqlitePool,
+    TerminalCounts, Timestamp, TOPIC_PLAN_APPLYING_COMPLETED, TOPIC_PLAN_APPLYING_PAUSED,
 };
 
 use super::apply::cumulative_counts;
@@ -131,6 +131,9 @@ pub(super) async fn handle_completed(
             "prepared_view_generation" => {
                 if let Some(project_id) = plan_project_id {
                     finalize_view_generation(pool, plan_id, project_id).await;
+                    if terminal == "applied" {
+                        finalize_prepared_lifecycle(pool, bus, project_id).await;
+                    }
                 }
             }
             "prepared_view_removal" => {

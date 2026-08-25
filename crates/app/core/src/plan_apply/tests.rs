@@ -2999,3 +2999,135 @@ async fn a_pause_after_a_skip_counts_the_rows_not_the_lagging_plan_counter() {
 
     active_runs().remove("p-pause-skip");
 }
+
+// ── astro-plan-krqge: prepared lifecycle closure ─────────────────────────────
+
+async fn insert_ready_project(db: &Database, project_id: &str) {
+    use persistence_plans::repositories::projects as projects_repo;
+
+    projects_repo::insert_project(
+        db.pool(),
+        &projects_repo::InsertProject {
+            id: project_id,
+            name: "JV Archive Prepared",
+            tool: "PixInsight",
+            lifecycle: "ready",
+            path: "projects/JV_Archive_Prepared",
+            notes: None,
+            canonical_target_id: None,
+            is_mosaic: false,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+/// A clean `prepared_view_generation` apply closes the requires-plan gate on
+/// `ready → prepared`: `apply_transition` refuses that edge unconditionally, so
+/// without this closure the project can never leave `ready` and stays unlinked.
+#[tokio::test]
+async fn completed_view_generation_apply_prepares_the_project() {
+    use persistence_plans::repositories::projects as projects_repo;
+
+    let (db, bus) = setup().await;
+    let plan_id = "p-krqge-prepared";
+    let run_id = "run-krqge-prepared";
+    let project_id = Uuid::new_v4().to_string();
+    insert_ready_project(&db, &project_id).await;
+    insert_approved_plan_with_items(&db, plan_id, 1).await;
+    apply_repo::cas_approved_to_applying(db.pool(), plan_id, run_id, "test-token", 1, 1)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE plan_items SET item_state = 'succeeded' WHERE plan_id = ?")
+        .bind(plan_id)
+        .execute(db.pool())
+        .await
+        .unwrap();
+    // The terminal state is derived from the plan row's cumulative counters
+    // (`cumulative_counts`), not from item states.
+    sqlx::query("UPDATE plans SET items_applied = 1, items_failed = 0 WHERE id = ?")
+        .bind(plan_id)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+    terminal::handle_completed(
+        db.pool(),
+        &bus,
+        plan_id,
+        run_id,
+        "prepared_view_generation",
+        Some(&project_id),
+        None,
+        TerminalCounts { succeeded: 1, failed: 0, skipped: 0, cancelled: 0 },
+    )
+    .await;
+
+    let project = projects_repo::get_project(db.pool(), &project_id).await.unwrap();
+    assert_eq!(
+        project.lifecycle, "prepared",
+        "applying the source-view plan must drive the project to prepared"
+    );
+
+    let entries = list_audit_entries(
+        db.pool(),
+        &AuditLogFilter { entity_id: Some(project_id.clone()), ..AuditLogFilter::default() },
+    )
+    .await
+    .unwrap();
+    assert!(
+        entries.iter().any(|e| e.trigger == "sourceview.plan.applied"),
+        "the lifecycle closure must leave a durable audit record: {entries:?}"
+    );
+}
+
+/// A `partially_applied` terminal leaves the lifecycle alone — only a clean
+/// apply materialises every planned link (mirrors the archive closure, which
+/// runs on `applied` only).
+#[tokio::test]
+async fn partially_applied_view_generation_leaves_lifecycle_ready() {
+    use persistence_plans::repositories::projects as projects_repo;
+
+    let (db, bus) = setup().await;
+    let plan_id = "p-krqge-partial";
+    let run_id = "run-krqge-partial";
+    let project_id = Uuid::new_v4().to_string();
+    insert_ready_project(&db, &project_id).await;
+    insert_approved_plan_with_items(&db, plan_id, 2).await;
+    apply_repo::cas_approved_to_applying(db.pool(), plan_id, run_id, "test-token", 2, 2)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE plan_items SET item_state = 'succeeded' WHERE id = ?")
+        .bind(format!("{plan_id}-item-0"))
+        .execute(db.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE plan_items SET item_state = 'failed' WHERE id = ?")
+        .bind(format!("{plan_id}-item-1"))
+        .execute(db.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE plans SET items_applied = 1, items_failed = 1 WHERE id = ?")
+        .bind(plan_id)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+    terminal::handle_completed(
+        db.pool(),
+        &bus,
+        plan_id,
+        run_id,
+        "prepared_view_generation",
+        Some(&project_id),
+        None,
+        TerminalCounts { succeeded: 1, failed: 1, skipped: 0, cancelled: 0 },
+    )
+    .await;
+
+    let project = projects_repo::get_project(db.pool(), &project_id).await.unwrap();
+    assert_eq!(
+        project.lifecycle, "ready",
+        "a partial apply must not claim the project is prepared"
+    );
+}
