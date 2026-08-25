@@ -136,12 +136,12 @@ pub(super) struct InstanceEnv {
 impl InstanceEnv {
     pub(super) fn new() -> Result<Self> {
         let root = tempfile::tempdir().context("failed to create isolated E2E instance dir")?;
-        let db_path = root.path().join("e2e-test.db");
+        let db_path = e2e_tests::instance::db_path(root.path());
 
         // Pre-warm: copy the once-per-process warmed resolve cache into this
         // instance's appdata dir so the app's `warm_bundled_on_first_run`
         // finds the sentinel and skips the full 13k-row seed load entirely.
-        let appdata = root.path().join("appdata");
+        let appdata = e2e_tests::instance::appdata_dir(root.path());
         std::fs::create_dir_all(&appdata)
             .context("failed to create instance appdata dir for pre-warm copy")?;
         let dest = appdata.join("simbad-cache.redb");
@@ -153,60 +153,7 @@ impl InstanceEnv {
             )
         })?;
 
-        // Issue #1204: the per-OS location vars below are honoured on Linux
-        // (`XDG_*`) and macOS (`HOME`), and silently ignored on Windows —
-        // Tauri resolves app dirs through `dirs`, which calls
-        // `SHGetKnownFolderPath`, and the Known Folder API reads the user's
-        // shell profile rather than `APPDATA`/`LOCALAPPDATA`. So on Windows
-        // every concurrent instance shared one real app-data root however
-        // these were set, colliding over `simbad-cache.redb` and — fatally —
-        // over the WebView2 user-data folder.
-        //
-        // `PV_DATA_DIR` is an explicit override the app itself honours
-        // (`desktop_shell::data_dir`), so isolation no longer depends on the
-        // OS agreeing to be redirected. The per-OS vars stay: they still
-        // place `app_config_dir` (window-state) under this root on Linux and
-        // macOS, which `PV_DATA_DIR` does not cover.
-        let mut vars: Vec<(&'static str, String)> =
-            vec![("PV_DATA_DIR", appdata.display().to_string())];
-        vars.extend(if cfg!(target_os = "windows") {
-            vec![
-                ("APPDATA", root.path().join("appdata").display().to_string()),
-                ("LOCALAPPDATA", root.path().join("localappdata").display().to_string()),
-                // The other half of #1204, and the fatal half: concurrent
-                // instances shared ONE WebView2 user-data folder, so the loser
-                // could not create its webview at all
-                // (`WindowsError(0x80070057)`), never opened a window, and
-                // never brought up its WebDriver port — surfacing four layers
-                // downstream as `bridge never became ready`.
-                //
-                // `WEBVIEW2_USER_DATA_FOLDER` is WebView2's own documented
-                // loader override: when set, it REPLACES the `userDataFolder`
-                // argument the app passes to
-                // `CreateCoreWebView2EnvironmentWithOptions`. Microsoft
-                // documents it as the intended lever for testing/deployment
-                // overrides, which is exactly this.
-                //
-                // It is read by the WebView2 loader inside the app process, so
-                // unlike APPDATA/LOCALAPPDATA it cannot be quietly bypassed by
-                // a Known Folder lookup — and unlike a config-declared
-                // window's `data_directory` (which must be RELATIVE, and
-                // resolves under `dirs::data_local_dir()`), it takes an
-                // absolute path, so the folder genuinely lives under this
-                // instance's temp root instead of merely having a unique name
-                // in a shared one.
-                ("WEBVIEW2_USER_DATA_FOLDER", root.path().join("webview2").display().to_string()),
-            ]
-        } else if cfg!(target_os = "macos") {
-            // app_config_dir resolves under $HOME on macOS (see
-            // `app_config_dir` below).
-            vec![("HOME", root.path().display().to_string())]
-        } else {
-            vec![
-                ("XDG_DATA_HOME", root.path().join("xdg-data").display().to_string()),
-                ("XDG_CONFIG_HOME", root.path().join("xdg-config").display().to_string()),
-            ]
-        });
+        let vars = e2e_tests::instance::location_vars(root.path());
         Ok(Self { _root: root, vars, db_path })
     }
 }

@@ -4,7 +4,10 @@ The MCP bridge is a WebSocket server inside the desktop app that lets an agent
 drive the running UI. `@hypothesi/tauri-mcp-server` connects to it and exposes
 tool calls such as `driver_session` and `webview_execute_js`, which is how
 automated journeys and manual validation sessions click through the real app
-against a real backend. It listens on port 9223.
+against a real backend. It listens on port 9223 by default, scanning upward from
+there when that port is taken. `PV_MCP_BRIDGE_PORT` moves the base, which is how
+several app instances run side by side — see
+`parallel-journey-instances.md`.
 
 The bridge is compiled only into a build with `--features dev-tools`. Release
 binaries omit that feature, so `tauri-plugin-mcp-bridge` is not linked and the

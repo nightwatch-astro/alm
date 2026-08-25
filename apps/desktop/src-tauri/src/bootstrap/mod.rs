@@ -52,9 +52,26 @@ pub fn mcp_bridge_bind_address<'a>(enable: Option<&str>, bind: Option<&'a str>) 
     })
 }
 
+/// Base port the MCP bridge scans upward from.
+///
+/// The argument is the raw value of `PV_MCP_BRIDGE_PORT`; `None` means unset,
+/// and so does an unparseable or out-of-range value, because the plugin default
+/// is a working configuration and refusing to start the bridge over a typo
+/// would be the worse failure.
+///
+/// Concurrent app instances on one host need predictable ports: the plugin
+/// scans `base_port..base_port + 100` and takes the first free one, so without
+/// a per-instance base the port an instance ends up on depends on launch order.
+/// `crates/e2e-tests/src/instance.rs` derives one base per instance number and
+/// this is the var it sets.
+#[cfg(any(feature = "dev-tools", test))]
+pub fn mcp_bridge_base_port(port: Option<&str>) -> Option<u16> {
+    port?.trim().parse().ok().filter(|p| *p != 0)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{mcp_bridge_bind_address, single_instance_guard_enabled};
+    use super::{mcp_bridge_base_port, mcp_bridge_bind_address, single_instance_guard_enabled};
 
     /// The release-leak regression: without the `e2e` feature compiled in, no
     /// value of `PV_E2E_INSTANCE_ID` may disable the guard.
@@ -107,5 +124,17 @@ mod tests {
         assert_eq!(mcp_bridge_bind_address(Some("1"), Some("   ")), Some("127.0.0.1"));
         assert_eq!(mcp_bridge_bind_address(Some("1"), Some("0.0.0.0")), Some("0.0.0.0"));
         assert_eq!(mcp_bridge_bind_address(Some("1"), Some("192.168.1.20")), Some("192.168.1.20"));
+    }
+
+    /// A usable value pins the base port; every unusable one falls back to the
+    /// plugin default rather than failing the launch.
+    #[test]
+    fn base_port_is_pinned_only_by_a_usable_value() {
+        assert_eq!(mcp_bridge_base_port(Some("9323")), Some(9323));
+        assert_eq!(mcp_bridge_base_port(Some(" 9423 ")), Some(9423));
+        for raw in [None, Some(""), Some("   "), Some("0"), Some("-1"), Some("70000"), Some("92a3")]
+        {
+            assert_eq!(mcp_bridge_base_port(raw), None, "port={raw:?} must not pin the base port");
+        }
     }
 }

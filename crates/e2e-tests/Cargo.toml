@@ -5,11 +5,17 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
-# Empty library target: all E2E logic lives in `tests/` so the heavy thirtyfour
-# WebDriver stack is a dev-dependency, compiled only for the test binaries and
-# never by `cargo build --workspace` of the shipping crates.
+# The library target holds only std-only per-instance allocation; the heavy
+# thirtyfour WebDriver stack stays a dev-dependency, compiled only for the test
+# binaries and never by `cargo build --workspace` of the shipping crates.
 [lib]
 path = "src/lib.rs"
+
+# Journey-driving launch helper, declared rather than auto-discovered so it is
+# visible in the manifest next to the lib whose allocation it shares.
+[[bin]]
+name = "journey-instance"
+path = "src/bin/journey-instance.rs"
 
 [dev-dependencies]
 # W3C WebDriver client (spec 037 adopted stack — see rust.tauri steering).
