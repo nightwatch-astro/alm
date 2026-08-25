@@ -268,9 +268,108 @@ pub fn relative_wire_path(root: &Path, path: &Path) -> String {
     wire_path(rel)
 }
 
+// ── Path identity / containment ───────────────────────────────────────────────
+
+/// Returns `true` when `ancestor` and `descendant` name the same filesystem
+/// object, or when `descendant` lies inside `ancestor`.
+///
+/// Case sensitivity is a property of the volume, not of the operating system:
+/// APFS can be formatted case-sensitive, external drives are often formatted
+/// differently from the boot volume, Linux can mount case-insensitive
+/// filesystems, and Windows supports per-directory case sensitivity. A
+/// `cfg!(windows)` case-fold therefore answers for the wrong platform half the
+/// time, so the question is put to the filesystem: `same-file` compares device
+/// + inode on Unix and `FILE_ID_INFO` on Windows.
+///
+/// Comparing canonicalised strings is not sufficient — macOS `realpath` does
+/// not correct the case of path components, so `~/Foo` and `~/foo` canonicalise
+/// to two different strings for one directory.
+///
+/// Identity is checked against every ancestor of `descendant`, so a case-only
+/// difference anywhere in the prefix is still recognised as containment. The
+/// lexical `starts_with` is kept as a first, cheaper answer and as the fallback
+/// for paths that cannot be stat'd (an unplugged drive, a path not yet created);
+/// for such paths only an exact-bytes prefix can be recognised.
+///
+/// A link is deliberately not resolved away by hand: two roots that reach one
+/// directory through a symlink or junction share an inode and are reported as
+/// containing each other.
+#[must_use]
+pub fn contains_or_same(ancestor: &Path, descendant: &Path) -> bool {
+    descendant.starts_with(ancestor)
+        || descendant.ancestors().any(|a| same_file::is_same_file(ancestor, a).unwrap_or(false))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `create_dir` is the oracle for the volume's case sensitivity, chosen
+    /// because it is independent of the device+inode identity under test.
+    fn make_case_variant_dirs(parent: &Path) -> (PathBuf, PathBuf, bool) {
+        let original = parent.join("Foo");
+        let variant = parent.join("FOO");
+        fs::create_dir(&original).expect("create Foo");
+        let case_sensitive = match fs::create_dir(&variant) {
+            Ok(()) => true,
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => false,
+            Err(e) => panic!("probing volume case sensitivity: {e}"),
+        };
+        (original, variant, case_sensitive)
+    }
+
+    #[test]
+    fn case_only_difference_follows_the_volume() {
+        let parent = tempfile::tempdir().unwrap();
+        let (original, variant, case_sensitive) = make_case_variant_dirs(parent.path());
+
+        assert_eq!(contains_or_same(&original, &variant), !case_sensitive);
+        assert_eq!(contains_or_same(&variant, &original), !case_sensitive);
+    }
+
+    #[test]
+    fn case_only_difference_in_a_parent_component_follows_the_volume() {
+        let parent = tempfile::tempdir().unwrap();
+        let (original, variant, case_sensitive) = make_case_variant_dirs(parent.path());
+        let nested = original.join("sub");
+        fs::create_dir(&nested).unwrap();
+
+        assert_eq!(contains_or_same(&variant, &nested), !case_sensitive);
+        assert!(contains_or_same(&original, &nested));
+    }
+
+    #[test]
+    fn distinct_sibling_directories_do_not_overlap() {
+        let parent = tempfile::tempdir().unwrap();
+        let a = parent.path().join("alpha");
+        let b = parent.path().join("beta");
+        fs::create_dir(&a).unwrap();
+        fs::create_dir(&b).unwrap();
+
+        assert!(!contains_or_same(&a, &b));
+        assert!(!contains_or_same(&b, &a));
+    }
+
+    #[test]
+    fn a_symlinked_root_overlaps_its_target() {
+        let parent = tempfile::tempdir().unwrap();
+        let target = parent.path().join("target");
+        let link = parent.path().join("link");
+        fs::create_dir(&target).unwrap();
+        create_symlink(&target, &link).unwrap();
+
+        assert!(contains_or_same(&link, &target));
+        assert!(contains_or_same(&target, &link));
+    }
+
+    /// Paths that cannot be stat'd (an unplugged drive, a not-yet-created root)
+    /// keep the lexical answer, which recognises an exact-bytes prefix only.
+    #[test]
+    fn unstattable_paths_fall_back_to_the_lexical_prefix() {
+        let missing = Path::new("/no-such-volume-4f2a/root");
+        assert!(contains_or_same(missing, &missing.join("child")));
+        assert!(!contains_or_same(missing, Path::new("/no-such-volume-4f2a/ROOT/child")));
+    }
 
     #[test]
     fn plain_directory_is_not_a_link() {

@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 camino = { workspace = true }
+same-file = { workspace = true }
 
 [dev-dependencies]
 proptest.workspace = true

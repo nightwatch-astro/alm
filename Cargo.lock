@@ -110,6 +110,7 @@ dependencies = [
  "filetime",
  "fs_executor",
  "fs_inventory",
+ "fs_pathsafe",
  "hex",
  "patterns",
  "persistence_calibration",
@@ -2029,6 +2030,7 @@ version = "0.1.0"
 dependencies = [
  "camino",
  "proptest",
+ "same-file",
  "tempfile",
 ]
 
