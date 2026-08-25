@@ -73,9 +73,9 @@ exact click sequences and troubleshooting), and `.claude/rules/50-tauri-mcp.md`
 - exclusive: false
 
 The same Tauri v2 app, built and driven natively on macOS through the same MCP
-bridge. `desktop-ui` keeps its name and stays the **Windows** lane, because
-existing `runs/*.md` carry `interface: desktop-ui (...)` and renaming it would
-break those records.
+bridge. `desktop-ui` keeps its name and stays the **Windows** lane: two existing
+`runs/*.md` records carry `interface: desktop-ui (...)`, and renaming would
+invalidate them.
 
 Nothing about the bridge is platform-gated: `--features dev-tools`,
 `PV_MCP_BRIDGE_ENABLE=1`, port 9223, and the `127.0.0.1` default unless
@@ -122,12 +122,11 @@ should therefore expect:
   Finder one, not the File Explorer one.
 - **Tool launch of an `.app` bundle.** Every seeded profile carrying a
   `bundle_id` goes through `/usr/bin/open -b`, which starts the app via Launch
-  Services: the project working folder is *not* applied, and no child PID comes
-  back (`crates/workflow/profiles/src/launch.rs` `spawn_platform`). A null PID
-  means the "already launched" re-launch warning, which needs a live PID, cannot
-  fire for those tools. J05/S5 already states the working-folder half of this.
-  A plain (non-bundle) executable takes the `process_group(0)` arm and does
-  return a PID.
+  Services, so the project working folder is *not* applied and no child PID comes
+  back (`crates/workflow/profiles/src/launch.rs` `spawn_platform`). J05/S5
+  already states the working-folder half. A plain (non-bundle) executable takes
+  the `process_group(0)` arm and does return a PID, which is recorded but changes
+  no observable behaviour — see "Limitations shared by both desktop lanes".
 - **A macOS-only launch failure branch.** `LaunchError::MacOsQuarantine` is
   raised when `open -b` fails with a quarantine / `LSOpenURLsWithRole` error
   (same file) — a refusal reason that has no Windows counterpart.
@@ -165,6 +164,20 @@ runners, and macOS runs only on a `workflow_dispatch` `run_macos` input
 (`.github/workflows/e2e.yml` header and `build-app-macos` job `if:`). Journey
 validation on macOS goes through the MCP bridge on a real Mac, which is a
 different harness and unaffected by that removal.
+
+### Limitations shared by both desktop lanes
+
+Not platform differences: true on Windows and macOS alike. Stated once here so
+neither profile reads as the better-supported lane.
+
+- **The re-launch guard never fires.** `pid_is_alive` is implemented only on
+  Linux (`/proc/<pid>` presence) and returns a hardcoded `false` on every other
+  target (`crates/workflow/profiles/src/launch.rs` `pid_is_alive_impl`), while
+  the guard gates on `prior.pid.is_some_and(pid_is_alive)`
+  (`crates/app/core/src/tool_launch.rs`). So a recorded PID makes no difference
+  on either desktop lane, and a prior `spawned` launch never produces the
+  "already launched" warning. No journey asserts that warning, so no journey
+  coverage is affected. Tracked as `astro-plan-7wu52`.
 
 ### Open cross-platform divergences
 
