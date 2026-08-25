@@ -82,6 +82,27 @@ pub fn db_url(root: &Path) -> String {
     format!("sqlite://{}?mode=rwc", db_path(root).display())
 }
 
+/// The ambient `PV_DB_URL`, when it is not the one this instance would use.
+///
+/// `apps/desktop/src-tauri/src/main.rs` prefers `PV_DB_URL` over the path it
+/// derives from `PV_DATA_DIR`, so one exported URL puts every instance on one
+/// database however well their roots are separated. That is how the historical
+/// Windows lane shared `wizard-test.db`. Detected rather than overridden,
+/// because the precedence has a legitimate caller: the nextest harness sets
+/// `PV_DB_URL` per instance and derives its fresh-DB reset from the exact path
+/// it named (`tests/common/helpers.rs`).
+///
+/// A caller that exports a shared `PV_DB_URL` *after* consuming this instance's
+/// environment is outside what any check here can observe.
+#[must_use]
+pub fn conflicting_db_url<'a>(root: &Path, ambient: Option<&'a str>) -> Option<&'a str> {
+    let ambient = ambient?;
+    if ambient.trim().is_empty() || ambient.trim() == db_url(root) {
+        return None;
+    }
+    Some(ambient)
+}
+
 /// Directory the app resolves `app_config_dir` (window state, webview
 /// storage) under, once [`location_vars`] is applied.
 ///
@@ -225,6 +246,26 @@ mod tests {
         for (key, value) in vars {
             assert!(value.starts_with(&prefix), "{key}={value} escapes the instance root {prefix}");
         }
+    }
+
+    /// The historical lane pin: one `PV_DB_URL` exported for every instance.
+    /// Instance 2 must reject instance 1's URL, and both must accept their own.
+    #[test]
+    fn a_foreign_pv_db_url_is_rejected_and_the_instances_own_is_not() {
+        let base = Path::new("/shared/base");
+        let one = instance_root(base, 1);
+        let two = instance_root(base, 2);
+        let lane_pin = "sqlite://C:\\dev\\astro-plan\\wizard-test.db?mode=rwc";
+
+        assert_eq!(super::conflicting_db_url(&two, Some(lane_pin)), Some(lane_pin));
+        assert!(
+            super::conflicting_db_url(&two, Some(&db_url(&one))).is_some(),
+            "instance 2 must reject instance 1's database"
+        );
+        assert_eq!(super::conflicting_db_url(&one, Some(&db_url(&one))), None);
+        assert_eq!(super::conflicting_db_url(&two, Some(&db_url(&two))), None);
+        assert_eq!(super::conflicting_db_url(&one, None), None);
+        assert_eq!(super::conflicting_db_url(&one, Some("  ")), None);
     }
 
     /// The `e2e` build's WebDriver server binds one port and panics its thread

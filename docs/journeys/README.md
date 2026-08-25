@@ -62,8 +62,16 @@ plugin scans upward from it, so the per-instance base port
 shares a database with another: `PV_DATA_DIR` alone separates them, before
 `PV_DB_URL` is considered. What did make the historical lane unsafe to
 parallelise was its own launch procedure — one hardcoded dev database at
-`C:\dev\astro-plan\wizard-test.db`, reset by deleting that path — not any
-property of the app.
+`C:\dev\astro-plan\wizard-test.db`, reset by deleting that path — not any property
+of the app. That procedure is gone from
+`docs/development/windows-native-rust-dev.md`: launches take an instance number
+and never name a database.
+
+Two limits on that claim. `PV_DB_URL` still overrides the per-instance
+derivation, so any launch procedure that exports one of its own re-shares the
+database — `journey-instance` refuses to run when it finds a foreign one set, and
+that is the only guard. And webview `localStorage` is isolated on Windows but not
+yet on macOS (`astro-plan-qvmqq`).
 
 Journeys that still need exclusivity, because they assert or mutate OS-global
 state no per-instance root covers:
@@ -86,11 +94,11 @@ that layer on top of it:
   visually/interactively observable must be validated in the real webview, not
   IPC-only. Validators announce when a check is backend-only IPC and classify
   findings backend-vs-UI.
-- **State-leakage prevention:** validation runs only against the Windows
-  checkout's disposable dev database (`wizard-test.db` via `PV_DB_URL`) and
-  `tempfile`-style scratch folders — never against real user libraries; this
-  repo checkout is never the app's working directory, so no fixture can land in
-  it.
+- **State-leakage prevention:** validation runs only against the disposable
+  per-instance database and scratch folders that `journey-instance` allocates —
+  never against real user libraries, and never against a `PV_DB_URL` the
+  validator chose, which would put every instance on one database; this repo
+  checkout is never the app's working directory, so no fixture can land in it.
 
 Pointers: `docs/development/windows-native-rust-dev.md` §"Validation driving"
 (canonical launch/reset/recompile/bridge mechanics),

@@ -63,6 +63,15 @@ fn run() -> Result<(), String> {
     std::fs::create_dir_all(e2e_tests::instance::appdata_dir(&root))
         .map_err(|e| format!("failed to create {}: {e}", root.display()))?;
 
+    let ambient_db = std::env::var("PV_DB_URL").ok();
+    if let Some(foreign) = e2e_tests::instance::conflicting_db_url(&root, ambient_db.as_deref()) {
+        return Err(format!(
+            "PV_DB_URL is already set to {foreign}, which is not instance {instance}'s database. \
+             The app prefers PV_DB_URL over the path it derives per instance, so launching with \
+             this set puts every instance on one database. Unset it and re-run."
+        ));
+    }
+
     let bind = std::env::var("PV_MCP_BRIDGE_BIND")
         .ok()
         .filter(|v| !v.trim().is_empty())

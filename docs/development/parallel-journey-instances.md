@@ -29,6 +29,22 @@ and the `journey-instance` binary (MCP-bridge driving).
 opens `<data dir>/alm.db` (`apps/desktop/src-tauri/src/main.rs`). `PV_DB_URL` is
 set anyway so the file is named and disposable rather than inferred.
 
+**`PV_DB_URL` overrides that derivation, so one exported value defeats every other
+isolation measure here.** `main.rs` reads `PV_DB_URL` first and only falls back to
+`<data dir>/alm.db`, so a session that exports a single URL — which is what the
+Windows lane did with `wizard-test.db` until this document existed — puts N
+instances on one database no matter how separate their roots are. The precedence
+is deliberate and stays: the nextest harness sets `PV_DB_URL` per instance and
+derives its fresh-DB reset from the exact path it named
+(`crates/e2e-tests/tests/common/helpers.rs`), so making `PV_DATA_DIR` win would
+silently move the database out from under it.
+
+What guards it instead: `journey-instance` refuses to emit an environment while a
+foreign `PV_DB_URL` is set, and it always emits its own. That catches the ordinary
+mistake of sourcing an old launch block first. It cannot catch a `PV_DB_URL`
+exported *after* the block is consumed — nothing in this repo can, so treat any
+hand-written `PV_DB_URL` in a launch procedure as a defect.
+
 `PV_E2E_INSTANCE_ID` is what lets a second instance start at all: it skips the
 single-instance plugin, and only in a build carrying the `e2e` feature
 (`apps/desktop/src-tauri/src/bootstrap/mod.rs`).
@@ -69,10 +85,12 @@ VITE_E2E=1 VITE_USE_MOCKS=false pnpm --filter @astro-plan/desktop preview \
 cargo run -p desktop_shell --features dev-tools,e2e > "instance-2.log" 2>&1 &
 ```
 
-One frontend server for N instances is intended: it is served read-only, and
-each instance keeps its own `localStorage` because each has its own webview
-profile. Distinct `PV_DEV_URL` values are needed per *checkout*, not per
-instance (issue #1409).
+One frontend server for N instances is intended: it is served read-only. Distinct
+`PV_DEV_URL` values are needed per *checkout*, not per instance (issue #1409).
+
+Sharing the origin does not by itself share `localStorage` — that lives in each
+instance's webview profile, which is isolated on Windows and not yet on macOS
+(`astro-plan-qvmqq`).
 
 ### Why a fixed base port per instance rather than auto-allocation
 
@@ -87,10 +105,34 @@ window cannot reach instance N+1's advertised port, and instance N is at
 `9223 + (N - 1) * 100` for the life of the host. Instance 1 stays on 9223, where
 every existing journey run file says it is.
 
-The port the app actually bound is still recoverable: the plugin prints
-`[MCP][PLUGIN][INFO] MCP Bridge plugin initialized for ... on <bind>:<port>` on
-stdout, which is why each instance above is launched with its stdout redirected
-to a per-instance log.
+**The log is the authoritative source for the port, never the formula.** The
+plugin prints `[MCP][PLUGIN][INFO] MCP Bridge plugin initialized for ... on
+<bind>:<port>` on stdout, which is why each instance above is launched with its
+stdout redirected to a per-instance log. Read that line before connecting.
+
+A host running three instances of a build predating `PV_MCP_BRIDGE_PORT` was
+observed on 9223, 9224 and 9225: with no per-instance base every instance started
+from the same default, and the plugin's scan moved each one up by one. Ports
+computed from the formula were stamped onto validator beads and sent two of them
+to addresses with no listener. The formula predicts the port only for a build that
+reads `PV_MCP_BRIDGE_PORT`, and only while nothing outside these instances holds
+it. The log is correct unconditionally.
+
+## Checking isolation from inside a running instance
+
+Two checks look reasonable and are worthless:
+
+- **`appDataDir()` returns the same path in every instance.** It derives from the
+  bundle identifier and ignores the isolation environment, so comparing it across
+  instances reports contamination that is not there (`astro-plan-vi9sp`). It is not
+  evidence either way.
+- **Comparing `localStorage` *contents*.** Every instance legitimately returns
+  identical first-run state, so equal contents prove nothing.
+
+The check that works is a unique nonce: write a value only one instance could have
+produced into that instance's `localStorage`, then read the same key from another
+instance. Absent means isolated; present means one store. Proven on Windows, where
+it confirmed distinct `EBWebView` trees.
 
 ## What is still shared
 
@@ -99,8 +141,9 @@ state.
 
 | resource | shared or isolated | journeys that care |
 |---|---|---|
-| SQLite database | isolated (`PV_DB_URL`, and `PV_DATA_DIR` even without it) | all |
-| app-data root, resolve cache, webview storage/`localStorage` | isolated (`PV_DATA_DIR`, per-OS location vars) | all |
+| SQLite database | isolated (`PV_DATA_DIR`; **defeated by an exported `PV_DB_URL`**, which wins) | all |
+| app-data root, resolve cache | isolated (`PV_DATA_DIR`) | all |
+| webview storage / `localStorage` | isolated on **Windows** (`WEBVIEW2_USER_DATA_FOLDER`, distinct `EBWebView` trees); **NOT isolated on macOS** — `astro-plan-qvmqq`, for which Windows is the reference implementation | all |
 | app-config root (window state) | isolated (per-OS location vars) | J10, J16 |
 | MCP bridge port | isolated (`PV_MCP_BRIDGE_PORT`, stride 100) | all |
 | WebDriver server port | isolated (`TAURI_WEBDRIVER_PORT`) — unset, the `e2e` build's server panics its thread on 4445 for every instance after the first | all, indirectly |
