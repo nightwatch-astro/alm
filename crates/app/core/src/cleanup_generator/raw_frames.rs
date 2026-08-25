@@ -68,7 +68,10 @@ async fn frame_protection_source(
 /// Enumerates present, non-protected per-frame inventory entries for the
 /// scope via [`frame_inventory::list_frames`] (already excludes `missing`,
 /// FR-022), resolves protection per candidate (FR-021), and sums reclaimable
-/// bytes over what remains (FR-020). Classification is deterministic (T014's
+/// bytes over what remains (FR-020, and `contracts/operations.md` requires the
+/// total to exclude `missing` and `protected`). A frame whose RESOLVED level is
+/// protected is still listed as a candidate, labelled, but contributes no bytes.
+/// Classification is deterministic (T014's
 /// session-kind derivation, not inference), so `confidence` is always `1.0`
 /// (FR-023).
 ///
@@ -128,7 +131,9 @@ pub async fn scan_raw_frames(
         .await
         .map_err(db_err)?;
 
-        total_reclaimable_bytes = total_reclaimable_bytes.saturating_add(frame.size_bytes);
+        if !protection::is_protected(&resolved.level) {
+            total_reclaimable_bytes = total_reclaimable_bytes.saturating_add(frame.size_bytes);
+        }
 
         candidates.push(RawFrameCleanupCandidate {
             frame_id: frame.frame_id,

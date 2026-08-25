@@ -270,7 +270,7 @@ pub(super) fn item_row_to_executor_item(
         Some(Utf8PathBuf::from(&row.to_relative_path))
     };
 
-    let is_protected = row.protection == "protected";
+    let is_protected = crate::protection::is_protected(&row.protection);
 
     // T020: `requires_destructive_confirm` is derived from action type,
     // independent of `is_protected`. Replaces the old `confirm_required = is_protected` inversion.

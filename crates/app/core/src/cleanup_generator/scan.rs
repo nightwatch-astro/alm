@@ -43,6 +43,11 @@ fn action_label(action: CleanupAction) -> &'static str {
 /// confidence) and the resolved protection status so users can see protection
 /// BEFORE generating a plan (constitution II).
 ///
+/// `total_reclaimable_bytes` is what applying this plan would free under the
+/// CURRENT protection settings, not what relaxing them could free: protected
+/// candidates stay in the list (so the user can see what is held back) but
+/// contribute no bytes, because apply refuses them.
+///
 /// # Errors
 ///
 /// Returns `ContractError` on database failure.
@@ -84,7 +89,6 @@ pub(super) async fn scan_with_policy(
         }
 
         let size = u64::try_from(row.size_bytes).unwrap_or(0);
-        total_reclaimable_bytes = total_reclaimable_bytes.saturating_add(size);
 
         // Resolve protection so the preview surfaces it (constitution II).
         //
@@ -109,6 +113,10 @@ pub(super) async fn scan_with_policy(
         )
         .await
         .map_err(db_err)?;
+
+        if !protection::is_protected(&resolved.level) {
+            total_reclaimable_bytes = total_reclaimable_bytes.saturating_add(size);
+        }
 
         let reason = format!(
             "{} artifact (classified by {}, {:.0}% confidence); protection: {}; policy: {}",

@@ -113,6 +113,18 @@ pub(crate) async fn load_global_protection(
     Ok(global)
 }
 
+/// Whether a resolved protection level makes an item unactionable.
+///
+/// The apply executor refuses any non-`NoOp`/`Catalogue` action on an item
+/// whose stored protection resolves to this level
+/// (`fs_executor::run::loop_`, gated by `plan_apply::paths`), and nothing
+/// clears that column — acknowledgement only writes an audit event. So a
+/// preview that counts these bytes as reclaimable is advertising space no
+/// apply can free.
+pub(crate) fn is_protected(level: &str) -> bool {
+    level == "protected"
+}
+
 #[derive(Clone)]
 pub(crate) struct GlobalProtection {
     pub(crate) level: String,

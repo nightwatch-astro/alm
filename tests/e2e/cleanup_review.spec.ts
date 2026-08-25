@@ -35,8 +35,9 @@
  * Mock wiring (apps/desktop/src/api/mocks.ts):
  *   cleanup_scan            → 3 candidates: 2 "intermediate" (90% confidence,
  *                             normal protection) + 1 "master" (95% confidence,
- *                             protected), totalReclaimableBytes 1_073_741_824
- *                             (1.0 GB).
+ *                             protected), totalReclaimableBytes 536_870_912
+ *                             (512.0 MB) — the two normal intermediates only,
+ *                             the protected master contributes nothing.
  *   cleanup_plan_generate   → { planId: 'plan-cleanup-mock', itemCount: 3,
  *                             protectedItemCount: 1 }.
  *   plans_get               → static `planDetail` fixture (11 cleanup items,
@@ -114,9 +115,10 @@ test.describe('cleanup review (spec 017 WP-E / Journey 6)', () => {
     await expect(scanBtn).toBeVisible();
     await scanBtn.click();
 
-    // Reclaimable total renders once the scan resolves (1_073_741_824 B = 1.0 GB).
+    // Reclaimable total renders once the scan resolves. It nets out the
+    // protected master: 536_870_912 B = 512.0 MB, not the 1.0 GB gross sum.
     await expect(cleanupSection.getByTestId('cleanup-reclaimable')).toHaveText(
-      '1.0 GB reclaimable',
+      '512.0 MB reclaimable',
       { timeout: 5_000 },
     );
 

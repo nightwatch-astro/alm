@@ -179,8 +179,39 @@ async fn scan_default_policy_proposes_nothing() {
     assert!(result.candidates.is_empty(), "all-Keep policy must propose nothing");
 }
 
+/// Seed one archivable intermediate pair (1000 + 2000) and one archivable
+/// final (4000) on project `p1`, so a caller can pick which of the three the
+/// protection settings should hold back. Distinct sizes: 0, 3000 and 7000 are
+/// mutually distinguishable totals, so a double subtraction or an off-by-one
+/// cannot land on the right answer by accident.
+async fn seed_archivable_mix(db: &Database) {
+    seed_project(db, "p1").await;
+    seed_artifact(db, "a1", "p1", "calibrated/light_001.xisf", "intermediate", 1000).await;
+    seed_artifact(db, "a2", "p1", "calibrated/light_002.xisf", "intermediate", 2000).await;
+    seed_artifact(db, "a3", "p1", "final/M31.xisf", "final", 4000).await;
+
+    set_policy(
+        db.pool(),
+        &CleanupPolicy {
+            entries: vec![
+                CleanupPolicyEntry {
+                    data_type: "intermediate".to_owned(),
+                    action: CleanupAction::Archive,
+                },
+                CleanupPolicyEntry {
+                    data_type: "final".to_owned(),
+                    action: CleanupAction::Archive,
+                },
+            ],
+            auto_on_completion: false,
+        },
+    )
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
-async fn scan_actioned_type_becomes_candidate_and_sums_bytes() {
+async fn scan_actioned_type_becomes_candidate() {
     let (db, _bus, _lock) = setup().await;
     seed_project(&db, "p1").await;
     seed_artifact(&db, "a1", "p1", "calibrated/light_001.xisf", "intermediate", 1000).await;
@@ -206,8 +237,94 @@ async fn scan_actioned_type_becomes_candidate_and_sums_bytes() {
 
     let result = scan(db.pool(), "p1").await.unwrap();
     assert_eq!(result.candidates.len(), 2, "only the two intermediates are candidates");
-    assert_eq!(result.total_reclaimable_bytes, 3000);
     assert!(result.candidates.iter().all(|c| c.data_type == "intermediate"));
+}
+
+// ── Reclaimable total nets out protected bytes (astro-plan-i5qxc) ──────
+//
+// `total_reclaimable_bytes` is what applying the plan would free under the
+// CURRENT protection settings. Three cases, because a fix that always
+// subtracts everything satisfies the all-protected case alone.
+
+#[tokio::test]
+async fn scan_total_is_zero_when_every_candidate_is_protected() {
+    let (db, _bus, _lock) = setup().await;
+    seed_archivable_mix(&db).await;
+
+    // Shipped defaults: defaultProtection="protected", so every candidate
+    // resolves protected regardless of category membership.
+    let result = scan(db.pool(), "p1").await.unwrap();
+
+    assert_eq!(result.candidates.len(), 3, "all three stay listed so protection is visible");
+    assert_eq!(
+        result.total_reclaimable_bytes, 0,
+        "apply refuses every protected item, so nothing is reclaimable"
+    );
+}
+
+#[tokio::test]
+async fn scan_total_is_full_size_when_no_candidate_is_protected() {
+    let (db, bus, _lock) = setup().await;
+    seed_archivable_mix(&db).await;
+
+    protection::set_global_protection_default(
+        db.pool(),
+        &bus,
+        "global",
+        "defaultProtection",
+        serde_json::json!("unprotected"),
+    )
+    .await
+    .unwrap();
+    protection::set_global_protection_default(
+        db.pool(),
+        &bus,
+        "global",
+        "protectedCategories",
+        serde_json::json!([]),
+    )
+    .await
+    .unwrap();
+
+    let result = scan(db.pool(), "p1").await.unwrap();
+
+    assert_eq!(result.candidates.len(), 3);
+    assert_eq!(result.total_reclaimable_bytes, 7000, "1000 + 2000 + 4000, nothing held back");
+}
+
+#[tokio::test]
+async fn scan_total_counts_only_the_unprotected_subset() {
+    let (db, bus, _lock) = setup().await;
+    seed_archivable_mix(&db).await;
+
+    // Only the `final` artifact's category is protected; both intermediates
+    // stay unprotected.
+    protection::set_global_protection_default(
+        db.pool(),
+        &bus,
+        "global",
+        "defaultProtection",
+        serde_json::json!("unprotected"),
+    )
+    .await
+    .unwrap();
+    protection::set_global_protection_default(
+        db.pool(),
+        &bus,
+        "global",
+        "protectedCategories",
+        serde_json::json!(["finals"]),
+    )
+    .await
+    .unwrap();
+
+    let result = scan(db.pool(), "p1").await.unwrap();
+
+    assert_eq!(result.candidates.len(), 3, "the protected final is still a listed candidate");
+    assert_eq!(
+        result.total_reclaimable_bytes, 3000,
+        "1000 + 2000 from the intermediates; the 4000 final is held back"
+    );
 }
 
 #[tokio::test]
@@ -470,7 +587,28 @@ async fn insert_acquisition_session(pool: &SqlitePool, id: &str, frame_ids: &[&s
 async fn scan_raw_frames_by_session_returns_present_candidates_with_reclaimable_bytes() {
     use app_core_targets::frame_writer::upsert_frame_record;
 
-    let (db, _bus, _lock) = setup().await;
+    let (db, bus, _lock) = setup().await;
+    // Light frames resolve protected under the shipped defaults, which would
+    // net the total to zero; this case is about summing real sizes and
+    // excluding `missing`, so relax protection out of the way.
+    protection::set_global_protection_default(
+        db.pool(),
+        &bus,
+        "global",
+        "defaultProtection",
+        serde_json::json!("unprotected"),
+    )
+    .await
+    .unwrap();
+    protection::set_global_protection_default(
+        db.pool(),
+        &bus,
+        "global",
+        "protectedCategories",
+        serde_json::json!([]),
+    )
+    .await
+    .unwrap();
     insert_root(db.pool(), "root-1", "/tmp/lib").await;
     let f1 = upsert_frame_record(db.pool(), "root-1", "l1.fits", 1000, "t0", "classified")
         .await
@@ -492,6 +630,43 @@ async fn scan_raw_frames_by_session_returns_present_candidates_with_reclaimable_
     assert_eq!(resp.total_reclaimable_bytes, 3000);
     assert!(resp.candidates.iter().all(|c| c.session_id.as_deref() == Some("sess-1")));
     assert!(resp.candidates.iter().all(|c| (c.confidence - 1.0).abs() < f64::EPSILON));
+}
+
+/// A frame whose RESOLVED protection level is protected is still listed (so
+/// the user can see what is held back) but contributes no bytes — distinct
+/// from `scan_raw_frames_excludes_protected_state`, which is about the
+/// inventory presence state and drops the candidate entirely.
+#[tokio::test]
+async fn scan_raw_frames_total_excludes_resolved_protected_bytes() {
+    use app_core_targets::frame_writer::upsert_frame_record;
+
+    let (db, _bus, _lock) = setup().await;
+    insert_root(db.pool(), "root-1", "/tmp/lib").await;
+    let f1 = upsert_frame_record(db.pool(), "root-1", "l1.fits", 1000, "t0", "classified")
+        .await
+        .unwrap();
+    let f2 = upsert_frame_record(db.pool(), "root-1", "l2.fits", 2000, "t0", "classified")
+        .await
+        .unwrap();
+    insert_acquisition_session(db.pool(), "sess-1", &[&f1, &f2]).await;
+
+    // Shipped defaults protect the "lights" category.
+    let resp = scan_raw_frames(
+        db.pool(),
+        &RawFrameCleanupScanRequest {
+            scope: RawFrameCleanupScope { session_id: Some("sess-1".to_owned()), root_id: None },
+            kinds: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resp.candidates.len(), 2);
+    assert!(
+        resp.candidates.iter().all(|c| c.protection == "protected"),
+        "fixture precondition: both frames must resolve protected"
+    );
+    assert_eq!(resp.total_reclaimable_bytes, 0, "protected frames are refused at apply");
 }
 
 #[tokio::test]

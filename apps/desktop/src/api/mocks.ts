@@ -1279,7 +1279,9 @@ const mockHandlers = {
             'master artifact (classified by rule, 95% confidence); protection: protected; policy: archive',
         },
       ],
-      totalReclaimableBytes: 1_073_741_824,
+      // The two normal intermediates only — the protected master's 512 MB is
+      // excluded, because apply refuses protected items and never frees them.
+      totalReclaimableBytes: 536_870_912,
     };
   },
   cleanup_plan_generate: async () => {
