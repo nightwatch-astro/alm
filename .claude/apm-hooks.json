@@ -10,6 +10,11 @@
         },
         {
           "type": "command",
+          "statusMessage": "Checking the merge bead for this branch...",
+          "command": ".claude/hooks/beads/scripts/pr-merge-bead-guard.py"
+        },
+        {
+          "type": "command",
           "statusMessage": "Staging beads JSONL for commit...",
           "command": ".claude/hooks/beads/scripts/beads-sync-stage.py"
         }
@@ -50,6 +55,38 @@
         }
       ],
       "_apm_source": "release-please"
+    },
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": ".claude/hooks/speckit-conductor/scripts/speckit-pr-title.py"
+        }
+      ],
+      "_apm_source": "speckit-conductor"
+    },
+    {
+      "matcher": "Write|Edit|MultiEdit|Bash|Skill",
+      "hooks": [
+        {
+          "type": "command",
+          "command": ".claude/hooks/speckit-conductor/scripts/speckit-tasks-guard.py",
+          "timeout": 10
+        }
+      ],
+      "_apm_source": "speckit-conductor"
+    },
+    {
+      "matcher": "apply_patch|Write|Edit|MultiEdit|NotebookEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": ".claude/hooks/adr-as-beads/scripts/adr-write-guard.py",
+          "timeout": 10
+        }
+      ],
+      "_apm_source": "adr-as-beads"
     },
     {
       "matcher": "Bash",
@@ -100,7 +137,7 @@
       "hooks": [
         {
           "type": "command",
-          "statusMessage": "Checking draft PR and Beads linkage policy...",
+          "statusMessage": "Checking draft PR policy...",
           "command": "python3 .claude/hooks/steering-git-workflow/scripts/pr-create-guard.py",
           "timeout": 10
         }
@@ -245,6 +282,17 @@
         }
       ],
       "_apm_source": "orchestrate"
+    },
+    {
+      "matcher": "domain-specialist|domain-specialist-high|shepherd|reviewer|researcher|advisor|scribe",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 .claude/hooks/worktrunk-writer/.apm/skills/worktrunk-writer/scripts/worktrunk-writer.py subagent-exit",
+          "timeout": 10
+        }
+      ],
+      "_apm_source": "worktrunk-writer"
     }
   ],
   "WorktreeCreate": [

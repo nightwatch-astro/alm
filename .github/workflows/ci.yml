@@ -163,6 +163,11 @@ jobs:
               - 'apps/desktop/src-tauri/**'
               - 'tests/**'
               - '**/*.rs'
+              # Compiled into Rust artifacts by `include_bytes!`, so a change
+              # here invalidates the Rust lane even though no `.rs` file moved.
+              # Without this entry a seed-refresh PR touching only these blobs
+              # skips `integration` entirely, including the digest guard.
+              - 'assets/seed/**'
             frontend:
               - 'apps/desktop/src/**'
               - 'apps/desktop/public/**'
@@ -190,6 +195,7 @@ jobs:
       - id: decide
         shell: bash
         run: |
+          set -euo pipefail
           shared="${{ steps.filter.outputs.force_full_shared }}"
           rust=false
           frontend=false
@@ -292,7 +298,13 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      # fetch-depth 2: the `Dead-caller ratchet` step below needs HEAD~1 on a main
+      # push, where `origin/main` is the commit just pushed and the ratchet's
+      # merge base is HEAD itself. The default depth-1 checkout has no HEAD~1 and
+      # the ratchet fails closed. Matches `dead-caller-main`.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       # Tauri's desktop_shell crate needs system webview libs to build on Linux.
       - name: Install Tauri Linux system deps
@@ -303,8 +315,12 @@ jobs:
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
             libayatana-appindicator3-dev
 
-      - uses: dtolnay/rust-toolchain@stable
-        if: needs.changes.outputs.rust == 'true'
+      # `scripts` arms this too: the dev-surface guard below resolves the cargo
+      # feature graph, so a scripts-only PR that edits the guard still needs the
+      # pinned toolchain to run it against itself.
+      - uses: dtolnay/rust-toolchain@1.98.0
+        if: >-
+          needs.changes.outputs.rust == 'true' || needs.changes.outputs.scripts == 'true'
         with:
           components: rustfmt, clippy
 
@@ -544,15 +560,27 @@ jobs:
             cargo nextest run --workspace --profile ci
           else
             echo "Running scoped tests for: $args"
-            # --no-tests=pass: a scoped crate set can legitimately contain
-            # zero runnable tests (e.g. an e2e_tests-only change — all its
-            # tests are #[ignore]d for the Layer-2 e2e.yml job), and nextest
-            # otherwise exits 4 ("no tests to run", run 28751553778).
+            # A scoped crate set can legitimately contain zero runnable tests
+            # (e.g. an e2e_tests-only change — all its tests are #[ignore]d for
+            # the Layer-2 e2e.yml job, run 28751553778), so nextest's default
+            # exit 4 is wrong here. A bare --no-tests=pass is wrong too: it also
+            # swallows a broken scripts/ci-affected-crates.sh output, and the job
+            # goes green having run nothing. Count the selection first, so the
+            # zero case is an announced exemption rather than a silent one.
+            # `nextest list` exits 0 on an empty selection, so the count is safe
+            # under `pipefail`.
             #
             # $args is a word list of `-p <crate>` flags and has to split, so the
             # SC2086 quote would collapse it into one bad argument.
             # shellcheck disable=SC2086
-            cargo nextest run --profile ci --no-tests=pass $args
+            selected=$(cargo nextest list --profile ci --message-format oneline $args | wc -l | tr -d '[:space:]')
+            echo "Scoped selection: ${selected} test(s)."
+            if [ "$selected" -eq 0 ]; then
+              echo "::notice::Exemption: the scoped crate set contains zero runnable tests; nextest is not invoked."
+            else
+              # shellcheck disable=SC2086
+              cargo nextest run --profile ci $args
+            fi
           fi
 
       # nextest does not run doctests; keep them in a dedicated step. Doctest
@@ -687,6 +715,16 @@ jobs:
         if: runner.os == 'Linux' && needs.changes.outputs.rust == 'true'
         run: just check-generated
 
+      # The release gate runs this too, but only on release-please branches and
+      # tags, so a change that ships the dev surface would reach main unobserved.
+      - name: Dev surface absent from a default-feature build
+        # `scripts` is armed as well as `rust`: a scripts-only edit that weakens
+        # the guard must run the guard.
+        if: >-
+          runner.os == 'Linux' && (needs.changes.outputs.rust == 'true' ||
+          needs.changes.outputs.scripts == 'true')
+        run: bash scripts/check-dev-surface-absent.sh
+
       # The declaration generator also reads `packages/contracts/schemas/` and
       # `specs/*/contracts/`, neither of which sets the `rust` filter. This leg
       # covers them without the Rust toolchain, system webkit, or cargo cache
@@ -808,7 +846,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
 
       # Scope gate: only run when a change touches the measured crates.
@@ -818,6 +856,7 @@ jobs:
         env:
           CHANGED_FILES: ${{ needs.changes.outputs.all_files }}
         run: |
+          set -euo pipefail
           args=$(printf '%s' "$CHANGED_FILES" | tr ',' '\n' | bash scripts/ci-affected-crates.sh)
           if printf '%s' "$args" | grep -qE 'app_core_inbox|persistence_inbox|fs_inventory'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -914,7 +953,13 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth 2: on a main push `origin/main` is the commit just pushed, so
+      # the tracking check would compare the baseline against itself. It falls
+      # back to HEAD~1, which the default depth-1 checkout does not contain, and
+      # the check fails closed under CI.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: taiki-e/install-action@v2
         with:
           tool: just

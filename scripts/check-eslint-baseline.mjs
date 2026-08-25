@@ -34,6 +34,7 @@ import path from 'node:path';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(here, '..');
 const DESKTOP_ROOT = path.join(REPO_ROOT, 'apps/desktop');
+const LINT_TARGET = 'src/';
 const BASELINE_PATH = path.join(here, 'eslint-alm-baseline.txt');
 
 // `eslint` is a devDependency of apps/desktop, not the repo root — resolve it
@@ -97,9 +98,29 @@ function writeBaseline(keys) {
   writeFileSync(BASELINE_PATH, lines.join('\n'));
 }
 
+/**
+ * Message for a lint run that covered too few files, or null when the count is
+ * acceptable.
+ *
+ * A run over zero files reports no blocking errors, so this gate prints OK while
+ * measuring nothing — which is what a moved `src/`, a renamed extension, or an
+ * ignore pattern that swallows the tree produce.
+ */
+function lintedFileFloorError(count, target) {
+  if (count > 0) return null;
+  return `eslint linted ${count} file(s) under ${target} — the lint target moved or the config excludes everything, so this gate measures nothing until that is fixed.`;
+}
+
 async function main() {
   const eslint = new ESLint({ cwd: DESKTOP_ROOT });
-  const results = await eslint.lintFiles(['src/']);
+  const results = await eslint.lintFiles([LINT_TARGET]);
+
+  const floorError = lintedFileFloorError(results.length, LINT_TARGET);
+  if (floorError !== null) {
+    console.error(floorError);
+    process.exitCode = 1;
+    return;
+  }
 
   const baseline = loadBaseline();
   const currentAlmKeys = new Set();
@@ -164,4 +185,4 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }
 
-export { baselineKey };
+export { baselineKey, lintedFileFloorError };

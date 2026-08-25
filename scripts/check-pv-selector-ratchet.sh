@@ -22,23 +22,55 @@
 #   bash scripts/check-pv-selector-ratchet.sh          # exits 0 on pass, 1 on fail
 
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+
+# `cd "$(git rev-parse --show-toplevel)"` degrades to a no-op `cd ""` at exit 0
+# when git fails, which scans the caller's cwd and reports a clean tree.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+# grep exits 1 for "no matches" and >1 for "the scan itself failed"; collapsing
+# the two reports a renamed or unreadable scan root as zero violations.
+scan() {
+  local root="$1" raw rc
+  if [ ! -d "$root" ]; then
+    echo "ERROR: scan root '$root' does not exist under $ROOT." >&2
+    exit 2
+  fi
+  set +e
+  raw=$(grep -rn '\.pv-[a-z]' "$root")
+  rc=$?
+  set -e
+  if [ "$rc" -gt 1 ]; then
+    echo "ERROR: grep exited $rc scanning '$root' — the scan failed, so this run proves nothing." >&2
+    exit 2
+  fi
+  printf '%s' "$raw"
+}
 
 # Playwright TS: locator('.pv-*'), locator(".pv-*"), const FOO = '.pv-*', etc.
 # Exclude toHaveClass/Attribute, /pv-/ regex, pv-mono (typography-only class),
 # and comment lines.
-ts_hits=$(grep -rn '\.pv-[a-z]' tests/e2e/ \
-  | grep -v 'toHaveClass\|toHaveAttribute\|/pv-' \
-  | grep -v '\.pv-mono' \
-  | grep -v ':[[:space:]]*//' \
-  | grep -v ':[[:space:]]*\*' \
-  || true)
+# `scan` runs in a subshell, so its `exit 2` must be re-raised here explicitly.
+ts_raw=$(scan tests/e2e/) || exit $?
+ts_hits=""
+if [ -n "$ts_raw" ]; then
+  ts_hits=$(printf '%s\n' "$ts_raw" \
+    | grep -v 'toHaveClass\|toHaveAttribute\|/pv-' \
+    | grep -v '\.pv-mono' \
+    | grep -v ':[[:space:]]*//' \
+    | grep -v ':[[:space:]]*\*' \
+    || true)
+fi
 
 # Rust: querySelector(".pv-*"), By::Css(".pv-*"), etc. — both quote styles.
 # Exclude Rust comment lines (//!, ///, //).
-rs_hits=$(grep -rn '\.pv-[a-z]' crates/e2e-tests/tests/ \
-  | grep -v ':[[:space:]]*//[/!]\?' \
-  || true)
+rs_raw=$(scan crates/e2e-tests/tests/) || exit $?
+rs_hits=""
+if [ -n "$rs_raw" ]; then
+  rs_hits=$(printf '%s\n' "$rs_raw" \
+    | grep -v ':[[:space:]]*//[/!]\?' \
+    || true)
+fi
 
 all_hits="${ts_hits}
 ${rs_hits}"

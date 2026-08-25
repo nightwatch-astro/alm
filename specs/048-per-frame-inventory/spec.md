@@ -4,15 +4,49 @@
 
 **Created**: 2026-07-04
 
-**Status**: Draft
+**Status**: Implemented (post-hoc record, verified 2026-08-24 against `origin/main`
+a52c637f2). All five user stories ship, including the live-detection triggers.
+
+- **US1** per-frame inventory with real sizes — frame records are written at plan
+  apply by `crates/app/inbox/src/plan_listener.rs` (`stat_frame` → `size_bytes` at
+  `:556`), and calibration-master `frame_ids` are populated there rather than left
+  as the historical `'[]'` placeholder (`:340`, `:996`, test at `:1096`).
+- **US2** frames removed or moved outside the app —
+  `crates/app/core/src/frame_inventory/reconcile.rs` and `relink.rs`, exposed as
+  `inventory_reconcile_run`, `inventory_frame_list` and `inventory_frame_relink`
+  (`apps/desktop/src-tauri/src/commands/inventory_frame.rs:53`/`:39`/`:69`). Relink
+  matches on sha256 computed on demand (`relink.rs:21`), per the 2026-07-04
+  clarification.
+- **US3** raw sub-frame cleanup candidates —
+  `crates/app/core/src/cleanup_generator/raw_frames.rs`, summing real
+  `frame.size_bytes` into `total_reclaimable_bytes` at `:190`/`:204` and refusing
+  the scan outright when a session's `frame_ids` is unreadable (`:47`, PR #1739).
+- **US4** per-root detection and reconciliation config —
+  `crates/app/settings/src/root_config.rs` holds per-root `ReconcileMode`
+  (`flag_missing` default, `auto_reconcile` opt-in) and the `detection.live` /
+  `.scheduled` / `.on_open` / `.follow_symlinks` keys. All three triggers are
+  consumed by `apps/desktop/src-tauri/src/frame_watcher.rs`: `detection.live` at
+  `:252` starts a real `notify` watcher via `start_artifact_watcher`,
+  `detection.scheduled` at `:204` spawns a periodic reconcile that doubles as the
+  polling fallback when live is off (`:59-60`), and `detection.on_open` at `:378`.
+  The registry is installed at `apps/desktop/src-tauri/src/lib.rs:772` and attached
+  or detached per root through `inventory_watcher_attach` / `_detach`
+  (`commands/inventory_frame.rs:125`/`:145`), so no watch is held on an idle root.
+  Config surface `inventory_root_config_get` / `_set` (`:84`/`:102`), UI
+  `apps/desktop/src/features/inventory/RootDetectionConfig.tsx:138`/`:160`/`:181`
+  with `__tests__/RootDetectionConfig.test.tsx`, live-event coverage
+  `apps/desktop/src-tauri/tests/frame_watcher_live_event.rs`. Landed in
+  `4d5916f9c` (PR #1636).
+- **US5** missing-frame awareness for calibration matches —
+  `crates/app/core/tests/calibration_missing_flag_integration.rs`.
 
 **Input**: User description: "Per-frame (per-file) inventory with live session membership. Complete PlateVault's per-frame inventory so raw sub-frame cleanup is possible and sessions stay honest about what is on disk."
 
 ## Overview
 
-PlateVault groups ingested images into acquisition and calibration **sessions**, but it does not keep an accurate, durable record of the **individual frames** (sub-exposures) that make up each session, nor of how large they are on disk. Two consequences follow:
+PlateVault groups ingested images into acquisition and calibration **sessions**. When this spec was written it did not keep an accurate, durable record of the **individual frames** (sub-exposures) that make up each session, nor of how large they are on disk. Two consequences followed:
 
-1. **Raw sub-frame cleanup is impossible.** Raw lights, darks, and flats are the largest consumers of disk space, but because the app cannot enumerate the individual frames it recorded (calibration frames are recorded with no frame list at all, and every frame's byte size is recorded as zero), the cleanup review flow refuses to consider them and can only offer processing artifacts as cleanup candidates. The biggest disk win is unavailable.
+1. **Raw sub-frame cleanup was impossible.** Raw lights, darks, and flats are the largest consumers of disk space, but because the app could not enumerate the individual frames it recorded (calibration frames were recorded with no frame list at all, and every frame's byte size was recorded as zero), the cleanup review flow refused to consider them and could only offer processing artifacts as cleanup candidates. The biggest disk win was unavailable. (All three conditions have since been removed — see the Status header.)
 2. **Sessions drift from reality.** Astrophotographers routinely cull sub-frames **outside** PlateVault — reviewing in Blink or by hand and then deleting rejects or moving them to a "rejects" folder. After that, a PlateVault session still claims frames that are no longer where it recorded them. Counts, size totals, and cleanup previews become wrong, and calibration matches may silently reference frames that have vanished.
 
 This feature completes the per-frame inventory so that every ingested frame — light **and** calibration — is recorded with its real on-disk size and its session membership; it teaches sessions to notice frames that were deleted or moved outside the app; and it unblocks the cleanup review flow to propose individual raw sub-frames as reviewable cleanup candidates. Consistent with PlateVault's principles, reconciliation only updates the app's records and what the user sees — it never deletes or moves a file as a side effect.

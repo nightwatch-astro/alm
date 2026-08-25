@@ -252,8 +252,10 @@ FAIL if:
   cleared, not the DB — delete `wizard-test.db*` and relaunch (see
   Preconditions step 2).
 - **Tauri MCP bridge** (needed only for Test 5): launch with the dev overlay
-  enabled (`cargo tauri dev --config src-tauri\tauri.dev.conf.json`, WS on
-  `0.0.0.0:9223`), connect from WSL via
+  enabled (`cargo tauri dev --config src-tauri\tauri.dev.conf.json
+  --features dev-tools` plus `PV_MCP_BRIDGE_ENABLE=1`, without which the bridge
+  does not start; WS on `127.0.0.1:9223`, so a gateway connection also needs
+  `PV_MCP_BRIDGE_BIND=0.0.0.0` at launch), connect from WSL via
   `driver_session host=<gateway> port=9223` where
   `gateway = ip route show default | awk '{print $3}'`; then use
   `webview_execute_js` to run the JS snippets in Test 5. If you are a

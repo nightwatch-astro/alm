@@ -158,7 +158,13 @@ fn spawn_platform(req: SpawnRequest) -> Result<SpawnResult, LaunchError> {
 
     if let Some(ref bid) = req.bundle_id {
         // Use `open -b <bundle_id> --args <argv>` for .app bundles (R-BundleId).
-        let mut cmd = std::process::Command::new("open");
+        //
+        // `req.working_dir` is not applied and cannot be: Launch Services starts
+        // the app itself, so `current_dir` here would set the cwd of `open`, not
+        // of the tool (`tests/real_spawn_stub.rs:12-16`). Any user-facing text
+        // about the working folder must therefore not promise it for this arm,
+        // which every seeded profile with a `bundle_id` takes on macOS.
+        let mut cmd = std::process::Command::new("/usr/bin/open");
         cmd.args(["-b", bid.as_str()]);
         if !req.args.is_empty() {
             cmd.arg("--args");
@@ -227,10 +233,17 @@ fn pid_is_alive_impl(_pid: u32) -> bool {
 
 // ── Verify working-dir containment ────────────────────────────────────────────
 
-/// Verify that `working_dir` is a prefix-descendant of at least one registered
-/// library root (R-CwdContain, FR-010).
+/// Verify that `working_dir` resolves inside at least one registered library
+/// root (R-CwdContain, FR-010).
 ///
-/// Returns `Ok(())` when at least one root contains `working_dir`.
+/// The comparison normalizes both sides. A bare `Path::starts_with` compares
+/// unnormalized text, which accepted `/mnt/library/../../a` as inside
+/// `/mnt/library` whenever the caller's `canonicalize` had failed, as it does
+/// for a directory that does not exist yet (astro-plan-3v3r.13.26).
+///
+/// An empty `library_roots` is refused: with nothing registered there is no root
+/// for the working directory to be inside of, and reporting containment made the
+/// check depend on configuration.
 ///
 /// # Errors
 ///
@@ -239,17 +252,11 @@ pub fn verify_cwd_containment(
     working_dir: &Path,
     library_roots: &[&Path],
 ) -> Result<(), &'static str> {
-    if library_roots.is_empty() {
-        // No roots registered — treat as contained to avoid blocking users with
-        // zero-root setups; the UI will guide them to register roots separately.
-        return Ok(());
+    if fs_pathsafe::contain::contained_in_any(working_dir, library_roots) {
+        Ok(())
+    } else {
+        Err("cwd.outside_library_root")
     }
-    for root in library_roots {
-        if working_dir.starts_with(root) {
-            return Ok(());
-        }
-    }
-    Err("cwd.outside_library_root")
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -257,7 +264,6 @@ pub fn verify_cwd_containment(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     fn sample_req() -> SpawnRequest {
         SpawnRequest {
@@ -304,15 +310,15 @@ mod tests {
 
     #[test]
     fn cwd_containment_passes_when_inside_root() {
-        let root = PathBuf::from("/mnt/library");
-        let cwd = PathBuf::from("/mnt/library/project");
+        let root = fs_pathsafe::test_support::abs_path("/mnt/library");
+        let cwd = fs_pathsafe::test_support::abs_path("/mnt/library/project");
         assert!(verify_cwd_containment(&cwd, &[root.as_path()]).is_ok());
     }
 
     #[test]
     fn cwd_containment_fails_when_outside_roots() {
-        let root = PathBuf::from("/mnt/library");
-        let cwd = PathBuf::from("/tmp/scratch");
+        let root = fs_pathsafe::test_support::abs_path("/mnt/library");
+        let cwd = fs_pathsafe::test_support::abs_path("/tmp/scratch");
         assert_eq!(
             verify_cwd_containment(&cwd, &[root.as_path()]),
             Err("cwd.outside_library_root")
@@ -320,9 +326,29 @@ mod tests {
     }
 
     #[test]
-    fn cwd_containment_passes_with_no_roots() {
-        let cwd = PathBuf::from("/anywhere");
-        assert!(verify_cwd_containment(&cwd, &[]).is_ok());
+    fn cwd_containment_fails_with_no_roots() {
+        let cwd = fs_pathsafe::test_support::abs_path("/anywhere");
+        assert_eq!(verify_cwd_containment(&cwd, &[]), Err("cwd.outside_library_root"));
+    }
+
+    /// astro-plan-3v3r.13.26: the text prefix matches, the resolved path does not.
+    #[test]
+    fn cwd_containment_fails_for_a_path_that_traverses_out_of_a_root() {
+        let root = fs_pathsafe::test_support::abs_path("/mnt/library");
+        let cwd = fs_pathsafe::test_support::abs_path("/mnt/library/../../a");
+        assert_eq!(
+            verify_cwd_containment(&cwd, &[root.as_path()]),
+            Err("cwd.outside_library_root")
+        );
+    }
+
+    /// A working directory the app is about to create is not yet on disk, which
+    /// is when the caller's `canonicalize` fails and the raw path arrives here.
+    #[test]
+    fn cwd_containment_passes_for_a_directory_that_does_not_exist_yet() {
+        let root = fs_pathsafe::test_support::abs_path("/mnt/library");
+        let cwd = fs_pathsafe::test_support::abs_path("/mnt/library/project/_source_view");
+        assert!(verify_cwd_containment(&cwd, &[root.as_path()]).is_ok());
     }
 
     #[test]

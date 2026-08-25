@@ -242,6 +242,10 @@ pub struct RawFileMetadata {
     pub naxis2: Option<String>,
     /// `INSTRUME` (camera/instrument identifier).
     pub instrume: Option<String>,
+    /// `CAMERAID` (`vendor_model_serial` camera body identifier). Distinguishes
+    /// two bodies of one model only for vendors that populate the serial
+    /// segment; see `sessions::camera_body_id` for the derivation.
+    pub cameraid: Option<String>,
     /// `TELESCOP` (telescope identifier).
     pub telescop: Option<String>,
     /// `DATE-OBS` (ISO 8601 string or FITS-style `YYYY-MM-DDTHH:MM:SS`).

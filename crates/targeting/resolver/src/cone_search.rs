@@ -25,6 +25,17 @@ pub struct ConeCandidate {
     pub separation_deg: f64,
 }
 
+/// Total, nearest-first order on angular separation that keeps every
+/// non-finite value LAST.
+///
+/// `f64::total_cmp` alone orders NaN by its sign bit, and the x86-64
+/// invalid-operation QNaN is sign-negative, so a bare `total_cmp` sorts that
+/// NaN below `-inf` and hands it a nearest-to-centre pick.
+#[must_use]
+pub fn separation_order(a: f64, b: f64) -> std::cmp::Ordering {
+    (!a.is_finite()).cmp(&!b.is_finite()).then_with(|| a.total_cmp(&b))
+}
+
 /// Catalogue-prominence tier (OQ-1). Declared low → high so `derive(Ord)`'s
 /// declaration-order comparison matches "more prominent wins": `Messier`/
 /// common-name outranks `Ngc`, which outranks `Ic`, then the Sharpless/
@@ -151,13 +162,9 @@ pub fn dedup_candidates(candidates: Vec<ConeCandidate>) -> Vec<ConeCandidate> {
         .map(|g| {
             g.into_iter()
                 .min_by(|a, b| {
-                    prominence_tier(&b.identity).cmp(&prominence_tier(&a.identity)).then_with(
-                        || {
-                            a.separation_deg
-                                .partial_cmp(&b.separation_deg)
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        },
-                    )
+                    prominence_tier(&b.identity)
+                        .cmp(&prominence_tier(&a.identity))
+                        .then_with(|| separation_order(a.separation_deg, b.separation_deg))
                 })
                 .expect("groups are never empty")
         })
@@ -203,10 +210,7 @@ pub fn select_for_display(
     };
     ranked.sort_by(|&a, &b| {
         rank_key(a).cmp(&rank_key(b)).then_with(|| {
-            candidates[a]
-                .separation_deg
-                .partial_cmp(&candidates[b].separation_deg)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            separation_order(candidates[a].separation_deg, candidates[b].separation_deg)
         })
     });
     if ranked.len() > limit {
@@ -388,6 +392,20 @@ mod tests {
         assert_eq!(out.len(), 2);
     }
 
+    #[test]
+    fn separation_order_puts_both_nan_signs_last() {
+        use std::cmp::Ordering;
+        // Every non-finite value sorts after every finite one, whatever its
+        // sign bit. `-inf` is itself non-finite, so it is on the same side.
+        for unusable in [f64::NAN, -f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(separation_order(unusable, 0.5), Ordering::Greater);
+            assert_eq!(separation_order(unusable, -0.5), Ordering::Greater);
+            assert_eq!(separation_order(0.5, unusable), Ordering::Less);
+        }
+        assert_eq!(separation_order(0.1, 0.2), Ordering::Less);
+        assert_eq!(separation_order(0.2, 0.2), Ordering::Equal);
+    }
+
     // ── select_for_display (#698) ─────────────────────────────────────────────
 
     // Every niche entry sits nearer to centre than the galaxy (0.000_833).
@@ -439,6 +457,81 @@ mod tests {
         assert!(
             selected.contains(&0),
             "the Messier-catalogued galaxy must survive the response-limit cut"
+        );
+    }
+
+    #[test]
+    fn nan_separation_neither_panics_nor_reorders_by_input_order() {
+        // `slice::sort_by` has an unconditional total-order detector, so a
+        // `partial_cmp(..).unwrap_or(Equal)` tie-break panics here rather than
+        // merely misordering. The candidate count is above the insertion-sort
+        // threshold so the detector actually runs.
+        let galaxy =
+            identity(Some(1), "M 51", None, ObjectType::Galaxy, "Sy2", &["M 51", "NGC 5194"]);
+        let mut candidates = vec![candidate(galaxy, 0.000_833)];
+        for n in 0..24 {
+            let designation = format!("[HL2008] {n}");
+            let niche = identity(
+                Some(100 + i64::from(n)),
+                &designation,
+                None,
+                ObjectType::EmissionNebula,
+                "HII",
+                &[&designation],
+            );
+            // Both NaN signs: x86-64 produces a sign-negative QNaN for an
+            // invalid operation, and `total_cmp` alone sorts that below -inf.
+            let sep = match n % 4 {
+                0 => f64::NAN,
+                1 => -f64::NAN,
+                _ => f64::from(n) * 0.0001,
+            };
+            candidates.push(candidate(niche, sep));
+        }
+
+        let ascending: Vec<usize> = (0..candidates.len()).collect();
+        let descending: Vec<usize> = ascending.iter().rev().copied().collect();
+
+        let from_ascending = select_for_display(&candidates, &ascending, Some(0), 8);
+        let from_descending = select_for_display(&candidates, &descending, Some(0), 8);
+
+        assert!(
+            from_ascending.contains(&0),
+            "the Messier-catalogued galaxy must survive alongside NaN separations"
+        );
+        assert_eq!(
+            from_ascending, from_descending,
+            "selection must not depend on the order candidates arrived in"
+        );
+    }
+
+    #[test]
+    fn nan_separation_does_not_collapse_a_dedup_group_by_input_order() {
+        // `dedup_candidates` collapses each group with `min_by`, which does not
+        // panic but does return the first element when the comparator claims
+        // every pair is equal.
+        let designation = "NGC 5194";
+        let with_nan_first = vec![
+            candidate(
+                identity(Some(1), designation, None, ObjectType::Galaxy, "G", &[designation]),
+                -f64::NAN,
+            ),
+            candidate(
+                identity(Some(1), designation, None, ObjectType::Galaxy, "G", &[designation]),
+                0.5,
+            ),
+        ];
+        let mut with_nan_last = with_nan_first.clone();
+        with_nan_last.reverse();
+
+        let first = dedup_candidates(with_nan_first);
+        let last = dedup_candidates(with_nan_last);
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(last.len(), 1);
+        assert!(
+            !first[0].separation_deg.is_nan() && !last[0].separation_deg.is_nan(),
+            "the finite-separation candidate must represent the group in both input orders"
         );
     }
 

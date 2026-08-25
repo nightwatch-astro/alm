@@ -34,13 +34,13 @@ Two disjoint stores exist today:
 
 - **Ephemeral/live side** — `EventBus`
   (`crates/audit/src/bus.rs:37-40`): hybrid tokio broadcast (live UI) +
-  durable `events` topic stream (`crates/persistence/db/migrations/0003_events.sql:7`).
+  durable `events` topic stream (`crates/persistence/core/migrations/0001_initial_schema.sql:720`).
   The `events` table is a topic+payload stream, not an audit record — it has
   no outcome/refused semantics. Typed payloads for settings changes,
   protection sets, plan/lifecycle progress, rescans etc. are declared in
   `crates/audit/src/event_bus.rs` (re-exported at `crates/audit/src/lib.rs:14-30`).
 - **Durable audit side** — `audit_log_entry` table
-  (`crates/persistence/db/migrations/0002_lifecycle.sql:154-167`): columns
+  (`crates/persistence/core/migrations/0001_initial_schema.sql:130-143`): columns
   `audit_id, entity_type, entity_id, from_state, to_state, trigger, actor
   (user|system), outcome (applied|refused|failed), severity
   (workflow|diagnostic), request_id, at, payload`. Rust type `AuditLogEntry`

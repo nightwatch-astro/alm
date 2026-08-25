@@ -8,7 +8,7 @@ starting point, refined by what the catalog actually offers.
 | Role | Agent (default → alternatives) | Model / effort | Persistence | Escalation |
 |---|---|---|---|---|
 | **Orchestrator** | you (lead session) | your session model | whole run | delegate deep planning / disputes |
-| **Researcher** | `Explore` → `general-purpose`, `speckit-research` | **cheap tier** low/med | ephemeral (reuse for follow-ups) | → mid tier when a single task is synthesis-heavy (see fan-out/fan-in below) |
+| **Researcher** | `Explore` → `general-purpose`, `researcher` | **cheap tier** low/med | ephemeral (reuse for follow-ups) | → mid tier when a single task is synthesis-heavy (see fan-out/fan-in below) |
 | **Docs-guard** | `docs-guard` (`agent-quality-guards`) | **cheap tier** medium, read-only | ephemeral | → reviewer when policy or meaning is disputed |
 | **Data-metrics-summarizer** | `data-metrics-summarizer` (`agent-quality-guards`) | **cheap tier** medium, read-only | ephemeral | → researcher when interpretation is required |
 | **Lint-guard** | `lint-guard` (`agent-quality-guards`) | **cheap tier** high, read-only | ephemeral | → reviewer when rule intent is disputed |
@@ -45,7 +45,7 @@ SKILL.md Core rules.
 | Domain-specialist | its `scope` only | bound throwaway children | parent-prepared Worktrunk checkout | children share its bound path but never claim, commit, push, or manage worktrees; on block → `BLOCKED kind:design\|debug` |
 | Reviewer | nothing (read-only) | nothing | separate Worktrunk checkout created from writer branch | logs `review` verdict as audit record + bead comment |
 | Advisor | nothing (read-only) | nothing | separate Worktrunk checkout when using tools | one `ADVICE`, then exits |
-| Shepherd | integration branch / merges (remote) | nothing | remote-side (`gh`, merge-tree probes) -- no worktree | merge + push authority only; never mutates local trees |
+| Shepherd | integration branch / merges | nothing | dedicated integration Worktrunk checkout | merge + push authority only; never mutates content trees |
 | Scribe | nothing (read-only) | nothing | reads beads db + artifacts | never in the write path |
 | Researcher | nothing (read-only) | nothing | separate Worktrunk checkout when using repository tools | returns a terse findings digest |
 | Tiebreaker | nothing (read-only) | nothing | separate Worktrunk checkout when using repository tools | binding `ADVICE`, logged |
@@ -83,6 +83,27 @@ advisors.** A domain-specialist may nest bounded throwaway implementation
 children in its own prepared checkout. It binds every child runtime to the
 same Worktrunk actor/lease, and collects the child before reporting. No other
 worker nests (SKILL.md core rule 5).
+
+A nested child takes a **named** agent whenever the catalog has one for the task.
+The table below is the common routing, not the whole catalog: a named agent for
+the language or concern at hand (`rust-pro`, `typescript-pro`,
+`security-auditor`, `debugger`, `test-automator` and similar) beats every generic
+option in it. Check `discover-agents.py` output before settling for a generalist.
+
+| Child task | Agent |
+|---|---|
+| File discovery, call-path tracing | `Explore` |
+| Read-only investigation, synthesis | `researcher`, else `Explore` |
+| Bulk edits, mechanical implementation | `coder` / `builder` |
+| Mixed tool use no named agent covers | `general-purpose` |
+
+`general-purpose` is the last resort, justified only when no narrower agent has
+the capability, since it costs a full generalist context to be told what to be.
+
+Route a **read-only** node to Researcher rather than Domain-specialist in the
+first place. The delegating role earns its nesting on volume-heavy execution; on
+pure analysis the reading IS the reasoning, so children only add a hop and
+re-read context the parent already holds.
 
 ## Researcher fan-out / fan-in
 

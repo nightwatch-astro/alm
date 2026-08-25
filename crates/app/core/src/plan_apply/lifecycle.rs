@@ -53,12 +53,19 @@ pub async fn list_crash_interrupted_plans(
 ///
 /// When the plan is `paused` (no live executor), transitions DB state
 /// directly and emits per-item audit rows matching the executor's Cancelled
-/// path (GF-5).
+/// path (GF-5). A cancel is a Tier-1 user decision, so every write in that
+/// branch gates the response: a failed item cancel, orphan sweep, or plan
+/// transition is returned as an error with the plan left `paused` and its items
+/// left `pending`. Each of those writes is idempotent, so the user can cancel
+/// again. Nothing is in flight on this branch, which is what makes refusing
+/// safe: the live-executor branch below signals the cancellation token and the
+/// executor performs the writes (`terminal::handle_cancelled`).
 ///
 /// # Errors
 ///
 /// - `plan.not_found` — plan not found.
 /// - `plan.not_in_apply` — plan is not in applying or paused state.
+/// - `internal.database` — a paused plan's cancel could not be persisted.
 #[expect(
     clippy::cognitive_complexity,
     reason = "plan cancel state machine over plan and run status combinations"
@@ -117,31 +124,26 @@ pub async fn cancel_plan(
                     error = %e,
                     "paused-cancel: list_pending_items failed; retrying once"
                 );
-                apply_repo::list_pending_items(pool, plan_id).await.unwrap_or_default()
+                apply_repo::list_pending_items(pool, plan_id).await.map_err(db_err)?
             }
         };
-        if let Err(e) = apply_repo::batch_cancel_pending_items(pool, plan_id).await {
-            tracing::error!(error = %e, "paused-cancel: batch_cancel_pending_items failed");
-        }
+        let cancelled_count =
+            apply_repo::batch_cancel_pending_items(pool, plan_id).await.map_err(db_err)?;
         for item_id in &pending_ids {
             audit_item_cancelled(pool, bus, &run_id, plan_id, item_id, "pending", &at).await;
         }
 
         // Sweep orphaned applying items (from retry_plan_item during pause).
-        match apply_repo::cancel_orphaned_applying_items(pool, plan_id).await {
-            Ok(orphaned) => {
-                for item_id in &orphaned {
-                    audit_item_cancelled(pool, bus, &run_id, plan_id, item_id, "applying", &at)
-                        .await;
-                }
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "paused-cancel: cancel_orphaned_applying_items failed");
-            }
+        let orphaned =
+            apply_repo::cancel_orphaned_applying_items(pool, plan_id).await.map_err(db_err)?;
+        for item_id in &orphaned {
+            audit_item_cancelled(pool, bus, &run_id, plan_id, item_id, "applying", &at).await;
         }
 
+        let cancelled_total = cancelled_count + i64::try_from(orphaned.len()).unwrap_or(i64::MAX);
+
         // Transition plan state to cancelled (TIER-1 durability write).
-        if let Err(e) = apply_repo::complete_run(
+        apply_repo::complete_run(
             pool,
             plan_id,
             &run_id,
@@ -149,18 +151,16 @@ pub async fn cancel_plan(
             plan_row.items_applied,
             plan_row.items_failed,
             plan_row.items_skipped,
-            plan_row.items_pending + plan_row.items_cancelled,
+            plan_row.items_cancelled + cancelled_total,
         )
         .await
-        {
-            return Err(db_err(e));
-        }
+        .map_err(db_err)?;
 
         return Ok(PlanCancelResponse {
             plan_id: plan_id.to_owned(),
             cancelled_at: at,
             items_applied: plan_row.items_applied,
-            items_cancelled: plan_row.items_pending,
+            items_cancelled: cancelled_total,
         });
     }
 
@@ -422,10 +422,19 @@ pub async fn resume_plan(
     // audit record (review fix, resume+retry item-set mismatch).
     // succeeded/skipped/cancelled items are still excluded: they are truly
     // terminal and never eligible for retry.
+    let plan_destination_root: Option<Utf8PathBuf> =
+        plan_row.destination_root.as_deref().map(Utf8PathBuf::from);
     let executor_items: Vec<ExecutorItem> = item_rows
         .iter()
         .filter(|r| matches!(r.item_state.as_str(), "pending" | "failed"))
-        .map(|r| item_row_to_executor_item(r, &root_map, &plan_row.destructive_destination))
+        .map(|r| {
+            item_row_to_executor_item(
+                r,
+                &root_map,
+                &plan_row.destructive_destination,
+                plan_destination_root.as_deref(),
+            )
+        })
         .collect();
 
     // Re-register the ActiveRun (R-Concur-1). A paused run has no registry
@@ -489,9 +498,8 @@ pub async fn resume_plan(
 
     // Restart the executor over the remaining pending items (issue #575).
     // No live progress-channel caller for resume today (the contract has no
-    // `event_sink` parameter) — `op_emitter: None` matches
-    // `apply_plan_channel_free`'s no-live-progress mode; the durable audit
-    // trail above is unaffected.
+    // `event_sink` parameter) — `op_emitter: None` matches `apply_plan`'s
+    // `event_sink: None` mode; the durable audit trail above is unaffected.
     spawn_executor_run(SpawnExecutorParams {
         pool: pool.clone(),
         bus: bus.clone(),
@@ -514,16 +522,19 @@ pub async fn resume_plan(
 
 /// Skip a pending item within an active apply (US4, T039).
 ///
-/// The item must be `pending` and the plan must be `applying`.
-/// The skip is registered in the in-memory SkipSet; the executor picks it
-/// up before starting the next item.
+/// The item must be `pending` and the plan must be `applying`. The item row is
+/// transitioned to `skipped` and the id is registered in the in-memory SkipSet,
+/// which is what stops the live executor before it starts that item.
 ///
 /// # Errors
 ///
 /// - `plan.not_found` — plan not found.
 /// - `plan.not_in_apply` — plan is not applying.
 /// - `item.not_found` — item not found.
-/// - `item.not_pending` — item is not in pending state.
+/// - `item.not_pending` — item is not in pending state, including a race where
+///   the executor reached it between the check and the write.
+/// - `internal.database` — the skip could not be persisted, so the item is left
+///   `pending` and eligible to run.
 pub async fn skip_plan_item(
     pool: &SqlitePool,
     plan_id: &str,
@@ -566,8 +577,15 @@ pub async fn skip_plan_item(
     // GF-29: Require a live ActiveRun before injecting the skip — mirrors
     // retry_plan_item's guard. Without this, a skip against a plan whose run
     // already finished fabricates new_state=skipped with nothing to execute it.
-    let registry = active_runs();
-    let run_ref = registry.get(plan_id).ok_or_else(|| {
+    // The SkipSet handle is cloned out so no registry guard is held across the
+    // write below.
+    let skip_set = {
+        let registry = active_runs();
+        let handle = registry.get(plan_id).map(|run| run.skip_set.clone());
+        drop(registry);
+        handle
+    }
+    .ok_or_else(|| {
         ContractError::new(
             ErrorCode::RunNotFound,
             format!("no active run found for plan {plan_id}; the run may have already finished"),
@@ -575,9 +593,24 @@ pub async fn skip_plan_item(
             false,
         )
     })?;
-    run_ref.skip_set.insert(item_id);
-    drop(run_ref);
-    drop(registry);
+
+    // Commit the skip before the item stops being eligible to run. The
+    // SkipSet is what stops the live executor, but it is process memory that
+    // `resume_plan` rebuilds empty, so a pause or a crash between here and the
+    // executor reaching the item would otherwise put a deliberately skipped
+    // destructive item back on the forward pass. `resume_plan` and the
+    // executor's forward loop both treat a `skipped` row as terminal.
+    let persisted = apply_repo::skip_pending_item(pool, plan_id, item_id).await.map_err(db_err)?;
+    if !persisted {
+        return Err(ContractError::new(
+            ErrorCode::ItemNotPending,
+            format!("item {item_id} is no longer pending; it was not skipped"),
+            ErrorSeverity::Blocking,
+            false,
+        ));
+    }
+
+    skip_set.insert(item_id);
 
     Ok(PlanItemSkipResponse { item_id: item_id.to_owned(), new_state: "skipped".to_owned() })
 }
@@ -720,8 +753,12 @@ pub async fn retry_plan_item(
 
 // ── confirm_plan_destructive_items ────────────────────────────────────────────
 
-/// Confirm every destructive (delete/trash) item in a plan, persisting
+/// Confirm every destructive item in a plan, persisting
 /// `plan_items.destructive_confirmed = 1` (FR-003, D9, issue #741).
+///
+/// "Destructive" covers a `delete` action and an `archive` action whose plan
+/// carries `destructive_destination = 'trash'`: the latter is rerouted to the
+/// OS trash at apply time, so the stored action alone understates it.
 ///
 /// This is the write half of the executor's destructive-confirm gate
 /// (`fs_executor::run::execute_plan`'s `destructive_unconfirmed` refusal,

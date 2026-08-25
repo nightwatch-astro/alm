@@ -7,9 +7,10 @@
 > are now resolved on demand against SIMBAD with a bundled seed index + local cache (spec 035). The
 > **license-attribution** model here (CDS/OpenNGC CC-BY attribution) remains relevant.
 
-> **See Spec 030**: UI implementation of this feature must follow
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md)
-> for layout, navigation, and component patterns.
+> **See Spec 032**: UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns. Spec 030 (UI Audit &
+> Revision), cited here previously, is superseded as of 2026-06-11.
 
 **Feature Branch**: `014-catalog-index-licensing`  
 **Created**: 2026-05-09  

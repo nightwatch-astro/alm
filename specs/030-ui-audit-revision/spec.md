@@ -1640,7 +1640,6 @@ Matching tolerance configuration.
 | Temperature tolerance | 5°C | How close set-temp must be for dark matching |
 | Exposure time tolerance | 2s | For matching darks to lights |
 | Aging threshold | 1 year | Warning badge on old calibration |
-| Require same camera | Yes | Toggle |
 | Require same gain | Yes | Toggle |
 | Require same binning | Yes | Toggle |
 

@@ -19,7 +19,7 @@
 use domain_core::ids::Timestamp;
 use sqlx::{SqliteConnection, SqlitePool};
 
-use persistence_core::DbResult;
+use persistence_core::{DbError, DbResult};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -282,8 +282,13 @@ pub async fn mark_artifacts_missing(pool: &SqlitePool, artifact_ids: &[String]) 
 
 /// Transition an artifact from `missing` back to `present` and refresh size/hash.
 ///
+/// A `content_hash` of `None` leaves the stored hash in place: it is the only
+/// record of which bytes were processed, and the recovery caller does not
+/// re-hash the file.
+///
 /// # Errors
-/// Returns [`persistence_core::DbError::Database`] on query failure.
+/// Returns [`persistence_core::DbError::NotFound`] when no artifact carries
+/// `artifact_id`, and [`persistence_core::DbError::Database`] on query failure.
 pub async fn mark_artifact_recovered(
     pool: &SqlitePool,
     artifact_id: &str,
@@ -291,10 +296,11 @@ pub async fn mark_artifact_recovered(
     content_hash: Option<&str>,
 ) -> DbResult<()> {
     let now = Timestamp::now_iso();
-    sqlx::query(
+    let result = sqlx::query(
         "\
         UPDATE processing_artifacts
-           SET state = 'present', last_seen_at = ?, size_bytes = ?, content_hash = ?
+           SET state = 'present', last_seen_at = ?, size_bytes = ?,
+               content_hash = COALESCE(?, content_hash)
          WHERE id = ?
         ",
     )
@@ -304,6 +310,9 @@ pub async fn mark_artifact_recovered(
     .bind(artifact_id)
     .execute(pool)
     .await?;
+    if result.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!("processing_artifact {artifact_id}")));
+    }
     Ok(())
 }
 
@@ -651,6 +660,43 @@ mod tests {
         let row2 = get_artifact_by_path(pool, "p1", "out/img.xisf").await.unwrap().unwrap();
         assert_eq!(row2.state, "present");
         assert_eq!(row2.size_bytes, 2048);
+    }
+
+    #[tokio::test]
+    async fn mark_artifact_recovered_reports_an_unknown_id() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+
+        let err = mark_artifact_recovered(db.pool(), "gone", 2048, None)
+            .await
+            .expect_err("a recovery that matches no row must not report success");
+
+        assert!(
+            matches!(err, DbError::NotFound(ref m) if m.contains("gone")),
+            "error must name the missing artifact: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mark_artifact_recovered_keeps_the_stored_content_hash() {
+        let db = Database::in_memory().await.unwrap();
+        db.migrate().await.unwrap();
+        let pool = db.pool();
+
+        insert_artifact_if_absent(pool, art("a1", "p1", "out/img.xisf", "intermediate"))
+            .await
+            .unwrap();
+        mark_artifact_recovered(pool, "a1", 1024, Some("abc123")).await.unwrap();
+        mark_artifacts_missing(pool, &["a1".to_owned()]).await.unwrap();
+
+        mark_artifact_recovered(pool, "a1", 2048, None).await.unwrap();
+
+        let row = get_artifact_by_path(pool, "p1", "out/img.xisf").await.unwrap().unwrap();
+        assert_eq!(
+            row.content_hash.as_deref(),
+            Some("abc123"),
+            "recovery without a fresh hash must not erase the stored one"
+        );
     }
 
     #[tokio::test]

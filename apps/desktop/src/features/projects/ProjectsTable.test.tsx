@@ -22,6 +22,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ProjectsTable, DEFAULT_PROJECT_SORT } from './ProjectsTable';
+import * as pt from './projects-table.css';
 import type { ProjectSummaryDto } from '@/bindings/index';
 
 const mockProjects: ProjectSummaryDto[] = [
@@ -132,9 +133,7 @@ describe('ProjectsTable', () => {
 
   it('marks the selected row with the selected CSS class', () => {
     const { container } = renderTable({ selectedId: 'proj-001' });
-    const selected = container.querySelectorAll(
-      '.pv-projects-table__row--selected',
-    );
+    const selected = container.querySelectorAll(`.${pt.rowSelected}`);
     expect(selected).toHaveLength(1);
     expect(selected[0]).toHaveTextContent('NGC 7000 Narrowband');
   });

@@ -5,9 +5,11 @@
 > Under 035 there is no catalog download at first run; if a catalog/resolver step remains it becomes a
 > lightweight SIMBAD-reachability check. All other first-run setup steps are unaffected.
 
-> **UI Revised**: The UI design in this spec has been revised by
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md).
-> When implementing, follow spec 030 for layout, navigation, and component patterns.
+> **UI Revised**: The UI design in this spec was revised by
+> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md), which is
+> superseded as of 2026-06-11. UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns.
 
 **Feature Branch**: `003-first-run-source-setup`  
 **Created**: 2026-05-09  

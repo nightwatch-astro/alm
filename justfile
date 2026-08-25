@@ -10,6 +10,8 @@ test:
     pnpm -r --if-present test
     node scripts/check-eslint-baseline.test.mjs
     node scripts/check-mock-baseline.test.mjs
+    node scripts/check-orphan-ve-modules.test.mjs
+    node scripts/precommit-verify.test.mjs
 
 # Lint and format. This recipe is the single local definition of the lint set;
 # the root package.json `lint` script delegates here so the two cannot drift.
@@ -35,6 +37,12 @@ lint:
     # protection policy. That comparison is offline; the live-protection
     # comparison after it skips with a NOTE when there is no network or token.
     bash scripts/check-required-contexts.sh
+
+# Run pre-commit over specific paths and FAIL if no hook looked at any of them.
+# Prefer this over a bare `pre-commit run --files ...`, which exits 0 when the
+# config's global `exclude:` drops every path given.
+precommit *FILES:
+    bash scripts/precommit-verify.sh {{FILES}}
 
 # Build the Rust workspace and package workspaces when present.
 build:
@@ -131,7 +139,7 @@ hygiene-pub:
 # Public API surface of one crate (read, not pass/fail).
 hygiene-api CRATE:
     @command -v cargo-public-api >/dev/null 2>&1 || { echo "cargo-public-api not installed: cargo install cargo-public-api"; exit 1; }
-    cargo public-api -p {{CRATE}}
+    cargo public-api -p {{quote(CRATE)}}
 
 # All non-interactive hygiene sweeps.
 hygiene: hygiene-deps hygiene-pub
@@ -188,10 +196,17 @@ dev:
     pnpm --filter @astro-plan/desktop dev
 
 # Start the Tauri desktop app in development mode (Rust + frontend).
-# The dev overlay enables `withGlobalTauri`, required by the (debug-only) MCP
-# bridge plugin; it is never applied to release builds.
+# The dev overlay enables `withGlobalTauri`, and the `dev-tools` feature compiles
+# in the MCP bridge plugin that requires it. Release builds carry neither. The
+# bridge stays closed here: it needs PV_MCP_BRIDGE_ENABLE=1 (see tauri-dev-mcp).
 tauri-dev:
-    cd apps/desktop && pnpm tauri dev --config src-tauri/tauri.dev.conf.json
+    cd apps/desktop && pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools
+
+# Start the desktop app with the MCP bridge open so an agent can drive it.
+# The bridge is unauthenticated and reaches every command handler; BIND defaults
+# to loopback and takes an address (0.0.0.0) only for cross-host validation.
+tauri-dev-mcp bind="127.0.0.1":
+    cd apps/desktop && PV_MCP_BRIDGE_ENABLE=1 PV_MCP_BRIDGE_BIND={{quote(bind)}} pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools
 
 # Clean build artifacts
 clean:
@@ -199,16 +214,16 @@ clean:
 
 # Speckit workflows (requires specify CLI)
 speckit-full FEATURE INTEGRATION="codex":
-    specify workflow run speckit-full -i feature_name={{FEATURE}} -i integration={{INTEGRATION}}
+    specify workflow run speckit-full -i feature_name={{quote(FEATURE)}} -i integration={{quote(INTEGRATION)}}
 
 speckit-bugfix ISSUE INTEGRATION="codex":
-    specify workflow run speckit-bugfix -i issue_number={{ISSUE}} -i integration={{INTEGRATION}}
+    specify workflow run speckit-bugfix -i issue_number={{quote(ISSUE)}} -i integration={{quote(INTEGRATION)}}
 
 speckit-tinyspec FEATURE INTEGRATION="codex":
-    specify workflow run speckit-tinyspec -i feature_name={{FEATURE}} -i integration={{INTEGRATION}}
+    specify workflow run speckit-tinyspec -i feature_name={{quote(FEATURE)}} -i integration={{quote(INTEGRATION)}}
 
 speckit-resume RUN_ID:
-    specify workflow resume {{RUN_ID}}
+    specify workflow resume {{quote(RUN_ID)}}
 
 speckit-status:
     specify workflow status

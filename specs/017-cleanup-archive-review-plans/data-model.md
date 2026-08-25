@@ -117,7 +117,7 @@ mutating the failed plan in place.
 
 ## Storage Notes
 
-- Plans and items live in SQLite tables owned by `crates/persistence/db/`.
+- Plans and items live in SQLite tables owned by `crates/persistence/plans/`.
 - Item counters (`itemsApplied`, `itemsFailed`, `itemsSkipped`, `itemsCancelled`,
   `itemsPending`) are persisted on the plan row to avoid recomputing on list
   render; the apply executor is responsible for keeping them coherent (A3).

@@ -195,7 +195,7 @@ async fn write_resolved_row(
 // ── Background drain (T025) ─────────────────────────────────────────────────────
 
 /// Summary of one [`resolve_pending`] drain pass.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DrainSummary {
     pub considered: usize,
     pub resolved: usize,
@@ -345,7 +345,9 @@ pub async fn resolve_pending<R: Resolver + ?Sized>(
 /// `pending` rows (and any session left unlinked from an earlier pass) resolve
 /// promptly instead of waiting for the next ~30s periodic tick. Never returns
 /// an error — a failure to build the resolver, drain, or back-fill is logged
-/// and the caller (periodic tick or next plan-applied event) retries.
+/// and the caller (periodic tick or next plan-applied event) retries. A failed
+/// pass returns a zeroed summary, so a caller keying a notification off
+/// `resolved` treats failure and an empty queue alike.
 #[expect(
     clippy::cognitive_complexity,
     reason = "drain-then-backfill sequence, each phase with independent error handling"
@@ -354,7 +356,7 @@ pub async fn drain_and_backfill_once(
     pool: &SqlitePool,
     bus: &EventBus,
     resolve_cache: &targeting_resolver::simbad::ResolveCache,
-) {
+) -> DrainSummary {
     use targeting_resolver::simbad::{SimbadConfig, SimbadResolver, DEFAULT_TAP_ENDPOINT};
 
     let settings = persistence_targets::repositories::q_desktop::get_resolver_settings(pool)
@@ -368,24 +370,31 @@ pub async fn drain_and_backfill_once(
     // `SimbadResolver::new` never builds a reqwest/TLS client when
     // `online_enabled` is false (mirrors target.resolve FIX-3); cache hits
     // still resolve regardless.
-    let config =
-        SimbadConfig::from_settings(endpoint, u64::try_from(timeout_secs.max(1)).unwrap_or(10));
+    let config = SimbadConfig::from_settings(
+        endpoint,
+        u64::from(crate::resolver_settings::positive_or_default(timeout_secs, 10)),
+    );
     let resolver = match SimbadResolver::new(&config, resolve_cache, online_enabled) {
         Ok(resolver) => resolver,
         Err(e) => {
             tracing::warn!("failed to build SimbadResolver for ingest drain: {e:?}");
-            return;
+            return DrainSummary::default();
         }
     };
 
-    if let Err(e) = resolve_pending(pool, &resolver, Some(bus), online_enabled, 50).await {
-        tracing::warn!("ingest_resolution drain failed: {e:?}");
-        return;
-    }
+    let summary = match resolve_pending(pool, &resolver, Some(bus), online_enabled, 50).await {
+        Ok(summary) => summary,
+        Err(e) => {
+            tracing::warn!("ingest_resolution drain failed: {e:?}");
+            return DrainSummary::default();
+        }
+    };
 
     if let Err(e) = crate::ingest_sessions::backfill_session_targets(pool).await {
         tracing::warn!("acquisition_session target back-fill failed: {e:?}");
     }
+
+    summary
 }
 
 async fn mark_resolved(

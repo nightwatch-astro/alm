@@ -50,7 +50,19 @@ impl MetadataExtractor for XisfExtractor {
 
         // Reads only the 16-byte preamble + declared XML header (capped at
         // 8 MiB internally); never touches pixel/attachment data.
-        let header = Header::read_from_file(path).map_err(|e| map_err(&e, path))?;
+        //
+        // `xisf-header` 0.4.3 length-checks before every slice, so no panic is
+        // known here; the guard keeps a future parser panic from reaching the
+        // inbox scan, matching the FITS adapter. It depends on panics
+        // unwinding: the release profile in the workspace `Cargo.toml`
+        // deliberately keeps the default `panic = "unwind"`.
+        let header =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Header::read_from_file(path)))
+                .map_err(|_| MetadataExtractError::Parse {
+                    path: path.display().to_string(),
+                    msg: "the XISF header parser panicked on malformed header bytes".to_owned(),
+                })?
+                .map_err(|e| map_err(&e, path))?;
 
         Ok(Some(parse_header(&header)))
     }
@@ -130,6 +142,7 @@ fn parse_header(header: &Header) -> RawFileMetadata {
     meta.naxis1 = non_empty(get_str(header, "NAXIS1"));
     meta.naxis2 = non_empty(get_str(header, "NAXIS2"));
     meta.instrume = non_empty(get_str(header, "INSTRUME"));
+    meta.cameraid = non_empty(get_str(header, "CAMERAID"));
     meta.telescop = non_empty(get_str(header, "TELESCOP"));
     meta.date_obs = non_empty(get_str(header, "DATE-OBS"));
 

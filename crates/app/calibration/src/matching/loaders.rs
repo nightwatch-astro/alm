@@ -48,6 +48,7 @@ pub(super) async fn load_session(
             rotation_deg: r.rotation_deg,
             binning: r.binning,
             optic_train: r.optic_train,
+            camera_body_id: r.camera_body_id,
             observing_night_date: r.observing_night_date,
             has_observer_location: r.has_observer_location.unwrap_or(0) != 0,
             has_exposure_start_utc: r.has_exposure_start_utc.unwrap_or(0) != 0,
@@ -102,6 +103,7 @@ pub(super) async fn load_masters(
                 rotation_deg: r.rotation_deg,
                 binning: r.binning,
                 optic_train: r.optic_train,
+                camera_body_id: r.camera_body_id,
                 source_session_id: r.source_session_id,
                 observing_night_date: r.observing_night_date,
             })
@@ -133,6 +135,7 @@ pub(super) async fn load_master_by_id(
             rotation_deg: r.rotation_deg,
             binning: r.binning,
             optic_train: r.optic_train,
+            camera_body_id: r.camera_body_id,
             source_session_id: r.source_session_id,
             observing_night_date: r.observing_night_date,
         })
@@ -187,6 +190,12 @@ async fn load_config_from_db(pool: &SqlitePool) -> MatchingRuleConfig {
         // "Offset match required" toggle (spec 043 P8).
         config.require_same_offset = row.require_same_offset;
 
+        // "Gain match required" and "Binning match required" toggles. Same dead
+        // config class as the fields below: the pane persisted both and no rule
+        // read them, so clearing either toggle changed nothing (astro-plan-rcvr).
+        config.require_same_gain = row.require_same_gain;
+        config.require_same_binning = row.require_same_binning;
+
         // Sensor temperature tolerance. Previously this row field was loaded
         // and then ignored: the UI wrote `temperature_tolerance_c` here while
         // the engine only ever read the `calibrationDarkTempTolerance` settings
@@ -200,6 +209,21 @@ async fn load_config_from_db(pool: &SqlitePool) -> MatchingRuleConfig {
         // the row said 5.0, and nothing ever compared them.
         if let Some(n) = usable_tolerance(row.temperature_tolerance_c) {
             config.dark_temp_tolerance_c = n;
+        }
+
+        // "Dark / bias age tolerance" input. Same dead-config class as the
+        // temperature field above: persisted and editable, read by no rule
+        // (astro-plan-rcvr). Zero and negative limits are rejected rather than
+        // honoured — a zero limit would refuse every master whose observing
+        // night differs at all, which no user picking "0" is asking for.
+        if row.aging_limit_days > 0 {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "day counts are far below f64's exact-integer range"
+            )]
+            {
+                config.age_limit_days = row.aging_limit_days as f64;
+            }
         }
     }
 

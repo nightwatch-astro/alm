@@ -364,6 +364,8 @@ async fn backfill_session_fingerprint(
         meta.instrume.as_deref(),
         meta.focal_length_mm,
     );
+    let camera_body_id =
+        sessions::camera_body_id(meta.cameraid.as_deref(), meta.instrume.as_deref());
 
     // Sensor set-point first: it is the temperature a calibration master is
     // matched on, with the measured CCD reading as the fallback.
@@ -390,6 +392,7 @@ async fn backfill_session_fingerprint(
             rotation_deg: meta.rotator_angle_deg,
             binning: (!binning.is_empty()).then_some(binning.as_str()),
             optic_train: optic_train.as_deref(),
+            camera_body_id: camera_body_id.as_deref(),
             observing_night_date: observing_night_date.as_deref(),
             // R11: ingest always uses the UTC observing-night fallback, so no
             // frame can assert a real observer location (mirrors
@@ -736,6 +739,17 @@ mod tests {
 
     fn meta_imagetyp(t: &str) -> RawFileMetadata {
         RawFileMetadata { image_typ: Some(t.to_owned()), ..RawFileMetadata::default() }
+    }
+
+    /// Records whether the observing-night date underflow is reachable from a
+    /// header. `Iso8601::DEFAULT` needs the `time` crate's `large-dates`
+    /// feature to accept a signed expanded year, and the workspace does not
+    /// enable it, so `Date::MIN`'s year cannot arrive through `DATE-OBS`. If
+    /// this assertion ever fails the underflow is header-reachable.
+    #[test]
+    fn a_minimum_date_header_is_not_parsed_as_that_year() {
+        let parsed = parse_date_obs(Some("-9999-01-01T00:00:00"));
+        assert_ne!(parsed.year(), -9999, "DATE-OBS reached sessions::observing_night as Date::MIN");
     }
 
     #[test]

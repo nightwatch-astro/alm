@@ -56,23 +56,28 @@ pub fn attribute(
 
 /// Determine which artifact rows should be re-attributed to `new_launch`.
 ///
-/// Returns the ids of artifacts whose `detected_at` falls within `window`
-/// of `new_launch.launched_at` AND whose current `tool_launch_id` is either
-/// `None` (unattributed) or points to a launch earlier than `new_launch`.
+/// Returns the ids of artifacts produced by `new_launch`'s tool whose
+/// `detected_at` falls within `window` of `new_launch.launched_at` AND whose
+/// current `tool_launch_id` is either `None` (unattributed) or points to a
+/// launch earlier than `new_launch`.
 ///
 /// The caller is responsible for updating the DB rows.
 #[must_use]
 pub fn reattribute_candidates<'a>(
     new_launch: &LaunchRef,
-    artifacts: &'a [(String, time::OffsetDateTime, Option<String>)], // (artifact_id, detected_at, current_launch_id)
+    // (artifact_id, artifact_tool, detected_at, current_launch_id)
+    artifacts: &'a [(String, String, time::OffsetDateTime, Option<String>)],
     existing_launches: &[LaunchRef],
     window: Duration,
 ) -> Vec<&'a String> {
     let window_secs = window.as_secs_f64();
     artifacts
         .iter()
-        .filter(|(_, detected_at, current_launch_id)| {
+        .filter(|(_, artifact_tool, detected_at, current_launch_id)| {
             // Must be same tool and within window.
+            if *artifact_tool != new_launch.tool_id {
+                return false;
+            }
             let diff = (*detected_at - new_launch.launched_at).as_seconds_f64();
             if diff < 0.0 || diff > window_secs {
                 return false;
@@ -87,7 +92,7 @@ pub fn reattribute_candidates<'a>(
                 None => true, // orphaned reference — re-attribute
             }
         })
-        .map(|(id, _, _)| id)
+        .map(|(id, _, _, _)| id)
         .collect()
 }
 
@@ -141,8 +146,9 @@ mod tests {
     fn reattribute_candidates_selects_unattributed_in_window() {
         let new_launch = launch("launch-new", "pixinsight", datetime!(2026-06-01 10:00 UTC));
         let artifacts = vec![
-            ("art-1".to_owned(), datetime!(2026-06-01 11:00 UTC), None),
-            ("art-2".to_owned(), datetime!(2026-06-01 18:00 UTC), None), // outside window
+            ("art-1".to_owned(), "pixinsight".to_owned(), datetime!(2026-06-01 11:00 UTC), None),
+            // outside window
+            ("art-2".to_owned(), "pixinsight".to_owned(), datetime!(2026-06-01 18:00 UTC), None),
         ];
         let candidates =
             reattribute_candidates(&new_launch, &artifacts, &[], DEFAULT_ATTRIBUTION_WINDOW);
@@ -156,6 +162,7 @@ mod tests {
         let new_launch = launch("launch-new", "pixinsight", datetime!(2026-06-01 10:00 UTC));
         let artifacts = vec![(
             "art-1".to_owned(),
+            "pixinsight".to_owned(),
             datetime!(2026-06-01 11:00 UTC),
             Some("launch-old".to_owned()),
         )];
@@ -176,6 +183,7 @@ mod tests {
         let newer = launch("launch-newer", "pixinsight", datetime!(2026-06-01 12:00 UTC));
         let artifacts = vec![(
             "art-1".to_owned(),
+            "pixinsight".to_owned(),
             datetime!(2026-06-01 13:00 UTC),
             Some("launch-newer".to_owned()),
         )];
@@ -187,5 +195,17 @@ mod tests {
             DEFAULT_ATTRIBUTION_WINDOW,
         );
         assert!(candidates.is_empty());
+    }
+
+    /// An artifact recorded as produced by another tool is not a candidate for
+    /// rebinding to this tool's launch, even inside the window.
+    #[test]
+    fn a_foreign_tool_artifact_is_not_a_candidate() {
+        let new_launch = launch("launch-new", "pixinsight", datetime!(2026-06-01 10:00 UTC));
+        let artifacts =
+            vec![("art-1".to_owned(), "siril".to_owned(), datetime!(2026-06-01 11:00 UTC), None)];
+        let candidates =
+            reattribute_candidates(&new_launch, &artifacts, &[], DEFAULT_ATTRIBUTION_WINDOW);
+        assert!(candidates.is_empty(), "a siril artifact must not rebind to a pixinsight launch");
     }
 }

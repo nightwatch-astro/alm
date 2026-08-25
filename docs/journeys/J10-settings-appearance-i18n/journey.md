@@ -1,12 +1,12 @@
 ---
 id: J10
 title: Configure appearance, per-library defaults, and trust the app is fully localized
-version: 11
+version: 17
 status: draft
 last_reviewed: 2026-07-17
 actors: [astrophotographer]
 surfaces: [settings, shell, audit, framing]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration journey.md @ git 66026463
   - deltas/2026-07-14-q15-t122.md (folded — PR #826 / commit 0cdc81cc)
@@ -37,6 +37,14 @@ trace:
     picker, clay/espresso hidden)
   - PR #1185 (design-refresh handoff 08 — default dark theme)
   - spec 061 US2 (selectable app language — Settings → Appearance control)
+  - PR #1078 (settings persistence sweep — planner threshold, calibration
+    tolerances)
+  - PR #1060 (command-palette routes)
+  - PR #1065, PR #1087 (Advanced danger-zone honesty)
+  - PR #1005, PR #1387 (Restore defaults on Appearance and Target Resolution)
+  - PR #1048 (spec 056 onboarding controls replace "Restart guided flow")
+  - PR #1379, PR #1414 (pt-BR complete; locale drift fails the build)
+  - PR #1692 (calibration matching settings actually drive matching)
 ---
 
 ## Goal
@@ -47,10 +55,10 @@ the interface — including error text and audit detail — ever shows them a ra
 technical string. "Done" for a single settings change is: the control reflects
 its new value immediately, a restart still shows that value, and (for
 durable-data settings) the change is discoverable afterward in the Audit Log.
-"Fully localized" (S8, S12) now means the interface is translated into the
-user's chosen language, not just that it is honestly English throughout — a
-chosen language other than the base one may be partially translated, but
-never leaks a raw key or crashes for the parts that aren't (S12).
+"Fully localized" (S8, S12) means the interface is translated into the user's
+chosen language: both shipped languages carry the same complete key set, and
+catalogue drift between them fails the build, so no pane can leak a raw key or
+fall back to English for a translated language (S12).
 
 ## Preconditions
 - P1: Setup is complete with at least one registered source, so every pane
@@ -77,7 +85,7 @@ Note: Release builds lack the /dev/contracts palette entry by design
   persisted value is fetched, rather than flashing its in-code default
   (previously ON) then snapping to the real value.
 - **Trace:** apps/desktop/src/features/settings/SettingsPage.tsx (pane ids
-  and nav groups), apps/desktop/messages/en.json:59,67 (displayed titles).
+  and nav groups), `apps/desktop/messages/en-GB.json:1901`, `:1928` (displayed titles).
   PR #909 fixes #584
   (apps/desktop/src/features/settings/ResolverSettingsControl.tsx).
 
@@ -175,13 +183,14 @@ Note: Release builds lack the /dev/contracts palette entry by design
   audit row.
 - **Trace:** PR #826 (commit 0cdc81cc); crates/app/settings/src/descriptors.rs
   (`pattern` key, `noisy: true`); crates/app/calibration/src/equipment.rs:140
-  (`write_audit`). Caution: Calibration Matching's own tolerance fields are
-  NOT a safe example for this step today — every save on that pane is
-  silently rejected by an unrelated bug (issue #639, open,
-  apps/desktop/src/features/settings/CalibrationMatching.tsx:92-97,
-  `exposureToleranceS` hardcoded `null` fails backend deserialisation), and
-  `calibration_tolerances_update` is not wired to `write_audit` at all
-  (apps/desktop/src-tauri/src/commands/calibration_tolerances.rs).
+  (`write_audit`). Caution: Calibration Matching still is not a safe example
+  for the audit half of this step — `calibration_tolerances_update` is not
+  wired to `write_audit`
+  (`apps/desktop/src-tauri/src/commands/calibration_tolerances.rs`) — but its
+  saves now persist: `exposureToleranceS` carries a real default (2.0) rather
+  than a hardcoded `null` that failed backend deserialisation
+  (`apps/desktop/src/features/settings/CalibrationMatching.tsx:42-45`,
+  `:117`), and the values it saves now actually drive matching (J08/S8).
 
 ### S4 — Confirm Ingestion settings persist but do not yet drive scans {#S4}
 - **Do:** Toggle "Follow symbolic links", "Follow NTFS junctions", and file
@@ -195,17 +204,21 @@ Note: Release builds lack the /dev/contracts palette entry by design
 - **Do:** In Target Planner, set the usable-altitude threshold (0–90°,
   default 30°).
 - **Expect:** The input reflects the newly typed value once committed
-  (blur/Enter).
-- **Expect (negative):** As of this audit, out-of-range input (e.g. 150°) is
-  **not** clamped at commit time, and the value does **not** survive a pane
-  switch or app restart — it reverts to the 30° default (issue #823, open,
-  filed 2026-07-14, same journey run; likely the same settings-descriptor
-  gap as #822/#645). Whether an in-range change immediately affects the
+  (blur/Enter), out-of-range input is clamped into 0–90 and the field
+  self-corrects to the clamped number, and the committed value survives a pane
+  switch and an app restart — it is written through the settings store under
+  the `usableAltitudeDeg` key, not per-tab local storage.
+- **Expect (negative):** Non-numeric input never persists: the field reverts
+  to the stored value. Whether an in-range change immediately affects the
   Targets planner table's imaging-time/visible-tonight columns within the
-  same session (before persistence) is unverified by this audit.
-- **Trace:** apps/desktop/src/features/settings/PlannerSettings.tsx,
-  apps/desktop/src/features/targets/altitude-settings.ts,
-  crates/app/settings/src/descriptors.rs (`usableAltitudeDeg`), issue #823
+  same session is not covered here.
+- **Trace:** `apps/desktop/src/features/settings/PlannerSettings.tsx:59-75`
+  (commit clamps and reflects back),
+  `apps/desktop/src/shared/planner/altitude-settings.ts:13-17`, `:40`
+  (settings-store write-through, explicitly not localStorage),
+  `crates/app/settings/src/descriptors.rs:482-490`
+  (`usableAltitudeDeg`, `NumberRangeInclusive` 0–90); issue #823, fixed in
+  PR #1078.
 
 ### S6 — Use the bottom log panel {#S6}
 - **Do:** Expand the collapsible bottom log strip; filter by severity
@@ -242,12 +255,15 @@ Note: Release builds lack the /dev/contracts palette entry by design
   leave keyboard/click handling dead); the entity-search catalog is cached
   briefly across opens and only auto-refreshes after a short interval,
   rather than re-fetching in full on every open.
-- **Expect (negative):** 3 of the palette's 8 listed routes (`/review`,
-  `/plans`, `/audit`) still do not exist in the route tree and silently
-  redirect when selected (issue #617, still open — not addressed by the
-  styling/matching/keyboard fix below).
+- **Expect:** Every page the palette lists resolves to a real route: the
+  Pages group is exactly Sessions, Calibration, Targets, Projects and
+  Settings, and `/dev/contracts` appears only in a `dev-tools` build.
+- **Expect (negative):** No palette entry silently redirects because its
+  route does not exist — the three former dead entries (`/review`, `/plans`,
+  `/audit`) are gone from the list.
 - **Trace:** apps/desktop/src/app/Sidebar.tsx,
-  apps/desktop/src/app/CommandPalette.tsx, issue #617. PR #884 fixes #581
+  `apps/desktop/src/app/CommandPalette.tsx:74-83` (the five Pages entries),
+  `:107-109` (dev-only entry); issue #617, fixed in PR #1060. PR #884 fixes #581
   (unstyled palette, broken alias matching, dead keyboard nav and clicks —
   all four were one focus-race + CSS-class + matcher defect, now fixed). PR
   #914 fixes a carried nJ10a-review nit: the palette no longer re-fetches
@@ -268,28 +284,41 @@ Note: Release builds lack the /dev/contracts palette entry by design
 
 ### S9 — Use Danger controls and Restore defaults {#S9}
 - **Do:** In Advanced, export settings via the native file dialog; use
-  "Restart first-run setup" and "Restart guided flow" (two distinct
-  controls); use "Reset preferences". In any pane offering "Restore
-  defaults", use it.
+  "Restart first-run setup"; use "Replay orientation" and "Restore getting
+  started" (the two onboarding controls that replaced the old "Restart guided
+  flow" — J18 owns what they do); use "Reset preferences". In any pane
+  offering "Restore defaults", use it.
 - **Expect:** "Restart first-run setup" is confirm-gated (inline
   confirm/cancel) before it reopens the source-registration wizard.
-  "Restore defaults" (8 adopting panes: Data Sources, Ingestion, Naming &
-  Structure, Calibration Matching, Target Planner, Framing, Cleanup,
-  Advanced) actually calls `settings.restore-defaults` or the pane's own
-  reset and refetches, so the visible fields do change.
-- **Expect (negative):** As of this audit, "Export database" and "Reset
-  preferences" are `console.log` no-ops — no backend call, no file, no
-  confirmation (issue #601, open,
-  apps/desktop/src/features/settings/Advanced.tsx:148-149). "Restart guided
-  flow" has no confirm gate at all, asymmetric with "Restart first-run
-  setup" (issue #827, open). "Restore defaults" fires immediately on click
-  with no confirmation step anywhere it is used, and never states which
+  "Restore defaults" — offered on 11 panes: Data Sources, Ingestion, Naming &
+  Structure, Processing-adjacent Calibration Matching, Target Resolution,
+  Target Planner, Framing, Cleanup, Source Views, Appearance and Advanced —
+  actually calls `settings.restore-defaults` or the pane's own reset and
+  refetches, so the visible fields do change.
+- **Expect:** "Reset preferences" is real and confirm-gated: it clears the
+  local appearance preferences (theme/density/font size) after an inline
+  confirm step, rather than logging to the console.
+- **Expect (negative):** "Export database" is present but disabled, with a
+  title stating it is not backed yet — it is not a live control that silently
+  does nothing.
+- **Expect (negative):** "Restore defaults" still fires immediately on click
+  with no confirmation step anywhere it is used, and still never states which
   settings it is about to reset, so a user cannot tell whether a given
-  instance resets a whole pane or one subsection of it (issues #802 and
-  #837, both open, apps/desktop/src/features/settings/SettingsKit.tsx:142-186).
-- **Trace:** apps/desktop/src/features/settings/Advanced.tsx,
-  apps/desktop/src/features/settings/SettingsKit.tsx, issue #601,
-  issue #802, issue #827, issue #837
+  instance resets a whole pane or one subsection of it (issues #802 and #837,
+  both open — see G6).
+- **Trace:** `apps/desktop/src/features/settings/Advanced.tsx:132-143`
+  (the #601 decision: no `db.export` command exists, so the button is disabled
+  with an explanatory title; `resetPreferences()` is real and local-only),
+  `:383-400` (the confirm-gated danger zone);
+  `apps/desktop/src/features/settings/SettingsKit.tsx` (`RestoreDefaultsBtn`,
+  no confirm path); the 11 adopting surfaces enumerated by
+  `grep -rl RestoreDefaultsBtn apps/desktop/src/features/settings/` (13 files,
+  of which `SettingsKit.tsx`, `settingsIpc.ts` and `useNamingPattern.ts` are
+  the shared implementation and `CatalogueSettingsControl.tsx` /
+  `ResolverSettingsControl.tsx` are both Target Resolution). Issues #802 and
+  #837 remain open; #601 is fixed (PR #1065, PR #1087) and #827 is moot — the
+  "Restart guided flow" control it was filed against no longer exists (spec
+  056, PR #1048).
 
 ### S10 — Tune framing clustering tolerances in the Framing pane {#S10}
 - **Do:** In Library → Framing, change the pointing tolerance fraction, the
@@ -362,18 +391,24 @@ Note: Release builds lack the /dev/contracts palette entry by design
   `aria-checked`. Text elsewhere in Settings (other panes, nav labels)
   updates immediately with no reload — an already-open bottom log panel, or
   a scroll position, are unaffected. The choice survives an app restart.
-- **Expect (negative):** As of this delta, only English (en-GB, complete)
-  and Portuguese (pt-BR, a 5-key stub: "All"/"Yes"/"No"/"Cancel"/"Save") are
-  offered. Selecting pt-BR does not translate the whole app on the spot —
-  every key outside that stub falls back to its English text rather than a
-  raw key or a crash. Full pt-BR coverage is separate follow-on work
-  (spec 061 US3).
+- **Expect:** Two languages are offered — English (en-GB) and Brazilian
+  Portuguese (pt-BR) — and both are complete: the two catalogues hold the same
+  2258 keys, so selecting pt-BR translates the app rather than falling back to
+  English for most of it. Catalogue drift between the two fails the build, so a
+  key added in one language cannot ship missing from the other.
+- **Expect (negative):** No raw message key and no crash appears in either
+  language, in any pane or error state.
 - **Trace:** apps/desktop/src/features/settings/General.tsx (language
   control), apps/desktop/src/data/locale.tsx (`LocaleProvider`/`useLocale`/
   `changeLocale`), apps/desktop/src/data/locale-meta.ts (native name + flag,
   accessible-name rule), apps/desktop/src/features/settings/SettingsPage.tsx
   (`LocaleProvider` mount point for the whole Settings surface),
-  tests/e2e/settings_appearance_i18n.spec.ts ("Language switcher"), spec 061.
+  tests/e2e/settings_appearance_i18n.spec.ts ("Language switcher"), spec 061;
+  `apps/desktop/messages/en-GB.json` and `pt-BR.json` (2258 keys each,
+  counted with `python3 -c "import json;
+  print(len(json.load(open(...))))"`), drift gate
+  `scripts/check-i18n-locale-drift.mjs` wired into `apps/desktop`'s `lint`
+  script (`apps/desktop/package.json:16`, `:24`); PR #1379, PR #1414.
 
 ## Success criteria
 - SC1: Every control across all 14 panes does something observable,
@@ -397,9 +432,15 @@ Note: Release builds lack the /dev/contracts palette entry by design
   tests/e2e/settings_appearance_i18n.spec.ts ("Whole-app zoom envelope
   pins").
 - SC7: Selecting a non-base UI language (S12) never produces a raw key or a
-  crash — untranslated keys fall back to English text — and the choice
-  persists across a restart; CI-pinned in
-  tests/e2e/settings_appearance_i18n.spec.ts ("Language switcher").
+  crash, the two catalogues hold an identical key set (2258 each), and the
+  choice persists across a restart; CI-pinned in
+  tests/e2e/settings_appearance_i18n.spec.ts ("Language switcher") and gated by
+  `scripts/check-i18n-locale-drift.mjs`.
+- SC8: The Target Planner threshold (S5) reads back its clamped value after a
+  pane switch and after a restart, for both an in-range and an out-of-range
+  entry.
+- SC9: Every entry the command palette lists resolves to a route that exists;
+  zero entries redirect silently (S7).
 
 ## Known gaps
 - G1: (dissolved 2026-07-15, resolved 2026-07-15) — tracked as issue #587;
@@ -524,3 +565,48 @@ Note: Release builds lack the /dev/contracts palette entry by design
   allowed to be partial as long as it falls back to English text instead of
   a raw key. Full pt-BR coverage is spec 061 US3, not yet done.
   Evidence: spec 061 US2 (T013–T016) · by: journey-scribe (intent-gated)
+
+- **Δ12** 2026-08-24 · S5, +SC8 · behavior-change
+  The Target Planner's usable-altitude threshold now clamps out-of-range input
+  into 0–90 at commit and persists through the settings store, surviving a pane
+  switch and a restart; it previously reverted to the 30° default.
+  Evidence: PR #1078 (18a52c244), issue #823 · by: journey-scribe (intent-gated)
+
+- **Δ13** 2026-08-24 · S7, +SC9 · behavior-change
+  The command palette's Pages group no longer lists routes that do not exist:
+  the three entries that silently redirected (`/review`, `/plans`, `/audit`)
+  are gone, leaving Sessions, Calibration, Targets, Projects and Settings, plus
+  `/dev/contracts` in a `dev-tools` build.
+  Evidence: PR #1060 (7451e0b69), issue #617 · by: journey-scribe (intent-gated)
+
+- **Δ14** 2026-08-24 · S9 · behavior-change
+  Advanced's danger controls stopped pretending: "Export database" is disabled
+  with a title stating it is not backed yet, and "Reset preferences" is a real,
+  confirm-gated action, where both were `console.log` no-ops styled as live
+  controls. "Restart guided flow" is gone — the pane now offers "Replay
+  orientation" and "Restore getting started" (J18).
+  Evidence: PR #1065 (923dedb1d), PR #1087 (f41d2f270), issue #601; PR #1048
+  (ea22487eb) for the onboarding controls · by: journey-scribe (intent-gated)
+
+- **Δ15** 2026-08-24 · S9 · behavior-change
+  "Restore defaults" is now offered on 11 panes rather than 8 — Appearance and
+  Target Resolution and Source Views gained it — each calling the pane's own
+  reset and refetching.
+  Evidence: PR #1005 (376129965), PR #1387 (99a2d65f8) · by: journey-scribe
+  (intent-gated)
+
+- **Δ16** 2026-08-24 · S3 · behavior-change
+  Calibration Matching's saves now round-trip (`exposureToleranceS` carries a
+  real default instead of a `null` that failed backend deserialisation) and the
+  values it stores now actually drive matching — the age limit and the
+  gain/binning match-required toggles were previously dead config (J08/S8).
+  Evidence: PR #1078 (18a52c244), issue #639; PR #1692 (03d61d21b) · by:
+  journey-scribe (intent-gated)
+
+- **Δ17** 2026-08-24 · S12, SC7 · behavior-change
+  Brazilian Portuguese is a complete catalogue rather than a five-key stub:
+  both languages carry the same 2258 keys, and catalogue drift between them
+  fails the build, so choosing pt-BR translates the app instead of falling back
+  to English almost everywhere.
+  Evidence: PR #1379 (b4e1c8e8c), PR #1414 (12865328c) · by: journey-scribe
+  (intent-gated)

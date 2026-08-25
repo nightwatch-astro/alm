@@ -21,7 +21,7 @@ triaging in the Inbox.
 
 **Pipeline reality** (grounding): `scan_start` is a stub. The real ingestion path is the Inbox
 pipeline — `inbox_scan_folder` (scan a folder) → `inbox_classify` (group/classify detections) —
-with `inbox_confirm` performing per-group approval. `crates/app/core/src/inbox/confirm.rs` is
+with `inbox_confirm` performing per-group approval. `crates/app/inbox/src/confirm.rs` is
 real and tested. This feature drives the existing **scan + classify** commands from the wizard;
 **confirm/approval stays in the Inbox** (decided).
 

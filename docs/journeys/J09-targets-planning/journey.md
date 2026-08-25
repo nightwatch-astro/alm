@@ -1,12 +1,12 @@
 ---
 id: J09
 title: Find, add, and plan around an astrophotography target
-version: 7
+version: 8
 status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [targets]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration journey.md @ git 66026463
   - deltas/2026-07-14-jval-docdrift.md (folded: astronomy columns real, favourites DB-backed, aria-sort, library-vs-seed correction)
@@ -27,6 +27,7 @@ trace:
   - spec-054-adaptive-detail-dock (FR-002, FR-006, FR-007, FR-008, FR-009 —
     adaptive detail dock, scrollable panel body, pinned/no-auto-hide table
     columns)
+  - PR #1719 (a truncated resolve cache is recreated instead of crashing)
 ---
 
 ## Goal
@@ -127,9 +128,20 @@ configured) real per-site astronomy for tonight.
   (raised stacking order) and are visible/clickable for a real mouse-driven
   user — previously correct in the DOM but clipped invisible beneath the
   dialog.
+- **Expect (negative):** A damaged resolve cache never takes the app down and
+  never loses anything the user authored: a cache file left truncated by an
+  unclean shutdown or a torn write is deleted and recreated, because the cache
+  is a reproducible projection of the bundled seed and the stored canonical
+  targets. If the file cannot be recreated, the failure is reported as a
+  resolve error rather than crashing.
 - **Trace:** commits 6b263a1e, 94dfa492, 1efdc0c5, fd87e99c, 6a51dfd5,
   ba68bf27; journey-run-2026-07-14.md Journey 9 section. PR #905 fixes #815
   (`apps/desktop/src/features/targets/AddTargetDialog.tsx`).
+- **Trace (cache recovery):**
+  `crates/targeting/resolver/src/simbad/cache.rs:35-52` (a redb file that
+  aborts the open through a release-live `assert!` is deleted and reopened
+  once), `:53-67` (`ResolveError::Network` when it cannot be removed or
+  recreated); PR #1719.
 
 ### S3 — Review and edit target identity {#S3}
 - **Do:** Open a target's detail panel. Add or remove an alias, set or clear
@@ -317,3 +329,11 @@ records these as spec-only, and issues #619/#620 (still OPEN as of
 component, and `TargetsTable.tsx`'s unknown-coordinates / no-site branches
 still render a plain "—", not the FR-137 "unresolved chip". Not verifiably
 shipped for this surface — left out of current-truth steps.
+
+- **Δ8** 2026-08-24 · S2 · behavior-change
+  A resolve-cache file left truncated by an unclean shutdown or a torn write is
+  now deleted and recreated instead of aborting the app: the cache is a
+  reproducible projection of the bundled seed and the stored canonical targets,
+  so nothing user-authored is lost, and a file that cannot be recreated is
+  reported as a resolve error.
+  Evidence: PR #1719 (54615f80e) · by: journey-scribe (intent-gated)

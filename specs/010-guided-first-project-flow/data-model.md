@@ -88,7 +88,7 @@ read (corrupt JSON, unknown state value, schema mismatch):
 
 Single SQLite table `guided_flow_state` with one row enforced by a check
 constraint or a singleton primary key. Migrations owned by
-`crates/persistence/db`.
+`crates/persistence/core`.
 
 ## Relationship To Other Specs
 

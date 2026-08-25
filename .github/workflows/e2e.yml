@@ -40,8 +40,11 @@
 #   Layer-1 `cargo test --workspace` job (ci.yml) — which has no
 #   tauri-webdriver CLI, no e2e-feature app build, and no served frontend —
 #   skips them; this workflow opts back in with `--run-ignored all`.
-#   `--no-tests=warn` is kept only as a defensive fallback; it should never
-#   actually trigger since every journey runs on both Linux and Windows.
+#   Every nextest invocation here spells `--no-tests=fail` explicitly:
+#   `taiki-e/install-action@nextest` installs the latest release, so nextest's
+#   own default is not pinned by this workflow. An empty selection means a
+#   filter, shard partition, or archive is broken, never that there is nothing
+#   to run.
 # - The Linux + Windows matrix proves the runner AND the journeys work on the
 #   supported platforms.
 # - This workflow runs independently of ci.yml (Layer-1 integration). Ordering /
@@ -281,6 +284,7 @@ jobs:
         env:
           DISPATCHED: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
+          set -euo pipefail
           run=false
           if [ "$DISPATCHED" = "true" ] \
             || [ "${{ steps.filter.outputs.force_full }}" = "true" ] \
@@ -392,6 +396,7 @@ jobs:
         id: appkey
         shell: bash
         run: |
+          set -euo pipefail
           key=$(bash scripts/e2e-app-cache-key.sh)
           # An empty key would silently degrade to a bare prefix shared by
           # every commit — the worst case, a permanent stale hit. Fail loudly.
@@ -432,6 +437,7 @@ jobs:
         id: verify-app-cache
         shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ steps.app-cache.outputs.cache-hit }}" = "true" ] && [ -x "${{ env.APP_BIN }}" ]; then
             echo "app_usable=true" >> "$GITHUB_OUTPUT"
           else
@@ -453,7 +459,7 @@ jobs:
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
             libayatana-appindicator3-dev
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.0
         if: steps.verify-app-cache.outputs.app_usable != 'true' || steps.verify-app-cache.outputs.archive_usable != 'true'
 
       # cache-on-failure deliberately left at its default (false). Saving from a
@@ -529,6 +535,7 @@ jobs:
         id: appkey
         shell: bash
         run: |
+          set -euo pipefail
           key=$(bash scripts/e2e-app-cache-key.sh)
           # An empty key would silently degrade to a bare prefix shared by
           # every commit — the worst case, a permanent stale hit. Fail loudly.
@@ -564,6 +571,7 @@ jobs:
         id: verify-app-cache
         shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ steps.app-cache.outputs.cache-hit }}" = "true" ] && [ -f "${{ env.APP_BIN }}" ]; then
             echo "app_usable=true" >> "$GITHUB_OUTPUT"
           else
@@ -575,7 +583,7 @@ jobs:
             echo "archive_usable=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.0
         if: steps.verify-app-cache.outputs.app_usable != 'true' || steps.verify-app-cache.outputs.archive_usable != 'true'
 
       - uses: Swatinem/rust-cache@v2
@@ -636,6 +644,7 @@ jobs:
         id: appkey
         shell: bash
         run: |
+          set -euo pipefail
           key=$(bash scripts/e2e-app-cache-key.sh)
           # An empty key would silently degrade to a bare prefix shared by
           # every commit — the worst case, a permanent stale hit. Fail loudly.
@@ -671,6 +680,7 @@ jobs:
         id: verify-app-cache
         shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ steps.app-cache.outputs.cache-hit }}" = "true" ] && [ -f "${{ env.APP_BIN }}" ]; then
             echo "app_usable=true" >> "$GITHUB_OUTPUT"
           else
@@ -682,7 +692,7 @@ jobs:
             echo "archive_usable=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.0
         if: steps.verify-app-cache.outputs.app_usable != 'true' || steps.verify-app-cache.outputs.archive_usable != 'true'
 
       - uses: Swatinem/rust-cache@v2
@@ -811,8 +821,9 @@ jobs:
         # --filter-expr selects exactly the smoke subset by test name. The
         # expression is an OR of exact name matches — no glob, no substring —
         # so a new journey with a similar name does not silently join the smoke
-        # run. `--no-tests=warn` is a defensive fallback (the filter should
-        # always match at least one test).
+        # run. This job publishes a branch-protection-required check and has no
+        # shard-coverage check behind it, so `--no-tests=fail` is the only thing
+        # standing between a renamed journey and a green check that ran nothing.
         run: >-
           xvfb-run -s "-screen 0 1600x1200x24" -a
           cargo nextest run
@@ -820,7 +831,7 @@ jobs:
           --workspace-remap .
           --profile e2e
           --run-ignored all
-          --no-tests=warn
+          --no-tests=fail
           --filter-expr 'test(all_top_level_screens_load) | test(inbox_ui_mixed_folder_splits_into_single_type_items) | test(targets_ui_add_target_no_duplicate_on_reconfirm)'
 
   # Gate for the smoke job, and the ONLY publisher of
@@ -992,7 +1003,7 @@ jobs:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           WEBKIT_DISABLE_COMPOSITING_MODE: "1"
           PV_E2E_APP_BIN: ${{ github.workspace }}/${{ env.APP_BIN }}
-        run: xvfb-run -s "-screen 0 1600x1200x24" -a cargo nextest run --archive-file e2e-archive.tar.zst --workspace-remap . --profile e2e --run-ignored all --no-tests=warn --partition hash:${{ matrix.shard }}/4
+        run: xvfb-run -s "-screen 0 1600x1200x24" -a cargo nextest run --archive-file e2e-archive.tar.zst --workspace-remap . --profile e2e --run-ignored all --no-tests=fail --partition hash:${{ matrix.shard }}/4
 
   # Copy of real-ui-e2e-ubuntu for Windows (no Linux deps/xvfb/chmod).
   #
@@ -1153,6 +1164,13 @@ jobs:
             --run-ignored all --message-format oneline \
             -E "${SHARD1} | ${SHARD2} | ${SHARD3}" | wc -l)
           echo "Total tests: ${TOTAL}, covered by shard union: ${UNION}"
+          # An empty or truncated archive makes both counts 0, which satisfies
+          # the equality below — the coverage check would pass having measured
+          # nothing. Assert a positive total before comparing.
+          if [ "${TOTAL}" -eq 0 ]; then
+            echo "::error::Archive lists zero tests. The e2e archive is empty or truncated; shard coverage cannot be verified."
+            exit 1
+          fi
           if [ "${TOTAL}" != "${UNION}" ]; then
             echo "::error::Shard coverage gap: ${TOTAL} tests in archive but only ${UNION} covered by the three shard filters. Add the missing test(s) to an -E expression."
             exit 1
@@ -1170,7 +1188,7 @@ jobs:
           --workspace-remap .
           --profile e2e
           --run-ignored all
-          --no-tests=warn
+          --no-tests=fail
           -E 'test(=slow_targets_ui_dock_pin_and_width_survive_a_real_restart) | test(=inbox_ui_missing_path_attribute_banner_blocks_confirm) | test(=inbox_ui_mixed_folder_splits_into_single_type_items) | test(=inbox_ui_unsplit_unclassified_folder_badge_is_not_classified) | test(=settings_ui_theme_applies_live_and_persists_to_settings_db)'
 
       # Shard 2 (~103s): slow_archive (25.5s) + 11 mid-range tests.
@@ -1185,7 +1203,7 @@ jobs:
           --workspace-remap .
           --profile e2e
           --run-ignored all
-          --no-tests=warn
+          --no-tests=fail
           -E 'test(=slow_archive_lifecycle_apply_trash_permanent_delete) | test(=targets_planner_real_astronomy_after_site_creation) | test(=targets_ui_identity_columns_stay_pinned_while_table_scrolls) | binary(calibration_ui_journeys) | binary(lifecycle_ui_journeys) | binary(source_view_journeys) | test(=ingestion_sessions_search) | binary(sessions_journeys) | test(=plan_review_empty_archive_plan_refuses_apply) | test(=plan_review_apply_with_audit) | test(=lifecycle_integrity)'
 
       # Shard 3 (~104s): no slow_ test, 13 mid-range tests.
@@ -1200,7 +1218,7 @@ jobs:
           --workspace-remap .
           --profile e2e
           --run-ignored all
-          --no-tests=warn
+          --no-tests=fail
           -E 'test(=inbox_ui_confirm_does_not_move_then_apply_moves_to_shown_destination) | binary(smoke) | test(=targets_ui_add_target_no_duplicate_on_reconfirm) | binary(inventory_journeys) | test(=cleanup_plan_review) | test(=inbox_ui_catalogue_in_place_zero_moves_byte_identical) | test(=plan_review_destructive_confirm_gate_and_apply) | test(=targets_ui_astronomy_columns_disclose_placeholder_without_site) | binary(onboarding_journey) | binary(cleanup_protection_gate_journey) | test(=first_run_resolve_create_project) | test(=inbox_ui_unclassified_gate_bulk_reclassify_unblocks_confirm) | test(=settings_ui_ingestion_toggle_autosaves_no_global_save_button)'
 
   # Copy of real-ui-e2e-ubuntu for the dispatch-only macOS chain (issue #489):
@@ -1295,7 +1313,7 @@ jobs:
         shell: bash
         env:
           PV_E2E_APP_BIN: ${{ github.workspace }}/${{ env.APP_BIN }}
-        run: cargo nextest run --archive-file e2e-archive.tar.zst --workspace-remap . --profile e2e --run-ignored all --no-tests=warn --partition hash:${{ matrix.shard }}/2
+        run: cargo nextest run --archive-file e2e-archive.tar.zst --workspace-remap . --profile e2e --run-ignored all --no-tests=fail --partition hash:${{ matrix.shard }}/2
 
   # ---------------------------------------------------------------------------
   # Per-OS gates preserving the pre-DAG check names ("Real-UI E2E — <os>").

@@ -161,6 +161,39 @@ find_rs_files() {
     fi
 }
 
+# Files the last require_source_roots call enumerated; printed by the OK line so
+# the verdict names the corpus it was derived from.
+SCANNED_FILES=0
+
+# Refuse a source root that enumerates nothing.
+#
+# The dead set is "definitions no line mentions", so an empty enumeration yields
+# an empty set and the gate prints OK over zero files. find_rs_files runs inside
+# command substitution at every call site, where its exit status is discarded, so
+# the floor is asserted here rather than in the walk.
+require_source_roots() {
+    local failed=0 root n
+    SCANNED_FILES=0
+    for root in "$@"; do
+        if [ ! -d "$root" ]; then
+            echo "FATAL: source root missing: $root" >&2
+            failed=1
+            continue
+        fi
+        n="$(find "$root" -type f -name '*.rs' -not -path '*/tests/*' | grep -c . || true)"
+        if [ "$n" -eq 0 ]; then
+            echo "FATAL: source root enumerated 0 production .rs files: $root" >&2
+            failed=1
+            continue
+        fi
+        SCANNED_FILES=$((SCANNED_FILES + n))
+    done
+    if [ "$failed" -ne 0 ]; then
+        echo "The source tree moved or the walk is broken; this gate cannot report zero dead functions until that is fixed." >&2
+        return 1
+    fi
+}
+
 # Emit the sorted list of module-level `pub fn` names in $1 (a crates/ root)
 # that no production line outside their own definition mentions.
 collect_dead() {
@@ -212,6 +245,13 @@ collect_dead() {
         | xargs -0 grep -hE '^pub (async )?fn [a-z_0-9]+' \
         | sed -E 's/^pub (async )?fn ([a-z_0-9]+).*/\2/' \
         | sort -u > "$defs"
+
+    # Zero definitions produce zero dead names, which is the same output as a
+    # fully-called tree.
+    if [ "$(grep -c . < "$defs" || true)" -eq 0 ]; then
+        echo "FATAL: 0 module-level pub fn definitions found under $crates_root; the walk or the definition pattern is broken." >&2
+        return 1
+    fi
 
     # shellcheck disable=SC2016  # the awk program is literal, not shell-expanded
     find_rs_files "${roots[@]}" -type f -name '*.rs' -not -path '*/tests/*' \
@@ -267,7 +307,423 @@ collect_dead() {
     ' "$corpus" | sort
 }
 
-# doc comment, one called only AFTER an inline test module (guards the
+# Require every NEWLY baselined name to carry a tracking reference in the
+# comment block directly above it.
+#
+# Why: an entry here means "implemented, tested, and never called by shipped
+# code". That is a debt item, but the file was being used as a suppression list
+# -- 131 of 148 entries carried no bead or issue reference when this check was
+# added, so nothing connected them back to work that would remove them. An
+# untracked entry reads as settled, and a feature that never runs can then sit
+# indefinitely while specs report it as shipped. That is exactly how
+# `acquisition_fingerprint`'s missing writer disabled calibration matching for
+# ~2.5 months (astro-plan-siyk, fixed in #1655) and the pattern recorded on
+# astro-plan-68c7.
+#
+# Deliberately grandfathered: existing entries are NOT retro-required to carry a
+# reference. Demanding 131 back-annotations at once would either block unrelated
+# work or get satisfied with a copy-pasted placeholder, which is worse than
+# silence because it looks like tracking. New entries only, so the file shrinks
+# toward being fully tracked as it turns over.
+#
+# Accepts an `astro-plan-*` bead id or a `#NNNN` issue reference anywhere in the
+# preceding comment block.
+#
+# One comment block covers the whole contiguous group of names beneath it, which
+# is how the file is already written (see the groups at
+# scripts/dead-callers-baseline.txt:32-48 and :71-96). A blank line ends a group;
+# a comment line following a name starts a new block rather than extending the
+# previous one.
+classify_baseline() {
+    awk '
+        /^[[:space:]]*#/ {
+            # A comment after a name opens a new block instead of appending to
+            # the one that covered the group above it.
+            if (after_name) { block = ""; after_name = 0 }
+            block = block " " $0
+            next
+        }
+        /^[[:space:]]*$/ { block = ""; after_name = 0; next }
+        {
+            after_name = 1
+            print (block ~ /astro-plan-[a-z0-9.]+|#[0-9]+/ ? "T" : "U") "\t" $0
+        }
+    '
+}
+
+# Names in $2 (current baseline file) that violate the tracking rule, relative to
+# $1 (base-revision baseline file). Prints `new<TAB>name` or `regressed<TAB>name`.
+tracking_violations() {
+    local base="$1" current="$2"
+    local base_class current_class
+    base_class="$(classify_baseline <"$base")"
+    current_class="$(classify_baseline <"$current")"
+
+    local current_untracked
+    current_untracked="$(printf '%s\n' "$current_class" | awk -F'\t' '$1 == "U" { print $2 }' | sort -u)"
+    [ -n "$current_untracked" ] || return 0
+
+    # (1) Names this revision ADDS must carry a reference. Pre-existing untracked
+    # names stay grandfathered.
+    comm -13 \
+        <(printf '%s\n' "$base_class" | cut -f2 | sort -u) \
+        <(printf '%s\n' "$current_untracked") \
+        | sed 's/^/new\t/'
+
+    # (2) A name that HAD a reference in the base and lost it is a regression:
+    # without this the ratchet holds only until the entry lands, after which the
+    # comment can be deleted while the name stays put.
+    comm -12 \
+        <(printf '%s\n' "$base_class" | awk -F'\t' '$1 == "T" { print $2 }' | sort -u) \
+        <(printf '%s\n' "$current_untracked") \
+        | sed 's/^/regressed\t/'
+}
+
+# Merge base of HEAD and the base ref, echoed on stdout. Empty means no merge
+# base could be reached, which the caller treats as a hard failure under CI.
+#
+# Why this fetches: the `integration` job in .github/workflows/ci.yml -- the one
+# whose `Dead-caller ratchet` step runs this script on PRs and in the merge queue
+# -- checks out at the `actions/checkout@v4` default depth, which populates the
+# event ref only. `origin/main` does not exist there, so a bare `git show
+# origin/main:...` fails and the gate skipped itself on every PR. In the
+# `dead-caller-main` job `origin/main` IS present but points at the commit just
+# pushed, so the baseline would be compared with itself and nothing ever reads as
+# added; the HEAD~1 fallback below makes that run check the commit's own additions
+# instead.
+#
+# Why it deepens rather than falling back to the ref tip: the tip is not the
+# branch point. Every name main DELETED from the baseline after the branch point
+# is absent from the tip and present on the branch, so it reads as a name this
+# branch added -- on the last six baseline-touching commits that is 39 names, and
+# a branch that never opens the file fails the gate. A depth-1 checkout has no
+# common ancestor to find, so the history is deepened until one exists.
+resolve_base_commit() {
+    local ref="${DEAD_CALLERS_BASE_REF:-origin/main}"
+    if ! git -C "$ROOT" rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1; then
+        git -C "$ROOT" fetch --quiet --depth=1 origin \
+            "+refs/heads/${ref#origin/}:refs/remotes/origin/${ref#origin/}" >/dev/null 2>&1 || true
+        git -C "$ROOT" rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || return 0
+    fi
+
+    # `--deepen` alone often suffices and avoids a full history fetch, but it only
+    # extends refs under the remote's refspec: the checked-out branch keeps its own
+    # shallow graft, and merge-base cannot walk past it. `--unshallow` recomputes
+    # every graft, so it is the rung that always resolves.
+    local base attempt
+    base="$(git -C "$ROOT" merge-base HEAD "$ref" 2>/dev/null)" || base=""
+    for attempt in --deepen=50 --unshallow; do
+        [ -z "$base" ] || break
+        [ "$(git -C "$ROOT" rev-parse --is-shallow-repository)" = true ] || break
+        git -C "$ROOT" fetch --quiet "$attempt" origin >/dev/null 2>&1 || break
+        base="$(git -C "$ROOT" merge-base HEAD "$ref" 2>/dev/null)" || base=""
+    done
+    [ -n "$base" ] || return 0
+
+    if [ "$base" = "$(git -C "$ROOT" rev-parse HEAD)" ]; then
+        git -C "$ROOT" rev-parse --verify --quiet 'HEAD~1^{commit}' >/dev/null 2>&1 || return 0
+        base="$(git -C "$ROOT" rev-parse 'HEAD~1')"
+    fi
+    printf '%s' "$base"
+}
+
+check_tracking_references() {
+    local base_commit baseline_rel
+    base_commit="$(resolve_base_commit)"
+    if [ -z "$base_commit" ]; then
+        # Failing closed in CI: a skip here is what let the check pass on every
+        # PR while reading as enforced.
+        if [ -n "${CI:-}" ]; then
+            echo "FAIL: cannot resolve a base to compare the baseline against (base ref ${DEAD_CALLERS_BASE_REF:-origin/main})." >&2
+            echo "This checkout has no merge base with that ref and no HEAD~1. Deepen it (fetch-depth) in the workflow, or set DEAD_CALLERS_BASE_REF." >&2
+            return 1
+        fi
+        echo "NOTE: no merge base available locally; skipping the tracking check."
+        return 0
+    fi
+
+    # `git show` needs a repo-relative path; $BASELINE is absolute.
+    baseline_rel="$(git -C "$SCRIPT_DIR" rev-parse --show-prefix 2>/dev/null)dead-callers-baseline.txt"
+
+    local base_file violations
+    base_file="$(mktemp)"
+    # shellcheck disable=SC2064  # expand now, not at trap time
+    trap "rm -f '$base_file'" RETURN
+    if ! git -C "$ROOT" show "$base_commit:$baseline_rel" >"$base_file" 2>/dev/null; then
+        echo "NOTE: no baseline file at $base_commit; skipping the tracking check."
+        return 0
+    fi
+
+    violations="$(tracking_violations "$base_file" "$BASELINE")"
+    [ -n "$violations" ] || return 0
+
+    echo "FAIL: baseline entries without a tracking reference (base $base_commit):" >&2
+    printf '%s\n' "$violations" \
+        | sed -e 's/^new\t/  added:     /' -e 's/^regressed\t/  lost ref:  /' >&2
+    cat >&2 <<'EOF'
+
+An entry here means the function is implemented and tested but never called by
+shipped code. Add a comment directly above it naming the bead or issue that will
+remove it -- an `astro-plan-*` id or `#NNNN`. One comment block covers the whole
+group of names under it, so joining an existing group is enough.
+
+`lost ref` means the entry HAD a reference and no longer does. Restore it rather
+than leaving the name behind, or the tracking holds only until the entry lands.
+
+Without a reference the entry reads as settled rather than owed, and a feature
+that never runs can sit here indefinitely while the specs call it shipped. If the
+function is genuinely not needed, delete it instead of baselining it.
+EOF
+    return 1
+}
+
+# Prove the tracking rule on fixture baselines where the answer is known.
+#
+# Needed because the real baseline passes the check, which is indistinguishable
+# from a check that classifies nothing: every way this can break is silent. The
+# group-carrying and lost-reference cases in particular each shipped as a bug in
+# the first version of this block.
+tracking_self_test() {
+    local tmp failures=0
+    tmp="$(mktemp -d)"
+    # shellcheck disable=SC2064  # expand $tmp now, not at trap time
+    trap "rm -rf '$tmp'" RETURN
+
+    expect() {  # expect <label> <expected> <actual>
+        [ "$2" = "$3" ] && return 0
+        echo "FAIL: tracking self-test: $1" >&2
+        echo "  expected: [$2]" >&2
+        echo "  actual:   [$3]" >&2
+        failures=$((failures + 1))
+    }
+
+    # A comment block covers every name in its group; a blank line ends the group;
+    # a comment after a name opens a new block.
+    cat >"$tmp/classify" <<'FIX'
+# tracked by astro-plan-abcd
+group_first
+group_second
+
+untracked_after_blank
+# no reference in this block
+new_block_name
+FIX
+    expect 'group carrying + blank/new-block resets' \
+        'T group_first|T group_second|U untracked_after_blank|U new_block_name' \
+        "$(classify_baseline <"$tmp/classify" | awk -F'\t' '{ printf "%s%s %s", sep, $1, $2; sep = "|" }')"
+
+    # A `#NNNN` issue reference is accepted alongside a bead id.
+    printf '# see #1655\nissue_tracked\n' >"$tmp/issue"
+    expect 'issue reference is accepted' 'T issue_tracked' \
+        "$(classify_baseline <"$tmp/issue" | tr '\t' ' ')"
+
+    printf '# tracked by astro-plan-aaaa\nkept_tracked\n\nold_untracked\n' >"$tmp/base"
+
+    # Grandfathered: an untracked name already in the base is not reported.
+    expect 'pre-existing untracked name is grandfathered' '' \
+        "$(tracking_violations "$tmp/base" "$tmp/base")"
+
+    # A new name with no reference is reported; one sharing a tracked group is not.
+    printf '# tracked by astro-plan-aaaa\nkept_tracked\nadded_in_group\n\nold_untracked\nadded_bare\n' >"$tmp/added"
+    expect 'new untracked name reported, group-mate accepted' 'new	added_bare' \
+        "$(tracking_violations "$tmp/base" "$tmp/added")"
+
+    # Deleting the comment from a landed entry is a regression, not a pass.
+    printf 'kept_tracked\n\nold_untracked\n' >"$tmp/regressed"
+    expect 'a landed entry losing its reference is reported' 'regressed	kept_tracked' \
+        "$(tracking_violations "$tmp/base" "$tmp/regressed")"
+
+    if [ "$failures" -gt 0 ]; then
+        echo "FAIL: tracking self-test: $failures case(s) failed." >&2
+        return 1
+    fi
+    echo "OK: tracking self-test passed — group blocks carry, grandfathering holds, lost references fail."
+}
+
+# Prove the tracking check compares against the branch point and not the base-ref
+# tip, on a depth-1 checkout shaped like the PR job.
+#
+# Needed because a wrong base raises no error of its own: names main deleted from
+# the baseline after the branch point are absent from the tip and present on the
+# branch, so they print in the same "added:" list as a genuine violation. The
+# fixture main deletes `deleted_on_main` on a commit the branch never has, which
+# is the exact shape that reported 39 names on branches that never opened the
+# file.
+#
+# The main-push half covers the other shape: on a push to main `origin/main` is
+# the commit just pushed, the merge base degenerates to HEAD, and the base can
+# only come from HEAD~1. That shape turned main red for three consecutive pushes
+# (astro-plan-9tbwc) while this self-test stayed green, because only the
+# feature-branch shape was constructed.
+base_resolution_self_test() {
+    local tmp up work branch_point resolved out rc=0
+    tmp="$(mktemp -d)"
+    # shellcheck disable=SC2064  # expand $tmp now, not at trap time
+    trap "rm -rf '$tmp'" RETURN
+    up="$tmp/up"
+    work="$tmp/work"
+
+    git init --quiet -b main "$up" >/dev/null 2>&1
+    git -C "$up" config user.email dead-callers@example.invalid
+    git -C "$up" config user.name dead-callers-self-test
+    git -C "$up" config commit.gpgsign false
+    mkdir -p "$up/scripts"
+    printf '# tracked by astro-plan-aaaa\nkept\n\ndeleted_on_main\n' \
+        >"$up/scripts/dead-callers-baseline.txt"
+    git -C "$up" add -A
+    git -C "$up" commit --quiet -m 'branch point'
+    branch_point="$(git -C "$up" rev-parse HEAD)"
+
+    git -C "$up" checkout --quiet -b feature
+    printf 'untouched baseline\n' >"$up/unrelated.txt"
+    git -C "$up" add -A
+    git -C "$up" commit --quiet -m 'branch work that never opens the baseline'
+
+    git -C "$up" checkout --quiet main
+    printf '# tracked by astro-plan-aaaa\nkept\n' >"$up/scripts/dead-callers-baseline.txt"
+    git -C "$up" add -A
+    git -C "$up" commit --quiet -m 'main drops deleted_on_main'
+
+    # The tip adds an untracked name, so a main-push run that resolves its base
+    # correctly has a violation to find, while one that compares the tip with
+    # itself finds nothing.
+    printf '# tracked by astro-plan-aaaa\nkept\n\npushed_untracked\n' \
+        >"$up/scripts/dead-callers-baseline.txt"
+    git -C "$up" add -A
+    git -C "$up" commit --quiet -m 'main push adds an untracked name'
+    local pushed_parent
+    pushed_parent="$(git -C "$up" rev-parse 'HEAD~1')"
+
+    git clone --quiet --depth=1 "file://$up" "$work" >/dev/null 2>&1
+    git -C "$work" fetch --quiet --depth=1 origin \
+        '+refs/heads/feature:refs/remotes/origin/feature' >/dev/null 2>&1
+    git -C "$work" checkout --quiet --detach origin/feature >/dev/null 2>&1
+
+    resolved="$(ROOT="$work" DEAD_CALLERS_BASE_REF=origin/main resolve_base_commit)"
+    if [ "$resolved" != "$branch_point" ]; then
+        echo "FAIL: base-resolution self-test: base is not the branch point." >&2
+        echo "  expected: [$branch_point]" >&2
+        echo "  actual:   [$resolved]" >&2
+        return 1
+    fi
+
+    out="$(ROOT="$work" SCRIPT_DIR="$work/scripts" \
+        BASELINE="$work/scripts/dead-callers-baseline.txt" \
+        DEAD_CALLERS_BASE_REF=origin/main CI=1 check_tracking_references 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "FAIL: base-resolution self-test: a branch that never edits the baseline was rejected." >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    # Main-push shape. `origin/main` IS the commit just pushed, so the merge base
+    # degenerates to HEAD and only HEAD~1 can serve as a base. A depth-1 checkout
+    # has no HEAD~1, so the gate has no base at all and fails closed; depth 2 is
+    # the shallowest checkout that resolves. The `fetch-depth: 2` on every ci.yml
+    # job running this script is load-bearing for that reason, not incidental.
+    local push_work
+    push_work="$tmp/push-depth1"
+    git clone --quiet --depth=1 "file://$up" "$push_work" >/dev/null 2>&1
+    if [ "$(git -C "$push_work" rev-parse HEAD)" \
+        != "$(git -C "$push_work" rev-parse origin/main)" ]; then
+        echo "FAIL: base-resolution self-test: the main-push fixture does not have origin/main == HEAD." >&2
+        return 1
+    fi
+
+    resolved="$(ROOT="$push_work" DEAD_CALLERS_BASE_REF=origin/main resolve_base_commit)"
+    if [ -n "$resolved" ]; then
+        echo "FAIL: base-resolution self-test: a depth-1 main push resolved a base it cannot have." >&2
+        echo "  expected: []" >&2
+        echo "  actual:   [$resolved]" >&2
+        return 1
+    fi
+
+    rc=0
+    out="$(ROOT="$push_work" SCRIPT_DIR="$push_work/scripts" \
+        BASELINE="$push_work/scripts/dead-callers-baseline.txt" \
+        DEAD_CALLERS_BASE_REF=origin/main CI=1 check_tracking_references 2>&1)" || rc=$?
+    if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'cannot resolve a base'; then
+        echo "FAIL: base-resolution self-test: a depth-1 main push did not fail closed on an unresolvable base." >&2
+        echo "  exit:   [$rc]" >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    push_work="$tmp/push-depth2"
+    git clone --quiet --depth=2 "file://$up" "$push_work" >/dev/null 2>&1
+    resolved="$(ROOT="$push_work" DEAD_CALLERS_BASE_REF=origin/main resolve_base_commit)"
+    if [ "$resolved" != "$pushed_parent" ]; then
+        echo "FAIL: base-resolution self-test: a depth-2 main push did not fall back to HEAD~1." >&2
+        echo "  expected: [$pushed_parent]" >&2
+        echo "  actual:   [$resolved]" >&2
+        return 1
+    fi
+
+    rc=0
+    out="$(ROOT="$push_work" SCRIPT_DIR="$push_work/scripts" \
+        BASELINE="$push_work/scripts/dead-callers-baseline.txt" \
+        DEAD_CALLERS_BASE_REF=origin/main CI=1 check_tracking_references 2>&1)" || rc=$?
+    if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'pushed_untracked'; then
+        echo "FAIL: base-resolution self-test: a depth-2 main push did not read the pushed commit's own additions." >&2
+        echo "  exit:   [$rc]" >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    echo "OK: base-resolution self-test passed — the base is the branch point on a branch, HEAD~1 on a main push, and a depth-1 main push fails closed."
+}
+
+# Require every ci.yml job that runs the ratchet to check out at least two
+# commits.
+#
+# Needed because the depth requirement is unobservable from inside the script:
+# the fixture cases above prove a depth-1 main push has no base and fails closed,
+# but nothing stops a workflow from checking out at depth 1 anyway. That is the
+# defect itself -- it reddened main for three consecutive pushes
+# (astro-plan-9tbwc, fixed in #1728) with every self-test green, because the depth
+# lives in the workflow while the failure surfaces here. `fetch-depth: 0` (full
+# history) also satisfies this.
+checkout_depth_self_test() {
+    local workflow report shallow
+    workflow="$ROOT/.github/workflows/ci.yml"
+    if [ ! -f "$workflow" ]; then
+        echo "FAIL: checkout-depth self-test: $workflow is missing." >&2
+        return 1
+    fi
+
+    # `job<TAB>depth` per job running the ratchet; `none` means the job pins no
+    # fetch-depth, and a job with several checkouts is judged on its shallowest.
+    report="$(awk '
+        /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+            job = $1; sub(/:$/, "", job); depth[job] = "none"; next
+        }
+        job == "" { next }
+        $1 == "fetch-depth:" {
+            if (depth[job] == "none" || $2 + 0 < depth[job] + 0) depth[job] = $2
+        }
+        /run:[[:space:]]*just dead-callers[[:space:]]*$/ { ratchet[job] = 1 }
+        END { for (j in ratchet) print j "\t" depth[j] }
+    ' "$workflow" | sort)"
+
+    if [ -z "$report" ]; then
+        echo "FAIL: checkout-depth self-test: no ci.yml job runs \`just dead-callers\`, so the depth requirement is unenforced." >&2
+        return 1
+    fi
+
+    shallow="$(printf '%s\n' "$report" | awk -F'\t' \
+        '$2 == "none" || ($2 + 0 > 0 && $2 + 0 < 2) { print "  " $1 " (fetch-depth: " $2 ")" }')"
+    if [ -n "$shallow" ]; then
+        echo "FAIL: checkout-depth self-test: these ci.yml jobs run the ratchet without HEAD~1:" >&2
+        printf '%s\n' "$shallow" >&2
+        echo "On a main push origin/main is the commit just pushed, so the base can only come from HEAD~1 and the ratchet fails closed without it. Set fetch-depth to 2 or more, or 0 for full history." >&2
+        return 1
+    fi
+
+    echo "OK: checkout-depth self-test passed — $(printf '%s\n' "$report" | grep -c . ) ci.yml job(s) running the ratchet check out HEAD~1."
+}
+
+# Fixture corpus: a live fn, a doc-comment-only fn, a test-only fn, one called
+# only AFTER an inline test module (guards the
 # brace-scope handling, since skipping to end-of-file instead would report it
 # dead), two out-of-line `#[cfg(test)] mod name;` cases — a flat-file sibling
 # and a `mod.rs`-directory sibling with its own nested submodule (guards
@@ -379,16 +835,39 @@ PROBE
         echo "  actual:   $got" >&2
         return 1
     fi
-    echo "OK: self-test passed — detector flags test-only and doc-only functions, not called ones."
+    mkdir -p "$tmp/emptyroot"
+    if (require_source_roots "$tmp/emptyroot") >/dev/null 2>&1; then
+        echo "FAIL: self-test: require_source_roots accepted a root holding 0 .rs files." >&2
+        return 1
+    fi
+
+    if (require_source_roots "$tmp/absent") >/dev/null 2>&1; then
+        echo "FAIL: self-test: require_source_roots accepted a missing root." >&2
+        return 1
+    fi
+
+    mkdir -p "$tmp/nodefs/probe/src"
+    echo 'fn private_only() -> bool { true }' > "$tmp/nodefs/probe/src/lib.rs"
+    if collect_dead "$tmp/nodefs" "$tmp/none" >/dev/null 2>&1; then
+        echo "FAIL: self-test: collect_dead reported zero dead functions from a corpus with 0 pub fn definitions." >&2
+        return 1
+    fi
+
+    echo "OK: self-test passed — detector flags test-only and doc-only functions, not called ones; an empty corpus is refused."
 }
 
 main() {
     case "${1:-}" in
         --self-test)
             self_test
+            tracking_self_test
+            base_resolution_self_test
+            checkout_depth_self_test
             return
             ;;
     esac
+
+    require_source_roots "$ROOT/crates" "$ROOT/apps/desktop/src-tauri/src" || exit 2
 
     local dead
     dead="$(collect_dead "$ROOT/crates" "$ROOT/apps/desktop/src-tauri/src")"
@@ -417,6 +896,21 @@ HDR
 
     self_test >/dev/null || {
         echo "FAIL: dead-caller detector self-test failed; results are not trustworthy." >&2
+        exit 1
+    }
+
+    tracking_self_test >/dev/null || {
+        echo "FAIL: tracking self-test failed; the tracking check's results are not trustworthy." >&2
+        exit 1
+    }
+
+    base_resolution_self_test >/dev/null || {
+        echo "FAIL: base-resolution self-test failed; the tracking check's base is not trustworthy." >&2
+        exit 1
+    }
+
+    checkout_depth_self_test >/dev/null || {
+        echo "FAIL: checkout-depth self-test failed; a workflow runs this ratchet on a checkout too shallow to resolve a base." >&2
         exit 1
     }
 
@@ -449,7 +943,9 @@ EOF
         printf '%s\n' "$stale" | sed 's/^/  /' >&2
     fi
 
-    echo "OK: no new dead pub fns ($(printf '%s\n' "$dead" | grep -c . || true) baselined)."
+    check_tracking_references || exit 1
+
+    echo "OK: no new dead pub fns across $SCANNED_FILES scanned file(s) ($(printf '%s\n' "$dead" | grep -c . || true) baselined)."
 }
 
 main "$@"

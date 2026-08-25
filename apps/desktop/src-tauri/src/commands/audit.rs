@@ -288,8 +288,13 @@ pub async fn audit_list(
 /// a file (mirrors `log.export`). Streams backend-side; only the path and count
 /// cross IPC.
 ///
+/// The destination passes `fs_pathsafe::export_dest`, so an existing file is
+/// refused rather than replaced and the write cannot leave the canonicalized
+/// parent directory.
+///
 /// # Errors
-/// Returns `Err(ContractError)` on database or filesystem failure.
+/// Returns `Err(ContractError)` on a refused destination, database failure, or
+/// filesystem failure.
 #[tauri::command]
 #[specta::specta]
 pub async fn audit_export(
@@ -297,6 +302,7 @@ pub async fn audit_export(
     file_path: String,
     filters: Option<AuditFilterDto>,
 ) -> Result<AuditExportResponse, ContractError> {
+    use fs_pathsafe::export_dest::{validate_export_destination, ExportWriteError};
     use std::io::Write;
     use std::path::Path;
 
@@ -304,41 +310,37 @@ pub async fn audit_export(
     let filter = build_filter(filters, None);
 
     let dest = Path::new(&file_path);
-    let parent = dest.parent().ok_or_else(|| {
-        ContractError::internal(format!("No parent directory for path {}", dest.display()))
+    let validated = validate_export_destination(dest).map_err(|rejected| {
+        ContractError::internal(format!("{}: {}", rejected.message(), dest.display()))
     })?;
-    if !parent.exists() {
-        return Err(ContractError::internal(format!(
-            "Parent directory does not exist: {}",
-            parent.display()
-        )));
-    }
 
     let rows = list_audit_entries(pool, &filter).await.map_err(db_err)?;
     let entries: Vec<AuditEntry> = rows.into_iter().map(row_to_entry).collect();
     let count = entries.len();
 
-    // Write to a sibling temp path, then rename atomically.
-    let tmp_path = parent.join(format!(".audit-export-{}.tmp", std::process::id()));
-    let file = std::fs::File::create(&tmp_path)
-        .map_err(|e| ContractError::internal(format!("failed to create temp file: {e}")))?;
-    let mut writer = std::io::BufWriter::new(file);
-    for entry in &entries {
-        serde_json::to_writer(&mut writer, entry)
-            .map_err(|e| ContractError::internal(format!("serialisation error: {e}")))?;
-        writer
-            .write_all(b"\n")
-            .map_err(|e| ContractError::internal(format!("write error: {e}")))?;
-    }
-    writer.flush().map_err(|e| ContractError::internal(format!("flush error: {e}")))?;
-    drop(writer);
+    let bytes = validated
+        .write_atomically(|file| {
+            let mut writer = std::io::BufWriter::new(file);
+            for entry in &entries {
+                serde_json::to_writer(&mut writer, entry).map_err(std::io::Error::other)?;
+                writer.write_all(b"\n")?;
+            }
+            writer.flush()
+        })
+        .map_err(|e| match e {
+            ExportWriteError::Rejected(rejected) => ContractError::internal(format!(
+                "{}: {}",
+                rejected.message(),
+                validated.path().display()
+            )),
+            ExportWriteError::Io(e) => ContractError::internal(format!("write error: {e}")),
+        })?;
 
-    let bytes = std::fs::metadata(&tmp_path).map_or(0, |m| m.len());
-
-    std::fs::rename(&tmp_path, dest)
-        .map_err(|e| ContractError::internal(format!("rename error: {e}")))?;
-
-    Ok(AuditExportResponse { file_path: dest.to_string_lossy().into_owned(), count, bytes })
+    Ok(AuditExportResponse {
+        file_path: validated.path().to_string_lossy().into_owned(),
+        count,
+        bytes,
+    })
 }
 
 // ── entity.names ─────────────────────────────────────────────────────────────

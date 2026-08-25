@@ -1,12 +1,13 @@
 # Quickstart: Settings Configuration Model
 
 > **T034 quickstart pass** — exercises the scope/values panes and auto-save
-> via `useAutoSave`. Updated 2026-06-23 to reflect as-built reality.
+> via `useAutoSave`. Updated 2026-06-23 to reflect as-built reality; file and
+> crate paths re-derived 2026-08-24.
 
 ## Overview
 
 Settings are organized into six panes (scopes), each auto-saving on change
-via `useAutoSave.ts` + `apps/desktop/src/api/commands.ts`. There is **no
+via `useAutoSave.ts` + `apps/desktop/src/features/settings/settingsIpc.ts`. There is **no
 global Save button** and no localStorage path.
 
 ## Pane Reference
@@ -67,7 +68,8 @@ in the log.
 
 Close and reopen the library. Confirm all changed values are still present.
 The source of truth is the SQLite `settings` table
-(`crates/persistence/db/migrations/0013_settings.sql`), not localStorage.
+(defined in `crates/persistence/core/migrations/0001_initial_schema.sql`), not
+localStorage.
 
 ## IPC Shape (for developers)
 
@@ -86,5 +88,5 @@ Tauri commands: `settings_get`, `settings_update`, `settings_restore_defaults`,
 `settings_source_override_set` in
 `apps/desktop/src-tauri/src/commands/settings.rs`.
 
-Desktop binding: `settingsGet` / `settingsUpdate` in
-`apps/desktop/src/api/commands.ts`.
+Desktop binding: `getSettings` / `updateSettings` in
+`apps/desktop/src/features/settings/settingsIpc.ts`.

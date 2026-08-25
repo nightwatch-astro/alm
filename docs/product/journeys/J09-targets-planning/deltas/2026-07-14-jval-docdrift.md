@@ -1,3 +1,9 @@
+> **MIGRATED:** current truth now lives at
+> `docs/journeys/J09-targets-planning/journey.md`.
+> This delta is frozen legacy history: it records behavior as understood on
+> its own date and may not match current behavior.
+> See `docs/product/journeys/README.md`.
+
 # jval-docdrift — J09-targets-planning: 044/047 shipped — astronomy columns are real, not stubs (reconciles q16-t132/t133)
 
 Task: jval-docdrift · Status: observed-live-2026-07-14

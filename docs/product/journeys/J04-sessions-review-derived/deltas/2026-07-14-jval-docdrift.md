@@ -1,3 +1,9 @@
+> **MIGRATED:** current truth now lives at
+> `docs/journeys/J04-sessions-review-derived/journey.md`.
+> This delta is frozen legacy history: it records behavior as understood on
+> its own date and may not match current behavior.
+> See `docs/product/journeys/README.md`.
+
 # jval-docdrift — J04-sessions-review-derived: PR #415 interaction-parity gap is closed; frame-type filter intentionally removed
 
 Task: jval-docdrift · Status: observed-live-2026-07-14

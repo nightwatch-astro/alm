@@ -1,8 +1,9 @@
 # Feature Specification: Processing Artifact Observation
 
-> **See Spec 030**: UI implementation of this feature must follow
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md)
-> for layout, navigation, and component patterns.
+> **See Spec 032**: UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns. Spec 030 (UI Audit &
+> Revision), cited here previously, is superseded as of 2026-06-11.
 
 **Feature Branch**: `012-processing-artifact-observation`  
 **Created**: 2026-05-09  
@@ -19,9 +20,11 @@ lives in beads.
 
 Superseding the original "NOT IMPLEMENTED" note: the functional core is built.
 Real crate `crates/workflow/artifacts/` (watcher, classifier, reconciler,
-rules), migration `0025_artifacts.sql`, repository
-`crates/persistence/db/src/repositories/artifacts.rs`, and app use-cases in
-`crates/app/lifecycle/src/artifact.rs` (`detect`/`list`/`classify_override`/
+rules), the artifact tables in
+`crates/persistence/core/migrations/0001_initial_schema.sql` (originally
+migration `0025_artifacts.sql`, since folded into the pre-1.0 baseline),
+repository `crates/persistence/plans/src/repositories/artifacts.rs`, and app
+use-cases in `crates/app/lifecycle/src/artifact/` (`detect`/`list`/`classify_override`/
 `mark_resolved`/`mark_missing`/`reattribute`/`complete_run`) are in place, with
 Tauri commands (`artifact_list`/`classify`/`mark_resolved`) + generated
 bindings, a live notify-rs OS watcher (`crates/fs/inventory/src/artifact_watcher.rs`),

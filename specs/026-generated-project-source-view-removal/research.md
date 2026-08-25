@@ -1,7 +1,9 @@
 # Research: Generated Project Source View Removal
 
 **Spec**: `specs/026-generated-project-source-view-removal/spec.md`  
-**Status**: NOT IMPLEMENTED
+**Status**: IMPLEMENTED (post-hoc record, corrected 2026-08-24). This document was
+left on the pre-implementation value when `spec.md`, `plan.md`, `data-model.md`
+and `tasks.md` were all flipped to Implemented.
 
 ## R1: When Source Views Become Stale
 

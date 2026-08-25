@@ -13,7 +13,7 @@
     "test:e2e": "playwright test",
     "test:e2e:real": "bash scripts/run-e2e-real.sh",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.e2e.json --noEmit",
-    "lint": "biome check . && node ../../scripts/check-eslint-baseline.mjs && stylelint \"src/styles/**/*.css\" && node scripts/build-tokens.mjs --check && node scripts/gen-ve-themes.mjs --check && bash ../../scripts/check-tokens.sh && node ../../scripts/check-i18n-catalog.mjs && node ../../scripts/check-mock-baseline.mjs && node ../../scripts/check-i18n-locale-drift.mjs && node scripts/check-circular.mjs",
+    "lint": "biome check . && node ../../scripts/check-eslint-baseline.mjs && stylelint \"src/styles/**/*.css\" && node scripts/build-tokens.mjs --check && node scripts/gen-ve-themes.mjs --check && bash ../../scripts/check-tokens.sh && node ../../scripts/check-i18n-catalog.mjs && node ../../scripts/check-mock-baseline.mjs && node ../../scripts/check-i18n-locale-drift.mjs && node ../../scripts/check-orphan-ve-modules.mjs && node ../../scripts/check-orphan-ve-modules.test.mjs && node scripts/check-circular.mjs",
     "lint:circular": "node scripts/check-circular.mjs",
     "lint:biome": "biome check .",
     "lint:css": "stylelint \"src/styles/**/*.css\"",
@@ -39,7 +39,8 @@
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "wordmark:generate": "node scripts/generate-splash-wordmark.mjs",
     "og:generate": "node scripts/generate-og-image.mjs",
-    "lockup:generate": "node scripts/generate-lockup.mjs"
+    "lockup:generate": "node scripts/generate-lockup.mjs",
+    "lint:orphan-ve": "node ../../scripts/check-orphan-ve-modules.mjs"
   },
   "dependencies": {
     "@base-ui-components/react": "1.0.0-rc.0",

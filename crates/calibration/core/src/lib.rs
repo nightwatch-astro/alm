@@ -61,6 +61,9 @@ pub enum Dimension {
     Rotation,
     Binning,
     OpticTrain,
+    /// Physical camera body, keyed on the `CAMERAID` serial rather than the
+    /// `INSTRUME` model — two identical bodies share a model but not a serial.
+    Camera,
     ObservingNightProximity,
     DateProximity,
 }
@@ -131,6 +134,7 @@ impl Dimension {
             Self::Rotation => "rotation",
             Self::Binning => "binning",
             Self::OpticTrain => "optic_train",
+            Self::Camera => "camera",
             Self::ObservingNightProximity => "observing_night_proximity",
             Self::DateProximity => "date_proximity",
         }
@@ -155,6 +159,10 @@ pub struct SessionInfo {
     pub rotation_deg: Option<f64>,
     pub binning: Option<String>,
     pub optic_train: Option<String>,
+    /// Physical camera body identifier, `None` whenever the headers carried no
+    /// serial beyond the `INSTRUME` model. Absent on the majority of cameras,
+    /// so it is never required for a match.
+    pub camera_body_id: Option<String>,
     /// ISO-8601 date string of the observing night (local date, noon-to-noon).
     pub observing_night_date: Option<String>,
     /// Whether the session has a known observer_location (required for
@@ -191,6 +199,8 @@ pub struct MasterInfo {
     pub rotation_deg: Option<f64>,
     pub binning: Option<String>,
     pub optic_train: Option<String>,
+    /// Physical camera body identifier; see [`SessionInfo::camera_body_id`].
+    pub camera_body_id: Option<String>,
     /// Originating session id (used for same_session selection reason).
     pub source_session_id: Option<String>,
     /// ISO-8601 date string of the observing night of the calibration session.
@@ -309,6 +319,7 @@ mod tests {
             rotation_deg: Some(0.0),
             binning: Some("1x1".to_owned()),
             optic_train: Some("train-a".to_owned()),
+            camera_body_id: None,
             observing_night_date: Some("2026-01-15".to_owned()),
             has_observer_location: true,
             has_exposure_start_utc: true,
@@ -327,6 +338,7 @@ mod tests {
             rotation_deg: None,
             binning: None,
             optic_train: None,
+            camera_body_id: None,
             source_session_id: None,
             observing_night_date: None,
         }
@@ -415,6 +427,7 @@ mod tests {
             rotation_deg: None,
             binning: None,
             optic_train: None,
+            camera_body_id: None,
             source_session_id: None,
             observing_night_date: None,
         };
@@ -450,6 +463,175 @@ mod tests {
         // Only request flat — dark master should not appear
         let matches = suggest(&session, &[dark], &[CalibrationKind::Flat], &config).unwrap();
         assert!(matches.is_empty());
+    }
+
+    // ── Camera-body dimension (astro-plan-ugux2) ──────────────────────────────
+
+    /// Session and master fixtures that agree on every dimension the three
+    /// evaluators compare, so only the camera body can change the outcome.
+    fn body_pair(
+        kind: CalibrationKind,
+        session_body: Option<&str>,
+        master_body: Option<&str>,
+    ) -> (SessionInfo, MasterInfo) {
+        let session =
+            SessionInfo { camera_body_id: session_body.map(str::to_owned), ..default_session() };
+        let master = MasterInfo {
+            id: "m-body".to_owned(),
+            kind,
+            gain: session.gain,
+            offset: session.offset,
+            exposure_s: session.exposure_s,
+            temp_c: session.temp_c,
+            filter: session.filter.clone(),
+            rotation_deg: session.rotation_deg,
+            binning: session.binning.clone(),
+            optic_train: session.optic_train.clone(),
+            camera_body_id: master_body.map(str::to_owned),
+            source_session_id: None,
+            observing_night_date: session.observing_night_date.clone(),
+        };
+        (session, master)
+    }
+
+    fn suggest_one(session: &SessionInfo, master: &MasterInfo) -> Vec<CalibrationMatch> {
+        suggest(
+            session,
+            std::slice::from_ref(master),
+            &[master.kind],
+            &MatchingRuleConfig::default(),
+        )
+        .unwrap()
+    }
+
+    const MATCHABLE_KINDS: [CalibrationKind; 3] =
+        [CalibrationKind::Dark, CalibrationKind::Flat, CalibrationKind::Bias];
+
+    /// The defect: a master from body A silently calibrated lights from body B.
+    #[test]
+    fn two_identical_bodies_with_different_camera_ids_do_not_match() {
+        for kind in MATCHABLE_KINDS {
+            let (session, master) =
+                body_pair(kind, Some("player one_serial-a"), Some("player one_serial-b"));
+            assert!(
+                suggest_one(&session, &master).is_empty(),
+                "{kind:?}: a master from a different body was offered as a candidate"
+            );
+        }
+    }
+
+    /// The majority case the owner called out: most vendors write no usable
+    /// `CAMERAID`, so a frame without one must score exactly as it did before the
+    /// dimension existed — no entry, no penalty.
+    #[test]
+    fn frames_without_a_camera_id_match_exactly_as_before() {
+        for kind in MATCHABLE_KINDS {
+            let (session, master) = body_pair(kind, None, None);
+            let matches = suggest_one(&session, &master);
+            assert_eq!(matches.len(), 1, "{kind:?}: an unidentified body stopped matching");
+            let m = &matches[0];
+            assert!(
+                (m.confidence - 1.0).abs() < 1e-9,
+                "{kind:?}: confidence dropped to {} without any camera evidence",
+                m.confidence
+            );
+            assert!(
+                !m.dimensions_matched.iter().any(|d| d.dimension == "camera")
+                    && !m.dimensions_mismatched.iter().any(|d| d.dimension == "camera"),
+                "{kind:?}: a skipped dimension was still reported"
+            );
+        }
+    }
+
+    /// Two agreeing body ids are recorded as a matched dimension at no cost.
+    #[test]
+    fn agreeing_camera_ids_match_at_full_confidence() {
+        for kind in MATCHABLE_KINDS {
+            let (session, master) =
+                body_pair(kind, Some("player one_serial-a"), Some("player one_serial-a"));
+            let matches = suggest_one(&session, &master);
+            assert_eq!(matches.len(), 1, "{kind:?}: agreeing bodies failed to match");
+            assert!(
+                (matches[0].confidence - 1.0).abs() < 1e-9,
+                "{kind:?}: agreement cost confidence"
+            );
+            assert!(
+                matches[0].dimensions_matched.iter().any(|d| d.dimension == "camera"),
+                "{kind:?}: the agreement was not recorded"
+            );
+        }
+    }
+
+    /// Present on one side only, both directions: the match stands (a mixed
+    /// library must still calibrate) but carries the reduced confidence
+    /// constitution II requires of an inferred match.
+    #[test]
+    fn a_camera_id_on_one_side_only_matches_at_reduced_confidence() {
+        let expected = 1.0 - crate::rules::UNKNOWN_CAMERA_BODY_PENALTY;
+        for kind in MATCHABLE_KINDS {
+            for (session_body, master_body) in
+                [(Some("player one_serial-a"), None), (None, Some("player one_serial-a"))]
+            {
+                let (session, master) = body_pair(kind, session_body, master_body);
+                let matches = suggest_one(&session, &master);
+                assert_eq!(
+                    matches.len(),
+                    1,
+                    "{kind:?} {session_body:?}/{master_body:?}: a one-sided id must not exclude"
+                );
+                let m = &matches[0];
+                assert!(
+                    (m.confidence - expected).abs() < 1e-9,
+                    "{kind:?} {session_body:?}/{master_body:?}: confidence {}, expected {expected}",
+                    m.confidence
+                );
+                let entry = m
+                    .dimensions_mismatched
+                    .iter()
+                    .find(|d| d.dimension == "camera")
+                    .expect("unproven body agreement must be reported");
+                assert_eq!(entry.reason, MismatchReason::MetadataMissing);
+            }
+        }
+    }
+
+    /// The two defects fixed in this area were a NaN delta scored as a match and
+    /// a negative delta raising confidence. The camera dimension is string
+    /// equality with a constant penalty, so it reports no delta at all and can
+    /// only ever lower a score.
+    #[test]
+    fn the_camera_dimension_carries_no_delta_and_cannot_raise_confidence() {
+        let penalty = crate::rules::UNKNOWN_CAMERA_BODY_PENALTY;
+        assert!(penalty.is_finite() && penalty > 0.0, "penalty {penalty} cannot lower confidence");
+
+        let (agreed_s, agreed_m) = body_pair(CalibrationKind::Dark, Some("body-a"), Some("body-a"));
+        let (partial_s, partial_m) = body_pair(CalibrationKind::Dark, Some("body-a"), None);
+        let agreed = suggest_one(&agreed_s, &agreed_m).remove(0);
+        let partial = suggest_one(&partial_s, &partial_m).remove(0);
+
+        assert!(
+            partial.confidence < agreed.confidence,
+            "an unproven body scored {} against a proven {}",
+            partial.confidence,
+            agreed.confidence
+        );
+        assert!(
+            agreed
+                .dimensions_matched
+                .iter()
+                .chain(partial.dimensions_matched.iter())
+                .filter(|d| d.dimension == "camera")
+                .all(|d| d.delta.is_none()),
+            "a matched camera dimension reported a numeric delta"
+        );
+        assert!(
+            partial
+                .dimensions_mismatched
+                .iter()
+                .filter(|d| d.dimension == "camera")
+                .all(|d| d.delta.is_none()),
+            "a mismatched camera dimension reported a numeric delta"
+        );
     }
 
     #[test]

@@ -290,3 +290,19 @@ async fn source_sub_frame_missing_flags_match_and_clears_on_recovery() {
     let entries: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
     assert_eq!(entries.len(), 1, "app must never create/delete/move files during reconcile");
 }
+
+/// A recovery call naming an artifact id that no longer has a row must not
+/// publish `artifact.recovered`: the event would assert an outcome the store
+/// contradicts.
+#[tokio::test]
+async fn recovery_of_an_unknown_artifact_publishes_nothing() {
+    let (db, _repo, bus) = support::setup().await;
+    let pool = db.pool();
+
+    let err = mark_recovered(pool, &bus, "proj-a", "art-gone", "output/MasterDark.xisf", 4096)
+        .await
+        .expect_err("a recovery that matches no row must not report success");
+
+    assert!(err.contains("art-gone"), "error must name the artifact: {err}");
+    assert_eq!(event_count(pool, "artifact.recovered").await, 0);
+}

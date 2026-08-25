@@ -1,6 +1,7 @@
 # Data Model: Settings Configuration Model
 
-*(Reconciled 2026-06-23 against as-built code on `main`.)*
+*(Reconciled 2026-06-23 against as-built code on `main`; file and crate paths
+re-derived 2026-08-24.)*
 
 ## IPC Transport
 
@@ -13,7 +14,7 @@ scope → key map.
 
 The canonical bag of v1 settings. Defined in
 `crates/domain/core/src/settings.rs` and persisted in a SQLite `settings`
-table (migration `0013_settings.sql`) in which each field maps to one row
+table (`crates/persistence/core/migrations/0001_initial_schema.sql`) in which each field maps to one row
 keyed by field name. The localStorage path (`alm.settings.v1`) is superseded.
 
 ### Field Table

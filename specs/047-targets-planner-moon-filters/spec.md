@@ -4,7 +4,21 @@
 
 **Created**: 2026-07-04
 
-**Status**: Draft (Track A, split out of the spec 044 placeholder; spec 044 is now Track B)
+**Status**: Implemented (post-hoc record, verified 2026-08-24 — surfaces for all
+four user stories located on `origin/main` a52c637f2; per-FR verification was not
+performed, so treat individual FRs as unconfirmed rather than closed). Track A,
+split out of the spec 044 placeholder; spec 044 is now Track B. US1 moon summary
+`apps/desktop/src/features/targets/MoonSummary.tsx` over
+`features/targets/astro/moon-state.ts` (phase / illumination); US2 real lunar
+distance `features/targets/astro/lunar-separation.ts`; US3 per-band viability and
+filter guidance `features/targets/GuidanceCell.tsx` and `FilterBadges.tsx`, with
+the tunable per-band `(distance, width)` parameters in
+`features/settings/PlannerSettings.tsx` over the `plannerMoonAvoidance` setting
+(`crates/app/settings/src/descriptors.rs`); US4 opposition / best-season
+`features/targets/astro/opposition.ts` (`nextOpposition:104`,
+`oppositionRelative:161`) and `astro/best-moon-date.ts`. Each `astro/` module has
+a colocated `.test.ts`. `iteration-2026-07-15-applied.md` in this directory
+records a further applied iteration.
 
 **Input**: User description: "Track A of the Targets Planner: moon-aware,
 filter-aware target planning using existing target data and simple well-known

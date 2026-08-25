@@ -45,14 +45,16 @@ pub struct ClassificationResult {
 /// against the supplied rule list.
 ///
 /// The rule with the **highest priority** that matches wins. On a tie the
-/// rule earlier in the slice wins (stable sort). If no rule matches the
+/// rule earlier in the slice wins. If no rule matches the
 /// fallback is returned: `kind=intermediate`, `confidence=0.1`.
 ///
 /// Rows with `classification_source = manual_override` are skipped by the
 /// caller (T015) before invoking this function.
 #[must_use]
 pub fn classify(file_name: &str, rules: &[ArtifactRule]) -> ClassificationResult {
-    let winner = rules.iter().filter(|r| r.matches(file_name)).max_by_key(|r| r.priority);
+    // `max_by_key` returns the LAST maximum, so iterate in reverse to make the
+    // earliest declared rule win a priority tie.
+    let winner = rules.iter().filter(|r| r.matches(file_name)).rev().max_by_key(|r| r.priority);
 
     match winner {
         Some(rule) => ClassificationResult {
@@ -111,6 +113,35 @@ mod tests {
         assert!(result.confidence < 0.2, "confidence={}", result.confidence);
         assert!(matches!(result.source, ClassificationSource::Fallback));
         assert!(result.matched_rule_id.is_none());
+    }
+
+    #[test]
+    fn equal_priority_tie_goes_to_the_earlier_rule() {
+        // `default_rules` has genuine priority ties and its own sort is stable,
+        // so declaration order is the only thing separating tied rules.
+        let rules = vec![
+            ArtifactRule {
+                id: "earlier",
+                tool: "test",
+                match_kind: MatchKind::Prefix,
+                pattern: "master",
+                kind: ArtifactKind::Master,
+                confidence: 0.9,
+                priority: 100,
+            },
+            ArtifactRule {
+                id: "later",
+                tool: "test",
+                match_kind: MatchKind::Prefix,
+                pattern: "master",
+                kind: ArtifactKind::Intermediate,
+                confidence: 0.5,
+                priority: 100,
+            },
+        ];
+        let result = classify("master_dark.xisf", &rules);
+        assert_eq!(result.matched_rule_id, Some("earlier"));
+        assert_eq!(result.kind, ArtifactKind::Master);
     }
 
     #[test]

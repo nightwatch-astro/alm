@@ -110,13 +110,19 @@ pub fn evaluate_assign(
 /// Collect dimensions with hard-rule violations for the given master type.
 ///
 /// Uses [`crate::rules::hard_rule_numeric`] / [`crate::rules::hard_rule_string`]
-/// — the same exact-match-or-exclude policy the `rules::{bias,dark,flat}`
-/// evaluators apply — so an assign override's violation list always agrees
-/// with what `suggest` would have excluded.
+/// / [`crate::rules::camera_bodies_conflict`] — the same exact-match-or-exclude
+/// policy the `rules::{bias,dark,flat}` evaluators apply — so an assign
+/// override's violation list always agrees with what `suggest` would have
+/// excluded.
 fn collect_hard_violations(session: &SessionInfo, master: &MasterInfo) -> Vec<Dimension> {
-    use crate::rules::{hard_rule_numeric, hard_rule_string};
+    use crate::rules::{camera_bodies_conflict, hard_rule_numeric, hard_rule_string};
 
     let mut violations = Vec::new();
+    // Dark, flat and bias all apply the camera-body rule, so the check sits
+    // outside the per-kind arms rather than being repeated in each.
+    if camera_bodies_conflict(session.camera_body_id.as_deref(), master.camera_body_id.as_deref()) {
+        violations.push(Dimension::Camera);
+    }
     match master.kind {
         CalibrationKind::Dark | CalibrationKind::Bias => {
             if !hard_rule_numeric(session.gain, master.gain) {
@@ -213,6 +219,7 @@ mod tests {
             rotation_deg: None,
             binning: None,
             optic_train: None,
+            camera_body_id: None,
             source_session_id: None,
             observing_night_date: None,
         }
@@ -230,8 +237,58 @@ mod tests {
             rotation_deg: None,
             binning: None,
             optic_train: None,
+            camera_body_id: None,
             source_session_id: None,
             observing_night_date: None,
+        }
+    }
+
+    /// `collect_hard_violations` and the `rules::*` evaluators must agree on what
+    /// a camera-body conflict is, or an override reports a violation list that
+    /// contradicts the exclusion `suggest` actually made. Both read
+    /// [`crate::rules::camera_bodies_conflict`]; these cases pin that two
+    /// different bodies are a violation and an absent id on either side is not.
+    #[test]
+    fn a_camera_body_conflict_is_a_hard_violation_but_a_missing_id_is_not() {
+        let with_body = |body: Option<&str>| SessionInfo {
+            camera_body_id: body.map(str::to_owned),
+            ..session("light", 100.0, 50.0)
+        };
+        let master_with = |body: Option<&str>| MasterInfo {
+            camera_body_id: body.map(str::to_owned),
+            ..dark_master(100.0, 50.0)
+        };
+        let config = MatchingRuleConfig::default();
+
+        let conflict = evaluate_assign(
+            &with_body(Some("body-a")),
+            &master_with(Some("body-b")),
+            false,
+            &config,
+        );
+        assert!(
+            matches!(
+                conflict,
+                Err(AssignError::IncompatibleDimensions { ref dimensions })
+                    if dimensions.contains(&Dimension::Camera)
+            ),
+            "two different bodies must be refused, got {conflict:?}"
+        );
+
+        for (session_body, master_body) in
+            [(None, None), (Some("body-a"), None), (None, Some("body-a"))]
+        {
+            let decision = evaluate_assign(
+                &with_body(session_body),
+                &master_with(master_body),
+                false,
+                &config,
+            )
+            .expect("an absent camera id must not refuse an assign");
+            assert!(
+                !decision.mismatched_dimensions.contains(&Dimension::Camera),
+                "{session_body:?}/{master_body:?} was reported as a camera violation"
+            );
         }
     }
 

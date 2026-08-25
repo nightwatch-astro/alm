@@ -21,6 +21,7 @@ fs_executor = { path = "../../fs/executor" }
 contracts_core = { path = "../../contracts/core" }
 domain_core = { path = "../../domain/core" }
 fs_inventory = { path = "../../fs/inventory" }
+fs_pathsafe = { path = "../../fs/pathsafe" }
 patterns = { path = "../../patterns" }
 persistence_calibration = { path = "../../persistence/calibration" }
 persistence_core = { path = "../../persistence/core" }
@@ -46,6 +47,9 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+# Containment fixtures build platform-absolute roots via `test_support`, which the
+# `[dependencies]` edge above leaves off so it is absent from release builds.
+fs_pathsafe = { path = "../../fs/pathsafe", features = ["test-fixture"] }
 contracts_core = { path = "../../contracts/core" }
 persistence_core = { path = "../../persistence/core", features = ["test-fixture"] }
 persistence_sessions = { path = "../../persistence/sessions", features = ["test-fixture"] }

@@ -97,38 +97,107 @@ pub async fn file_records_by_root(
     Ok(rows)
 }
 
-/// Id of the `acquisition_session` whose `frame_ids` JSON array contains a
-/// given frame id, matched via `LIKE`.
+/// Id of the `acquisition_session` whose `frame_ids` JSON array contains
+/// `frame_id` as an exact member.
+///
+/// `json_each` compares decoded array elements, so an id containing `%`, `_`,
+/// or `"` matches itself and nothing else.
+///
+/// `frame_ids` carries no `json_valid` CHECK and `json_each` raises on a
+/// malformed value, which fails the whole query rather than the one row. The
+/// `CASE` substitutes an empty array so a corrupt row is skipped instead.
 ///
 /// # Errors
 /// Returns `persistence_core::DbError::Database` on query failure.
-pub async fn find_acquisition_session_id_by_frame_like(
+pub async fn find_acquisition_session_id_by_frame(
     pool: &SqlitePool,
-    like_pattern: &str,
+    frame_id: &str,
 ) -> DbResult<Option<String>> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT id FROM acquisition_session WHERE frame_ids LIKE ? LIMIT 1")
-            .bind(like_pattern)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT id FROM acquisition_session \
+         WHERE EXISTS (SELECT 1 FROM json_each( \
+                           CASE WHEN json_valid(acquisition_session.frame_ids) \
+                                THEN acquisition_session.frame_ids ELSE '[]' END) je \
+                       WHERE je.value = ?) \
+         LIMIT 1",
+    )
+    .bind(frame_id)
+    .fetch_optional(pool)
+    .await?;
     Ok(row.map(|(id,)| id))
 }
 
 /// `(session id, kind)` of the `calibration_session` whose `frame_ids` JSON
-/// array contains a given frame id, matched via `LIKE`.
+/// array contains `frame_id` as an exact member.
+///
+/// Guards `json_each` against a malformed `frame_ids` value for the reason
+/// given on [`find_acquisition_session_id_by_frame`].
 ///
 /// # Errors
 /// Returns `persistence_core::DbError::Database` on query failure.
-pub async fn find_calibration_session_by_frame_like(
+pub async fn find_calibration_session_by_frame(
     pool: &SqlitePool,
-    like_pattern: &str,
+    frame_id: &str,
 ) -> DbResult<Option<(String, String)>> {
-    let row: Option<(String, String)> =
-        sqlx::query_as("SELECT id, kind FROM calibration_session WHERE frame_ids LIKE ? LIMIT 1")
-            .bind(like_pattern)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT id, kind FROM calibration_session \
+         WHERE EXISTS (SELECT 1 FROM json_each( \
+                           CASE WHEN json_valid(calibration_session.frame_ids) \
+                                THEN calibration_session.frame_ids ELSE '[]' END) je \
+                       WHERE je.value = ?) \
+         LIMIT 1",
+    )
+    .bind(frame_id)
+    .fetch_optional(pool)
+    .await?;
     Ok(row)
+}
+
+/// One stored JSON column whose value is not valid JSON.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MalformedJsonColumnRow {
+    pub table_name: String,
+    pub column_name: String,
+    pub row_id: String,
+}
+
+/// The `column_name` value carried by a session frame-attribution row, so
+/// callers can separate an unreadable Tier-1 attribution record from a merely
+/// unreadable equipment alias list.
+pub const FRAME_IDS_COLUMN: &str = "frame_ids";
+
+/// Every row whose JSON column is not valid JSON, across the four columns the
+/// `CASE WHEN json_valid(...)` guards read: `acquisition_session.frame_ids`,
+/// `calibration_session.frame_ids`, `cameras.aliases`, `telescopes.aliases`.
+///
+/// Those guards substitute an empty array, so a corrupt row reads as zero
+/// frames or zero aliases rather than failing its query. This is the only
+/// query that can tell the two apart, and callers whose result would otherwise
+/// be silently degraded must consult it.
+///
+/// `json_valid(NULL)` is `NULL`, so a NULL column is never reported malformed
+/// (all four columns are `NOT NULL` today).
+///
+/// # Errors
+/// Returns `persistence_core::DbError::Database` on query failure.
+pub async fn list_malformed_json_columns(
+    pool: &SqlitePool,
+) -> DbResult<Vec<MalformedJsonColumnRow>> {
+    let rows = sqlx::query_as::<_, MalformedJsonColumnRow>(
+        "SELECT 'acquisition_session' AS table_name, 'frame_ids' AS column_name, id AS row_id \
+           FROM acquisition_session WHERE NOT json_valid(frame_ids) \
+         UNION ALL \
+         SELECT 'calibration_session', 'frame_ids', id \
+           FROM calibration_session WHERE NOT json_valid(frame_ids) \
+         UNION ALL \
+         SELECT 'cameras', 'aliases', id FROM cameras WHERE NOT json_valid(aliases) \
+         UNION ALL \
+         SELECT 'telescopes', 'aliases', id FROM telescopes WHERE NOT json_valid(aliases) \
+         ORDER BY table_name ASC, row_id ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }
 
 /// Mark a `file_record` row `missing`. Preserves the original call site's
@@ -629,7 +698,7 @@ pub async fn session_history(
         "SELECT at, trigger, actor
          FROM audit_log_entry
          WHERE entity_type = 'acquisition_session' AND entity_id = ?
-         ORDER BY at ASC",
+         ORDER BY at ASC, audit_id ASC",
     )
     .bind(session_id)
     .fetch_all(pool)
@@ -1202,5 +1271,135 @@ mod tests {
         let db = setup_db().await;
         let ids = project_ids_for_session(db.pool(), "no-such").await.unwrap();
         assert!(ids.is_empty());
+    }
+
+    async fn insert_acquisition_session(pool: &SqlitePool, id: &str, frame_ids: &str) {
+        sqlx::query(
+            "INSERT INTO acquisition_session (id, session_key, frame_ids, created_at) \
+             VALUES (?, ?, ?, '2026-01-01T00:00:00Z')",
+        )
+        .bind(id)
+        .bind(id)
+        .bind(frame_ids)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn insert_calibration_session(pool: &SqlitePool, id: &str, frame_ids: &str) {
+        sqlx::query(
+            "INSERT INTO calibration_session (id, session_key, frame_ids, kind, created_at) \
+             VALUES (?, ?, ?, 'dark', '2026-01-01T00:00:00Z')",
+        )
+        .bind(id)
+        .bind(id)
+        .bind(frame_ids)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// `_` is a single-character `LIKE` wildcard, so a pattern built from
+    /// `f_1` also matched a session holding only `fx1`.
+    #[tokio::test]
+    async fn acquisition_lookup_rejects_underscore_wildcard_collision() {
+        let db = setup_db().await;
+        insert_acquisition_session(db.pool(), "s-other", r#"["fx1"]"#).await;
+
+        let found = find_acquisition_session_id_by_frame(db.pool(), "f_1").await.unwrap();
+        assert_eq!(found, None);
+    }
+
+    /// `%` matches any run of characters, so a pattern built from `f%` matched
+    /// every session.
+    #[tokio::test]
+    async fn acquisition_lookup_rejects_percent_wildcard_collision() {
+        let db = setup_db().await;
+        insert_acquisition_session(db.pool(), "s-other", r#"["frame-9"]"#).await;
+
+        let found = find_acquisition_session_id_by_frame(db.pool(), "f%").await.unwrap();
+        assert_eq!(found, None);
+    }
+
+    /// An id that is a substring of a genuine member is not a member.
+    #[tokio::test]
+    async fn acquisition_lookup_rejects_prefix_collision() {
+        let db = setup_db().await;
+        insert_acquisition_session(db.pool(), "s-other", r#"["frame-1-extra"]"#).await;
+
+        assert_eq!(find_acquisition_session_id_by_frame(db.pool(), "frame-1").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn acquisition_lookup_finds_exact_member_with_metacharacters() {
+        let db = setup_db().await;
+        insert_acquisition_session(db.pool(), "s-1", r#"["a_b","c%d"]"#).await;
+
+        assert_eq!(
+            find_acquisition_session_id_by_frame(db.pool(), "a_b").await.unwrap().as_deref(),
+            Some("s-1")
+        );
+        assert_eq!(
+            find_acquisition_session_id_by_frame(db.pool(), "c%d").await.unwrap().as_deref(),
+            Some("s-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn calibration_lookup_rejects_wildcard_and_prefix_collisions() {
+        let db = setup_db().await;
+        insert_calibration_session(db.pool(), "c-other", r#"["fx1","frame-1-extra"]"#).await;
+
+        assert_eq!(find_calibration_session_by_frame(db.pool(), "f_1").await.unwrap(), None);
+        assert_eq!(find_calibration_session_by_frame(db.pool(), "f%").await.unwrap(), None);
+        assert_eq!(find_calibration_session_by_frame(db.pool(), "frame-1").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn calibration_lookup_finds_exact_member_with_metacharacters() {
+        let db = setup_db().await;
+        insert_calibration_session(db.pool(), "c-1", r#"["a_b"]"#).await;
+
+        let found = find_calibration_session_by_frame(db.pool(), "a_b").await.unwrap();
+        assert_eq!(found, Some(("c-1".to_owned(), "dark".to_owned())));
+    }
+
+    /// `frame_ids` has no `json_valid` CHECK. An unguarded `json_each` raises
+    /// on a malformed row and fails the whole query, losing the sessions that
+    /// are intact.
+    #[tokio::test]
+    async fn acquisition_lookup_skips_malformed_frame_ids() {
+        let db = setup_db().await;
+        insert_acquisition_session(db.pool(), "s-bad", "oops").await;
+        insert_acquisition_session(db.pool(), "s-empty", "").await;
+        insert_acquisition_session(db.pool(), "s-good", r#"["f1"]"#).await;
+
+        let found = find_acquisition_session_id_by_frame(db.pool(), "f1")
+            .await
+            .expect("a corrupt row must not fail the lookup");
+        assert_eq!(found.as_deref(), Some("s-good"));
+    }
+
+    #[tokio::test]
+    async fn calibration_lookup_skips_malformed_frame_ids() {
+        let db = setup_db().await;
+        insert_calibration_session(db.pool(), "c-bad", "oops").await;
+        insert_calibration_session(db.pool(), "c-empty", "").await;
+        insert_calibration_session(db.pool(), "c-good", r#"["f1"]"#).await;
+
+        let found = find_calibration_session_by_frame(db.pool(), "f1")
+            .await
+            .expect("a corrupt row must not fail the lookup");
+        assert_eq!(found, Some(("c-good".to_owned(), "dark".to_owned())));
+    }
+
+    /// A repeated id in the array must not yield the session twice.
+    #[tokio::test]
+    async fn acquisition_lookup_returns_one_session_for_a_repeated_id() {
+        let db = setup_db().await;
+        insert_acquisition_session(db.pool(), "s-1", r#"["f1","f1"]"#).await;
+
+        let found = find_acquisition_session_id_by_frame(db.pool(), "f1").await.unwrap();
+        assert_eq!(found.as_deref(), Some("s-1"));
     }
 }

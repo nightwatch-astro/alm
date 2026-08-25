@@ -126,9 +126,10 @@ pub async fn get_all_raw(pool: &SqlitePool) -> DbResult<Vec<(String, Value)>> {
 ///
 /// Returns [`persistence_core::DbError::Database`] on query failure.
 pub async fn get_all_by_prefix(pool: &SqlitePool, prefix: &str) -> DbResult<Vec<(String, Value)>> {
-    // SQLite LIKE pattern: append '%' to the prefix. The prefix itself may
-    // contain literal '%' or '_' — escape them so they are matched literally.
-    let pattern = format!("{}%", prefix.replace('%', "\\%").replace('_', "\\_"));
+    // The prefix may contain LIKE metacharacters; escape them so they match
+    // literally. `escape_like` escapes the backslash itself, which a bare
+    // `%`/`_` replacement does not.
+    let pattern = format!("{}%", persistence_core::repositories::sql::escape_like(prefix));
     let rows: Vec<(String, Json<Value>)> = sqlx::query_as(
         "SELECT key, value FROM settings WHERE key LIKE ? ESCAPE '\\' ORDER BY key ASC",
     )
@@ -340,6 +341,32 @@ mod tests {
         let db = setup_db().await;
         let result = get_raw(db.pool(), "nonexistent_key").await.unwrap();
         assert!(result.is_none());
+    }
+
+    /// A prefix ending in a backslash left the escape character dangling under
+    /// the previous `%`/`_`-only replacement, so `\_` was read as an escaped
+    /// wildcard instead of a literal backslash followed by a wildcard.
+    #[tokio::test]
+    async fn get_all_by_prefix_treats_metacharacters_literally() {
+        let db = setup_db().await;
+        let v = serde_json::json!(1);
+        for key in
+            ["a_b.one", "axb.two", "c%d.three", "cQd.four", "e\\_f.five", "e\\Qf.six", "eXf.seven"]
+        {
+            set_raw(db.pool(), key, &v).await.unwrap();
+        }
+
+        let underscore = get_all_by_prefix(db.pool(), "a_b.").await.unwrap();
+        assert_eq!(underscore.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), vec!["a_b.one"]);
+
+        let percent = get_all_by_prefix(db.pool(), "c%d.").await.unwrap();
+        assert_eq!(percent.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), vec!["c%d.three"]);
+
+        let backslash = get_all_by_prefix(db.pool(), "e\\_f.").await.unwrap();
+        assert_eq!(
+            backslash.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            vec!["e\\_f.five"]
+        );
     }
 
     #[tokio::test]

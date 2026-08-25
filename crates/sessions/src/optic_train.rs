@@ -53,7 +53,7 @@ pub fn optic_train_key(
     ))
 }
 
-fn normalize_text(value: Option<&str>) -> Option<String> {
+pub(crate) fn normalize_text(value: Option<&str>) -> Option<String> {
     let v = value?.trim();
     if v.is_empty() {
         return None;

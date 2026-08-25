@@ -180,36 +180,27 @@ fn tool_id_from_project_tool(project_tool: &str) -> String {
 /// Constitution: never follows symlinks/junctions (no per-root opt-in exists
 /// for project output folders in v1) — neither into a symlinked directory
 /// nor as a symlinked file.
-fn real_read_dir(dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut out = Vec::new();
-    real_read_dir_into(dir, &mut out)?;
-    Ok(out)
+///
+/// The walk itself is `fs_pathsafe::real_files_under_reporting`, which is
+/// reparse-aware (a Windows junction is a reparse point `is_symlink()` need
+/// not report) and iterative, so a deep tree cannot exhaust the stack. An
+/// unreadable subdirectory lands in `unreadable` rather than aborting the
+/// walk: one permission-denied directory must not stop reconciliation for
+/// every artifact elsewhere under the project root. Only an unreadable root
+/// is an error, because there the walk yields nothing at all.
+fn real_read_dir(dir: &Path) -> Result<workflow_artifacts::DirListing, String> {
+    fs_pathsafe::probe_root(dir, false)
+        .map_err(|reason| format!("read_dir({}) failed: {reason}", dir.display()))?;
+    let (files, unreadable) = fs_pathsafe::real_files_under_reporting(dir, false);
+    Ok(workflow_artifacts::DirListing { files, unreadable })
 }
 
-/// Recursion helper for [`real_read_dir`]; `out` accumulates real file paths
-/// across the whole subtree.
-fn real_read_dir_into(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries =
-        std::fs::read_dir(dir).map_err(|e| format!("read_dir({}) failed: {e}", dir.display()))?;
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
-        if file_type.is_symlink() {
-            continue;
-        }
-        if file_type.is_dir() {
-            real_read_dir_into(&entry.path(), out)?;
-        } else if file_type.is_file() {
-            out.push(entry.path());
-        }
-    }
-    Ok(())
-}
-
-/// Real (size, mtime) probe. Uses `symlink_metadata` and rejects symlinks
-/// explicitly — belt-and-suspenders alongside `real_read_dir`'s filter.
+/// Real (size, mtime) probe. Uses `symlink_metadata` and rejects symlinks and
+/// junctions explicitly — belt-and-suspenders alongside `real_read_dir`'s
+/// filter.
 fn real_metadata(path: &Path) -> Option<(u64, std::time::SystemTime)> {
     let meta = std::fs::symlink_metadata(path).ok()?;
-    if meta.file_type().is_symlink() {
+    if fs_pathsafe::is_link_or_junction_metadata(&meta) {
         return None;
     }
     let modified = meta.modified().ok()?;
@@ -348,6 +339,16 @@ async fn run_attach_reconciliation(
     )
     .map_err(|e| format!("reconcile failed: {e}"))?;
 
+    let unreadable: Vec<String> =
+        report.unreadable_dirs.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+    if !unreadable.is_empty() {
+        tracing::warn!(
+            count = unreadable.len(),
+            "artifact watcher: unreadable directories skipped during reconcile: {}",
+            unreadable.join(", ")
+        );
+    }
+
     let mut seen_ids: Vec<String> = Vec::new();
     let mut gone: Vec<app_core::artifact::GoneArtifact> = Vec::new();
     for (rel_path, outcome) in report.existing {
@@ -360,6 +361,7 @@ async fn run_attach_reconciliation(
                 });
             }
             workflow_artifacts::ReconcileOutcome::Seen => seen_ids.push(row.id.clone()),
+            workflow_artifacts::ReconcileOutcome::Unknown => {}
         }
     }
 
@@ -383,6 +385,7 @@ async fn run_attach_reconciliation(
     // otherwise pays one commit per row on every drawer open. A failed phase is
     // logged, not propagated — the remaining phases still run, matching the old
     // per-row loops' tolerance of individual failures.
+    app_core::artifact::report_scan_incomplete(bus, project_id, &unreadable).await;
     if let Err(e) = app_core::artifact::touch_seen(pool, &seen_ids).await {
         tracing::warn!(count = seen_ids.len(), "artifact watcher: seen phase failed: {e}");
     }
@@ -782,7 +785,7 @@ mod tests {
         std::fs::write(&top_file, b"x").unwrap();
         std::fs::write(&nested_file, b"x").unwrap();
 
-        let found = real_read_dir(dir.path()).unwrap();
+        let found = real_read_dir(dir.path()).unwrap().files;
 
         assert!(found.contains(&top_file), "top-level file must be found");
         assert!(found.contains(&nested_file), "file nested under a subfolder must be found");
@@ -796,7 +799,7 @@ mod tests {
         let deep_file = deep_dir.join("integration.xisf");
         std::fs::write(&deep_file, b"x").unwrap();
 
-        let found = real_read_dir(dir.path()).unwrap();
+        let found = real_read_dir(dir.path()).unwrap().files;
 
         assert!(found.contains(&deep_file), "file nested two levels deep must be found");
     }
@@ -814,8 +817,45 @@ mod tests {
         let link_path = dir.path().join("linked_output");
         std::os::unix::fs::symlink(real_target.path(), &link_path).unwrap();
 
-        let found = real_read_dir(dir.path()).unwrap();
+        let found = real_read_dir(dir.path()).unwrap().files;
 
         assert!(found.is_empty(), "must not descend into a symlinked directory: found {found:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_read_dir_skips_an_unreadable_subdirectory_and_reports_it() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let sibling_dir = dir.path().join("output");
+        std::fs::create_dir_all(&sibling_dir).unwrap();
+        let sibling_file = sibling_dir.join("integration.xisf");
+        std::fs::write(&sibling_file, b"x").unwrap();
+        let top_file = dir.path().join("top.fits");
+        std::fs::write(&top_file, b"x").unwrap();
+        let locked = dir.path().join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::write(locked.join("hidden.fits"), b"x").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        // root (and any CAP_DAC_READ_SEARCH holder) bypasses mode bits, which
+        // would make the assertion vacuous.
+        if std::fs::read_dir(&locked).is_ok() {
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+            eprintln!(
+                "skipping: this environment can read a mode-000 directory (running as root?)"
+            );
+            return;
+        }
+
+        let whole_walk = real_read_dir(dir.path());
+
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let listing = whole_walk.expect("an unreadable subdirectory must not fail the whole walk");
+        assert!(listing.files.contains(&top_file), "top-level sibling must still be reconciled");
+        assert!(listing.files.contains(&sibling_file), "nested sibling must still be reconciled");
+        assert_eq!(listing.unreadable, vec![locked], "the unreadable directory must be reported");
     }
 }

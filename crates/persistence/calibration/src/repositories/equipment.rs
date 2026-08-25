@@ -242,7 +242,7 @@ pub async fn delete_camera(pool: &SqlitePool, id: &str) -> DbResult<()> {
     ensure_row_affected(result.rows_affected(), "camera", id)
 }
 
-/// Find a camera by alias. Searches the JSON aliases array using LIKE.
+/// Find a camera by alias. Matches an exact member of the JSON aliases array.
 ///
 /// # Errors
 ///
@@ -255,7 +255,10 @@ pub async fn find_camera_by_alias(pool: &SqlitePool, alias: &str) -> DbResult<Op
         "SELECT id, name, aliases, auto_detected, sensor_type, passband, \
          pixel_size_um, sensor_width_px, sensor_height_px \
          FROM cameras \
-         WHERE EXISTS (SELECT 1 FROM json_each(cameras.aliases) j WHERE j.value = ?) \
+         WHERE EXISTS (SELECT 1 FROM json_each( \
+                           CASE WHEN json_valid(cameras.aliases) \
+                                THEN cameras.aliases ELSE '[]' END) j \
+                       WHERE j.value = ?) \
          LIMIT 1",
     )
     .bind(alias)
@@ -378,7 +381,9 @@ pub async fn find_telescope_by_alias(
 ) -> DbResult<Option<Telescope>> {
     let row: Option<(String, String, String, Option<i32>, i32)> = sqlx::query_as(
         "SELECT t.id, t.name, t.aliases, t.focal_length_mm, t.auto_detected \
-         FROM telescopes t, json_each(t.aliases) j \
+         FROM telescopes t, json_each( \
+                  CASE WHEN json_valid(t.aliases) \
+                       THEN t.aliases ELSE '[]' END) j \
          WHERE j.value = ? \
          LIMIT 1",
     )
@@ -755,6 +760,53 @@ mod tests {
         assert!(not_found.is_none());
     }
 
+    /// Writes a row whose JSON `aliases` column holds a non-JSON string, which
+    /// the schema permits: `aliases` is `TEXT NOT NULL DEFAULT '[]'` with no
+    /// `json_valid` CHECK. `cameras` and `telescopes` share the four columns
+    /// touched here.
+    ///
+    /// Called before the intact row so the corrupt one takes the lower rowid: a
+    /// full table scan then reaches it first and the by-alias probes' `LIMIT 1`
+    /// cannot skip past it.
+    async fn insert_malformed_aliases_row(pool: &SqlitePool, table: &str, id: &str) {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "INSERT INTO {table} (id, name, aliases, created_at) \
+             VALUES (?, 'corrupt', 'oops', '2026-01-01T00:00:00Z')"
+        )))
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn camera_find_by_alias_survives_a_malformed_aliases_row() {
+        let pool = setup_db().await;
+        insert_malformed_aliases_row(&pool, "cameras", "cam-corrupt").await;
+
+        create_camera(
+            &pool,
+            &CreateCamera {
+                name: "ASI2600MM".to_owned(),
+                aliases: vec!["ZWO 2600".to_owned()],
+                sensor_type: None,
+                passband: None,
+                pixel_size_um: None,
+                sensor_width_px: None,
+                sensor_height_px: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let found = find_camera_by_alias(&pool, "ZWO 2600")
+            .await
+            .expect("a malformed aliases row must not fail the whole query")
+            .expect("the intact camera is still matched");
+        assert_eq!(found.name, "ASI2600MM");
+        assert_eq!(found.aliases, vec!["ZWO 2600".to_owned()]);
+    }
+
     #[tokio::test]
     async fn camera_delete_nonexistent() {
         let pool = setup_db().await;
@@ -838,6 +890,31 @@ mod tests {
 
         let not_found = find_telescope_by_alias(&pool, "missing").await.unwrap();
         assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn telescope_find_by_alias_survives_a_malformed_aliases_row() {
+        let pool = setup_db().await;
+        insert_malformed_aliases_row(&pool, "telescopes", "tel-corrupt").await;
+
+        create_telescope(
+            &pool,
+            &CreateTelescope {
+                name: "Esprit 100ED".to_owned(),
+                aliases: vec!["SW Esprit".to_owned()],
+                focal_length_mm: Some(550),
+            },
+        )
+        .await
+        .unwrap();
+
+        let found = find_telescope_by_alias(&pool, "SW Esprit")
+            .await
+            .expect("a malformed aliases row must not fail the whole query")
+            .expect("the intact telescope is still matched");
+        assert_eq!(found.name, "Esprit 100ED");
+        assert_eq!(found.aliases, vec!["SW Esprit".to_owned()]);
+        assert_eq!(found.focal_length_mm, Some(550));
     }
 
     // ── Optical Train tests ─────────────────────────────────────────────────

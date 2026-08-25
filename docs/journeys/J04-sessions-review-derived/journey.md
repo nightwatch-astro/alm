@@ -1,12 +1,12 @@
 ---
 id: J04
 title: Review acquisition sessions as a derived, always-current inventory
-version: 6
+version: 7
 status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [sessions, projects]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - docs/product/journeys/J04-sessions-review-derived/journey.md @ 66026463 (pre-migration doc)
   - docs/product/journeys/J04-sessions-review-derived/deltas/2026-07-14-jval-docdrift.md
@@ -22,6 +22,7 @@ trace:
   - PR #906 (merged, fixes #771)
   - spec-054-adaptive-detail-dock (FR-001, FR-004, FR-005 — adaptive
     side/bottom dock, resizable+persistent width, per-page pin)
+  - PR #1736 (guarded JSON reads over frame_ids)
 ---
 
 ## Goal
@@ -69,6 +70,19 @@ the view carries no leftover review-state controls.
   no review-state pill (e.g. needs-review/candidate) appears anywhere on
   the page — the Inbox confirm gate the user already passed is the only
   gate (live-verified 2026-07-14: DOM/button scan found none).
+- **Expect (negative):** One session whose stored frame list is not valid JSON
+  never empties the whole list: every intact session still lists with its own
+  frame count, and the corrupt one reports zero frames rather than failing the
+  query. That zero is indistinguishable from a session whose frames are
+  genuinely unattributed (G4) — the surface that must not confuse the two is
+  raw sub-frame cleanup, which refuses outright (J06/S5).
+- **Trace (resilience):**
+  `crates/persistence/targets/src/repositories/inventory.rs:135`
+  (`list_sessions_for_root`), `:161-170` and `:197-206` (per-row `frame_count`
+  and first-frame lookup read `frame_ids` through
+  `CASE WHEN json_valid(...) THEN ... ELSE '[]' END`), `:412` and `:434`
+  (`list_session_cameras`, the S3 Camera dropdown, guarded the same way);
+  PR #1736.
 - **Trace:** `apps/desktop/src/features/sessions/SessionsTable.tsx:296-299`;
   docs/development/journey-run-2026-07-14.md;
   `crates/app/core/src/inventory.rs` `parse_session_key_fields`,
@@ -208,7 +222,9 @@ the view carries no leftover review-state controls.
 - SC1: Before any plan applies, Sessions shows 0 rows for that inventory
   (S1).
 - SC2: After a plan applies, session row count and per-row frame counts
-  match the applied plan exactly (S2).
+  match the applied plan exactly (S2), and one session with an unreadable
+  frame list reduces that agreement to its own row rather than emptying the
+  list (S2).
 - SC3: 0 review-lifecycle controls (Confirm/Re-open/Reject/Ignore, review
   pill) are present anywhere on the Sessions list or detail (S2, S4).
 - SC4: 100% of rows render a non-blank Target-cell identity (never a bare
@@ -236,6 +252,10 @@ the view carries no leftover review-state controls.
   (`PropertyTable.tsx:201`); see S4. Retired per the id-stability rule
   (never renumbered, never reused) rather than deleted.
 - G3: (dissolved 2026-07-15) — tracked as issue #889; was wrongly scoped out, now tracked (connectivity state).
+- G4: A session whose stored frame list is unreadable reports a frame count of
+  zero here, which reads identically to a session whose frames are genuinely
+  unattributed. Nothing on this page distinguishes the two. Tracked as
+  astro-plan-dq9r3, which also covers the absence of any in-app repair path.
 
 ## Delta log
 
@@ -276,3 +296,11 @@ the view carries no leftover review-state controls.
   wizard each used a different format (decimal hours, h/m, or h/m/s) for
   the same quantity.
   Evidence: PR #1288 (refs #631) · by: journey-scribe (intent-gated)
+
+- **Δ7** 2026-08-24 · S2, S3, SC2, +G4 · behavior-change
+  One session whose stored frame list is not valid JSON no longer empties the
+  Sessions list or its Camera dropdown: every read of that column is guarded,
+  so intact rows still list with their own frame counts. The corrupt session
+  reports zero frames, which is indistinguishable from genuinely unattributed
+  frames (G4).
+  Evidence: PR #1736 (da71a9c44) · by: journey-scribe (intent-gated)

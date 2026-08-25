@@ -439,7 +439,16 @@ async fn audit_export_writes_ndjson_file_of_real_rows() {
 
     let res = audit_export(state, file_path.clone(), None).await.expect("audit_export ok");
     assert_eq!(res.count, 1);
-    assert_eq!(res.file_path, file_path);
+    // The response reports the canonicalized destination, which differs from the
+    // requested string wherever the parent path crosses a symlink.
+    let expected = tmp_dir
+        .path()
+        .canonicalize()
+        .expect("canonical tmp dir")
+        .join("export.ndjson")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(res.file_path, expected);
 
     let contents = std::fs::read_to_string(&file_path).expect("read exported file");
     let lines: Vec<&str> = contents.lines().collect();
@@ -447,6 +456,34 @@ async fn audit_export_writes_ndjson_file_of_real_rows() {
     let parsed: serde_json::Value = serde_json::from_str(lines[0]).expect("valid ndjson line");
     assert_eq!(parsed["id"], "a1");
     assert_eq!(parsed["entityId"], "ses-1");
+}
+
+#[tokio::test]
+async fn audit_export_refuses_an_existing_destination() {
+    let app = mock_lifecycle_app().await;
+    let state = app.state::<AppState>();
+    insert_audit_row(state.repo.pool(), "a1", "session", "ses-1", "Confirm session").await;
+
+    let tmp_dir = tempfile::tempdir().expect("tmp dir");
+    let dest = tmp_dir.path().join("keep.ndjson");
+    std::fs::write(&dest, b"user data").expect("seed");
+
+    let err =
+        audit_export(state, dest.to_string_lossy().into_owned(), None).await.expect_err("refused");
+
+    assert!(err.message.contains("already exists"), "{:?}", err.message);
+    assert_eq!(std::fs::read(&dest).expect("read"), b"user data");
+}
+
+#[tokio::test]
+async fn audit_export_refuses_a_relative_destination() {
+    let app = mock_lifecycle_app().await;
+    let state = app.state::<AppState>();
+
+    let err =
+        audit_export(state, "../../export.ndjson".to_owned(), None).await.expect_err("refused");
+
+    assert!(err.message.contains("absolute"), "{:?}", err.message);
 }
 
 // ─── Review (1 command) ─────────────────────────────────────────────────────

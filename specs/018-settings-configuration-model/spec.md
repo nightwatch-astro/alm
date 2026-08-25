@@ -5,9 +5,10 @@
 > the catalog settings surface becomes the SIMBAD resolver settings (endpoint, enable/disable, cache).
 > All other settings are unaffected.
 
-> **See Spec 030**: UI implementation of this feature must follow
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md)
-> for layout, navigation, and component patterns.
+> **See Spec 032**: UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns. Spec 030 (UI Audit &
+> Revision), cited here previously, is superseded as of 2026-06-11.
 
 **Feature Branch**: `018-settings-configuration-model`  
 **Created**: 2026-05-09  
@@ -220,10 +221,11 @@ are now absorbed into the v1 settings model.
 
 ## Implementation Status
 
-*(Reconciled 2026-06-23 against as-built code on `main`.)*
+*(Reconciled 2026-06-23 against as-built code on `main`; file and crate paths
+re-derived 2026-08-24.)*
 
 The backend settings subsystem is built and on `main`. The desktop UI panes are
-wired via `useAutoSave` and `apps/desktop/src/api/commands.ts`. The **localStorage
+wired via `useAutoSave` and `apps/desktop/src/features/settings/settingsIpc.ts`. The **localStorage
 mockup path is replaced** by a Tauri backend. Remaining work is in UI polish,
 US5 migration, dev_mode release gating, and two reframed key tasks (T042/T043).
 
@@ -261,21 +263,27 @@ Scope → key mapping:
   Key metadata is descriptor-driven from `crates/app/settings/src/descriptors.rs`
   (`DESCRIPTORS` table, 29 keys — single source for key set, noisy, overridable,
   defaults, devMode cfg gate).
-- **Persistence**: migration `crates/persistence/db/migrations/0013_settings.sql`
-  (`settings` + `source_overrides` tables). Low-level repo:
-  `crates/persistence/db/src/repositories/settings.rs` (get_raw/set_raw/load_settings/
+- **Persistence**: the `settings` + `source_overrides` tables in
+  `crates/persistence/core/migrations/0001_initial_schema.sql` (originally
+  migration `0013_settings.sql`, since folded into the pre-1.0 baseline).
+  Low-level repo:
+  `crates/persistence/lifecycle/src/repositories/settings.rs` (get_raw/set_raw/load_settings/
   patterns_by_type helpers).
 - **Tauri commands**: `apps/desktop/src-tauri/src/commands/settings.rs`
   (`settings_get`, `settings_update`, `settings_restore_defaults`,
   `settings_source_override_set`).
-- **Desktop binding**: `apps/desktop/src/api/commands.ts`
-  (`settingsGet` / `settingsUpdate`); wired through `useAutoSave.ts` in section
-  panes. NOTE: `apps/desktop/src/data/settings.ts` does NOT exist.
+- **Desktop binding**: `apps/desktop/src/features/settings/settingsIpc.ts`
+  (`getSettings` / `updateSettings`, the latter re-exported from
+  `apps/desktop/src/data/settingsWrite.ts`) over the `apps/desktop/src/api/ipc.ts`
+  switcher and the generated `packages/contracts/src/generated/` types; wired
+  through `apps/desktop/src/features/settings/useAutoSave.ts` in section panes.
+  NOTE: `apps/desktop/src/data/settings.ts` does NOT exist, and neither does the
+  former single-file binding `apps/desktop/src/api/commands.ts`.
 - **Audit variants**: `SettingsChanged`, `SettingsSnapshot`, `SettingsRepair`
   in `crates/audit/src/event_bus.rs`.
 - **No `crates/app/core/usecases/settings.rs`**: this path does not exist.
 - **Wired settings sections**: advanced / general / cleanup / naming / sources /
   calibration. API Contracts is not a user section (FR-012).
 - **Auto-save**: section panes use `useAutoSave.ts`; no per-key save button.
-- **Theme**: separate `alm.theme` localStorage key in
-  `apps/desktop/src/app/theme.tsx`; not part of `SettingsState`.
+- **Theme**: separate `pv.theme` localStorage key in
+  `apps/desktop/src/data/theme.ts`; not part of `SettingsState`.

@@ -100,7 +100,7 @@ export interface PanelGroupRevision {
   crossTargetAssociationId?: string;
   sessionCount: number;
   representativeSessionId: string;
-  representativeEvidenceId: string;
+  representativeEvidenceId?: string;
   matchingSettingsRevision: number;
   acceptedAt: string;
   acceptedBy: string;
@@ -122,7 +122,7 @@ export interface MosaicRevision {
   crossTargetAssociationId?: string;
   panelCount: number;
   edgeCount: number;
-  capturedUnionEvidenceId: string;
+  capturedUnionEvidenceId?: string;
   matchingSettingsRevision: number;
   acceptedAt: string;
   acceptedBy: string;

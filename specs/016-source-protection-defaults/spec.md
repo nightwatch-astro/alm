@@ -1,12 +1,14 @@
 # Feature Specification: Source Protection Defaults
 
-> **See Spec 030**: UI implementation of this feature must follow
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md)
-> for layout, navigation, and component patterns.
+> **See Spec 032**: UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns. Spec 030 (UI Audit &
+> Revision), cited here previously, is superseded as of 2026-06-11.
 
 **Feature Branch**: `016-source-protection-defaults`  
 **Created**: 2026-05-09  
-**Status**: Draft  
+**Status**: Implemented (post-hoc record, verified 2026-08-24) — see
+Implementation Status below for the per-item evidence.  
 **Input**: User description: "Specify protection settings as per-source behavior with global defaults rather than only a global protection setting."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -110,10 +112,32 @@ As a user, I want global protection defaults for newly added sources so that com
 - Per-source override surfaces (Sources detail / row) are scoped to future
   implementation; mockup demonstrates inheritance language only.
 
-**Pending implementation:**
+**Shipped** (verified against `origin/main` a52c637f2 on 2026-08-24; these four
+items were carried as "Pending implementation" long after they landed):
 
-- Per-source protection override storage and resolver (override → global default).
-- Protection evaluation hook inside plan generation (spec 017 cleanup, spec 025
-  archive) producing blocked / requires-acknowledgement plan items.
-- Protected categories enforcement (frame-type / role membership check).
-- Audit events for protection changes and protected-plan acknowledgements.
+- Per-source protection override storage and resolver (override → global default):
+  `crates/app/core/src/protection/source_protection.rs:35` `get_source_protection`
+  (a `None` `source_id` returns the global defaults directly) and `:102`
+  `set_source_protection`; global defaults at
+  `crates/app/core/src/protection/global_defaults.rs:36`. Exposed as
+  `source_protection_get` / `source_protection_set`
+  (`apps/desktop/src-tauri/src/commands/protection.rs:37`/`:56`). The per-source
+  override UI shipped as
+  `apps/desktop/src/features/settings/SourceProtectionOverride.tsx`, superseding
+  the "scoped to future implementation" note above.
+- Protection evaluation hook inside plan generation:
+  `crates/app/core/src/protection/plan_check.rs` `plan_protection_check`, which
+  marks items `requires_acknowledgement` at `:103`; command
+  `plan_protection_check_cmd` (`protection.rs:80`).
+- Protected categories enforcement: `protected_categories` is applied in cleanup
+  generation at `crates/app/core/src/cleanup_generator/raw_frames.rs:33` and
+  `cleanup_generator/scan.rs`, with the setting defined in
+  `crates/app/settings/src/descriptors.rs`.
+- Audit events for protection changes and protected-plan acknowledgements:
+  `set_source_protection` returns a resolvable `audit_id`
+  (`crates/app/core/src/protection/tests.rs:211` and `:230`, the latter asserting
+  a durable `audit_log_entry` row), and `acknowledge_protected_item`
+  (`plan_check.rs:132`) emits `protection.plan.acknowledged`
+  (`tests.rs:395`-`:405`). Command surface at `protection.rs:101`.
+
+End-to-end coverage: `crates/e2e-tests/tests/cleanup_protection_gate_journey.rs`.

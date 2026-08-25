@@ -41,6 +41,11 @@ pub struct PlanRow {
     pub approved_at: Option<String>,
     pub discarded_at: Option<String>,
     pub created_at: String,
+    /// Absolute root every item destination in this plan must resolve under
+    /// (migration 0003). `None` leaves the executor's destination gate
+    /// inactive, which is the behaviour for every plan type that does not set
+    /// it.
+    pub destination_root: Option<String>,
 }
 
 /// Flat row returned from the `plan_items` table.
@@ -271,22 +276,22 @@ pub async fn list_plans(
     created_after: Option<&str>,
     limit: i64,
 ) -> DbResult<Vec<PlanRow>> {
-    // Build a dynamic query. SQLite does not support array binding, so we
-    // validate the filter values (already validated by the use case) and
-    // interpolate a fixed IN clause.
+    // SQLite does not support array binding, so the IN clauses are built from
+    // the filter lengths only. No caller bytes reach the SQL text; every filter
+    // value is bound below, in the order the placeholders appear.
+    let placeholders = |n: usize| -> String { vec!["?"; n].join(",") };
+
     let state_clause = if state_filter.is_empty() {
         // Default: all non-discarded states.
         "state != 'discarded'".to_owned()
     } else {
-        let quoted: Vec<String> = state_filter.iter().map(|s| format!("'{s}'")).collect();
-        format!("state IN ({})", quoted.join(","))
+        format!("state IN ({})", placeholders(state_filter.len()))
     };
 
     let origin_clause = if origin_filter.is_empty() {
         String::new()
     } else {
-        let quoted: Vec<String> = origin_filter.iter().map(|s| format!("'{s}'")).collect();
-        format!("AND origin IN ({})", quoted.join(","))
+        format!("AND origin IN ({})", placeholders(origin_filter.len()))
     };
 
     let date_clause = if created_after.is_some() { "AND created_at >= ?" } else { "" };
@@ -302,6 +307,12 @@ pub async fn list_plans(
     );
 
     let mut q = sqlx::query_as::<_, PlanRow>(sqlx::AssertSqlSafe(&*sql));
+    for state in state_filter {
+        q = q.bind(state);
+    }
+    for origin in origin_filter {
+        q = q.bind(origin);
+    }
     if let Some(after) = created_after {
         q = q.bind(after);
     }
@@ -323,9 +334,14 @@ pub async fn list_plan_items(pool: &SqlitePool, plan_id: &str) -> DbResult<Vec<P
 }
 
 /// Set `destructive_confirmed = 1` on every item in `plan_id` that requires
-/// destructive confirmation (`action IN ('delete','trash')`, or the explicit
-/// `requires_destructive_confirm` override column — mirrors the derivation in
-/// `app_core::plan_apply::item_row_to_executor_item`).
+/// destructive confirmation: `action IN ('delete','trash')`, an
+/// `action = 'archive'` item whose plan carries
+/// `destructive_destination = 'trash'` (that reroute makes it a real OS-trash
+/// removal), or the explicit `requires_destructive_confirm` override column.
+/// Mirrors the derivation in
+/// `app_core::plan_apply::item_row_to_executor_item`, and MUST stay at least as
+/// wide as it: a narrower writer leaves items the executor refuses with
+/// `destructive_unconfirmed` even after the user confirmed the plan.
 ///
 /// This is the write half of the FR-003/D9 confirm gate: the executor
 /// (`fs_executor::run::execute_plan`) refuses any destructive item where
@@ -340,12 +356,40 @@ pub async fn confirm_plan_destructive_items(pool: &SqlitePool, plan_id: &str) ->
     let result = sqlx::query(
         "UPDATE plan_items SET destructive_confirmed = 1 \
          WHERE plan_id = ? AND destructive_confirmed = 0 \
-         AND (action IN ('delete', 'trash') OR requires_destructive_confirm = 1)",
+         AND (action IN ('delete', 'trash') OR requires_destructive_confirm = 1 \
+              OR (action = 'archive' AND EXISTS ( \
+                  SELECT 1 FROM plans p \
+                  WHERE p.id = plan_items.plan_id \
+                  AND p.destructive_destination = 'trash')))",
     )
     .bind(plan_id)
     .execute(pool)
     .await?;
     Ok(result.rows_affected())
+}
+
+/// Record the absolute destination root every item in `plan_id` must resolve
+/// under (migration 0003).
+///
+/// # Errors
+///
+/// Returns [`persistence_core::DbError::NotFound`] if no plan with `plan_id`
+/// exists, or [`persistence_core::DbError::Database`] on connection failure.
+pub async fn set_destination_root(
+    pool: &SqlitePool,
+    plan_id: &str,
+    destination_root: &str,
+) -> DbResult<()> {
+    let rows = sqlx::query("UPDATE plans SET destination_root = ? WHERE id = ?")
+        .bind(destination_root)
+        .bind(plan_id)
+        .execute(pool)
+        .await?
+        .rows_affected();
+    if rows == 0 {
+        return Err(persistence_core::DbError::NotFound(format!("plan {plan_id}")));
+    }
+    Ok(())
 }
 
 /// Update the plan state.
@@ -386,21 +430,30 @@ pub(crate) async fn update_plan_state_conn(
     Ok(())
 }
 
-/// Set `approved_at` and `approval_token` on a plan row.
+/// Approve a plan: `ready_for_review → approved`, recording `approved_at` and
+/// `approval_token`.
 ///
-/// Called by `approve_plan` after state is updated to `approved`.
+/// The expected state is in the `WHERE` clause, so this loses rather than
+/// overwrites when it races another transition. Without that predicate a
+/// concurrent [`set_reopened`] could be undone by an approval that had already
+/// read `ready_for_review`, leaving the plan `approved` with a live token while
+/// the reopen returned success.
 ///
 /// # Errors
 ///
-/// Returns [`persistence_core::DbError::Database`] on connection failure.
+/// - [`persistence_core::DbError::NotFound`] when no row matches `plan_id`.
+/// - [`persistence_core::DbError::CasFailed`] when the row exists in a state
+///   other than `ready_for_review`.
+/// - [`persistence_core::DbError::Database`] on connection failure.
 pub async fn set_approved(
     pool: &SqlitePool,
     plan_id: &str,
     approved_at: &str,
     approval_token: &str,
 ) -> DbResult<()> {
-    sqlx::query(
-        "UPDATE plans SET state = 'approved', approved_at = ?, approval_token = ? WHERE id = ?",
+    let rows = sqlx::query(
+        "UPDATE plans SET state = 'approved', approved_at = ?, approval_token = ? \
+         WHERE id = ? AND state = 'ready_for_review'",
     )
     .bind(approved_at)
     .bind(approval_token)
@@ -408,6 +461,62 @@ pub async fn set_approved(
     .execute(pool)
     .await?;
 
+    if rows.rows_affected() == 0 {
+        return Err(state_cas_error(pool, plan_id, "'ready_for_review'").await?);
+    }
+    Ok(())
+}
+
+/// The error a lost state CAS on `plans` should return.
+///
+/// A guarded `UPDATE` affecting zero rows does not say why. Re-reading the state
+/// separates a missing plan from one in a state the transition does not accept:
+/// the first is [`persistence_core::DbError::NotFound`], the second
+/// [`persistence_core::DbError::CasFailed`], which the app layer maps to
+/// `plan.invalid_state`. Reporting both as `NotFound` told the caller a plan it
+/// had just read no longer existed.
+///
+/// `expected` is quoted by the caller, so a transition accepting more than one
+/// state can name all of them.
+async fn state_cas_error(pool: &SqlitePool, plan_id: &str, expected: &str) -> DbResult<DbError> {
+    let found: Option<String> = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind(plan_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(match found {
+        None => DbError::NotFound(format!("plan {plan_id}")),
+        Some(state) => {
+            DbError::CasFailed(format!("plan {plan_id} expected state {expected}, found '{state}'"))
+        }
+    })
+}
+
+/// Return a plan to `draft` and clear its approval (spec 017 T023).
+///
+/// `approval_token` and `approved_at` are nulled in the same statement as the
+/// state change: `verify_approval_token` reads a null stored token as
+/// `plan.approval.stale`, so a token issued before the reopen cannot authorise
+/// an apply of the edited plan. The state predicate is in the `WHERE` clause so
+/// a concurrent `applying` transition cannot be overwritten.
+///
+/// # Errors
+///
+/// - [`persistence_core::DbError::NotFound`] when no row matches `plan_id`.
+/// - [`persistence_core::DbError::CasFailed`] when the row exists in a state
+///   with no `→ draft` edge, which the app layer maps to `plan.invalid_state`.
+/// - [`persistence_core::DbError::Database`] on connection failure.
+pub async fn set_reopened(pool: &SqlitePool, plan_id: &str) -> DbResult<()> {
+    let rows = sqlx::query(
+        "UPDATE plans SET state = 'draft', approved_at = NULL, approval_token = NULL \
+         WHERE id = ? AND state IN ('approved', 'ready_for_review')",
+    )
+    .bind(plan_id)
+    .execute(pool)
+    .await?;
+
+    if rows.rows_affected() == 0 {
+        return Err(state_cas_error(pool, plan_id, "'approved' or 'ready_for_review'").await?);
+    }
     Ok(())
 }
 
@@ -419,17 +528,22 @@ pub async fn set_approved(
 ///
 /// # Errors
 ///
-/// Returns [`persistence_core::DbError::Database`] on connection failure.
+/// Returns [`persistence_core::DbError::NotFound`] when no plan carries
+/// `plan_id`, and [`persistence_core::DbError::Database`] on connection failure.
 pub async fn set_chosen_framing_id(
     pool: &SqlitePool,
     plan_id: &str,
     framing_id: &str,
 ) -> DbResult<()> {
-    sqlx::query("UPDATE plans SET chosen_framing_id = ? WHERE id = ?")
+    let rows = sqlx::query("UPDATE plans SET chosen_framing_id = ? WHERE id = ?")
         .bind(framing_id)
         .bind(plan_id)
         .execute(pool)
         .await?;
+
+    if rows.rows_affected() == 0 {
+        return Err(DbError::NotFound(format!("plan {plan_id}")));
+    }
     Ok(())
 }
 
@@ -528,6 +642,20 @@ mod tests {
     // ── chosen_framing_id (F-Framing-10) ────────────────────────────────────
 
     #[tokio::test]
+    async fn set_chosen_framing_id_reports_a_plan_that_is_gone() {
+        let db = setup_db().await;
+
+        let err = set_chosen_framing_id(db.pool(), "plan-gone", "framing-1")
+            .await
+            .expect_err("an attribution write that matches no plan must not report success");
+
+        assert!(
+            matches!(err, DbError::NotFound(ref m) if m.contains("plan-gone")),
+            "error must name the missing plan: {err}"
+        );
+    }
+
+    #[tokio::test]
     async fn chosen_framing_id_defaults_to_none_and_round_trips() {
         let db = setup_db().await;
         insert_plan(db.pool(), &sample_plan("plan-attr")).await.unwrap();
@@ -612,6 +740,49 @@ mod tests {
         let rows = list_plans(db.pool(), &["draft".to_owned()], &[], None, 100).await.unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "p1");
+    }
+
+    /// State, origin, and `created_after` placeholders appear in that order in
+    /// the SQL text; a bind order that disagrees silently returns wrong rows.
+    #[tokio::test]
+    async fn list_plans_combines_state_origin_and_created_after_filters() {
+        let db = setup_db().await;
+        for (id, origin) in [("p-keep", "cleanup"), ("p-origin", "archive"), ("p-state", "cleanup")]
+        {
+            let mut plan = sample_plan(id);
+            plan.origin = origin;
+            plan.plan_type = origin;
+            insert_plan(db.pool(), &plan).await.unwrap();
+        }
+        update_plan_state(db.pool(), "p-state", "ready_for_review").await.unwrap();
+
+        let rows = list_plans(
+            db.pool(),
+            &["draft".to_owned()],
+            &["cleanup".to_owned()],
+            Some("2000-01-01T00:00:00Z"),
+            100,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["p-keep"]);
+    }
+
+    /// Filter values are bound, so SQL metacharacters are matched as data and
+    /// cannot extend the WHERE clause past the non-discarded default.
+    #[tokio::test]
+    async fn list_plans_filter_values_cannot_inject_sql() {
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p1")).await.unwrap();
+        insert_plan(db.pool(), &sample_plan("p2")).await.unwrap();
+        soft_delete_plan(db.pool(), "p2", "2026-06-01T00:00:00Z").await.unwrap();
+
+        let rows = list_plans(db.pool(), &["draft') OR 1=1 --".to_owned()], &[], None, 100)
+            .await
+            .expect("a hostile filter value is data, not SQL");
+
+        assert!(rows.is_empty(), "no plan has that literal state");
     }
 
     #[tokio::test]
@@ -704,6 +875,92 @@ mod tests {
         // Idempotent: a second confirm on an already-confirmed plan touches nothing.
         let confirmed_again = confirm_plan_destructive_items(db.pool(), "p-confirm").await.unwrap();
         assert_eq!(confirmed_again, 0);
+    }
+
+    // ── State CAS on approval and reopen ────────────────────────────────────
+    //
+    // Both statements are guarded `UPDATE`s, so the interesting cases are the
+    // ones that affect zero rows: a lost race must be distinguishable from a
+    // plan that is not there.
+
+    #[tokio::test]
+    async fn approval_requires_ready_for_review() {
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p-cas")).await.unwrap();
+
+        // Still a draft: approval must not force the state.
+        let err =
+            set_approved(db.pool(), "p-cas", "2026-08-01T00:00:00Z", "tok-1").await.unwrap_err();
+        assert!(matches!(err, DbError::CasFailed(_)), "got {err:?}");
+        let row = get_plan(db.pool(), "p-cas", false).await.unwrap();
+        assert_eq!(row.state, "draft");
+        assert_eq!(row.approval_token, None);
+
+        update_plan_state(db.pool(), "p-cas", "ready_for_review").await.unwrap();
+        set_approved(db.pool(), "p-cas", "2026-08-01T00:00:00Z", "tok-1").await.unwrap();
+        let row = get_plan(db.pool(), "p-cas", false).await.unwrap();
+        assert_eq!(row.state, "approved");
+        assert_eq!(row.approval_token.as_deref(), Some("tok-1"));
+    }
+
+    #[tokio::test]
+    async fn approval_of_a_reopened_plan_loses() {
+        // The concurrency case from the review: approval read `ready_for_review`,
+        // a reopen landed first, and the approval must not resurrect the token.
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p-race")).await.unwrap();
+        update_plan_state(db.pool(), "p-race", "ready_for_review").await.unwrap();
+        set_reopened(db.pool(), "p-race").await.unwrap();
+
+        let err = set_approved(db.pool(), "p-race", "2026-08-01T00:00:00Z", "tok-race")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DbError::CasFailed(_)), "got {err:?}");
+        let row = get_plan(db.pool(), "p-race", false).await.unwrap();
+        assert_eq!(row.state, "draft");
+        assert_eq!(row.approval_token, None);
+    }
+
+    #[tokio::test]
+    async fn approval_of_a_missing_plan_is_not_found() {
+        let db = setup_db().await;
+        let err =
+            set_approved(db.pool(), "ghost", "2026-08-01T00:00:00Z", "tok").await.unwrap_err();
+        assert!(matches!(err, DbError::NotFound(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn reopen_clears_the_approval() {
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p-reopen")).await.unwrap();
+        update_plan_state(db.pool(), "p-reopen", "ready_for_review").await.unwrap();
+        set_approved(db.pool(), "p-reopen", "2026-08-01T00:00:00Z", "tok-r").await.unwrap();
+
+        set_reopened(db.pool(), "p-reopen").await.unwrap();
+        let row = get_plan(db.pool(), "p-reopen", false).await.unwrap();
+        assert_eq!(row.state, "draft");
+        assert_eq!(row.approval_token, None);
+        assert_eq!(row.approved_at, None);
+    }
+
+    #[tokio::test]
+    async fn reopen_of_an_applying_plan_reports_invalid_state_not_missing() {
+        // `applying` has no `→ draft` edge. Reporting this as NotFound told the
+        // caller a plan it had just read had disappeared.
+        let db = setup_db().await;
+        insert_plan(db.pool(), &sample_plan("p-applying")).await.unwrap();
+        update_plan_state(db.pool(), "p-applying", "applying").await.unwrap();
+
+        let err = set_reopened(db.pool(), "p-applying").await.unwrap_err();
+        assert!(matches!(err, DbError::CasFailed(_)), "got {err:?}");
+        assert!(format!("{err}").contains("found 'applying'"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn reopen_of_a_missing_plan_is_not_found() {
+        let db = setup_db().await;
+        let err = set_reopened(db.pool(), "ghost").await.unwrap_err();
+        assert!(matches!(err, DbError::NotFound(_)), "got {err:?}");
     }
 
     #[tokio::test]
