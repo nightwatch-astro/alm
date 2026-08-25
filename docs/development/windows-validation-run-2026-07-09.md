@@ -23,7 +23,9 @@ step. **Interactive protocol:** every test stops for human review before the nex
   stand-ins for the native folder pickers).
 - DB (first-run source of truth): `sqlite://C:\dev\astro-plan\wizard-test.db`.
 - Bridge: WebSocket `0.0.0.0:9223`, connect `driver_session host=localhost
-  port=9223`.
+  port=9223`. Repeating this run needs `--features dev-tools` at launch, and
+  `PV_MCP_BRIDGE_BIND=0.0.0.0` to reproduce that bind; the bridge binds
+  `127.0.0.1` by default and is absent without the feature.
 - Run branch / worktree: `ws3-mcp-validation-run` @
   `/home/sjors/tmp/worktrees/astro-plan/campaign-ws0` (tracks origin/main).
 

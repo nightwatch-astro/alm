@@ -22,9 +22,11 @@ fn pixinsight_profile() -> ToolProfile {
         // robust path argument is a `.xosm` project file we never generate,
         // and running WBPP's automationMode would violate the PixInsight
         // processing boundary (Constitution III). Launch bare instead — the
-        // user opens their own files/project inside PixInsight. `cwd` is
-        // still anchored to the project folder (R-CwdContain), which is what
-        // drives the one-time "cwd anchored" hint (supports_open_folder=false).
+        // user opens their own files/project inside PixInsight, which is what
+        // the one-time launch hint says (supports_open_folder=false). The
+        // working folder reaches the tool only where the platform arm applies
+        // it, and `bundle_id` is set here, so on macOS `open -b` runs and
+        // Launch Services drops it (`launch::spawn_platform`).
         args_template: vec![],
         supports_open_folder: false,
         detach_strategy: DetachStrategy::OpenBundleId,
@@ -133,9 +135,10 @@ mod tests {
 
     #[test]
     fn pixinsight_launches_bare_with_no_folder_arg() {
-        // PixInsight cannot open a bare folder path (bug #778): launch with
-        // no args and rely on `cwd` anchoring instead of {folder} (spec 011
-        // R-CwdContain, supports_open_folder=false path).
+        // PixInsight cannot open a bare folder path (bug #778), so it launches
+        // with no args (spec 011 R-CwdContain, supports_open_folder=false
+        // path). It sets a bundle id, so on macOS it takes the `open -b` arm,
+        // which applies no working directory at all (`launch.rs:159-183`).
         let p = find("pixinsight").expect("pixinsight must be seeded");
         assert!(!p.supports_open_folder);
         assert!(p.args_template.is_empty());

@@ -144,13 +144,14 @@ async fn first_run_resolve_create_project() -> anyhow::Result<()> {
 /// Filesystem plan review → apply → durable-record assertion.
 ///
 /// Backend REAL: `roots.register`, `sources.set_organization_state`,
-/// `inbox.scan.folder`, `inbox.classify`, `inbox.confirm`,
+/// `inbox.scan.folder`, `inbox.classify`, `inbox.confirm`, `plans.approve`,
 /// `inbox.plan.apply`, `plans.apply.status`.
 ///
-/// `inbox.plan.apply` (not `plans.apply_real`) is the mutating step: it
-/// auto-approves the confirmed plan and calls the SAME `apply_plan` core
-/// function `plans.apply_real` uses, just without a progress `Channel` — the
-/// exact real, channel-free equivalent this journey needs (see module docs).
+/// `inbox.plan.apply` (not `plans.apply_real`) is the mutating step: it calls the
+/// SAME `apply_plan` core function `plans.apply_real` uses, just without a
+/// progress `Channel` — the exact real, channel-free equivalent this journey
+/// needs (see module docs). It refuses a plan that carries no approval, so the
+/// journey approves first, as the UI does.
 #[tokio::test]
 #[ignore = "Layer-2 real-UI journey: needs tauri-webdriver CLI + desktop_shell --features e2e + served frontend; run via e2e.yml (--run-ignored all)"]
 async fn plan_review_apply_with_audit() -> anyhow::Result<()> {
@@ -250,6 +251,10 @@ async fn plan_review_apply_with_audit() -> anyhow::Result<()> {
     anyhow::ensure!(!plan_id.is_empty(), "expected a real (non-empty) plan id: {confirm}");
 
     // 3. Apply — the real filesystem mutation (FR-009).
+    // Constitution II (astro-plan-tykek): `inbox.plan.apply` refuses a plan the
+    // caller has not approved, mirroring the UI's approve-then-apply gesture.
+    let _: serde_json::Value =
+        app.invoke("plans_approve", json!({ "id": confirm["planId"] })).await?;
     let apply: serde_json::Value =
         app.invoke("inbox_plan_apply", json!({ "inboxItemId": inbox_item_id })).await?;
     anyhow::ensure!(
@@ -369,7 +374,7 @@ async fn ingestion_sessions_search() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("inbox.classify returned no contentSignature: {classify}"))?
         .to_owned();
 
-    let _: serde_json::Value = app
+    let confirm: serde_json::Value = app
         .invoke(
             "inbox_confirm",
             json!({
@@ -384,6 +389,10 @@ async fn ingestion_sessions_search() -> anyhow::Result<()> {
         )
         .await?;
 
+    // Constitution II (astro-plan-tykek): `inbox.plan.apply` refuses a plan the
+    // caller has not approved, mirroring the UI's approve-then-apply gesture.
+    let _: serde_json::Value =
+        app.invoke("plans_approve", json!({ "id": confirm["planId"] })).await?;
     let _: serde_json::Value =
         app.invoke("inbox_plan_apply", json!({ "inboxItemId": inbox_item_id })).await?;
 
@@ -706,11 +715,16 @@ async fn cleanup_plan_review() -> anyhow::Result<()> {
         approve["planId"] == json!(plan_id) && approve["newState"] == "approved",
         "expected plans.approve to move the generated plan to approved: {approve}"
     );
+    let approval_token = approve["approvalToken"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("plans.approve returned no approvalToken: {approve}"))?
+        .to_owned();
 
-    // Apply — the real filesystem mutation (channel-free, spec 037). Tolerates
-    // the plan already being `approved` (reuses the stored token).
-    let apply: serde_json::Value =
-        app.invoke("plans_apply_direct", json!({ "planId": plan_id })).await?;
+    // Apply — the real filesystem mutation (channel-free, spec 037). The token
+    // minted by the approve call above is the gate; no apply path mints its own.
+    let apply: serde_json::Value = app
+        .invoke("plans_apply_direct", json!({ "planId": plan_id, "approvalToken": approval_token }))
+        .await?;
     anyhow::ensure!(
         apply["planId"] == json!(plan_id) && apply["newState"] == "applying",
         "expected plans.apply.direct to start applying the approved plan: {apply}"

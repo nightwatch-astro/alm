@@ -73,7 +73,4 @@ target_resolution_settings
 target_resolution_settings_update
 target_resolve_explicit
 target_sessions_list
-tools_discover
 tools_launch
-tools_list
-tools_update

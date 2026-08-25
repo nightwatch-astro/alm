@@ -8,7 +8,7 @@ use audit::event_bus::{
     ArchivePermanentlyDeleted, ArchiveSentToTrash, Source, TOPIC_ARCHIVE_PERMANENTLY_DELETED,
     TOPIC_ARCHIVE_SENT_TO_TRASH,
 };
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use contracts_core::plans::{ArchivePermanentlyDeleteResponse, ArchiveSendToTrashResponse};
 use contracts_core::{error_code::ErrorCode, ContractError, ErrorSeverity};
 use domain_core::ids::{new_id, Timestamp};
@@ -26,19 +26,59 @@ use super::{build_root_map, db_err, PERMANENT_DELETE_CONFIRM_TEXT};
 
 /// Resolve an archived item's on-disk absolute path.
 ///
-/// `archive_path` is stored root-relative when the item has a `from_root_id`
-/// (mirrors the spec-025 executor's `resolve_item_path`, `crates/fs/executor/src/run.rs`);
+/// `archive_path` is stored root-relative when the item has a `from_root_id`;
 /// archive-plan generators that predate a resolved root (`archive_generator`,
 /// `cleanup_generator`) store an already-absolute path with `from_root_id: None`,
-/// so the "no root" branch uses `archive_path` as-is rather than erroring.
+/// so that shape is accepted through `resolve_unrooted`.
+///
+/// A `from_root_id` that does not resolve is an error rather than the no-root
+/// shape. Sharing one branch meant an unresolvable root id produced a
+/// cwd-relative path, which then reached `trash_file` or `delete_file`
+/// (astro-plan-3v3r.5.20).
+///
+/// # Errors
+///
+/// [`fs_pathsafe::contain::ContainmentError`] when the path does not resolve
+/// inside its root, or when a rootless path is not absolute and normal.
 fn resolve_archive_abs_path(
     archive_path: &str,
     from_root_id: Option<&str>,
     root_map: &HashMap<String, Utf8PathBuf>,
-) -> Utf8PathBuf {
-    match from_root_id.and_then(|rid| root_map.get(rid)) {
-        Some(root) => root.join(archive_path),
-        None => Utf8PathBuf::from(archive_path),
+) -> Result<Utf8PathBuf, fs_pathsafe::contain::ContainmentError> {
+    let path = Utf8Path::new(archive_path);
+    match from_root_id {
+        Some(rid) => {
+            let root = root_map.get(rid).ok_or_else(|| {
+                fs_pathsafe::contain::ContainmentError::RootMissing {
+                    path: path.as_std_path().to_path_buf(),
+                }
+            })?;
+            fs_pathsafe::contain::resolve_in_root_utf8(root, path)
+        }
+        None => fs_pathsafe::contain::resolve_unrooted_utf8(path),
+    }
+}
+
+/// Resolve one archived item, recording an uncontained path as a failure.
+///
+/// The recorded failure surfaces to the caller only when no item moved at all,
+/// which is the same handling the trash and delete primitives already get. In a
+/// mixed batch the refusal is a `warn` and the response still reports the items
+/// that did move.
+fn resolve_or_record_failure(
+    archive_path: &str,
+    from_root_id: Option<&str>,
+    root_map: &HashMap<String, Utf8PathBuf>,
+    item_id: &str,
+    last_failure: &mut Option<(FailureCode, String)>,
+) -> Option<Utf8PathBuf> {
+    match resolve_archive_abs_path(archive_path, from_root_id, root_map) {
+        Ok(path) => Some(path),
+        Err(e) => {
+            tracing::warn!(item_id = %item_id, error = %e, "archive item path not contained");
+            *last_failure = Some((FailureCode::PathInvalid, e.to_string()));
+            None
+        }
     }
 }
 
@@ -108,8 +148,15 @@ pub async fn send_archive_to_trash(
     for item in &archive_items {
         // Filtered by `archive_path.is_some()` above.
         let archive_rel = item.archive_path.as_deref().unwrap_or_default();
-        let abs_path =
-            resolve_archive_abs_path(archive_rel, item.from_root_id.as_deref(), &root_map);
+        let Some(abs_path) = resolve_or_record_failure(
+            archive_rel,
+            item.from_root_id.as_deref(),
+            &root_map,
+            &item.id,
+            &mut last_failure,
+        ) else {
+            continue;
+        };
 
         if !abs_path.exists() {
             // Already gone (e.g. a repeated call) — not a failure, no-op.
@@ -214,8 +261,15 @@ pub async fn permanently_delete_archive(
     let mut last_failure: Option<(FailureCode, String)> = None;
     for item in &archive_items {
         let archive_rel = item.archive_path.as_deref().unwrap_or_default();
-        let abs_path =
-            resolve_archive_abs_path(archive_rel, item.from_root_id.as_deref(), &root_map);
+        let Some(abs_path) = resolve_or_record_failure(
+            archive_rel,
+            item.from_root_id.as_deref(),
+            &root_map,
+            &item.id,
+            &mut last_failure,
+        ) else {
+            continue;
+        };
 
         if !abs_path.exists() {
             // Already gone (e.g. a repeated call) — not a failure, no-op.
@@ -258,4 +312,68 @@ pub async fn permanently_delete_archive(
     .map_err(bus_err)?;
 
     Ok(ArchivePermanentlyDeleteResponse { plan_id: plan_id.to_owned(), items_deleted, audit_id })
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn root_map() -> HashMap<String, Utf8PathBuf> {
+        HashMap::from([(
+            "root-1".to_owned(),
+            Utf8PathBuf::from(fs_pathsafe::test_support::abs("/mnt/library")),
+        )])
+    }
+
+    /// Compare by path components: the resolved form carries the platform
+    /// separator, which differs from the Unix-style literal on Windows.
+    fn assert_same_path(actual: &camino::Utf8Path, expected_unix: &str) {
+        assert_eq!(
+            actual.as_std_path(),
+            std::path::Path::new(&fs_pathsafe::test_support::abs(expected_unix)),
+        );
+    }
+
+    #[test]
+    fn a_root_relative_archive_path_resolves_under_its_root() {
+        let path = resolve_archive_abs_path(
+            ".astro-plan-archive/plan-1/x.fits",
+            Some("root-1"),
+            &root_map(),
+        )
+        .unwrap();
+        assert_same_path(&path, "/mnt/library/.astro-plan-archive/plan-1/x.fits");
+    }
+
+    /// astro-plan-3v3r.5.20: an unresolvable root id took the no-root branch and
+    /// produced a cwd-relative path, which then reached trash_file/delete_file.
+    #[test]
+    fn an_unresolvable_root_id_is_refused_rather_than_treated_as_rootless() {
+        let err = resolve_archive_abs_path("plan-1/x.fits", Some("missing-root"), &root_map())
+            .unwrap_err();
+        assert!(matches!(err, fs_pathsafe::contain::ContainmentError::RootMissing { .. }), "{err}");
+    }
+
+    #[test]
+    fn a_root_relative_path_that_escapes_its_root_is_refused() {
+        let err =
+            resolve_archive_abs_path("../../etc/passwd", Some("root-1"), &root_map()).unwrap_err();
+        assert!(matches!(err, fs_pathsafe::contain::ContainmentError::Escapes { .. }), "{err}");
+    }
+
+    /// Legacy archive/cleanup generators store an absolute path with no root id.
+    #[test]
+    fn a_rootless_absolute_path_still_resolves() {
+        let supplied = fs_pathsafe::test_support::abs("/mnt/library/archive/x.fits");
+        let path = resolve_archive_abs_path(&supplied, None, &root_map()).unwrap();
+        assert_same_path(&path, "/mnt/library/archive/x.fits");
+    }
+
+    #[test]
+    fn a_rootless_relative_path_is_refused() {
+        let err = resolve_archive_abs_path("archive/x.fits", None, &root_map()).unwrap_err();
+        assert!(matches!(err, fs_pathsafe::contain::ContainmentError::NotAbsolute { .. }), "{err}");
+    }
 }

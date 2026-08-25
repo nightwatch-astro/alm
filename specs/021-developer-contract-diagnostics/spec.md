@@ -1,8 +1,11 @@
 # Feature Specification: Developer Contract Diagnostics
 
-> **See Spec 030**: Implementation of this feature must follow
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md)
-> for UI patterns, lifecycle states, source folder types, and data model changes.
+> **See Spec 032**: UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns. Spec 030 (UI Audit &
+> Revision), cited here previously, is superseded as of 2026-06-11.
+> Lifecycle states, source folder types, and data model concepts are owned by
+> the dependent backend specs (002, 005-019, 023-026), not by spec 030.
 
 **Feature Branch**: `021-developer-contract-diagnostics`  
 **Created**: 2026-05-09  

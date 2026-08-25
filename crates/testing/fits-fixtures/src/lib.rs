@@ -29,6 +29,8 @@
 use std::io::Write as _;
 use std::path::Path;
 
+const CARD: usize = 80;
+
 /// Minimal FITS fixture builder.
 ///
 /// # Panics
@@ -37,7 +39,7 @@ use std::path::Path;
 /// after the mandatory END card). Test fixtures never need more than ~10 cards.
 #[derive(Default)]
 pub struct FitsFixture {
-    cards: Vec<String>,
+    cards: Vec<[u8; CARD]>,
 }
 
 impl FitsFixture {
@@ -47,10 +49,18 @@ impl FitsFixture {
         Self::default()
     }
 
-    /// Add a raw card string (truncated / padded to 80 bytes).
+    /// Add a raw card string, space-padded or truncated to exactly 80 bytes.
+    ///
+    /// A FITS card is a fixed 80-byte record, so padding and truncation are on
+    /// byte counts, not character counts: a multibyte character straddling byte
+    /// 80 is cut mid-character.
     #[must_use]
     pub fn card(mut self, raw: &str) -> Self {
-        self.cards.push(format!("{:<80}", &raw[..raw.len().min(80)]));
+        let mut card = [b' '; CARD];
+        let src = raw.as_bytes();
+        let n = src.len().min(CARD);
+        card[..n].copy_from_slice(&src[..n]);
+        self.cards.push(card);
         self
     }
 
@@ -128,7 +138,6 @@ impl FitsFixture {
     /// cards were added (would overflow one 2880-byte FITS block).
     pub fn write(self, path: &Path) {
         const BLOCK: usize = 2880;
-        const CARD: usize = 80;
         const MAX_CARDS: usize = BLOCK / CARD; // 36
 
         let n = self.cards.len();
@@ -140,9 +149,7 @@ impl FitsFixture {
 
         let mut block = vec![b' '; BLOCK];
         for (i, card) in self.cards.iter().enumerate() {
-            let bytes = card.as_bytes();
-            block[i * CARD..i * CARD + bytes.len().min(CARD)]
-                .copy_from_slice(&bytes[..bytes.len().min(CARD)]);
+            block[i * CARD..(i + 1) * CARD].copy_from_slice(card);
         }
         // END card
         block[n * CARD..n * CARD + 3].copy_from_slice(b"END");
@@ -189,5 +196,33 @@ mod tests {
         assert_eq!(bytes.len(), 2880);
         // END should be at slot 3.
         assert_eq!(bytes[3 * 80..3 * 80 + 3], *b"END");
+    }
+
+    /// bd astro-plan-3v3r.15.5: a card whose byte 80 fell inside a multibyte
+    /// character panicked on a `str` slice at a non-char boundary.
+    #[test]
+    fn multibyte_card_across_the_eighty_byte_boundary_does_not_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.fits");
+        // "OBJECT  = '" is 11 bytes; 'é' is 2 bytes and lands on bytes 79..81.
+        let value = format!("{}é", "x".repeat(68));
+        FitsFixture::new().object(&value).card(&"Ω".repeat(60)).write(&path);
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(bytes.len(), 2880);
+        assert_eq!(&bytes[..11], b"OBJECT  = '");
+        // Both cards occupy exactly 80 bytes each, so END lands at slot 2.
+        assert_eq!(bytes[2 * 80..2 * 80 + 3], *b"END");
+    }
+
+    #[test]
+    fn short_ascii_card_is_space_padded_to_eighty_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.fits");
+        FitsFixture::new().card("SIMPLE  =                    T").write(&path);
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[..30], b"SIMPLE  =                    T");
+        assert!(bytes[30..80].iter().all(|b| *b == b' '));
     }
 }

@@ -1,8 +1,8 @@
 // Copyright (C) 2024-2026 Sjors Robroek
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Pure action → filesystem-op dispatch (no async, no callbacks): resolves
-//! item paths against their roots and calls the matching `ops::*` primitive.
+//! Pure action → filesystem-op dispatch (no async, no callbacks): calls the
+//! matching `ops::*` primitive on paths already resolved by the run loop.
 
 use camino::{Utf8Path, Utf8PathBuf};
 
@@ -13,7 +13,6 @@ use crate::ops::delete_op;
 use crate::ops::link_op;
 use crate::ops::mkdir_op;
 use crate::ops::move_op;
-use crate::ops::path_gate;
 use crate::ops::trash_op;
 use crate::ops::write_manifest_op;
 
@@ -21,47 +20,55 @@ use super::{ExecutorItem, ExecutorItemAction};
 
 pub(super) type OpError = (PlanItemFailure, bool, RollbackOutcome, Option<String>);
 
-pub(super) fn execute_item(item: &ExecutorItem) -> Result<(), OpError> {
-    // Resolve the source and destination paths against the library root (if set).
-    // The path gate has already validated them earlier in the loop; this is the
-    // absolute-path computation for the actual filesystem operation.
-    let resolved_src: Option<Utf8PathBuf> =
-        resolve_item_path(item.source_path.as_deref(), item.library_root.as_deref());
-    // #765: destination_root (picked destination root) takes precedence over
-    // library_root (source root) for the destination join. Falls back to
-    // library_root when destination_root is unset, preserving same-root
-    // behavior for archive/trash/catalogue/legacy items.
-    let resolved_dst: Option<Utf8PathBuf> = resolve_item_path(
-        item.destination_path.as_deref(),
-        item.destination_root.as_deref().or(item.library_root.as_deref()),
-    );
+/// Both sides of an item, resolved and proven contained by
+/// `run::loop_::resolve_item_paths`.
+///
+/// Dispatch takes these rather than the roots so there is one resolution per
+/// item: a second join here disagreed with the gate about which root governs a
+/// destination (astro-plan-3v3r.1.12).
+#[derive(Debug, Clone, Default)]
+pub(super) struct ResolvedItemPaths {
+    pub(super) source: Option<Utf8PathBuf>,
+    pub(super) destination: Option<Utf8PathBuf>,
+    /// The archive destination carried by `Archive`/`Trash`, resolved against
+    /// the same root as the source.
+    ///
+    /// A third destination field reached `move_file` unresolved and ungated
+    /// while only the two named sides were gated (astro-plan-zboex).
+    pub(super) archive_destination: Option<Utf8PathBuf>,
+}
+
+pub(super) fn execute_item(item: &ExecutorItem, paths: &ResolvedItemPaths) -> Result<(), OpError> {
+    let resolved_src = paths.source.as_deref();
+    let resolved_dst = paths.destination.as_deref();
 
     match &item.action {
         ExecutorItemAction::NoOp => Ok(()),
 
         ExecutorItemAction::Move => {
-            let src = require_resolved_path(resolved_src.as_deref(), "source")?;
-            let dst = require_resolved_path(resolved_dst.as_deref(), "destination")?;
+            let src = require_resolved_path(resolved_src, "source")?;
+            let dst = require_resolved_path(resolved_dst, "destination")?;
             move_op::move_file(src, dst)
                 .map_err(|(f, r)| (f, r.rollback_attempted, r.rollback_outcome, r.rollback_message))
         }
 
-        ExecutorItemAction::Archive { archive_destination } => {
-            let src = require_resolved_path(resolved_src.as_deref(), "source")?;
-            // archive_destination is already absolute (pre-computed at plan generation).
-            archive_op::archive_file(src, archive_destination)
+        ExecutorItemAction::Archive { .. } => {
+            let src = require_resolved_path(resolved_src, "source")?;
+            let dst =
+                require_resolved_path(paths.archive_destination.as_deref(), "archive destination")?;
+            archive_op::archive_file(src, dst)
                 .map_err(|(f, r)| (f, r.rollback_attempted, r.rollback_outcome, r.rollback_message))
         }
 
-        ExecutorItemAction::Trash { fallback_archive_destination } => {
-            let src = require_resolved_path(resolved_src.as_deref(), "source")?;
-            trash_op::trash_file(src, fallback_archive_destination.as_deref())
+        ExecutorItemAction::Trash { .. } => {
+            let src = require_resolved_path(resolved_src, "source")?;
+            trash_op::trash_file(src, paths.archive_destination.as_deref())
                 .map(|_| ()) // discard TrashResult (audit_reason recorded by caller)
                 .map_err(|(f, r)| (f, r.rollback_attempted, r.rollback_outcome, r.rollback_message))
         }
 
         ExecutorItemAction::Delete => {
-            let src = require_resolved_path(resolved_src.as_deref(), "source")?;
+            let src = require_resolved_path(resolved_src, "source")?;
             // T020: use `destructive_confirmed`, not `is_protected`.
             delete_op::delete_file(src, item.destructive_confirmed)
                 .map_err(|(f, r)| (f, r.rollback_attempted, r.rollback_outcome, None))
@@ -74,38 +81,22 @@ pub(super) fn execute_item(item: &ExecutorItem) -> Result<(), OpError> {
         }
 
         ExecutorItemAction::Mkdir => {
-            let dst = require_resolved_path(resolved_dst.as_deref(), "destination")?;
+            let dst = require_resolved_path(resolved_dst, "destination")?;
             mkdir_op::make_dir(dst).map_err(|f| (f, false, RollbackOutcome::NotApplicable, None))
         }
 
         ExecutorItemAction::Link { kind } => {
-            let src = require_resolved_path(resolved_src.as_deref(), "source")?;
-            let dst = require_resolved_path(resolved_dst.as_deref(), "destination")?;
+            let src = require_resolved_path(resolved_src, "source")?;
+            let dst = require_resolved_path(resolved_dst, "destination")?;
             link_op::create_link(src, dst, *kind)
                 .map_err(|f| (f, false, RollbackOutcome::NotApplicable, None))
         }
 
         ExecutorItemAction::WriteManifest { project_id } => {
-            let dst = require_resolved_path(resolved_dst.as_deref(), "destination")?;
+            let dst = require_resolved_path(resolved_dst, "destination")?;
             write_manifest_op::write_marker(dst, project_id)
                 .map_err(|f| (f, false, RollbackOutcome::NotApplicable, None))
         }
-    }
-}
-
-/// Resolve a relative path against an optional library root.
-/// Returns `None` if either argument is `None`.
-fn resolve_item_path(relative: Option<&Utf8Path>, root: Option<&Utf8Path>) -> Option<Utf8PathBuf> {
-    match (relative, root) {
-        (Some(rel), Some(r)) => {
-            // Use the validated lexical normalization (path_gate already checked safety).
-            Some(path_gate::lexical_normalize(&r.join(rel)))
-        }
-        (Some(rel), None) => {
-            // Legacy: no root — use path as-is.
-            Some(rel.to_path_buf())
-        }
-        _ => None,
     }
 }
 

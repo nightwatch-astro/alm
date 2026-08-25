@@ -46,6 +46,9 @@ import type {
   RegisterSourceBatchResponse_Serialize,
   RemapVerification,
   ToolPathValidation,
+  ToolProfileSummary,
+  ToolProfileListResponse,
+  ToolDiscoverResponse,
   IpcOperationHandle,
   OperationEvent,
   PlanApplyResponse,
@@ -207,7 +210,6 @@ let mockCalibrationTolerances: CalibrationTolerances = {
   temperatureToleranceC: 5.0,
   exposureToleranceS: 2.0,
   agingLimitDays: 365,
-  requireSameCamera: true,
   requireSameGain: true,
   requireSameBinning: true,
   requireSameOffset: true,
@@ -455,6 +457,45 @@ function mockContractError(code: string, message: string): never {
 // live in ./mocks/inbox.ts and are imported above.
 
 let mockInboxOpenPlans: InboxOpenPlan[] = seedInboxOpenPlans();
+
+// ── Processing-tool profiles (spec 011) — stateful mock ───────────────────────
+//
+// Seeded UNCONFIGURED on purpose. The disabled "Open in {tool}" CTA and its
+// `Tool path not configured` hint are the default state every project spec
+// asserts, so a seed with a path would silently retire that coverage. The
+// Settings save path (`tools_update`) is what flips a profile to configured,
+// which is the transition spec 011 T018 covers.
+
+/** Path `tools_discover` reports per tool id; anything else gets `/mock/bin/<id>`. */
+const MOCK_DISCOVERED_TOOL_PATHS: Record<string, string> = {
+  pixinsight: '/Applications/PixInsight/PixInsight.app',
+  siril: '/usr/local/bin/siril',
+};
+
+let mockToolProfiles: ToolProfileSummary[] = [
+  {
+    id: 'pixinsight',
+    name: 'PixInsight',
+    configured: false,
+    available: false,
+    supportsOpenFolder: true,
+    enabled: true,
+    autoDetected: false,
+    executablePath: null,
+    watchExtensions: ['xisf', 'fit', 'fits', 'tif', 'tiff'],
+  },
+  {
+    id: 'siril',
+    name: 'Siril',
+    configured: false,
+    available: false,
+    supportsOpenFolder: true,
+    enabled: true,
+    autoDetected: false,
+    executablePath: null,
+    watchExtensions: ['fit', 'fits', 'tif', 'tiff'],
+  },
+];
 
 /**
 /**
@@ -1356,6 +1397,14 @@ const mockHandlers = {
       discardedAt: new Date().toISOString(),
     };
   },
+  plans_reopen: async (_args) => {
+    return {
+      planId: (_args?.id as string) ?? 'plan-001',
+      newState: 'draft',
+      priorState: 'approved',
+      reopenedAt: new Date().toISOString(),
+    };
+  },
   settings_update: async (_args) => {
     // The `observing` scope round-trips into the seedable values bag so a
     // UI-driven site creation / active-site switch persists across the
@@ -1615,6 +1664,56 @@ const mockHandlers = {
       // existing directories).
       isDir: valid ? true : null,
     } satisfies ToolPathValidation;
+  },
+  tools_list: async () => {
+    return { tools: mockToolProfiles } satisfies ToolProfileListResponse;
+  },
+  tools_discover: async (_args) => {
+    // Discovery reports candidate paths and does NOT persist them: the
+    // ProcessingTools pane pre-fills empty inputs from this response and the
+    // user still has to save. Mutating state here would make the pane's
+    // "auto-detected, unsaved" state unreachable in mock mode, which is the
+    // state the save step exists to leave.
+    const req = (_args?.request as { toolId?: string | null }) ?? {};
+    const only = req.toolId ?? null;
+    return {
+      entries: mockToolProfiles
+        .filter((t) => only === null || t.id === only)
+        .map((t) => ({
+          toolId: t.id,
+          path: MOCK_DISCOVERED_TOOL_PATHS[t.id] ?? `/mock/bin/${t.id}`,
+          available: true,
+        })),
+    } satisfies ToolDiscoverResponse;
+  },
+  tools_update: async (_args) => {
+    const req =
+      (_args?.request as {
+        id?: string;
+        path?: string | null;
+        enabled?: boolean;
+      }) ?? {};
+    const id = req.id ?? '';
+    const index = mockToolProfiles.findIndex((t) => t.id === id);
+    if (index === -1) throw new Error(`mock tools_update: unknown tool ${id}`);
+    const path = req.path?.trim() ? req.path.trim() : null;
+    const updated: ToolProfileSummary = {
+      ...mockToolProfiles[index],
+      executablePath: path,
+      configured: path !== null,
+      // Mock mode has no filesystem, so a configured path is always present.
+      // `available` therefore tracks `configured`, which is what makes the
+      // project CTA flip from disabled to enabled after a save.
+      available: path !== null,
+      // A saved path is no longer a mere auto-detect suggestion, regardless of
+      // where the string came from.
+      autoDetected: false,
+      enabled: req.enabled ?? mockToolProfiles[index].enabled,
+    };
+    mockToolProfiles = mockToolProfiles.map((t, i) =>
+      i === index ? updated : t,
+    );
+    return updated satisfies ToolProfileSummary;
   },
   firstrun_complete: async () => {
     return {

@@ -1,6 +1,18 @@
 # apps/desktop/src/bindings/ is generated (tauri-specta); its doc comments
 # carry trailing whitespace, so whitespace/EOF fixers would corrupt it and
 # break the `just check-generated` drift gate.
+#
+# This exclude is global, so `pre-commit run --files <path under any prefix
+# below>` exits 0 with every hook reporting "(no files to check) Skipped" —
+# indistinguishable from a passing run. Use `just precommit <paths>`, which
+# fails when no hook looked at the paths given.
+#
+# specs/ carries no recorded rationale (present since the initial scaffold,
+# 0fe246eb0). Measured cost of un-gating it, over 503 tracked spec files:
+# trailing-whitespace rewrites 34 files / 129 lines, end-of-file-fixer 5 files,
+# and typos reports 20 findings across 14 files. 9 of those findings sit in
+# tasks.md files, which the speckit-tasks-guard hook denies writing under an
+# active beads workspace.
 exclude: '^(\.specify/|specs/|\.claude/|\.agents/|\.codex/|\.mcp\.json|apps/desktop/src/bindings/)'
 
 repos:

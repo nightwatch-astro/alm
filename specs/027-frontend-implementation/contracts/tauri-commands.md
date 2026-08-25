@@ -34,8 +34,8 @@ This document defines the command interface that the frontend depends on. The ac
 | Command | Args | Returns | Used By |
 |---------|------|---------|---------|
 | `sessions.transition` | `{ id, action, metadata? }` | `Result<Session>` | Review queue, detail |
-| `sessions.split` | `{ id, split_at_index }` | `Result<{ original: Session, new: Session }>` | Sessions toolbar bulk action |
-| `sessions.merge` | `{ ids }` | `Result<Session>` | Sessions toolbar bulk action |
+| `sessions.split` | `{ id, split_at_index }` | `Result<{ original: Session, new: Session }>` | none -- SUPERSEDED with FR-015 |
+| `sessions.merge` | `{ ids }` | `Result<Session>` | none -- SUPERSEDED with FR-015 |
 | `projects.create_plan` | `{ wizard_state }` | `FilesystemPlan` | Wizard step 6 |
 | `plans.approve` | `{ id, delete_acknowledged? }` | `Result<Plan>` | Plan review |
 | `plans.apply` | `{ id }` | `OperationHandle` | Plan review |
@@ -47,6 +47,11 @@ This document defines the command interface that the frontend depends on. The ac
 | `scan.start` | `{ root_ids? }` | `OperationHandle` | Setup, Data sources |
 | `preferences.set` | `{ key, value }` | `Result<void>` | Density, sidebar, views |
 | `tour.complete_step` | `{ step }` | `Result<void>` | Tour |
+
+`sessions.split` and `sessions.merge` are registered fixture stubs returning
+hardcoded sessions (spec 029 FR-005, T021). No frontend module invokes either
+one, so no product flow depends on their result shapes. Their removal is tracked
+outside this specification.
 
 ## Native API Commands (Tauri built-in)
 

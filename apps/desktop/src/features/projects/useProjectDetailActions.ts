@@ -41,9 +41,16 @@ export function useProjectDetailActions(
   // transition is plan-gated; this is the UI entry point that actually
   // creates the reviewable plan the toast below points the user to.
   const generateArchivePlan = useGenerateArchivePlan();
-  const [archiveReviewPlanId, setArchiveReviewPlanId] = useState<string | null>(
-    null,
-  );
+  const [reviewPlanId, setReviewPlanId] = useState<string | null>(null);
+  // Which generator produced `reviewPlanId` — the shared overlay is titled per
+  // flow, and only the archive generator reports an `emptyReason`.
+  const [reviewPlanKind, setReviewPlanKind] = useState<
+    'archive' | 'source_view'
+  >('archive');
+  // ready → prepared is plan-gated on a source-view generation plan, and
+  // generating one needs the user's copy opt-in, so the refusal opens the
+  // existing generate dialog rather than generating unattended.
+  const [prepareGenerateOpen, setPrepareGenerateOpen] = useState(false);
   // #603: diagnostic sentence for a 0-item archive plan, surfaced by
   // `archive.plan.generate` alongside the plan id — the review overlay has
   // no other way to explain WHY a plan came back empty.
@@ -127,6 +134,8 @@ export function useProjectDetailActions(
         });
         if (nextState === 'archived') {
           void handleGenerateArchivePlan();
+        } else if (nextState === 'prepared') {
+          setPrepareGenerateOpen(true);
         }
       } else if (resp.status === 'error') {
         addToast({
@@ -160,7 +169,8 @@ export function useProjectDetailActions(
         variant: 'info',
       });
       setArchiveEmptyReason(res.emptyReason ?? null);
-      setArchiveReviewPlanId(res.planId);
+      setReviewPlanKind('archive');
+      setReviewPlanId(res.planId);
     } catch {
       addToast({
         message: m.archive_generate_failed(),
@@ -169,10 +179,22 @@ export function useProjectDetailActions(
     }
   };
 
-  /** After the archive plan applies, the project's lifecycle flips server-side
+  /**
+   * Route a source-view generation plan into the shared review overlay — the
+   * plan-gated `ready → prepared` edge is closed by applying that plan, the
+   * same way applying an origin=archive plan is the only path to `archived`.
+   */
+  const handlePrepareViewPlanCreated = (planId: string) => {
+    setPrepareGenerateOpen(false);
+    setArchiveEmptyReason(null);
+    setReviewPlanKind('source_view');
+    setReviewPlanId(planId);
+  };
+
+  /** After a review plan applies, the project's lifecycle flips server-side
    * (C5 — applying an origin=archive plan is the one legitimate path to
    * `archived`); refresh the detail query so the UI reflects it. */
-  const handleArchivePlanApplied = () => {
+  const handleReviewPlanApplied = () => {
     void sharedQueryClient.invalidateQueries({
       queryKey: queryKeys.projects.detail(projectId),
     });
@@ -201,14 +223,18 @@ export function useProjectDetailActions(
     lifecycle,
     channelWorking,
     transitionWorking,
-    archiveReviewPlanId,
-    setArchiveReviewPlanId,
+    reviewPlanId,
+    setReviewPlanId,
+    reviewPlanKind,
     archiveEmptyReason,
     setArchiveEmptyReason,
+    prepareGenerateOpen,
+    setPrepareGenerateOpen,
     handleReinfer,
     handleDismissDrift,
     handleTransition,
-    handleArchivePlanApplied,
+    handlePrepareViewPlanCreated,
+    handleReviewPlanApplied,
     handleResolveBlocked,
     handleReveal,
   };

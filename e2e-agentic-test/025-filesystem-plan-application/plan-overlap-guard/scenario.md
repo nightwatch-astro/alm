@@ -39,6 +39,10 @@ merged: report BLOCKED, do not improvise.
    longer — wait for the detail to resolve).
 5. Confirm all three items (each produces one plan; single root →
    auto-selected). Verify `inbox_plan_list_open` shows 3 plans.
+6. Approve each of the three plans via `plans_approve` (`{ id: PLAN_ID }`).
+   `inbox_plan_apply` refuses a plan that carries no approval with
+   `plan.approval_required` (astro-plan-tykek), so this stands in for the
+   Apply gesture the UI performs.
 
 ## Stage 1 — Agent validation via Tauri MCP
 
@@ -74,7 +78,8 @@ merged: report BLOCKED, do not improvise.
    step 1 completes, re-read `inbox_plan_list_open`.
    - Expected: B's plan still open/approved (not stale, not errored, not
      half-applied); now `invoke('inbox_plan_apply', {…B_ID…})` alone
-     SUCCEEDS; B's 2 files land under
+     SUCCEEDS (re-`plans_approve` B first if the rejection cleared its
+     approval); B's 2 files land under
      `test-data\library-lights\NGC 7000\Ha\...\light\` (WSL `find`), and no
      duplicate/partial artifacts exist.
    - FAIL if: B is stuck (registry leak — the guard didn't clean up), or

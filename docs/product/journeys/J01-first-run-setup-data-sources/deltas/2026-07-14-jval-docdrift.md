@@ -1,3 +1,9 @@
+> **MIGRATED:** current truth now lives at
+> `docs/journeys/J01-first-run-setup-data-sources/journey.md`.
+> This delta is frozen legacy history: it records behavior as understood on
+> its own date and may not match current behavior.
+> See `docs/product/journeys/README.md`.
+
 # jval-docdrift — J01-first-run-setup-data-sources: Wizard is 6 steps with a new Observing Site step; Project outputs is required
 
 Task: jval-docdrift · Status: observed-live-2026-07-14

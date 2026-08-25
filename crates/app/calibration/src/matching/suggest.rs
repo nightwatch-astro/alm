@@ -10,7 +10,7 @@ use contracts_core::calibration_match::{
 };
 use sqlx::SqlitePool;
 
-use calibration_core::ranking::suggest_status;
+use calibration_core::ranking::multi_kind_suggest_status;
 
 use super::context::{apply_session_context, load_session_contexts};
 use super::loaders::{load_config, load_masters, load_session};
@@ -57,7 +57,10 @@ pub async fn suggest(
     match domain_suggest(&session, &masters, &types_ref, &config) {
         Err(error_code) => Ok(guard_error_suggest_response(&req.request_id, &error_code)),
         Ok(matches) => {
-            let status_str = suggest_status(&matches);
+            // A suggest request covers up to three calibration kinds and the
+            // match list is ranked only within each kind, so the status must
+            // reduce per kind rather than compare the two leading entries.
+            let status_str = multi_kind_suggest_status(&matches);
             let suggest_status = match status_str {
                 "match" => SuggestStatus::Match,
                 "ambiguous" => SuggestStatus::Ambiguous,

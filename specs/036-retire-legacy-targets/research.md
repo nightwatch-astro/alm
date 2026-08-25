@@ -40,9 +40,16 @@ exists and is the natural axis); a separate table (over-modelled).
 
 ## R3 — Schema removal mechanism (greenfield)
 
-**Decision**: edit the source migrations directly — delete `0017_targets.sql` and
-`0027_target_identity.sql`, and surgically remove the `target` table +
-`acquisition_session.target_id` from `0002_lifecycle.sql`. No `0034_drop` migration.
+**Decision**: edit the source migrations directly — delete the gen-2 target migrations and
+surgically remove the `target` table + `acquisition_session.target_id`. No drop migration.
+
+Reconciled 2026-08-24: the numbered chain this decision was written against no longer exists.
+The schema is one editable baseline, `crates/persistence/core/migrations/0001_initial_schema.sql`
+(decision bead `adr-1`), so "edit the source migration directly" now means editing that file.
+The gen-2 tables are already absent from it; gen-1 `target` (`:2914`) and
+`acquisition_session.target_id` (`:28`) survive, as the deferral in `plan.md` §Gen-1 records.
+Any edit to the baseline changes the version-1 checksum and makes existing development
+databases fail to open — see `docs/development/database-baseline-and-migrations.md`.
 
 **Rationale**: greenfield (no production DBs, no data to preserve) means the cleanest end
 state is "the legacy schema was never created." This avoids a confusing create-then-drop

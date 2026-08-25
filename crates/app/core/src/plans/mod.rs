@@ -41,6 +41,7 @@ mod archive;
 mod auto_apply;
 mod discard;
 mod read;
+mod reopen;
 mod retry;
 #[cfg(test)]
 mod tests;
@@ -52,6 +53,7 @@ pub use auto_apply::{
 };
 pub use discard::discard_plan;
 pub use read::{get_plan, list_plans};
+pub use reopen::reopen_plan;
 pub use retry::retry_plan;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -64,8 +66,22 @@ pub const PERMANENT_DELETE_CONFIRM_TEXT: &str = "DELETE";
 
 // ── Error helpers ─────────────────────────────────────────────────────────────
 
-// Domain-scoped DB error mapper: routes NotFound to plan.not_found code.
+// Domain-scoped DB error mapper: routes NotFound to plan.not_found and a lost
+// state CAS to plan.invalid_state.
 fn db_err(e: persistence_core::DbError) -> ContractError {
+    // A lost CAS is not a database fault: the plan exists and the caller's read
+    // of its state went stale before the guarded UPDATE ran. Left in the generic
+    // arm, `approve_plan` and `reopen_plan` reported a concurrent transition as
+    // `internal.database`, marked retryable — so the UI would offer a retry for
+    // a request that can never succeed.
+    if let persistence_core::DbError::CasFailed(msg) = e {
+        return ContractError::new(
+            ErrorCode::PlanInvalidState,
+            msg,
+            ErrorSeverity::Blocking,
+            false,
+        );
+    }
     crate::errors::db_err_with_not_found(ErrorCode::PlanNotFound)(e)
 }
 

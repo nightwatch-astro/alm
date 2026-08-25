@@ -48,19 +48,19 @@ pub async fn reattribute(
     // Load existing launches to determine ordering.
     let existing = load_launch_refs(pool, project_id, new_launch_tool_id).await?;
 
-    // Build candidate list.
-    let triplets: Vec<(String, OffsetDateTime, Option<String>)> = rows
+    // Build candidate list. The producing tool travels with each row;
+    // `reattribute_candidates` owns the same-tool rule.
+    let candidates_input: Vec<(String, String, OffsetDateTime, Option<String>)> = rows
         .iter()
-        .filter(|r| r.tool == new_launch_tool_id)
         .filter_map(|r| {
             let dt = parse_dt(&r.detected_at)?;
-            Some((r.id.clone(), dt, r.tool_launch_id.clone()))
+            Some((r.id.clone(), r.tool.clone(), dt, r.tool_launch_id.clone()))
         })
         .collect();
 
     let candidates = workflow_artifacts::reattribute_candidates(
         &new_launch,
-        &triplets,
+        &candidates_input,
         &existing,
         DEFAULT_ATTRIBUTION_WINDOW,
     );

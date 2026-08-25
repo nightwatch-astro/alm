@@ -148,6 +148,9 @@ pub enum UnassignedReason {
     MissingOpticTrain,
     MissingPointing,
     MissingRotation,
+    /// Geometry is present but a component is not finite, so it cannot take
+    /// part in a tolerance comparison.
+    UnusableGeometry,
 }
 
 /// The clustering outcome for one session.
@@ -252,6 +255,17 @@ type ClusterableSession = (EntityId, Pointing, f32, Option<f64>);
 /// used to seed an existing framing's accumulator from its declared
 /// `member_session_ids`' *actual* geometry (never from input-order luck).
 type SessionGeom = (Pointing, f32, Option<f64>);
+/// Whether every geometry component can take part in a tolerance comparison.
+///
+/// A comparison against `NaN` is false, so an ungated non-finite component
+/// passes the envelope check and propagates into the representative rotation.
+fn geometry_is_finite(pointing: &Pointing, rotation_deg: f32, fov: Option<f64>) -> bool {
+    pointing.ra_deg.is_finite()
+        && pointing.dec_deg.is_finite()
+        && rotation_deg.is_finite()
+        && fov.is_none_or(f64::is_finite)
+}
+
 type SplitResult = (
     BTreeMap<EntityId, Assignment>,
     BTreeMap<(EntityId, String), Vec<ClusterableSession>>,
@@ -277,7 +291,10 @@ fn split_known_members_and_null_geometry(
 
     for session in sessions {
         if let (Some(pointing), Some(rotation_deg)) = (session.pointing, session.rotation_deg) {
-            if session.target_id.is_some() && session.optic_train_key.is_some() {
+            if geometry_is_finite(&pointing, rotation_deg, session.fov_diagonal_deg)
+                && session.target_id.is_some()
+                && session.optic_train_key.is_some()
+            {
                 geometry_by_id
                     .insert(session.session_id, (pointing, rotation_deg, session.fov_diagonal_deg));
             }
@@ -315,6 +332,13 @@ fn split_known_members_and_null_geometry(
             );
             continue;
         };
+        if !geometry_is_finite(&pointing, rotation_deg, session.fov_diagonal_deg) {
+            resolved.insert(
+                session.session_id,
+                Assignment::Unassigned(UnassignedReason::UnusableGeometry),
+            );
+            continue;
+        }
         clusterable.push((
             session.session_id,
             target_id,
@@ -641,6 +665,26 @@ mod tests {
 
     fn assignment_for(result: &ClusteringResult, byte: u8) -> &Assignment {
         &result.assignments.iter().find(|(sid, _)| *sid == id(byte)).expect("session present").1
+    }
+
+    #[test]
+    fn non_finite_geometry_is_unassigned_rather_than_clustered() {
+        // Every tolerance comparison against NaN is false, so an ungated NaN
+        // passes the envelope check and reaches the representative rotation.
+        let sessions = vec![
+            geom(1, 10, "scope-a|cam-a", f64::NAN, 20.0, 0.0, Some(2.0)),
+            geom(2, 10, "scope-a|cam-a", 100.0, 20.0, f32::NAN, Some(2.0)),
+            geom(3, 10, "scope-a|cam-a", 100.0, 20.0, 0.0, Some(f64::INFINITY)),
+        ];
+        let result = derive_clustering(&sessions, &[], &params());
+
+        assert!(result.new_framings.is_empty());
+        for session in 1..=3 {
+            assert!(matches!(
+                assignment_for(&result, session),
+                Assignment::Unassigned(UnassignedReason::UnusableGeometry)
+            ));
+        }
     }
 
     // ── multi-night/multi-filter collapse ───────────────────────────────────

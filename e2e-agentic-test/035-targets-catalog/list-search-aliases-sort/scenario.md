@@ -52,6 +52,9 @@
 3. The bundled catalog seed populates targets on first use — no fixture
    files are needed for this scenario.
 4. Connect the Tauri MCP bridge (`driver_session host=<WSL gateway> port=9223`).
+   The gateway address reaches the bridge only when `run-dev.bat` sets
+   `PV_MCP_BRIDGE_ENABLE=1` and `PV_MCP_BRIDGE_BIND=0.0.0.0` and passes
+   `--features dev-tools` (see AGENT-RUNNER.md).
 
 ## Stage 1 — Agent validation via Tauri MCP
 

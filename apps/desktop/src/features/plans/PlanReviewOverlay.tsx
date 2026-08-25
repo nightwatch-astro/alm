@@ -70,8 +70,24 @@ export interface PlanReviewOverlayProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function actionPillVariant(action: PlanItemDetail_Serialize['action']) {
-  return action === 'delete' ? ('danger' as const) : ('info' as const);
+/**
+ * Whether applying this item removes the user's file from where it lives now.
+ *
+ * Both `cleanup_generator` and `archive_generator` always store
+ * `action = "archive"` for a destructive-but-reversible item; the reroute to
+ * the OS bin is a plan-level choice honoured only at apply time
+ * (`plan_apply::paths::item_row_to_executor_item`). So a plan that WILL send
+ * files to the OS bin carries zero `delete` items, and action alone cannot
+ * decide destructiveness.
+ */
+function isDestructiveItem(
+  item: PlanItemDetail_Serialize,
+  plan: PlanDetail_Serialize | undefined,
+): boolean {
+  if (item.action === 'delete') return true;
+  return (
+    item.action === 'archive' && plan?.destructiveDestination === 'os_trash'
+  );
 }
 
 /**
@@ -185,6 +201,7 @@ export function PlanReviewOverlay({
   const [finalState, setFinalState] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const {
     progress,
     run: runApply,
@@ -193,12 +210,12 @@ export function PlanReviewOverlay({
     reset: resetApply,
   } = usePlanApplyProgress();
 
-  // Destructive-confirm gate (FR-003, D9, issue #741): `delete` items are
+  // Destructive-confirm gate (FR-003, D9, issue #741): destructive items are
   // permanently refused at apply time until `destructive_confirmed` is set.
   // Plan-level (not per-item — `PlanItemDetail` carries no such flag; the
   // gate mirrors the existing plan-wide protection gate above it).
-  const hasDestructiveItems = (plan?.items ?? []).some(
-    (item) => item.action === 'delete',
+  const hasDestructiveItems = (plan?.items ?? []).some((item) =>
+    isDestructiveItem(item, plan),
   );
   const [destructiveConfirmed, setDestructiveConfirmed] = useState(false);
   const [confirmingDestructive, setConfirmingDestructive] = useState(false);
@@ -206,7 +223,8 @@ export function PlanReviewOverlay({
     string | null
   >(null);
 
-  const busy = approving || discarding || retrying || progress.running;
+  const busy =
+    approving || discarding || retrying || reopening || progress.running;
   // FR-011 (issue #733): a plan reopened from a prior session carries no
   // session-local `finalState` (it starts `null` every mount), so the
   // footer must fall back to the persisted `plan.state` from `plans.get`
@@ -215,6 +233,7 @@ export function PlanReviewOverlay({
   // `plan.invalid_state`.
   const effectiveState = finalState ?? plan?.state ?? null;
   const applied = effectiveState === 'applied';
+  const reopenable = effectiveState === 'approved';
   const retryable =
     effectiveState === 'failed' ||
     effectiveState === 'partially_applied' ||
@@ -330,6 +349,27 @@ export function PlanReviewOverlay({
     }
   }, [planId, busy, onDiscarded, onClose, resetApply]);
 
+  /** Return an approved plan to `draft` (`plans.reopen`, T023). The approval
+   * token issued at approval time dies with the call, so the plan must be
+   * re-approved before it can be applied. */
+  const handleReopen = useCallback(async () => {
+    if (planId === null || busy) return;
+    setReopening(true);
+    setApplyError(null);
+    try {
+      unwrap(await commands.plansReopen(planId));
+      invalidatePlan();
+      setFinalState(null);
+      setGateReady(false);
+      setDestructiveConfirmed(false);
+      addToast({ message: m.plans_review_reopened_toast(), variant: 'info' });
+    } catch (e) {
+      setApplyError(errMessage(e));
+    } finally {
+      setReopening(false);
+    }
+  }, [planId, busy, invalidatePlan]);
+
   /** Resume a paused apply run (R-Pause-1, T048-T050). Minimal, honest
    * surface: reflects the real `plan.resume` call outcome, nothing simulated. */
   const handleResume = useCallback(async () => {
@@ -402,7 +442,11 @@ export function PlanReviewOverlay({
         ? 'pv-plan-review__row--protected'
         : undefined,
     name: item.name,
-    action: <Pill variant={actionPillVariant(item.action)}>{item.action}</Pill>,
+    action: (
+      <Pill variant={isDestructiveItem(item, plan) ? 'danger' : 'info'}>
+        {item.action}
+      </Pill>
+    ),
     from: <span className="pv-mono">{item.from}</span>,
     to:
       item.action === 'delete' ? (
@@ -480,6 +524,16 @@ export function PlanReviewOverlay({
       <Btn variant="ghost" onClick={() => void handleDiscard()} disabled={busy}>
         {m.plans_review_discard_btn()}
       </Btn>
+      {reopenable && (
+        <Btn
+          variant="ghost"
+          onClick={() => void handleReopen()}
+          disabled={busy}
+          data-testid="plan-review-reopen"
+        >
+          {reopening ? m.plans_review_reopening() : m.plans_review_reopen_btn()}
+        </Btn>
+      )}
       <Btn
         variant={hasDestructiveItems ? 'destructive' : 'primary'}
         onClick={() => void handleApproveAndApply()}

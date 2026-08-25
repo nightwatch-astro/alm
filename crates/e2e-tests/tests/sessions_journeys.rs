@@ -163,7 +163,7 @@ async fn sessions_ui_derived_view_invariants() -> anyhow::Result<()> {
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("inbox.classify returned no contentSignature: {classify}"))?
         .to_owned();
-    let _: serde_json::Value = app
+    let confirm: serde_json::Value = app
         .invoke(
             "inbox_confirm",
             json!({
@@ -177,6 +177,10 @@ async fn sessions_ui_derived_view_invariants() -> anyhow::Result<()> {
             }),
         )
         .await?;
+    // Constitution II (astro-plan-tykek): `inbox.plan.apply` refuses a plan the
+    // caller has not approved, mirroring the UI's approve-then-apply gesture.
+    let _: serde_json::Value =
+        app.invoke("plans_approve", json!({ "id": confirm["planId"] })).await?;
     let _: serde_json::Value =
         app.invoke("inbox_plan_apply", json!({ "inboxItemId": inbox_item_id })).await?;
 

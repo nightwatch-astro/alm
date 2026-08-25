@@ -16,9 +16,11 @@ use crate::ops::move_op::{move_file, MoveResult};
 
 /// Archive a file by moving it to `archive_destination`.
 ///
-/// `archive_destination` is the absolute resolved path under the app-managed
-/// archive root (e.g. `<library_root>/.astro-plan-archive/<planId>/...`).
-/// Pre-computed at plan generation; passed in from the item's `archive_path`.
+/// `archive_destination` is the path already resolved and proven contained by
+/// `run::loop_::resolve_item_paths` (e.g.
+/// `<library_root>/.astro-plan-archive/<planId>/...`). Its stored form comes
+/// from the item's `archive_path` and may be root-relative, so passing the
+/// stored value straight in bypasses the containment rule (astro-plan-zboex).
 ///
 /// # Errors
 ///

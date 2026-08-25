@@ -12,7 +12,7 @@ export type {
   TypedOkResponseEnvelope,
   TypedRequestEnvelope,
 } from "./client";
-export { AlmContractError, createAlmClient } from "./client";
+export { AlmContractError } from "./client";
 
 export type * from "./generated/envelope";
 

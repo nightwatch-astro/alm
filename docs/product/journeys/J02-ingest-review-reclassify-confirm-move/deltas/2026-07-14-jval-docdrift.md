@@ -1,3 +1,9 @@
+> **MIGRATED:** current truth now lives at
+> `docs/journeys/J02-ingest-review-reclassify-confirm-move/journey.md`.
+> This delta is frozen legacy history: it records behavior as understood on
+> its own date and may not match current behavior.
+> See `docs/product/journeys/README.md`.
+
 # jval-docdrift — J02-ingest-review-reclassify-confirm-move: Destination-root picker surfaces inside the Review-plans overlay, not an inline Confirm modal
 
 Task: jval-docdrift · Status: observed-live-2026-07-14

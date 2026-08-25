@@ -11,12 +11,20 @@
 //!
 //! This extractor reads only the header keywords required for inbox
 //! classification: `IMAGETYP`, `FILTER`, `OBJECT`, `EXPTIME`, `EXPOSURE`,
-//! `GAIN`, `XBINNING`, `YBINNING`, `NAXIS1`, `NAXIS2`, `INSTRUME`, `TELESCOP`,
-//! `DATE-OBS`.
+//! `GAIN`, `XBINNING`, `YBINNING`, `NAXIS1`, `NAXIS2`, `INSTRUME`, `CAMERAID`,
+//! `TELESCOP`, `DATE-OBS`.
 //!
-//! No cfitsio or heavy C dependencies — `fits-header` is pure Rust. Missing or
-//! garbage headers are handled gracefully; the extractor never panics or
-//! returns hard errors for corrupt files, preferring `None` values.
+//! No cfitsio or heavy C dependencies — `fits-header` is pure Rust. A header
+//! missing individual keywords still yields `Ok`, with `None` for each absent
+//! field. A header in which the parser recognises no keyword at all yields
+//! [`MetadataExtractError::Parse`], as does one that panics inside
+//! `fits-header`; [`FitsExtractor::extract`] never panics.
+//!
+//! This adapter does not validate that the header block is ASCII. `fits-header`
+//! slices each field from the raw 80 bytes of its card and lossy-decodes the
+//! slice, so an invalid UTF-8 byte garbles the one field that contains it and
+//! cannot shift any later field. Such a field still passes through undetected,
+//! with no panic and no error.
 #![allow(clippy::doc_markdown)]
 
 use std::io::{self, Read};
@@ -66,11 +74,36 @@ impl MetadataExtractor for FitsExtractor {
             msg: e.to_string(),
         })?;
 
+        // `Header::parse` is third-party and unvendored, and the inbox scan runs
+        // it over every file it walks, so one panic would abort a whole scan
+        // rather than skip a file. No `fits-header` release currently panics on
+        // malformed bytes; this backstops the next one. Containing a panic here
+        // depends on it unwinding: the release profile in the workspace
+        // `Cargo.toml` deliberately keeps the default `panic = "unwind"`.
+        let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            fits_header::Header::parse(&bytes)
+        }))
+        .map_err(|_| MetadataExtractError::Parse {
+            path: path.display().to_string(),
+            msg: "the FITS header parser panicked on malformed header bytes".to_owned(),
+        })?;
+
         // Header::parse never actually errs (parsing is lenient by design);
         // propagate defensively rather than unwrap.
-        let header = fits_header::Header::parse(&bytes).map_err(|e| {
-            MetadataExtractError::Parse { path: path.display().to_string(), msg: e.to_string() }
+        let header = parsed.map_err(|e| MetadataExtractError::Parse {
+            path: path.display().to_string(),
+            msg: e.to_string(),
         })?;
+
+        // A header whose every card is opaque to the parser carries no evidence
+        // at all. Returning it as `Ok` would let callers fall back to path-based
+        // inference and report a filename guess as header-backed fact.
+        if header.iter().all(|r| r.keyword().is_none()) {
+            return Err(MetadataExtractError::Parse {
+                path: path.display().to_string(),
+                msg: "the FITS header carries no readable keyword".to_owned(),
+            });
+        }
 
         Ok(Some(parse_header(&header)))
     }
@@ -117,8 +150,8 @@ fn read_header_bytes(mut reader: impl Read) -> io::Result<Vec<u8>> {
 
 /// Typed keyword read that never hard-errors: a duplicated keyword
 /// (`FitsError::AmbiguousKeyword`) falls back to its first occurrence instead
-/// of surfacing an error, preserving this extractor's "always `None`, never
-/// `Err`" contract for corrupt/odd files.
+/// of surfacing an error. Per-field reads are always `None`, never `Err`;
+/// rejecting a wholly unreadable header is [`FitsExtractor::extract`]'s job.
 fn get<T: FromCard>(header: &Header, key: &str) -> Option<T> {
     match header.get::<T>(key) {
         Ok(v) => v,
@@ -158,6 +191,7 @@ fn parse_header(header: &Header) -> RawFileMetadata {
     meta.naxis1 = get(header, "NAXIS1");
     meta.naxis2 = get(header, "NAXIS2");
     meta.instrume = get_str(header, "INSTRUME");
+    meta.cameraid = get_str(header, "CAMERAID");
     meta.telescop = get_str(header, "TELESCOP");
     meta.date_obs = get_str(header, "DATE-OBS");
 
@@ -350,6 +384,51 @@ mod tests {
     #[test]
     fn empty_block_returns_empty_metadata() {
         let meta = parse(&[]);
+        assert!(meta.image_typ.is_none());
+    }
+
+    /// Regression for astro-plan-3v3r.20.33 / 20.16, asserted against the parser
+    /// rather than the adapter so [`FitsExtractor::extract`]'s `catch_unwind`
+    /// cannot mask a reintroduced panic. `fits-header` 0.4.2 sliced its
+    /// lossy-decoded card at fixed offsets and panicked on this input.
+    #[test]
+    fn parser_itself_does_not_panic_on_a_non_ascii_block() {
+        let parsed = fits_header::Header::parse(&[0xffu8; BLOCK_SIZE]);
+        assert!(parsed.is_ok(), "expected a lenient parse, got {parsed:?}");
+    }
+
+    /// `fits-header` parses a block of non-ASCII bytes leniently into opaque
+    /// cards; the adapter rejects it because no keyword is recognised.
+    #[test]
+    fn malformed_header_bytes_are_a_parse_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("corrupt.fits");
+        std::fs::write(&path, [0xffu8; BLOCK_SIZE]).expect("write fixture");
+
+        let err = FitsExtractor
+            .extract(&path)
+            .expect_err("a header with no readable keyword must be an error");
+        assert!(matches!(err, MetadataExtractError::Parse { .. }), "got {err:?}");
+    }
+
+    /// A readable header that simply lacks `IMAGETYP` stays `Ok`: the
+    /// keywordless-header rejection must not swallow a valid header whose
+    /// individual keywords are absent.
+    #[test]
+    fn header_without_imagetyp_is_extracted() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("no_imagetyp.fits");
+        let block = build_fits_header(&[
+            "SIMPLE  =                    T",
+            "BITPIX  =                   16",
+            "NAXIS   =                    0",
+        ]);
+        std::fs::write(&path, &block).expect("write fixture");
+
+        let meta = FitsExtractor
+            .extract(&path)
+            .expect("a readable header must not be an error")
+            .expect("a .fits extension must be supported");
         assert!(meta.image_typ.is_none());
     }
 

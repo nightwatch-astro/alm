@@ -126,8 +126,10 @@ async fn build_simbad_resolver(
         |r| (r.online_enabled != 0, r.simbad_endpoint, r.request_timeout_secs),
     );
 
-    let config =
-        SimbadConfig::from_settings(endpoint, u64::try_from(timeout_secs.max(1)).unwrap_or(10));
+    let config = SimbadConfig::from_settings(
+        endpoint,
+        u64::from(app_core::targets::resolver_settings::positive_or_default(timeout_secs, 10)),
+    );
     // FIX-3 preserved: when offline, `SimbadResolver::new` never builds a
     // reqwest/TLS client (see `EitherNetworkResolver`) — cache hits still
     // resolve; a miss reports an offline-shaped unresolved outcome.

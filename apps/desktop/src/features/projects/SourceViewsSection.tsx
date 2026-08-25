@@ -43,14 +43,13 @@ import type {
 } from './source-views';
 import { errMessage } from '@/lib/errors';
 import { GenerateSourceViewDialog } from './GenerateSourceViewDialog';
+import { PlanReviewOverlay } from '@/features/plans/PlanReviewOverlay';
 import { ViewAuditHistory } from './ViewAuditHistory';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface SourceViewsSectionProps {
   projectId: string;
-  /** Called with planId after a plan is created so the parent can navigate. */
-  onPlanCreated?: (planId: string) => void;
   /** Whether the collapsible section starts open. Default true. */
   defaultOpen?: boolean;
 }
@@ -59,7 +58,6 @@ export interface SourceViewsSectionProps {
 
 export function SourceViewsSection({
   projectId,
-  onPlanCreated,
   defaultOpen = true,
 }: SourceViewsSectionProps) {
   const [views, setViews] = useState<PreparedViewSummary[]>([]);
@@ -70,13 +68,11 @@ export function SourceViewsSection({
   const [verifyResults, setVerifyResults] = useState<
     Record<string, SourceViewVerifyResponse>
   >({});
-
-  function handleGenerated(planId: string) {
-    onPlanCreated?.(planId);
-    // Refresh the list so a newly-applied view (once the caller approves +
-    // applies the plan) will show up on next load; nothing to reload yet
-    // since the plan hasn't been applied.
-  }
+  // Every action here produces a plan that only takes effect once it is
+  // reviewed, approved and applied; without this overlay the plan is created
+  // and then orphaned, so no links are ever materialised.
+  const [reviewPlanId, setReviewPlanId] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const generateButton = (
     <Btn
@@ -111,7 +107,7 @@ export function SourceViewsSection({
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, reloadKey]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -125,10 +121,10 @@ export function SourceViewsSection({
         message: m.projects_source_views_removal_toast(),
         action: {
           label: m.projects_source_views_view_plan_btn(),
-          onClick: () => onPlanCreated?.(planId),
+          onClick: () => setReviewPlanId(planId),
         },
       });
-      onPlanCreated?.(planId);
+      setReviewPlanId(planId);
     } catch (err: unknown) {
       addToast({
         variant: 'warn',
@@ -157,10 +153,10 @@ export function SourceViewsSection({
         message: m.projects_source_views_regen_toast({ warning }),
         action: {
           label: m.projects_source_views_view_plan_btn(),
-          onClick: () => onPlanCreated?.(planId),
+          onClick: () => setReviewPlanId(planId),
         },
       });
-      onPlanCreated?.(planId);
+      setReviewPlanId(planId);
     } catch (err: unknown) {
       addToast({
         variant: 'warn',
@@ -197,7 +193,20 @@ export function SourceViewsSection({
       projectId={projectId}
       open={generateOpen}
       onClose={() => setGenerateOpen(false)}
-      onPlanCreated={handleGenerated}
+      onPlanCreated={setReviewPlanId}
+    />
+  );
+
+  // Mounted only while a plan is under review — the overlay reads a query
+  // client at render time even when closed.
+  const overlay = reviewPlanId !== null && (
+    <PlanReviewOverlay
+      planId={reviewPlanId}
+      open={reviewPlanId !== null}
+      onClose={() => setReviewPlanId(null)}
+      title={m.projects_source_views_review_title()}
+      onApplied={() => setReloadKey((key) => key + 1)}
+      onRetryCreated={setReviewPlanId}
     />
   );
 
@@ -210,6 +219,7 @@ export function SourceViewsSection({
       >
         <p className="pv-text-sm pv-text-muted">{m.common_loading()}</p>
         {dialog}
+        {overlay}
       </Section>
     );
   }
@@ -225,6 +235,7 @@ export function SourceViewsSection({
           {m.projects_source_views_load_error({ error })}
         </Banner>
         {dialog}
+        {overlay}
       </Section>
     );
   }
@@ -240,6 +251,7 @@ export function SourceViewsSection({
           {m.projects_source_views_empty()}
         </p>
         {dialog}
+        {overlay}
       </Section>
     );
   }
@@ -251,6 +263,7 @@ export function SourceViewsSection({
       right={generateButton}
     >
       {dialog}
+      {overlay}
       <ul className="pv-source-views__list">
         {views.map((view) => (
           <li
@@ -372,7 +385,7 @@ export function SourceViewsSection({
 
               {/* T019: audit-history surface — this view's removal/regeneration
                   plans, reusing the shared plan review overlay for full detail. */}
-              <ViewAuditHistory viewId={view.id} onViewPlan={onPlanCreated} />
+              <ViewAuditHistory viewId={view.id} onViewPlan={setReviewPlanId} />
             </div>
 
             <div className="pv-source-views__actions">

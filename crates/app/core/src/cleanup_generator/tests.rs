@@ -13,6 +13,7 @@ use contracts_core::cleanup::{
     CleanupAction, CleanupPolicy, CleanupPolicyEntry, RawFrameCleanupGenerateRequest,
     RawFrameCleanupScanRequest,
 };
+use contracts_core::error_code::ErrorCode;
 use contracts_core::protection::{
     PlanProtectionCheckRequest, ProtectionLevel, SourceProtectionSetRequest,
 };
@@ -920,4 +921,148 @@ async fn generate_raw_frame_plan_skips_missing_selected_frames() {
     .unwrap();
 
     assert_eq!(resp.item_count, 1, "the missing frame must not become a plan item (FR-022)");
+}
+
+// ── Unreadable frame attribution refuses cleanup (astro-plan-l2s06) ──────────
+
+/// Writes a `frame_ids` value the `json_valid` guards reject. The helper above
+/// serialises through `serde_json` and cannot produce one.
+async fn insert_session_with_raw_frame_ids(pool: &SqlitePool, id: &str, frame_ids: &str) {
+    sqlx::query(
+        "INSERT INTO acquisition_session (id, session_key, frame_ids, created_at)
+         VALUES (?, '{}', ?, datetime('now'))",
+    )
+    .bind(id)
+    .bind(frame_ids)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// Seeds a root-scoped library where two present frames belong to an intact
+/// session, so the scan has real candidates to return. Without the refusal both
+/// tests below observe those candidates; the corrupt session is the only
+/// difference between them.
+async fn seed_two_attributed_frames(pool: &SqlitePool) -> Vec<String> {
+    use app_core_targets::frame_writer::upsert_frame_record;
+
+    insert_root(pool, "root-1", "/tmp/lib").await;
+    let f1 =
+        upsert_frame_record(pool, "root-1", "l1.fits", 1000, "t0", "classified").await.unwrap();
+    let f2 =
+        upsert_frame_record(pool, "root-1", "l2.fits", 2000, "t0", "classified").await.unwrap();
+    insert_acquisition_session(pool, "sess-intact", &[&f1, &f2]).await;
+    vec![f1, f2]
+}
+
+#[tokio::test]
+async fn scan_raw_frames_refuses_while_a_session_frame_ids_is_unreadable() {
+    let (db, _bus, _lock) = setup().await;
+    seed_two_attributed_frames(db.pool()).await;
+    insert_session_with_raw_frame_ids(db.pool(), "sess-corrupt", "{").await;
+
+    let err = scan_raw_frames(
+        db.pool(),
+        &RawFrameCleanupScanRequest {
+            scope: RawFrameCleanupScope { session_id: None, root_id: Some("root-1".to_owned()) },
+            kinds: None,
+        },
+    )
+    .await
+    .expect_err("a corrupt session reads as zero frames, so the scan must refuse");
+
+    assert_eq!(err.code, ErrorCode::InternalData);
+    assert!(
+        err.message.contains("sess-corrupt"),
+        "the refusal must name the unreadable session: {}",
+        err.message
+    );
+}
+
+#[tokio::test]
+async fn generate_raw_frame_plan_refuses_while_a_session_frame_ids_is_unreadable() {
+    let (db, _bus, _lock) = setup().await;
+    let frames = seed_two_attributed_frames(db.pool()).await;
+    insert_session_with_raw_frame_ids(db.pool(), "sess-corrupt", "{").await;
+
+    let err = generate_raw_frame_plan(
+        db.pool(),
+        &RawFrameCleanupGenerateRequest {
+            selected_frame_ids: frames,
+            title: None,
+            destructive_destination: None,
+        },
+    )
+    .await
+    .expect_err("a destructive plan must not be built while attribution is unreadable");
+
+    assert_eq!(err.code, ErrorCode::InternalData);
+    assert!(
+        err.message.contains("sess-corrupt"),
+        "the refusal must name the unreadable session: {}",
+        err.message
+    );
+}
+
+/// The other half of the distinction: `[]` is a session with no frames, not a
+/// session whose frames cannot be read, and it must not refuse anything.
+#[tokio::test]
+async fn an_empty_frame_ids_still_reads_as_empty_and_refuses_nothing() {
+    let (db, _bus, _lock) = setup().await;
+    let frames = seed_two_attributed_frames(db.pool()).await;
+    insert_session_with_raw_frame_ids(db.pool(), "sess-empty", "[]").await;
+
+    let scan = scan_raw_frames(
+        db.pool(),
+        &RawFrameCleanupScanRequest {
+            scope: RawFrameCleanupScope { session_id: None, root_id: Some("root-1".to_owned()) },
+            kinds: None,
+        },
+    )
+    .await
+    .expect("an empty frame_ids is not a corrupt one");
+
+    assert_eq!(scan.candidates.len(), 2);
+    assert_eq!(scan.total_reclaimable_bytes, 3000);
+    assert!(scan.candidates.iter().all(|c| c.session_id.as_deref() == Some("sess-intact")));
+
+    let plan = generate_raw_frame_plan(
+        db.pool(),
+        &RawFrameCleanupGenerateRequest {
+            selected_frame_ids: frames,
+            title: None,
+            destructive_destination: None,
+        },
+    )
+    .await
+    .expect("an empty frame_ids must not block plan generation");
+
+    assert_eq!(plan.item_count, 2);
+}
+
+/// A malformed equipment alias list is reported by the scan but is not
+/// attribution, so it must not refuse a cleanup plan.
+#[tokio::test]
+async fn a_malformed_camera_alias_list_does_not_refuse_cleanup() {
+    let (db, _bus, _lock) = setup().await;
+    seed_two_attributed_frames(db.pool()).await;
+    sqlx::query(
+        "INSERT INTO cameras (id, name, aliases, created_at)
+         VALUES ('cam-corrupt', 'cam-corrupt', '[', datetime('now'))",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    let scan = scan_raw_frames(
+        db.pool(),
+        &RawFrameCleanupScanRequest {
+            scope: RawFrameCleanupScope { session_id: None, root_id: Some("root-1".to_owned()) },
+            kinds: None,
+        },
+    )
+    .await
+    .expect("an unreadable alias list cannot misdirect a plan item");
+
+    assert_eq!(scan.candidates.len(), 2);
 }

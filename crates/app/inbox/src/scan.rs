@@ -18,6 +18,7 @@
 //! used for content signatures.
 #![allow(clippy::doc_markdown)]
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use app_core_targets::metadata_cache::cached_extract;
@@ -213,8 +214,11 @@ fn is_xisf_extension(ext: &str) -> bool {
 /// Returns `Some(ScannedMasterFile)` when the file is identified as a master.
 /// Returns `None` when not a master or metadata is unreadable.
 fn try_detect_master(abs_path: &Path, rel_path: &str, ext: &str) -> Option<ScannedMasterFile> {
-    // Cached extract (F0): memoized by (path, mtime, size); unsupported
-    // extensions and unparseable files both surface as `Err` here.
+    // Cached extract (F0): memoized by (path, mtime, size). Unsupported
+    // extensions and headers in which no keyword is readable surface as `Err`
+    // here, so such a file is declined outright rather than path-inferred. A
+    // readable header that merely lacks `IMAGETYP` still reaches
+    // `detect_master` below and may be classified from its path.
     let bundle = cached_extract(abs_path).ok()?;
 
     let image_typ_raw = bundle.image_typ.as_deref();
@@ -320,7 +324,9 @@ struct LeafDir {
 ///
 /// # Errors
 ///
-/// Returns an error string if `root` is not a directory or cannot be read.
+/// Returns an error string if `root` is not a directory the walker will
+/// descend under `options.follow_symlinks` — including a symlinked or junction
+/// root while following is disabled — or cannot be read.
 /// Unreadable *sub*-directories are non-fatal: they are collected in
 /// [`ScanOutput::warnings`] and the scan continues with whatever it can reach.
 ///
@@ -330,14 +336,14 @@ struct LeafDir {
 /// (e.g. a logic error in `process_leaf`). Per-file I/O failures
 /// (unreadable files, parse errors) are silently skipped and do not panic.
 pub fn scan_root(root: &Path, options: &ScanOptions) -> Result<ScanOutput, String> {
-    if !root.is_dir() {
-        return Err(format!("scan root is not a directory: {}", root.display()));
-    }
+    fs_pathsafe::probe_root(root, options.follow_symlinks)
+        .map_err(|reason| format!("scan root is unusable: {reason} ({})", root.display()))?;
 
     // Phase 1: collect leaf dirs via fast directory walk (no per-file I/O).
     let mut leaf_dirs: Vec<LeafDir> = Vec::new();
     let mut warnings: Vec<ScanWarning> = Vec::new();
-    collect_leaf_dirs(root, options, &mut leaf_dirs, &mut warnings)?;
+    let mut visited: HashSet<PathBuf> = HashSet::new();
+    collect_leaf_dirs(root, options, &mut leaf_dirs, &mut warnings, &mut visited)?;
 
     if leaf_dirs.is_empty() {
         return Ok(ScanOutput { items: vec![], warnings });
@@ -450,12 +456,25 @@ fn process_leaf(root: &Path, leaf: &LeafDir) -> ScannedInboxItem {
 /// When called on the scan root (top-level), a read failure propagates as
 /// `Err` — there is nothing to return. When called recursively on a subdir,
 /// the same failure is pushed into `warnings` and the walk continues.
+///
+/// `visited` holds the canonical path of every directory already entered and is
+/// consulted only when `options.follow_symlinks` is set. Without it a link back
+/// to an ancestor re-enters the same real directory once per link component the
+/// OS allows, duplicating every frame inside it; the same key shape as
+/// `fs_pathsafe::real_files_under_reporting`.
 fn collect_leaf_dirs(
     dir: &Path,
     options: &ScanOptions,
     leaf_dirs: &mut Vec<LeafDir>,
     warnings: &mut Vec<ScanWarning>,
+    visited: &mut HashSet<PathBuf>,
 ) -> Result<(), String> {
+    if options.follow_symlinks
+        && !visited.insert(std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
+    {
+        return Ok(());
+    }
+
     let read_dir = std::fs::read_dir(dir)
         .map_err(|e| format!("cannot read directory {}: {e}", dir.display()))?;
 
@@ -514,7 +533,7 @@ fn collect_leaf_dirs(
     // A read failure on a subdir is non-fatal: record it in warnings and
     // continue so partial results reach the caller instead of nothing.
     for subdir in subdirs {
-        if let Err(reason) = collect_leaf_dirs(&subdir, options, leaf_dirs, warnings) {
+        if let Err(reason) = collect_leaf_dirs(&subdir, options, leaf_dirs, warnings, visited) {
             warnings.push(ScanWarning { path: subdir, reason });
         }
     }
@@ -876,6 +895,40 @@ mod tests {
         assert!(items[0].masters.is_empty(), "dummy file cannot be a master");
     }
 
+    /// A master-shaped file name never outranks an unreadable header: the
+    /// extractor rejects a header with no recognisable keyword, so no
+    /// path-only inference runs (astro-plan-z7997).
+    #[test]
+    fn corrupt_master_named_fits_is_not_detected_as_a_master() {
+        let tmp = tmpdir();
+        let folder = tmp.path().join("calibration");
+        fs::create_dir_all(&folder).unwrap();
+        write_file(&folder, "masterDark.fits", &[0xffu8; 2880]);
+
+        let items = scan_root(tmp.path(), &ScanOptions::default()).unwrap().items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            items[0].masters.is_empty(),
+            "a corrupt header carries no evidence for master detection"
+        );
+    }
+
+    /// The neighbouring case the z7997 rejection must not swallow: a valid
+    /// header without `IMAGETYP` still reaches path inference.
+    #[test]
+    fn keywordless_imagetyp_master_still_infers_frame_type_from_path() {
+        let tmp = tmpdir();
+        let folder = tmp.path().join("calibration");
+        fs::create_dir_all(&folder).unwrap();
+        write_realistic_fits(&folder, "masterDark.fits", None, None);
+
+        let items = scan_root(tmp.path(), &ScanOptions::default()).unwrap().items;
+        assert_eq!(items.len(), 1);
+        let master = items[0].masters.first().expect("path inference must still detect a master");
+        assert_eq!(master.detection.frame_type, FrameType::Dark);
+        assert!(!master.detection.stack_count_evidence, "no header integration count present");
+    }
+
     /// Constitution §I regression: a symlinked subdirectory reachable from the
     /// scan root must not be traversed unless `follow_symlinks` is enabled.
     #[cfg(unix)]
@@ -966,6 +1019,70 @@ mod tests {
         let options = ScanOptions { follow_symlinks: true, workers: None };
         let items = scan_root(&scan_root_dir, &options).unwrap().items;
         assert_eq!(items.len(), 1, "junction is traversed when explicitly enabled");
+    }
+
+    /// Directory link usable on both lanes: a symlink on Unix, a junction on
+    /// Windows, where `is_symlink()` does not report the reparse point.
+    fn link_dir(link: &Path, target: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).unwrap();
+        #[cfg(windows)]
+        make_junction(link, target);
+    }
+
+    /// A link back to an ancestor is re-entered without a visited set, so the
+    /// one real directory is inventoried once per re-entry — 16 items where one
+    /// is expected. The walk still ends, because each re-entry adds a link
+    /// component and the OS caps symlink resolution (`ELOOP`), so the bound
+    /// comes from the platform rather than from the walker.
+    #[test]
+    fn opt_in_traversal_terminates_on_a_directory_cycle() {
+        let tmp = tmpdir();
+        let root = tmp.path().join("library");
+        let frames = root.join("frames");
+        fs::create_dir_all(&frames).unwrap();
+        write_file(&frames, "light_001.fits", b"light");
+        link_dir(&frames.join("back_to_root"), &root);
+
+        let options = ScanOptions { follow_symlinks: true, workers: None };
+        let items = scan_root(&root, &options).unwrap().items;
+        assert_eq!(items.len(), 1, "the one real frame is inventoried exactly once");
+    }
+
+    /// Constitution §I: the root itself is a link, and `is_dir()` follows it, so
+    /// the default scan walked into it. The gate applies to the root on the same
+    /// terms as to any entry below it.
+    #[test]
+    fn symlinked_scan_root_rejected_by_default() {
+        let tmp = tmpdir();
+        let real_root = tmp.path().join("real_root");
+        fs::create_dir_all(&real_root).unwrap();
+        write_file(&real_root, "hidden.fits", b"hidden");
+
+        let linked_root = tmp.path().join("linked_root");
+        link_dir(&linked_root, &real_root);
+
+        let error = scan_root(&linked_root, &ScanOptions::default())
+            .expect_err("a symlinked root must be refused while following is disabled");
+        assert!(
+            error.contains("scan root is unusable"),
+            "error must name the root as unusable, got: {error}"
+        );
+    }
+
+    #[test]
+    fn symlinked_scan_root_accepted_when_follow_symlinks_enabled() {
+        let tmp = tmpdir();
+        let real_root = tmp.path().join("real_root");
+        fs::create_dir_all(&real_root).unwrap();
+        write_file(&real_root, "visible.fits", b"visible");
+
+        let linked_root = tmp.path().join("linked_root");
+        link_dir(&linked_root, &real_root);
+
+        let options = ScanOptions { follow_symlinks: true, workers: None };
+        let items = scan_root(&linked_root, &options).unwrap().items;
+        assert_eq!(items.len(), 1, "a symlinked root is walkable when explicitly enabled");
     }
 
     /// Multi-leaf sort-order is deterministic regardless of OS readdir ordering

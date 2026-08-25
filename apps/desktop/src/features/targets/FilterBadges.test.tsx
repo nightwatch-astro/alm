@@ -10,6 +10,7 @@ import {
   DEFAULT_MOON_AVOIDANCE,
   BANDS,
 } from '@/shared/planner/moon-avoidance';
+import * as tt from './targets-table.css';
 
 describe('FilterBadges — per-band viability pills (spec 047 T016)', () => {
   it('renders all seven bands with a viable/not-viable aria-label each', () => {
@@ -44,9 +45,9 @@ describe('FilterBadges — per-band viability pills (spec 047 T016)', () => {
       <FilterBadges viability={viability} recommendation="broadband-ok" />,
     );
     const broadband = within(container).getByLabelText('L: viable tonight');
-    expect(broadband.className).toContain('pv-filter-badge--broadband');
+    expect(broadband.className).toContain(tt.filterBadgeTier.broadband);
     const narrowband = within(container).getByLabelText('Ha: viable tonight');
-    expect(narrowband.className).toContain('pv-filter-badge--narrowband');
+    expect(narrowband.className).toContain(tt.filterBadgeTier.narrowband);
   });
 
   it('recommendationLabel covers all four categories', () => {

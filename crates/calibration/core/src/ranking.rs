@@ -13,6 +13,7 @@
 //! - Bias: gain (hard), offset (hard).
 
 use crate::candidate::{CalibrationMatch, SelectionReason};
+use crate::CalibrationKind;
 
 // ── Soft dimension tolerance config ──────────────────────────────────────────
 
@@ -81,6 +82,7 @@ impl SoftDimConfig {
 /// `calibrationDarkOverridePenalty`, `calibrationFlatOverridePenalty`,
 /// `calibrationBiasOverridePenalty`, `calibrationPrefillSuggestion`.
 #[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)] // Distinct orthogonal per-field match-required flags
 pub struct MatchingRuleConfig {
     // ── Dark tolerances ──
     /// Dark exposure soft tolerance (percentage, 0–100). Default 5.0 → ±5%.
@@ -117,6 +119,28 @@ pub struct MatchingRuleConfig {
     /// the candidate. Default: `true` (offset always required, matching the
     /// original strict behaviour).
     pub require_same_offset: bool,
+    /// When true, a master must carry the same GAIN as the light session for
+    /// dark, bias, and flat matching (hard rule). When false, a missing or
+    /// mismatched gain costs
+    /// [`RELAXED_HARD_RULE_PENALTY`](crate::rules::RELAXED_HARD_RULE_PENALTY)
+    /// instead of excluding the candidate. Default: `true`.
+    pub require_same_gain: bool,
+    /// When true, a flat master must carry the same BINNING as the light session
+    /// (hard rule). When false, a missing or mismatched binning costs
+    /// [`RELAXED_HARD_RULE_PENALTY`](crate::rules::RELAXED_HARD_RULE_PENALTY)
+    /// instead of excluding the candidate. Dark and bias matching does not
+    /// compare binning at all, so this flag does not reach them. Default: `true`.
+    pub require_same_binning: bool,
+
+    // ── Age tolerance (dark and bias) ──
+    /// Maximum accepted age gap in days between the light session's observing
+    /// night and the master's. Default 365. A master beyond the limit is kept
+    /// as a candidate and reported as an out-of-tolerance `DateProximity`
+    /// mismatch; the dimension is skipped entirely when either observing night
+    /// is unknown, so a master with no date is never penalised for age.
+    pub age_limit_days: f64,
+    /// Age soft max penalty. Default 0.3.
+    pub age_max_penalty: f64,
 
     // ── UI ──
     /// When true, the assign dialog pre-fills with the top candidate (R-Prefill).
@@ -138,6 +162,10 @@ impl Default for MatchingRuleConfig {
             flat_override_penalty: 0.3,
             bias_override_penalty: 0.3,
             require_same_offset: true,
+            require_same_gain: true,
+            require_same_binning: true,
+            age_limit_days: 365.0,
+            age_max_penalty: 0.3,
             prefill_suggestion: true,
         }
     }
@@ -166,6 +194,12 @@ impl MatchingRuleConfig {
     #[must_use]
     pub fn flat_night_config(&self) -> SoftDimConfig {
         SoftDimConfig::new(self.flat_night_tolerance_nights, self.flat_night_max_penalty)
+    }
+
+    /// `SoftDimConfig` for dark/bias master age tolerance.
+    #[must_use]
+    pub fn age_config(&self) -> SoftDimConfig {
+        SoftDimConfig::new(self.age_limit_days, self.age_max_penalty)
     }
 }
 
@@ -203,18 +237,23 @@ pub fn rank_matches(matches: &mut [CalibrationMatch]) {
 /// Returns `"match"`, `"ambiguous"`, or `"no_match"`.
 #[must_use]
 pub fn suggest_status(matches: &[CalibrationMatch]) -> &'static str {
+    status_from_ranked_confidences(&matches.iter().map(|m| m.confidence).collect::<Vec<_>>())
+}
+
+/// Classify a status from the confidences of one kind's ranked candidates.
+fn status_from_ranked_confidences(matches: &[f64]) -> &'static str {
     match matches.len() {
         0 => "no_match",
         // Same rule as the multi-candidate arm below: a confidence that is not a
         // real number cannot be shown to be a clear match, and having no runner-up
         // does not make it one. Without this, a lone NaN-confidence candidate was
         // reported as a settled match while two of them were reported ambiguous.
-        1 if !matches[0].confidence.is_finite() => "ambiguous",
+        1 if !matches[0].is_finite() => "ambiguous",
         1 => "match",
         _ => {
             // Ambiguous when top two are within 0.05 confidence.
-            let top = matches[0].confidence;
-            let second = matches[1].confidence;
+            let top = matches[0];
+            let second = matches[1];
             if !top.is_finite() || !second.is_finite() {
                 // A confidence that is not a real number cannot be shown to be
                 // clear of its runner-up, so the user decides rather than the app.
@@ -226,6 +265,42 @@ pub fn suggest_status(matches: &[CalibrationMatch]) -> &'static str {
                 "match"
             }
         }
+    }
+}
+
+/// Classify the suggestion status of a multi-kind match list.
+///
+/// [`suggest_status`] compares `matches[0]` against `matches[1]`, which is only
+/// meaningful within one calibration kind: a request that asks for darks, flats
+/// and biases receives a list ranked within each kind but unordered across
+/// them, so the two leading entries can belong to different kinds and their
+/// confidences are not comparable. This reduces the per-kind statuses instead —
+/// any ambiguous kind makes the request ambiguous, otherwise any kind with a
+/// candidate makes it a match.
+#[must_use]
+pub fn multi_kind_suggest_status(matches: &[CalibrationMatch]) -> &'static str {
+    let mut kinds: Vec<CalibrationKind> = Vec::new();
+    for m in matches {
+        if !kinds.contains(&m.calibration_type) {
+            kinds.push(m.calibration_type);
+        }
+    }
+
+    let mut any_match = false;
+    for kind in kinds {
+        let per_kind: Vec<f64> =
+            matches.iter().filter(|m| m.calibration_type == kind).map(|m| m.confidence).collect();
+        match status_from_ranked_confidences(&per_kind) {
+            "ambiguous" => return "ambiguous",
+            "match" => any_match = true,
+            _ => {}
+        }
+    }
+
+    if any_match {
+        "match"
+    } else {
+        "no_match"
     }
 }
 
@@ -283,15 +358,57 @@ mod tests {
     use crate::CalibrationKind;
 
     fn make_match(confidence: f64, reason: SelectionReason) -> CalibrationMatch {
+        make_kind_match(CalibrationKind::Dark, confidence, reason)
+    }
+
+    fn make_kind_match(
+        kind: CalibrationKind,
+        confidence: f64,
+        reason: SelectionReason,
+    ) -> CalibrationMatch {
         CalibrationMatch::new(
             "ses".to_owned(),
             "master".to_owned(),
-            CalibrationKind::Dark,
+            kind,
             confidence,
             vec![],
             vec![],
             reason,
         )
+    }
+
+    /// Two near-tied candidates of DIFFERENT kinds are not competing, so the
+    /// request is a match; two near-tied darks are genuinely ambiguous.
+    #[test]
+    fn a_multi_kind_status_reduces_within_each_kind() {
+        let cross_kind = vec![
+            make_kind_match(CalibrationKind::Dark, 0.90, SelectionReason::CompatibleFallback),
+            make_kind_match(CalibrationKind::Flat, 0.88, SelectionReason::CompatibleFallback),
+        ];
+        assert_eq!(multi_kind_suggest_status(&cross_kind), "match");
+
+        let same_kind = vec![
+            make_kind_match(CalibrationKind::Dark, 0.90, SelectionReason::CompatibleFallback),
+            make_kind_match(CalibrationKind::Dark, 0.88, SelectionReason::CompatibleFallback),
+        ];
+        assert_eq!(multi_kind_suggest_status(&same_kind), "ambiguous");
+    }
+
+    /// One ambiguous kind makes the whole request ambiguous even when another
+    /// kind has a clear winner.
+    #[test]
+    fn a_single_ambiguous_kind_makes_the_request_ambiguous() {
+        let matches = vec![
+            make_kind_match(CalibrationKind::Bias, 1.00, SelectionReason::CompatibleFallback),
+            make_kind_match(CalibrationKind::Dark, 0.90, SelectionReason::CompatibleFallback),
+            make_kind_match(CalibrationKind::Dark, 0.88, SelectionReason::CompatibleFallback),
+        ];
+        assert_eq!(multi_kind_suggest_status(&matches), "ambiguous");
+    }
+
+    #[test]
+    fn a_multi_kind_status_is_no_match_when_empty() {
+        assert_eq!(multi_kind_suggest_status(&[]), "no_match");
     }
 
     #[test]

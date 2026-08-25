@@ -182,6 +182,12 @@ fn db_err(e: DbError) -> ContractError {
         DbError::CasFailed(msg) => {
             ContractError::new(ErrorCode::PlanInvalidState, msg, ErrorSeverity::Blocking, false)
         }
+        // Raised when the plan was reopened and re-approved between the
+        // pre-flight token check and the apply CAS. Same contract code as the
+        // pre-flight mismatch, so one cause has one failure.
+        DbError::ApprovalStale(msg) => {
+            ContractError::new(ErrorCode::PlanApprovalStale, msg, ErrorSeverity::Blocking, false)
+        }
         other => crate::errors::db_err(other),
     }
 }
@@ -197,7 +203,7 @@ mod terminal;
 #[cfg(test)]
 mod tests;
 
-pub use apply::{apply_plan, apply_plan_channel_free};
+pub use apply::apply_plan;
 pub use lifecycle::{
     cancel_plan, confirm_plan_destructive_items, get_apply_status, list_crash_interrupted_plans,
     resume_plan, retry_plan_item, skip_plan_item, sweep_crashed_applying_plans,
@@ -209,9 +215,9 @@ use apply::{spawn_executor_run, SpawnExecutorParams};
 use callbacks::{audit_item_cancelled, PlanApplyCallbacks};
 use finalizers::{
     finalize_archive_lifecycle, finalize_calibration_master_archive,
-    finalize_calibration_master_restore, finalize_project_create_manifest,
-    finalize_restore_lifecycle, finalize_view_generation, finalize_view_regeneration,
-    finalize_view_removal,
+    finalize_calibration_master_restore, finalize_prepared_lifecycle,
+    finalize_project_create_manifest, finalize_restore_lifecycle, finalize_view_generation,
+    finalize_view_regeneration, finalize_view_removal,
 };
 use paths::{
     check_overlap_and_register, compute_plan_path_set, item_row_to_executor_item,

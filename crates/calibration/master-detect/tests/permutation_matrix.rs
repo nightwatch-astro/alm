@@ -312,9 +312,13 @@ fn detect_master_permutation_matrix() {
     assert!(failures.is_empty(), "permutation matrix mismatches:\n{}", failures.join("\n"));
 }
 
-/// Provenance check for a sample of cells where the winning detector matters:
-/// STACKCNT evidence must come from Siril; a no-header path-fallback master
-/// can only come from `PixInsight` (Siril requires IMAGETYP).
+/// Provenance check for a sample of cells where the winning detector matters.
+///
+/// Every detector that sees a header count now reports it as evidence, so a
+/// STACKCNT-backed result is claimed by the first registered detector rather
+/// than by Siril specifically; the cell asserts that the count is carried as
+/// evidence at all. A no-header path-fallback master can still only come from
+/// `PixInsight`, since Siril requires IMAGETYP.
 #[test]
 fn detect_master_permutation_matrix_provenance_sample() {
     let stackcnt_case = DetectInput {
@@ -324,8 +328,8 @@ fn detect_master_permutation_matrix_provenance_sample() {
         rel_path: "Calibration/Darks/Combined30/",
     };
     let result = detect_master(&stackcnt_case).unwrap();
-    assert_eq!(result.detector, "siril");
     assert!(result.stack_count_evidence);
+    assert!(result.is_master);
 
     let path_fallback_case = DetectInput {
         imagetyp: None,

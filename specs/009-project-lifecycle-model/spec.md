@@ -12,9 +12,10 @@
 > prepared` PreparedSource creation is now **per-framing** (a Q20 source view per
 > framing). See the Iterations log below. Spec 008 owns the framing data model.
 
-> **See Spec 030**: UI implementation of this feature must follow
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md)
-> for layout, navigation, and component patterns.
+> **See Spec 032**: UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns. Spec 030 (UI Audit &
+> Revision), cited here previously, is superseded as of 2026-06-11.
 
 **Feature Branch**: `009-project-lifecycle-model`  
 **Created**: 2026-05-09  
@@ -182,7 +183,7 @@ Eighteen allowed edges total (seventeen + `archived → ready`).
   through spec 017 (filesystem plan) / spec 025; `setProjectLifecycle` is a
   pure state write in the mockup.
 - Cross-spec audit fan-out via the persistence boundary
-  (`crates/persistence/db/`).
+  (the `crates/persistence/` crates).
 
 ## Iterations
 

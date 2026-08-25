@@ -19,9 +19,10 @@
 > (FR-009 dropped + SC-002 nav reversal are sanctioned scope changes; FR-005/FR-007 observing-plan refs
 > remain deferred / out of scope).
 
-> **See Spec 030**: UI implementation of this feature must follow
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md)
-> for layout, navigation, and component patterns.
+> **See Spec 032**: UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns. Spec 030 (UI Audit &
+> Revision), cited here previously, is superseded as of 2026-06-11.
 
 **Feature Branch**: `023-target-identity-history-notes`  
 **Created**: 2026-05-09  

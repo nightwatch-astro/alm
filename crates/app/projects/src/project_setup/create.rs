@@ -40,6 +40,8 @@ use super::{
 /// Rules:
 /// - `..` components are rejected (`path.invalid`) — a project path must not
 ///   escape its anchor;
+/// - a path with no `Normal` component is rejected (`path.invalid`) — a
+///   filesystem or device root cannot be a destination root;
 /// - an absolute path is used as-is (validated downstream by containment);
 /// - a relative path is joined onto the registered project folder;
 /// - a relative path with no registered project folder is rejected
@@ -50,6 +52,21 @@ async fn anchor_project_path(pool: &SqlitePool, raw: &str) -> Result<String, Con
 
     if candidate.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
         let message = "Project path must not contain '..' components.";
+        return Err(ContractError::new(
+            ErrorCode::PathInvalid,
+            message,
+            ErrorSeverity::Blocking,
+            false,
+        )
+        .with_field_error(super::field_error("path", ErrorCode::PathInvalid, message)));
+    }
+
+    // A path whose components are only a root and/or a device prefix (`/`,
+    // `C:\`, `\\server\share`) or only `.` names no folder, so downstream
+    // readers would take the filesystem root itself as the project's
+    // destination root and scaffold directly into it.
+    if !candidate.components().any(|c| matches!(c, std::path::Component::Normal(_))) {
+        let message = "Project path must name a folder, not a filesystem or device root.";
         return Err(ContractError::new(
             ErrorCode::PathInvalid,
             message,

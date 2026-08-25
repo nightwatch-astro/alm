@@ -19,9 +19,9 @@ classification creates N real items, and the suppression predicates go away.
 
 | Concern | Path |
 |---|---|
-| Schema | `crates/persistence/db/migrations/0049_inbox_single_type.sql` (`inbox_source_groups` at `:39`, `inbox_items` at `:84`), `0020_inbox.sql` (evidence `:56`, plan links `:105`) |
-| Repository | `crates/persistence/db/src/repositories/inbox.rs` — upsert `:507`, sentinel `:584`, purge `:610`, sibling list `:632`, suppression macro `:1494`, list query `:1758` |
-| Status-bar count | `crates/persistence/db/src/repositories/q_desktop.rs` — placeholder writes `:25`/`:72`, count `:179` |
+| Schema | `crates/persistence/core/migrations/0001_initial_schema.sql` — `inbox_source_groups`, `inbox_items`, classification evidence and plan links (originally migrations `0049_inbox_single_type.sql` and `0020_inbox.sql`, since folded into the pre-1.0 baseline) |
+| Repository | `crates/persistence/inbox/src/repositories/inbox/` — `items.rs`, `projections.rs`, `source_groups.rs`, `classification.rs`, `metadata.rs`, `plan_links.rs`. The single `inbox.rs` file this table used to cite was split into this module directory, so the upsert/sentinel/purge/sibling-list/suppression line numbers no longer resolve |
+| Status-bar count | `crates/persistence/targets/src/repositories/q_desktop.rs` |
 | Classify | `crates/app/inbox/src/classify.rs` — result vocabulary `:400-405`, materialization gate `:433`, false state write `:467`, `materialize_sub_items` `:870`, cache seed `:1013` |
 | Reclassify | `crates/app/inbox/src/reclassify.rs` — per-item plan block `:81`, #1086 gate `:173-202`, sentinel clear `:218-228`, group-wide interlock `:346-362` |
 | Confirm | `crates/app/inbox/src/confirm.rs` — needs-review gate `:174`, TOCTOU `:198`, result gate `:215` |
@@ -31,7 +31,7 @@ classification creates N real items, and the suppression predicates go away.
 | Layer-2 journeys | `crates/e2e-tests/tests/inbox_ui_journeys.rs` — helpers `:135`/`:148`, five journeys |
 
 No new crate. The change lives inside `crates/app/inbox` and
-`crates/persistence/db`, plus one migration and the desktop Inbox feature.
+`crates/persistence/inbox`, plus one migration and the desktop Inbox feature.
 
 ## Running the tests
 

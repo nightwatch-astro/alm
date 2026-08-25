@@ -43,7 +43,10 @@ pub struct TargetProjectRow {
 /// List acquisition sessions whose `canonical_target_id` matches `target_id`,
 /// ordered by `created_at DESC` (newest first).
 ///
-/// `json_array_length(frame_ids)` gives a zero-allocation frame count.
+/// `json_array_length` gives a zero-allocation frame count. `frame_ids` carries
+/// no `json_valid` CHECK and the function raises on a malformed value, failing
+/// the whole SELECT; the `CASE` substitutes an empty array so a corrupt session
+/// reports `frame_count` 0 instead of losing every other session's row.
 ///
 /// # Errors
 ///
@@ -56,7 +59,9 @@ pub async fn list_sessions_for_target(
         "SELECT id,
                 session_key,
                 created_at,
-                json_array_length(frame_ids) AS frame_count
+                json_array_length(
+                    CASE WHEN json_valid(frame_ids)
+                         THEN frame_ids ELSE '[]' END) AS frame_count
          FROM acquisition_session
          WHERE canonical_target_id = ?
          ORDER BY created_at DESC",
@@ -196,6 +201,36 @@ mod tests {
         assert_eq!(rows[0].id, "s-001", "newest first");
         assert_eq!(rows[1].id, "s-002");
         assert_eq!(rows[0].frame_count, 3, "frame_count from json_array_length");
+    }
+
+    /// `acquisition_session.frame_ids` is `TEXT NOT NULL DEFAULT '[]'` with no
+    /// `json_valid` CHECK, so a corrupt value is storable. An unguarded
+    /// `json_array_length` over it raises "malformed JSON" and fails the whole
+    /// SELECT rather than the one bad row.
+    #[tokio::test]
+    async fn sessions_for_target_tolerate_malformed_frame_ids() {
+        let db = setup_db().await;
+        insert_target(db.pool(), "t-mj").await;
+
+        insert_linked_session(db.pool(), "s-mj-ok", "t-mj", "2026-01-02T00:00:00Z").await;
+        sqlx::query(
+            "INSERT INTO acquisition_session \
+                (id, session_key, frame_ids, created_at, canonical_target_id) \
+             VALUES ('s-mj-bad', 'k', 'oops', '2026-01-01T00:00:00Z', 't-mj')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        let rows = list_sessions_for_target(db.pool(), "t-mj")
+            .await
+            .expect("malformed frame_ids must not fail the target session history");
+
+        assert_eq!(rows.len(), 2, "the corrupt row is listed, not dropped");
+        assert_eq!(rows[0].id, "s-mj-ok", "newest first");
+        assert_eq!(rows[0].frame_count, 3, "intact row keeps its real count");
+        assert_eq!(rows[1].id, "s-mj-bad");
+        assert_eq!(rows[1].frame_count, 0, "corrupt frame_ids reads as an empty array");
     }
 
     #[tokio::test]

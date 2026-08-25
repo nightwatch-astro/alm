@@ -14,12 +14,10 @@ use persistence_core::DbResult;
 
 /// Raw persisted row from `calibration_tolerances`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[allow(clippy::struct_excessive_bools)] // Distinct orthogonal per-field match-required flags
 pub struct CalibrationTolerancesRow {
     pub temperature_tolerance_c: f64,
     pub exposure_tolerance_s: f64,
     pub aging_limit_days: i64,
-    pub require_same_camera: bool,
     pub require_same_gain: bool,
     pub require_same_binning: bool,
     /// Hard rule: master must carry the same OFFSET as the light session
@@ -34,10 +32,9 @@ pub struct CalibrationTolerancesRow {
 /// Returns `persistence_core::DbError::Database` on query failure (including the unexpected
 /// case where the migration-0008 seed row is missing).
 pub async fn get(pool: &SqlitePool) -> DbResult<CalibrationTolerancesRow> {
-    let row: (f64, f64, i64, i64, i64, i64, i64) = sqlx::query_as(
+    let row: (f64, f64, i64, i64, i64, i64) = sqlx::query_as(
         "SELECT temperature_tolerance_c, exposure_tolerance_s, aging_limit_days, \
-                require_same_camera, require_same_gain, require_same_binning, \
-                require_same_offset \
+                require_same_gain, require_same_binning, require_same_offset \
          FROM calibration_tolerances WHERE singleton_id = 'default'",
     )
     .fetch_one(pool)
@@ -47,7 +44,6 @@ pub async fn get(pool: &SqlitePool) -> DbResult<CalibrationTolerancesRow> {
         temperature_tolerance_c,
         exposure_tolerance_s,
         aging_limit_days,
-        require_same_camera,
         require_same_gain,
         require_same_binning,
         require_same_offset,
@@ -57,7 +53,6 @@ pub async fn get(pool: &SqlitePool) -> DbResult<CalibrationTolerancesRow> {
         temperature_tolerance_c,
         exposure_tolerance_s,
         aging_limit_days,
-        require_same_camera: require_same_camera != 0,
         require_same_gain: require_same_gain != 0,
         require_same_binning: require_same_binning != 0,
         require_same_offset: require_same_offset != 0,
@@ -78,14 +73,13 @@ pub async fn update(
     sqlx::query(
         "INSERT INTO calibration_tolerances \
          (singleton_id, temperature_tolerance_c, exposure_tolerance_s, aging_limit_days, \
-          require_same_camera, require_same_gain, require_same_binning, require_same_offset, \
+          require_same_gain, require_same_binning, require_same_offset, \
           updated_at) \
-         VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?) \
+         VALUES ('default', ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(singleton_id) DO UPDATE SET \
              temperature_tolerance_c = excluded.temperature_tolerance_c, \
              exposure_tolerance_s    = excluded.exposure_tolerance_s, \
              aging_limit_days        = excluded.aging_limit_days, \
-             require_same_camera     = excluded.require_same_camera, \
              require_same_gain       = excluded.require_same_gain, \
              require_same_binning    = excluded.require_same_binning, \
              require_same_offset     = excluded.require_same_offset, \
@@ -94,7 +88,6 @@ pub async fn update(
     .bind(row.temperature_tolerance_c)
     .bind(row.exposure_tolerance_s)
     .bind(row.aging_limit_days)
-    .bind(i64::from(row.require_same_camera))
     .bind(i64::from(row.require_same_gain))
     .bind(i64::from(row.require_same_binning))
     .bind(i64::from(row.require_same_offset))
@@ -123,7 +116,6 @@ mod tests {
         assert!((row.temperature_tolerance_c - 5.0).abs() < f64::EPSILON);
         assert!((row.exposure_tolerance_s - 2.0).abs() < f64::EPSILON);
         assert_eq!(row.aging_limit_days, 365);
-        assert!(row.require_same_camera);
         assert!(row.require_same_gain);
         assert!(row.require_same_binning);
         assert!(row.require_same_offset, "migration 0051 default must be true");
@@ -136,7 +128,6 @@ mod tests {
             temperature_tolerance_c: 3.5,
             exposure_tolerance_s: 1.0,
             aging_limit_days: 90,
-            require_same_camera: false,
             require_same_gain: true,
             require_same_binning: false,
             require_same_offset: false,
@@ -154,7 +145,6 @@ mod tests {
             temperature_tolerance_c: 4.0,
             exposure_tolerance_s: 1.5,
             aging_limit_days: 180,
-            require_same_camera: true,
             require_same_gain: false,
             require_same_binning: true,
             require_same_offset: false,

@@ -186,28 +186,6 @@
   line-height: var(--pv-leading-normal);
 }
 
-/* ── Plan panel summary breakdown (task #59) ──────────────────────────────── */
-.pv-plan-panel__summary-breakdown {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--pv-sp-1) var(--pv-sp-2);
-  min-width: 0;
-}
-.pv-plan-panel__summary-type {
-  white-space: nowrap;
-}
-.pv-plan-panel__summary-type-count {
-  font-weight: var(--pv-weight-semibold);
-  color: var(--pv-text);
-}
-.pv-plan-panel__summary-type-name {
-  color: var(--pv-text-secondary);
-}
-.pv-plan-panel__summary-sep {
-  color: var(--pv-text-muted);
-}
-
 /* ── Status bar lib / page slots (spec-043, tasks #87, B) ────────────────── */
 .pv-statusbar__lib {
   display: flex;
@@ -229,19 +207,6 @@
   min-width: 0;
   padding-right: var(--pv-sp-3);
   border-right: 1px solid var(--pv-border-subtle);
-}
-
-/* ── Plan panel context (narrow detail pane, #76) ────────────────────────── */
-.pv-listpage__detail-body .pv-plan-panel__bar {
-  flex-wrap: wrap;
-  gap: var(--pv-sp-2);
-}
-.pv-listpage__detail-body .pv-plan-panel__bar-actions {
-  flex-wrap: wrap;
-}
-.pv-listpage__detail-body .pv-plan-panel__summary-dest,
-.pv-listpage__detail-body .pv-plan-panel__path {
-  word-break: break-all;
 }
 
 /* ── Inbox detail two-column split (tasks #75, #98, task D) ──────────────── */

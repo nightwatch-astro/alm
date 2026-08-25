@@ -54,6 +54,7 @@ fn write_fits(
     object: Option<&str>,
     filter: Option<&str>,
     date_obs: Option<&str>,
+    camera: Option<(&str, &str)>,
 ) {
     let path = dir.join(name);
     let mut block = vec![b' '; 2880];
@@ -82,6 +83,10 @@ fn write_fits(
     write_card(&format!("{:<80}", "OFFSET  = 50"));
     write_card(&format!("{:<80}", "EXPTIME = 300.0"));
     write_card(&format!("{:<80}", "SET-TEMP= -10.0"));
+    if let Some((instrume, cameraid)) = camera {
+        write_card(&format!("{:<80}", format!("INSTRUME= '{instrume}'")));
+        write_card(&format!("{:<80}", format!("CAMERAID= '{cameraid}'")));
+    }
     block[idx * 80..idx * 80 + 3].copy_from_slice(b"END");
     let mut f = std::fs::File::create(path).unwrap();
     f.write_all(&block).unwrap();
@@ -211,6 +216,7 @@ async fn two_m31_frames_group_into_one_linked_session() {
         Some("M 31"),
         Some("Ha"),
         Some("2026-06-21T22:00:00"),
+        None,
     );
     write_fits(
         tmp.path(),
@@ -219,6 +225,7 @@ async fn two_m31_frames_group_into_one_linked_session() {
         Some("NGC 224"),
         Some("Ha"),
         Some("2026-06-21T23:00:00"),
+        None,
     );
 
     build_applied_plan(
@@ -337,6 +344,7 @@ async fn catalogued_frame_is_recorded_identically_to_a_moved_frame() {
             Some("M 31"),
             Some("Ha"),
             Some("2026-06-21T22:00:00"),
+            None,
         );
         filetime::set_file_mtime(
             tmp.path().join(name),
@@ -399,6 +407,7 @@ async fn unknown_object_session_backfills_after_resolve() {
         Some("WeirdObject 42"),
         Some("L"),
         Some("2026-06-21T22:00:00"),
+        None,
     );
     build_applied_plan(pool, "plan-2", root_id, &[("u.fits", "move", true)]).await;
 
@@ -466,6 +475,7 @@ async fn ingested_session_total_size_is_sum_of_real_frame_sizes() {
         Some("M 31"),
         Some("Ha"),
         Some("2026-06-21T22:00:00"),
+        None,
     );
     write_fits(
         tmp.path(),
@@ -474,6 +484,7 @@ async fn ingested_session_total_size_is_sum_of_real_frame_sizes() {
         Some("M 31"),
         Some("Ha"),
         Some("2026-06-21T23:00:00"),
+        None,
     );
     // Pad the second frame by one FITS block so the two sizes differ.
     std::fs::OpenOptions::new()
@@ -558,6 +569,7 @@ async fn ingested_session_matches_a_calibration_master() {
         Some("M 31"),
         Some("Ha"),
         Some("2026-06-21T22:00:00"),
+        Some(("Poseidon-C PRO", "Player One_CAMD2282B4C061209000")),
     );
     build_applied_plan(pool, "plan-siyk", root_id, &[("light.fits", "move", true)]).await;
 
@@ -585,6 +597,21 @@ async fn ingested_session_matches_a_calibration_master() {
             .fetch_one(pool)
             .await
             .unwrap();
+
+    // astro-plan-ugux2: the body id must be DERIVED from the frame's own
+    // CAMERAID by the production writer, normalized the way
+    // `sessions::camera_body_id` normalizes. Asserting a value the fixture
+    // never wrote is what distinguishes this from seeding the column by hand.
+    let camera_body_id: Option<String> =
+        sqlx::query_scalar("SELECT camera_body_id FROM acquisition_fingerprint")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        camera_body_id.as_deref(),
+        Some("player one_camd2282b4c061209000"),
+        "CAMERAID must reach the fingerprint through the real ingest derivation"
+    );
     assert_eq!(dims.0, Some(100.0), "GAIN must reach the fingerprint (hard rule, every kind)");
     assert_eq!(dims.1, Some(50.0), "OFFSET must reach the fingerprint (dark hard rule)");
     assert_eq!(dims.2, Some(300.0), "EXPTIME must reach the fingerprint");
@@ -613,6 +640,7 @@ async fn ingested_session_matches_a_calibration_master() {
             temp_c: Some(-10.0),
             binning: Some("1x1"),
             optic_train: None,
+            camera_body_id: None,
         },
     )
     .await

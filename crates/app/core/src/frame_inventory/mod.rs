@@ -188,20 +188,16 @@ pub(crate) async fn owning_session_frame_type(
     pool: &SqlitePool,
     frame_id: &str,
 ) -> Result<(Option<String>, RawFrameType), ContractError> {
-    let like = format!("%\"{frame_id}\"%");
-
     if let Some(session_id) =
-        persistence_core::repositories::q_core::find_acquisition_session_id_by_frame_like(
-            pool, &like,
-        )
-        .await
-        .map_err(db_err)?
+        persistence_core::repositories::q_core::find_acquisition_session_id_by_frame(pool, frame_id)
+            .await
+            .map_err(db_err)?
     {
         return Ok((Some(session_id), RawFrameType::Light));
     }
 
     if let Some((session_id, kind)) =
-        persistence_core::repositories::q_core::find_calibration_session_by_frame_like(pool, &like)
+        persistence_core::repositories::q_core::find_calibration_session_by_frame(pool, frame_id)
             .await
             .map_err(db_err)?
     {

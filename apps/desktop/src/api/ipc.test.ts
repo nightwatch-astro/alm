@@ -132,3 +132,59 @@ describe('unwrap validates ContractError envelope (T118)', () => {
     );
   });
 });
+
+describe('unwrap passes contract domain errors through unvalidated', () => {
+  // `ManifestOpError` (bindings/index.ts) declares code/message/details and no
+  // severity/retryable, so validating it as a ContractError would mask the real
+  // manifest failure behind an IpcPayloadValidationError.
+  const manifestOpError = {
+    code: 'project.read_only',
+    message: 'Project is archived',
+    details: null,
+  };
+
+  it('throws the ManifestOpError itself, not a validation error', () => {
+    try {
+      unwrap({ status: 'error', error: manifestOpError });
+      expect.unreachable('unwrap must throw on an error envelope');
+    } catch (e) {
+      expect(e).toBe(manifestOpError);
+    }
+  });
+
+  it('throws a code/message-only payload unchanged', () => {
+    const minimal = { code: 'internal', message: 'database failure' };
+    try {
+      unwrap({ status: 'error', error: minimal });
+      expect.unreachable('unwrap must throw on an error envelope');
+    } catch (e) {
+      expect(e).toBe(minimal);
+    }
+  });
+
+  it('still validates a payload carrying a key outside the domain-error set', () => {
+    const drifted = { code: 'internal', message: 'oops', severity: 'error' };
+    expect(() => unwrap({ status: 'error', error: drifted })).toThrow(
+      IpcPayloadValidationError,
+    );
+  });
+});
+
+describe('IpcPayloadValidationError reports an unserializable payload', () => {
+  it('constructs when the raw payload is circular', () => {
+    const circular: Record<string, unknown> = { code: 1 };
+    circular.self = circular;
+    const err = new IpcPayloadValidationError('ContractError', {}, circular);
+    expect(err.message).toContain('<unserializable>');
+    expect(err.raw).toBe(circular);
+  });
+
+  it('constructs when the raw payload holds a BigInt', () => {
+    const err = new IpcPayloadValidationError(
+      'ContractError',
+      {},
+      { code: 1n },
+    );
+    expect(err.message).toContain('<unserializable>');
+  });
+});

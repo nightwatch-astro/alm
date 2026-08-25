@@ -12,6 +12,7 @@ use contracts_core::inventory_frame::{
 };
 use contracts_core::{error_code::ErrorCode, ContractError, ErrorSeverity};
 use domain_core::ids::new_id;
+use persistence_core::repositories::q_core;
 use persistence_plans::repositories::source_protection as prot_repo;
 use sqlx::SqlitePool;
 
@@ -41,6 +42,58 @@ fn raw_frame_protection_category(frame_type: RawFrameType) -> &'static str {
         RawFrameType::Flat => "flats",
         RawFrameType::Bias => "bias",
     }
+}
+
+/// Refuse raw-frame cleanup while any session's `frame_ids` is unreadable.
+///
+/// The `CASE WHEN json_valid(frame_ids)` guards substitute an empty array, so a
+/// corrupt session contributes zero frames and its frames resolve to no owning
+/// session — indistinguishable from a frame that is genuinely unattributed, and
+/// an unattributed frame is a cleanup candidate whose protection resolves under
+/// its root instead of its session. Constitution II forbids letting a
+/// destructive plan be built on that, and Constitution V makes
+/// frame-to-session attribution Tier 1, so the failure is raised rather than
+/// degraded (the same choice as
+/// `persistence_plans::repositories::projects::find_blockable_missing_sources`).
+///
+/// The check is deliberately not narrowed to the requested scope: deciding
+/// whether a corrupt session owns a selected frame requires reading the
+/// membership that is precisely what cannot be read.
+///
+/// A malformed `aliases` list is logged but does not refuse — equipment naming
+/// is not attribution and cannot misdirect a plan item.
+async fn refuse_unreadable_frame_attribution(pool: &SqlitePool) -> Result<(), ContractError> {
+    let malformed = q_core::list_malformed_json_columns(pool).await.map_err(db_err)?;
+    for row in &malformed {
+        tracing::warn!(
+            table = %row.table_name,
+            column = %row.column_name,
+            row_id = %row.row_id,
+            "stored JSON column is not valid JSON; queries over it read as empty"
+        );
+    }
+
+    let unreadable: Vec<&str> = malformed
+        .iter()
+        .filter(|row| row.column_name == q_core::FRAME_IDS_COLUMN)
+        .map(|row| row.row_id.as_str())
+        .collect();
+    if unreadable.is_empty() {
+        return Ok(());
+    }
+
+    Err(ContractError::new(
+        ErrorCode::InternalData,
+        format!(
+            "frame-to-session attribution is unreadable for {} session(s) ({}), \
+             so raw sub-frame cleanup cannot tell an unattributed frame from one \
+             of theirs. Repair or re-import those sessions first.",
+            unreadable.len(),
+            unreadable.join(", ")
+        ),
+        ErrorSeverity::Blocking,
+        false,
+    ))
 }
 
 /// Pick the protection source id for a raw frame (issue #563): the owning
@@ -86,11 +139,17 @@ async fn frame_protection_source(
 ///
 /// # Errors
 ///
-/// Returns `ContractError` on database failure or an invalid/empty scope.
+/// Returns `ContractError` on database failure, an invalid/empty scope, or
+/// `internal.data` when any session's `frame_ids` is unreadable (see
+/// [`refuse_unreadable_frame_attribution`]) — the preview refuses on the same
+/// condition as the plan so a frame cannot be absent from one surface and
+/// present as a candidate in the other.
 pub async fn scan_raw_frames(
     pool: &SqlitePool,
     req: &RawFrameCleanupScanRequest,
 ) -> Result<RawFrameCleanupScanResponse, ContractError> {
+    refuse_unreadable_frame_attribution(pool).await?;
+
     let listed = frame_inventory::list_frames(
         pool,
         &InventoryFrameListRequest {
@@ -164,12 +223,16 @@ pub async fn scan_raw_frames(
 ///
 /// # Errors
 ///
-/// Returns `ContractError` on database failure or when no selected frame id
-/// resolves to a present `file_record` row.
+/// Returns `ContractError` on database failure, when no selected frame id
+/// resolves to a present `file_record` row, or `internal.data` when any
+/// session's `frame_ids` is unreadable (see
+/// [`refuse_unreadable_frame_attribution`]).
 pub async fn generate_raw_frame_plan(
     pool: &SqlitePool,
     req: &RawFrameCleanupGenerateRequest,
 ) -> Result<GenerateCleanupPlanResult, ContractError> {
+    refuse_unreadable_frame_attribution(pool).await?;
+
     let rows = frame_inventory::rows_by_ids(pool, &req.selected_frame_ids).await?;
 
     let plan_id = new_id();

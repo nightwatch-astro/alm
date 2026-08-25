@@ -97,7 +97,14 @@ pub enum ObservingNightError {
     DateUnderflow,
 }
 
-fn noon_bounded_date(local_date: Date, local_hour: u8) -> Result<Date, ObservingNightError> {
+/// The single noon-bounded observing-night date derivation in this crate.
+///
+/// A pre-noon local timestamp belongs to the previous night; when that day does
+/// not exist the derivation is refused rather than substituting `local_date`.
+pub(crate) fn noon_bounded_date(
+    local_date: Date,
+    local_hour: u8,
+) -> Result<Date, ObservingNightError> {
     if local_hour < 12 {
         local_date.previous_day().ok_or(ObservingNightError::DateUnderflow)
     } else {

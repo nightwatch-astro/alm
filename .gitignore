@@ -316,6 +316,11 @@ apps/desktop/src-tauri/gen/
 # APM dependencies
 apm_modules/
 
+# Python bytecode. Hook scripts are executed in place, so a run writes cache
+# directories beside the deployed script.
+__pycache__/
+*.pyc
+
 # Spec Kit Memory optimizer cache
 .spec-kit-memory/
 .specify/extensions/memory-md/node_modules/

@@ -4,7 +4,20 @@
 
 **Created**: 2026-07-04
 
-**Status**: Clarified (all open questions resolved 2026-07-04)
+**Status**: Implemented (post-hoc record, verified 2026-08-24; open questions were
+resolved 2026-07-04). All four user stories ship: US1 `sourceview_generate`
+(`apps/desktop/src-tauri/src/commands/prepared_views.rs:130`, registered at
+`bootstrap/specta.rs:447`, covered by
+`crates/app/core/tests/source_view_generation_us1.rs`); US2 profile-driven layout
+via `workflow_profiles::seed::resolve_source_view_layout`
+(`crates/app/projects/src/source_view_generate/generate.rs:78`); US3
+`preparedview_regenerate` (`specta.rs:445`,
+`crates/app/core/tests/source_view_generation_us3_regenerate.rs`); US4
+`sourceview_verify` (`prepared_views.rs:151`,
+`crates/app/core/tests/source_view_verify_us4.rs`). Destination model shipped as
+`sourceview_destination_get` / `_set` (`prepared_views.rs:169`/`:188`), and
+`crates/e2e-tests/tests/source_view_journeys.rs` exercises the surface
+end-to-end.
 
 **Input**: User description: "Restore source-view generation: the app generates a
 processing-tool-ready (WBPP/PixInsight-first) project input directory on disk —

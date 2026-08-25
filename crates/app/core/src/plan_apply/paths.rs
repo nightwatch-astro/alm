@@ -12,15 +12,19 @@ use super::{
 /// held across an `.await`.
 pub(super) static OVERLAP_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Resolve one claimed relative path the same way the executor resolves item
-/// paths (`resolve_item_path`): join against the root when known, then
-/// lexically normalize. Unrooted paths normalize as-is — they never falsely
-/// prefix-match rooted absolute paths.
+/// Resolve one claimed relative path for the FR-017 overlap set: join against
+/// the root when known, then lexically normalize. Unrooted paths normalize
+/// as-is — they never falsely prefix-match rooted absolute paths.
+///
+/// This set is compared for overlap and never mutated, so an uncontained path
+/// is deliberately kept rather than refused: over-claiming a path only makes
+/// the concurrency check stricter. Anything that mutates goes through
+/// `fs_pathsafe::contain` instead.
 pub(super) fn resolve_claimed_path(relative: &str, root: Option<&Utf8PathBuf>) -> Utf8PathBuf {
-    use fs_executor::ops::path_gate::lexical_normalize;
+    use fs_pathsafe::contain::normalize_utf8;
     match root {
-        Some(r) => lexical_normalize(&r.join(relative)),
-        None => lexical_normalize(Utf8Path::new(relative)),
+        Some(r) => normalize_utf8(&r.join(relative)),
+        None => normalize_utf8(Utf8Path::new(relative)),
     }
 }
 
@@ -35,7 +39,7 @@ pub(super) fn compute_plan_path_set(
     item_rows: &[plans_repo::PlanItemRow],
     root_map: &HashMap<String, Utf8PathBuf>,
 ) -> PlanPathSet {
-    use fs_executor::ops::path_gate::lexical_normalize;
+    use fs_pathsafe::contain::normalize_utf8;
 
     let mut set = PlanPathSet::new();
     for row in item_rows {
@@ -51,7 +55,7 @@ pub(super) fn compute_plan_path_set(
         if let Some(archive) = row.archive_path.as_deref().filter(|a| !a.is_empty()) {
             let p = Utf8Path::new(archive);
             if p.is_absolute() {
-                set.insert(lexical_normalize(p));
+                set.insert(normalize_utf8(p));
             } else {
                 set.insert(resolve_claimed_path(archive, to_root));
             }
@@ -119,6 +123,14 @@ pub(super) fn verify_approval_token(
     stored_token: Option<&str>,
     supplied_token: &str,
 ) -> Result<(), ContractError> {
+    if supplied_token.is_empty() {
+        return Err(ContractError::new(
+            ErrorCode::PlanApprovalStale,
+            "no approval token supplied; approve the plan and pass its token".to_owned(),
+            ErrorSeverity::Blocking,
+            false,
+        ));
+    }
     match stored_token {
         None => Err(ContractError::new(
             ErrorCode::PlanApprovalStale,
@@ -174,11 +186,12 @@ pub(super) fn materialization_from_provenance(
 /// `from_root_id` or id absent from the map), `library_root` is `None` and
 /// the gate is skipped (legacy/test mode).
 ///
-/// `destination_root` is resolved independently from `to_root_id` (falling
-/// back to `library_root` when `to_root_id` is absent or unresolvable, same
-/// as `compute_plan_path_set`'s `to_root` fallback) so a cross-root move
-/// joins `to_relative_path` against the *picked* destination root instead of
-/// silently reusing the source root (#765).
+/// `destination_root` is resolved independently from `to_root_id` so a
+/// cross-root move joins `to_relative_path` against the *picked* destination
+/// root instead of silently reusing the source root (#765). Precedence:
+/// `to_root_id` → `plan_destination_root` (`plans.destination_root`) →
+/// `library_root`, and the last step is skipped for an absolute destination,
+/// which belongs to no root the item names.
 ///
 /// `plan_destructive_destination` is the *plan-level* `plans.destructive_destination`
 /// choice ("archive" | "trash"), not a per-item column: both `cleanup_generator`
@@ -191,6 +204,7 @@ pub(super) fn item_row_to_executor_item(
     row: &plans_repo::PlanItemRow,
     root_map: &HashMap<String, Utf8PathBuf>,
     plan_destructive_destination: &str,
+    plan_destination_root: Option<&Utf8Path>,
 ) -> ExecutorItem {
     // DB path columns are stored as `String` (unchanged DB representation,
     // Local-First custody §I). Rust strings are already UTF-8, so building a
@@ -246,17 +260,6 @@ pub(super) fn item_row_to_executor_item(
     let library_root: Option<Utf8PathBuf> =
         row.from_root_id.as_deref().and_then(|rid| root_map.get(rid)).cloned();
 
-    // #765: destination_root resolves independently from to_root_id, falling
-    // back to library_root — NOT reusing from_root_id's resolution outright —
-    // so a cross-root move/link/mkdir joins to_relative_path against the
-    // destination root the user actually picked.
-    let destination_root: Option<Utf8PathBuf> = row
-        .to_root_id
-        .as_deref()
-        .and_then(|rid| root_map.get(rid))
-        .cloned()
-        .or_else(|| library_root.clone());
-
     // Paths are stored as relative to the library root.
     let source_path = if row.from_relative_path.is_empty() {
         None
@@ -270,12 +273,37 @@ pub(super) fn item_row_to_executor_item(
         Some(Utf8PathBuf::from(&row.to_relative_path))
     };
 
+    // #765: destination_root resolves independently from to_root_id, falling
+    // back to library_root — NOT reusing from_root_id's resolution outright —
+    // so a cross-root move/link/mkdir joins to_relative_path against the
+    // destination root the user actually picked.
+    // astro-plan-d8cyr: `plans.destination_root` outranks that fallback, and an
+    // ABSOLUTE destination takes no fallback at all. Source-view generation
+    // stores an absolute destination with `to_root_id=None` and
+    // `from_root_id=Some`, so falling back to the source root would gate such a
+    // destination against a root it never belonged to and refuse every item of
+    // a plan written before migration 0003 with a non-retryable `root_escape`.
+    let destination_is_absolute = destination_path.as_ref().is_some_and(|p| p.is_absolute());
+    let destination_root: Option<Utf8PathBuf> = row
+        .to_root_id
+        .as_deref()
+        .and_then(|rid| root_map.get(rid))
+        .cloned()
+        .or_else(|| plan_destination_root.map(Utf8Path::to_path_buf))
+        .or_else(|| if destination_is_absolute { None } else { library_root.clone() });
+
     let is_protected = crate::protection::is_protected(&row.protection);
 
-    // T020: `requires_destructive_confirm` is derived from action type,
-    // independent of `is_protected`. Replaces the old `confirm_required = is_protected` inversion.
-    let requires_destructive_confirm = matches!(row.action.as_str(), "delete" | "trash")
-        || row.requires_destructive_confirm.unwrap_or(0) != 0;
+    // T020: `requires_destructive_confirm` is derived from the EFFECTIVE
+    // executor action, independent of `is_protected`. Reading `row.action`
+    // instead would miss an `action = "archive"` item that the plan-level
+    // `destructive_destination = "trash"` reroute above turned into a real
+    // OS-trash removal, letting it past the executor's confirm gate
+    // unconfirmed. `persistence_plans::repositories::plans::confirm_plan_destructive_items`
+    // is the write half and MUST stay at least as wide as this predicate.
+    let requires_destructive_confirm =
+        matches!(action, ExecutorItemAction::Delete | ExecutorItemAction::Trash { .. })
+            || row.requires_destructive_confirm.unwrap_or(0) != 0;
 
     // T023a: `destructive_confirmed` is now a real DB column (migration 0033).
     let destructive_confirmed = row.destructive_confirmed != 0;

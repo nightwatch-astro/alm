@@ -15,7 +15,13 @@
  * 5. A zero-item plan cannot be approved (FR-014).
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -30,6 +36,7 @@ const {
   mockPlansGet,
   mockPlansApprove,
   mockPlansDiscard,
+  mockPlansReopen,
   mockPlansRetry,
   mockPlansResume,
   mockPlansApplyStatus,
@@ -43,6 +50,7 @@ const {
   mockPlansGet: vi.fn(),
   mockPlansApprove: vi.fn(),
   mockPlansDiscard: vi.fn(),
+  mockPlansReopen: vi.fn(),
   mockPlansRetry: vi.fn(),
   mockPlansResume: vi.fn(),
   mockPlansApplyStatus: vi.fn(),
@@ -59,6 +67,7 @@ vi.mock('@/bindings/index', () => ({
     plansGet: mockPlansGet,
     plansApprove: mockPlansApprove,
     plansDiscard: mockPlansDiscard,
+    plansReopen: mockPlansReopen,
     plansRetry: mockPlansRetry,
     plansResume: mockPlansResume,
     plansApplyStatus: mockPlansApplyStatus,
@@ -730,6 +739,97 @@ describe('PlanReviewOverlay (spec 017 WP-E)', () => {
     expect(approveBtn).not.toHaveAttribute('data-variant', 'primary');
   });
 
+  // A plan bound for the OS bin carries NO `delete` items: both generators
+  // always store `action = "archive"` and only apply time reroutes to trash
+  // (`plan_apply::paths::item_row_to_executor_item`). Judging destructiveness
+  // from the item action alone rendered such a plan neutral and gate-free
+  // while applying it removed the user's files (constitution II).
+  it('renders a trash-destination plan as destructive though every item action is archive', async () => {
+    mockProtectionCheck.mockResolvedValue(
+      ok(protectionCheck({ hasProtectedItems: false, protectedItems: [] })),
+    );
+    mockPlansGet.mockResolvedValue(
+      ok(
+        plan({
+          destructiveDestination: 'os_trash',
+          items: [item({ action: 'archive', to: '' })],
+        }),
+      ),
+    );
+    renderOverlay();
+
+    await screen.findByText('light_001.xisf');
+    const approveBtn = screen.getByTestId('plan-review-approve-apply');
+    await waitFor(() =>
+      expect(approveBtn).toHaveAttribute('data-variant', 'destructive'),
+    );
+    expect(approveBtn).not.toHaveAttribute('data-variant', 'primary');
+    // The row itself must read danger too, not just the footer button.
+    const actionPill = within(
+      screen.getByTestId('plan-review-item-0'),
+    ).getByText('archive');
+    expect(actionPill).toHaveAttribute('data-variant', 'danger');
+  });
+
+  it('blocks Approve & apply on a trash-destination archive plan until destructive-confirm succeeds', async () => {
+    mockProtectionCheck.mockResolvedValue(
+      ok(protectionCheck({ hasProtectedItems: false, protectedItems: [] })),
+    );
+    mockPlansGet.mockResolvedValue(
+      ok(
+        plan({
+          destructiveDestination: 'os_trash',
+          items: [item({ action: 'archive', to: '' })],
+        }),
+      ),
+    );
+    renderOverlay();
+
+    const approveBtn = await screen.findByTestId('plan-review-approve-apply');
+    const confirmBox = await screen.findByTestId(
+      'plan-review-confirm-destructive',
+    );
+    await waitFor(() => expect(approveBtn).toBeDisabled());
+    expect(confirmBox).not.toBeChecked();
+
+    fireEvent.click(confirmBox);
+    await waitFor(() =>
+      expect(mockPlansConfirmDestructive).toHaveBeenCalledWith('plan-1'),
+    );
+    await waitFor(() => expect(approveBtn).not.toBeDisabled());
+  });
+
+  it('keeps an archive-destination plan of archive items non-destructive and gate-free', async () => {
+    mockProtectionCheck.mockResolvedValue(
+      ok(protectionCheck({ hasProtectedItems: false, protectedItems: [] })),
+    );
+    mockPlansGet.mockResolvedValue(
+      ok(
+        plan({
+          destructiveDestination: 'archive',
+          items: [
+            item({ action: 'archive', to: '.astro-plan-archive/a.xisf' }),
+          ],
+        }),
+      ),
+    );
+    renderOverlay();
+
+    await screen.findByText('light_001.xisf');
+    const approveBtn = screen.getByTestId('plan-review-approve-apply');
+    await waitFor(() =>
+      expect(approveBtn).toHaveAttribute('data-variant', 'primary'),
+    );
+    expect(
+      screen.queryByTestId('plan-review-confirm-destructive'),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(approveBtn).not.toBeDisabled());
+    const actionPill = within(
+      screen.getByTestId('plan-review-item-0'),
+    ).getByText('archive');
+    expect(actionPill).toHaveAttribute('data-variant', 'info');
+  });
+
   it('offers Cancel apply during a running apply and calls plan.cancel (US3/FR-009, issue #743)', async () => {
     mockProtectionCheck.mockResolvedValue(
       ok(protectionCheck({ hasProtectedItems: false, protectedItems: [] })),
@@ -915,5 +1015,39 @@ describe('PlanReviewOverlay (spec 017 WP-E)', () => {
       expect(mockPlansRetry).toHaveBeenCalledWith('plan-1', 'cancelled'),
     );
     await waitFor(() => expect(onRetryCreated).toHaveBeenCalledWith('plan-2'));
+  });
+  it('offers reopen on an approved plan and calls plans.reopen (T023)', async () => {
+    mockPlansGet.mockResolvedValue(ok(plan({ state: 'approved' })));
+    mockPlansReopen.mockResolvedValue(
+      ok({
+        planId: 'plan-1',
+        newState: 'draft',
+        priorState: 'approved',
+        reopenedAt: '2026-07-01T00:00:00Z',
+      }),
+    );
+    renderOverlay();
+
+    fireEvent.click(await screen.findByTestId('plan-review-reopen'));
+    await waitFor(() => expect(mockPlansReopen).toHaveBeenCalledWith('plan-1'));
+  });
+
+  it('hides reopen on a plan that has not been approved (T023)', async () => {
+    mockPlansGet.mockResolvedValue(ok(plan({ state: 'ready_for_review' })));
+    renderOverlay();
+
+    await screen.findByTestId('plan-review-approve-apply');
+    expect(screen.queryByTestId('plan-review-reopen')).toBeNull();
+  });
+
+  it('hides reopen on an applied plan whose filesystem actions happened (T023)', async () => {
+    mockPlansGet.mockResolvedValue(ok(plan({ state: 'applied' })));
+    renderOverlay();
+
+    // Wait for the plan to load, so the absent reopen button is a real
+    // rendering decision rather than an unresolved query.
+    await screen.findByTestId('plan-review-item-0');
+    expect(screen.queryByTestId('plan-review-approve-apply')).toBeNull();
+    expect(screen.queryByTestId('plan-review-reopen')).toBeNull();
   });
 });

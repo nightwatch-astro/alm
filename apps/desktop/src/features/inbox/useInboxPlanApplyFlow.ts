@@ -17,6 +17,19 @@ import {
   useInboxPlanApplyAll,
   useInboxPlanCancel,
 } from './store';
+import type { InboxOpenPlan } from './store';
+
+/**
+ * Record the user's approval for every plan in a batch gesture before any of
+ * them is applied (Constitution II, `astro-plan-tykek`).
+ *
+ * Individual failures are swallowed: a plan already in `approved` state rejects
+ * a second `plans.approve` yet still carries a usable approval, and the backend
+ * refuses any plan that ends up without one, reporting it per plan.
+ */
+async function approvePlans(planIds: string[]): Promise<void> {
+  await Promise.allSettled(planIds.map((id) => commands.plansApprove(id)));
+}
 
 export interface PlanApplyFlowResult {
   handleApplyOne: (planId: string) => Promise<void>;
@@ -32,6 +45,7 @@ export interface PlanApplyFlowResult {
 export function useInboxPlanApplyFlow(
   refreshAll: () => void,
   viewResultAction: () => { label: string; onClick: () => void },
+  openPlans: InboxOpenPlan[],
 ): PlanApplyFlowResult {
   const { applyAll, loading: applyAllLoading } = useInboxPlanApplyAll();
   const { applySelected, loading: applySelectedLoading } =
@@ -79,6 +93,12 @@ export function useInboxPlanApplyFlow(
   const handleApplySelected = useCallback(
     async (inboxItemIds: string[]) => {
       if (inboxItemIds.length === 0) return;
+      const selectedSet = new Set(inboxItemIds);
+      await approvePlans(
+        openPlans
+          .filter((p) => selectedSet.has(p.inboxItemId))
+          .map((p) => p.planId),
+      );
       const result = await applySelected(inboxItemIds);
       if (result) {
         const failed = result.results.filter((r) => r.error != null).length;
@@ -104,10 +124,13 @@ export function useInboxPlanApplyFlow(
         addToast({ message: m.inbox_toast_apply_failed(), variant: 'error' });
       }
     },
-    [applySelected, refreshAll, viewResultAction],
+    [applySelected, openPlans, refreshAll, viewResultAction],
   );
 
   const handleApplyAll = useCallback(async () => {
+    // Only the plans the user was shown get an approval; anything that appeared
+    // since this render is refused by the backend rather than applied unseen.
+    await approvePlans(openPlans.map((p) => p.planId));
     const result = await applyAll();
     if (result) {
       const failed = result.results.filter((r) => r.error != null).length;
@@ -130,7 +153,7 @@ export function useInboxPlanApplyFlow(
       }
       refreshAll();
     }
-  }, [applyAll, refreshAll, viewResultAction]);
+  }, [applyAll, openPlans, refreshAll, viewResultAction]);
 
   const handleCancel = useCallback(
     async (inboxItemId: string) => {

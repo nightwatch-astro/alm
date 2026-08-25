@@ -73,8 +73,8 @@ the file to be marked unclassified (per-file marker, not folder-level).
 
 > **Note**: `dark_flat` IMAGETYP values (DARKFLAT, Dark Flat, FLATDARK, etc.) are intentionally NOT in the normalization table for v1. Per spec 007 R-DarkFlat-Reserved, dark-flat calibration matching is deferred. Files with these IMAGETYP values land in the `unclassified` state and require manual user assignment via `inbox.reclassify`. The `dark_flat` FrameType enum value remains reserved for forward-compat.
 
-**Known capture-software values** (reference, research task pending — see
-tasks.md §Phase 0):
+**Known capture-software values** (reference, not yet validated against real
+captures):
 
 - **NINA**: writes `Light Frame`, `Dark Frame`, `Flat Frame`, `Bias Frame`
 - **Sequence Generator Pro (SGP)**: writes `Light Frame`, `Dark Frame`,
@@ -88,8 +88,8 @@ tasks.md §Phase 0):
 - **ZWO ASI software**: writes `LIGHT`, `DARK`, `FLAT`, `BIAS`
 - **FireCapture** (planetary): primarily writes video — see §Video Lane
 
-A research task (tasks.md T0-IMAGETYP-Research) is added to validate these
-values against real FITS files from each capture software before v1 ships.
+Validating these values against real FITS files from each capture software is
+tracked in beads.
 
 A settings UI for user-extended normalization mappings (for niche software)
 is **deferred to v1.x**. This is documented as a spec 018 follow-up.
@@ -97,7 +97,7 @@ is **deferred to v1.x**. This is documented as a spec 018 follow-up.
 
 **Canonical data artifact**: the normalization table ships as data in
 `crates/metadata/core` (not hardcoded in the classifier). (Ref:
-R-IMAGETYP-Norm, tasks.md T-NormTable)
+R-IMAGETYP-Norm)
 
 ---
 
@@ -236,8 +236,7 @@ via the spec 002 event bus (`plan.applying.completed`, `plan.applying.paused`,
 `plan.discarded`). A background self-healing repair query runs every 5
 minutes to close any `plan_open` items whose linked plan has reached a
 terminal state (`applied | partially_applied | failed | cancelled |
-discarded`) without the event having been processed. See tasks.md for the
-repair task.
+discarded`) without the event having been processed.
 
 ---
 

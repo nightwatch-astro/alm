@@ -80,18 +80,41 @@ export type IpcResult<T, E = unknown> =
   | { status: 'ok'; data: T }
   | { status: 'error'; error: E };
 
+/** The only keys a contract domain error payload may carry. */
+const DOMAIN_ERROR_KEYS = new Set(['code', 'message', 'details']);
+
+/**
+ * True when the payload is a contract *domain* error rather than a
+ * `ContractError`.
+ *
+ * `ContractError` always carries `severity` and `retryable`; domain error types
+ * such as `ManifestOpError` carry only `code`, `message`, and optional
+ * `details`. Running the ContractError schema over one of those replaces the
+ * real backend failure with an `IpcPayloadValidationError`, so they are thrown
+ * unvalidated. A payload with a foreign key set is still validated, which keeps
+ * drift detection intact.
+ */
+function isDomainErrorPayload(err: object): boolean {
+  const record = err as Record<string, unknown>;
+  return (
+    typeof record.code === 'string' &&
+    typeof record.message === 'string' &&
+    Object.keys(record).every((key) => DOMAIN_ERROR_KEYS.has(key))
+  );
+}
+
 /**
  * Translate a generated `Result` into the throw-on-error contract the app's
  * call sites expect: returns `data` on success, throws `error` otherwise.
  *
- * T118: When the error branch carries an object-shaped payload (i.e. a
- * `ContractError` from the backend), the mandatory envelope fields are validated
- * via the cached validator from `ipc.validate.ts` before re-throwing. This
- * surfaces backend drift (e.g. a renamed `code` key, a missing `message`) as a
- * clear `IpcPayloadValidationError` rather than a silent `undefined` downstream.
+ * T118: When the error branch carries a `ContractError`-shaped payload, the
+ * mandatory envelope fields are validated via the cached validator from
+ * `ipc.validate.ts` before re-throwing. This surfaces backend drift (e.g. a
+ * renamed `code` key, a missing `message`) as a clear
+ * `IpcPayloadValidationError` rather than a silent `undefined` downstream.
  *
- * Plain string errors (older commands) and `Error` instances are passed through
- * unchanged so no existing behaviour is broken.
+ * Plain string errors (older commands), `Error` instances, and contract domain
+ * errors are passed through unchanged so no existing behaviour is broken.
  */
 export function unwrap<T, E = unknown>(result: IpcResult<T, E>): T {
   if (result.status === 'ok') {
@@ -103,7 +126,8 @@ export function unwrap<T, E = unknown>(result: IpcResult<T, E>): T {
     err !== null &&
     typeof err === 'object' &&
     !Array.isArray(err) &&
-    !(err instanceof Error)
+    !(err instanceof Error) &&
+    !isDomainErrorPayload(err)
   ) {
     // Use the cached validator if loaded; skip validation on a cache miss
     // (validate chunk not yet loaded — safe to skip, still rethrows the error).

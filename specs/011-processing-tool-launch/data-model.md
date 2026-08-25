@@ -37,8 +37,10 @@ DetachStrategy = "spawn_detached"   // Windows default
 
 ### macOS launch rule (R-BundleId)
 
-- If `bundle_id` is set: `open -b <bundle_id> --args <rendered_argv>` with
-  `cwd` anchored via the Tauri shell API.
+- If `bundle_id` is set: `open -b <bundle_id> --args <rendered_argv>`. No
+  working directory is applied, and none can be: Launch Services starts the
+  app, so the caller's `current_dir` would set the cwd of `open` rather than
+  of the tool. `open -b` also does not report the child PID.
 - If `bundle_id` is null: fall back to direct executable + `setsid`-style
   detach via `pre_exec`.
 - On quarantine/translocation error from `open -b`: surface R-MacQuarantine
@@ -61,7 +63,7 @@ DetachStrategy = "spawn_detached"   // Windows default
 
 ## ToolLaunch
 
-Persisted in SQLite via `crates/persistence/db/`; one row per launch
+Persisted in SQLite via the `crates/persistence/` crates; one row per launch
 attempt (success or failure that reached the spawn step).
 
 ```

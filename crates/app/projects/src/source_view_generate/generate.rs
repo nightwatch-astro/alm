@@ -549,6 +549,12 @@ async fn persist_plan(
     .await
     .map_err(|e| db_internal_ctx(e, "insert source view generation plan"))?;
 
+    // Item destinations below are stored absolute with no `to_root_id`, so the
+    // executor's destination gate takes its containment root from here.
+    plans_repo::set_destination_root(pool, plan_id, destination_root.as_str())
+        .await
+        .map_err(|e| db_internal_ctx(e, "record source view generation destination root"))?;
+
     // Mkdir actions for each distinct destination directory.
     let mut item_index: i64 = 0;
     let mut mkdir_dirs: BTreeSet<Utf8PathBuf> = BTreeSet::new();

@@ -116,7 +116,11 @@ fn classify_item(
         return Some(BrokenItemState::Missing);
     };
 
-    let is_symlink = lstat.file_type().is_symlink();
+    // The shared primitive, not `file_type().is_symlink()`: a Windows junction
+    // is a reparse point that `is_symlink()` need not report, and a
+    // misclassified one falls into the copy branch below, whose
+    // `partial_content_probe` opens the path and so reads through the link.
+    let is_symlink = fs_pathsafe::is_link_or_junction_metadata(&lstat);
     let recorded_symlink = item.materialization == "symlink";
 
     if is_symlink {

@@ -41,6 +41,13 @@ pub enum DbError {
     NotFound(String),
     #[error("compare-and-swap failed: {0}")]
     CasFailed(String),
+    /// The approval token an operation was authorised with is no longer the one
+    /// on the row. Separate from [`DbError::CasFailed`] because a state CAS can
+    /// hold while the token has been revoked and reissued by a reopen plus
+    /// re-approval, and the caller owes the user `plan.approval.stale` for that
+    /// rather than `plan.invalid_state`.
+    #[error("approval token stale: {0}")]
+    ApprovalStale(String),
     #[error("serialisation error: {0}")]
     Serialise(#[from] serde_json::Error),
     #[error("database error: {0}")]
@@ -88,9 +95,17 @@ impl Database {
     ///   at most losing the last un-checkpointed transaction — the database is
     ///   never corrupted.  This is materially faster than `FULL` on spinning or
     ///   network-backed storage without sacrificing integrity guarantees the app
-    ///   depends on.  Tier-1 (`FULL`) escalation per-connection for high-value
-    ///   writes (audit events, filesystem plan commits) is tracked as a follow-up
-    ///   in kyo7.49.
+    ///   depends on.  No writer raises `synchronous`; this pool default is the
+    ///   only setting in the repo.  One tier-1 path syncs separately: the
+    ///   filesystem-mutation intent commit is followed by a best-effort
+    ///   `PRAGMA wal_checkpoint(TRUNCATE)` (see `checkpoint_intent` in
+    ///   `persistence_plans::repositories::plan_apply`), whose failure both
+    ///   call sites discard without logging — the persistence layer has no
+    ///   logging facade, and boot reconciliation is the backstop.  The other
+    ///   tier-1 records §V names —
+    ///   frame-to-session attribution, lifecycle choices, user overrides — have
+    ///   no such escalation; whether they require one is open
+    ///   (astro-plan-53b8).
     /// - **`foreign_keys = ON`**: enforced explicitly so the constraint is not
     ///   silently absent if a future sqlx version changes its default.
     /// - **`busy_timeout`** (#1231): pins the wait interval so it is ours, not
@@ -184,15 +199,26 @@ impl Database {
     /// # Errors
     ///
     /// Returns `persistence_core::DbError::Database` if the statement fails (e.g. destination
-    /// already exists, or disk full).
+    /// already exists, the destination directory does not exist, or disk full), or if the
+    /// statement reports success without leaving a file at `dest`.
     pub async fn backup_to(&self, dest: &std::path::Path) -> DbResult<()> {
         let dest_str = dest.display().to_string().replace('\'', "''");
         let stmt = sqlx::AssertSqlSafe(format!("VACUUM INTO '{dest_str}'"));
         sqlx::query(stmt).execute(&self.pool).await?;
+        // Observed with a `Database::in_memory()` source on this workspace's sqlx
+        // build: `VACUUM INTO` reports success and writes nothing. The statement
+        // result therefore does not establish that the backup exists, and the
+        // caller relies on this file as rollback material.
+        if !dest.is_file() {
+            return Err(DbError::Database(sqlx::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("VACUUM INTO reported success but wrote no file at {}", dest.display()),
+            ))));
+        }
         Ok(())
     }
 
-    /// Run all pending migrations from the frozen baseline and future append-only files.
+    /// Run all pending migrations, starting from the `0001` baseline.
     ///
     /// # Errors
     ///
@@ -267,6 +293,17 @@ mod tests {
         }
     }
 
+    /// `MigrateError::Dirty` reports a `_sqlx_migrations` row with
+    /// `success = false`. This build never records one: `execute_migration`
+    /// inserts `success` as a `TRUE` literal, and a script that fails inserts
+    /// nothing at all, so a database this build wrote cannot produce `Dirty`.
+    /// [`a_failed_migration_records_no_row`] pins that dependency behaviour.
+    ///
+    /// `Dirty` does still arrive from a `success = false` row written by another
+    /// tool, such as an older sqlx or the sqlx CLI, and this classifier returns
+    /// `None` for it. That is a diagnosis gap rather than a custody one: sqlx
+    /// reads the dirty version before applying anything, so the migration never
+    /// starts. Tracked on astro-plan-00yw0.
     #[test]
     fn divergence_detail_ignores_unrelated_failures() {
         assert!(super::migration_divergence_detail(&super::DbError::NotImplemented).is_none());
@@ -274,6 +311,91 @@ mod tests {
             sqlx::migrate::MigrateError::Dirty(71)
         ))
         .is_none());
+    }
+
+    /// Keeps a partially-applied schema unreachable. A migration file starting
+    /// with `-- no-transaction` sets `Migration::no_tx`, and sqlx then runs that
+    /// script outside a transaction, so a failure partway leaves the statements
+    /// it already ran in place.
+    #[test]
+    fn every_migration_runs_inside_a_transaction() {
+        let opted_out: Vec<i64> = super::Database::migrator()
+            .iter()
+            .filter(|migration| migration.no_tx)
+            .map(|migration| migration.version)
+            .collect();
+
+        assert!(
+            opted_out.is_empty(),
+            "migrations {opted_out:?} opt out of the per-migration transaction. \
+             Such a migration can fail partway and leave the schema half built, \
+             and because a failed migration records no bookkeeping row, nothing \
+             marks the database as partially applied and \
+             migration_divergence_detail has no error to classify. Recovery then \
+             depends entirely on the pre-migration backup. The constitution's \
+             unclean-shutdown constraint requires a verified backup and an \
+             explicit user resume-or-repair prompt before a migration may run in \
+             that state. Satisfy those before deleting this assertion."
+        );
+    }
+
+    /// Pins the sqlx behaviour that keeps `MigrateError::Dirty` out of reach:
+    /// a failed migration leaves no `_sqlx_migrations` row, so no
+    /// `success = false` row exists for `dirty_version` to find.
+    ///
+    /// This is a property of the sqlx version this workspace resolves, not of
+    /// this crate, so a sqlx upgrade that starts recording failed migrations
+    /// turns this red. That is the point: it is the moment to re-examine whether
+    /// a partially-applied migration needs a user-facing repair path.
+    #[tokio::test]
+    async fn a_failed_migration_records_no_row() {
+        use std::borrow::Cow;
+
+        let failing = sqlx::migrate::Migrator {
+            migrations: Cow::Owned(vec![
+                sqlx::migrate::Migration::new(
+                    1,
+                    Cow::Borrowed("create probe"),
+                    sqlx::migrate::MigrationType::Simple,
+                    sqlx::SqlStr::from_static("CREATE TABLE probe (id INTEGER);"),
+                    false,
+                ),
+                sqlx::migrate::Migration::new(
+                    2,
+                    Cow::Borrowed("collide with probe"),
+                    sqlx::migrate::MigrationType::Simple,
+                    sqlx::SqlStr::from_static("CREATE TABLE probe (id INTEGER);"),
+                    false,
+                ),
+            ]),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+
+        let db = super::Database::in_memory().await.expect("in-memory connect");
+        let mut conn = db.pool().acquire().await.expect("acquire");
+
+        let error = failing.run(&mut *conn).await.expect_err("migration 2 must fail");
+        assert!(
+            matches!(error, sqlx::migrate::MigrateError::ExecuteMigration(_, 2)),
+            "a failing script must surface as ExecuteMigration: {error:?}"
+        );
+
+        let dirty_rows: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations WHERE success = FALSE")
+                .fetch_one(&mut *conn)
+                .await
+                .expect("count dirty rows");
+        assert_eq!(dirty_rows, 0, "a failed migration must record no bookkeeping row");
+
+        let rerun = failing.run(&mut *conn).await.expect_err("migration 2 must fail again");
+        assert!(
+            !matches!(rerun, sqlx::migrate::MigrateError::Dirty(_)),
+            "without a dirty row sqlx must not escalate to Dirty: {rerun:?}"
+        );
+        assert!(
+            super::migration_divergence_detail(&super::DbError::Migration(rerun)).is_none(),
+            "a failed script is not a divergent history"
+        );
     }
 
     #[tokio::test]
@@ -309,15 +431,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn synchronous_normal_on_fresh_connection() {
-        let db = super::Database::in_memory().await.expect("in-memory connect");
-        // SQLite returns the numeric value: 0=OFF, 1=NORMAL, 2=FULL, 3=EXTRA.
-        let sync_level: i64 =
-            sqlx::query_scalar("PRAGMA synchronous").fetch_one(db.pool()).await.unwrap();
-        assert_eq!(sync_level, 1, "synchronous must be NORMAL (1) per tier-2 policy");
-    }
-
-    #[tokio::test]
     async fn has_pending_migrations_is_false_for_fresh_db() {
         let db = super::Database::in_memory().await.expect("in-memory connect");
         // Fresh DB: _sqlx_migrations does not exist yet.
@@ -347,5 +460,76 @@ mod tests {
 
         let pending = db.has_pending_migrations().await.expect("has_pending_migrations");
         assert!(pending, "one migration removed: must report pending");
+    }
+
+    async fn file_backed_db(dir: &std::path::Path) -> super::Database {
+        let src = dir.join("src.sqlite3");
+        let db = super::Database::connect(&format!("sqlite://{}?mode=rwc", src.display()))
+            .await
+            .expect("file-backed connect");
+        db.migrate().await.expect("migrate");
+        db
+    }
+
+    #[tokio::test]
+    async fn backup_to_writes_the_requested_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = file_backed_db(dir.path()).await;
+        let dest = dir.path().join("plain.sqlite3");
+
+        db.backup_to(&dest).await.expect("backup");
+
+        assert!(dest.is_file(), "a successful backup must leave a file at {}", dest.display());
+    }
+
+    #[tokio::test]
+    async fn backup_to_rejects_an_absent_destination_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = file_backed_db(dir.path()).await;
+        let dest = dir.path().join("no-such-dir").join("backup.sqlite3");
+
+        let err = db.backup_to(&dest).await.expect_err("absent parent must fail");
+
+        assert!(!dest.exists(), "no file may be created for a rejected backup");
+        assert!(err.to_string().contains("no-such-dir"), "error must name the destination: {err}");
+    }
+
+    /// The pre-migration backup names its destination after the app version, so
+    /// a second launch on the same version aims at an existing backup. SQLite
+    /// refuses that destination ("output file already exists"), which preserves
+    /// the earlier rollback material rather than overwriting it.
+    #[tokio::test]
+    async fn backup_to_rejects_an_existing_destination_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = file_backed_db(dir.path()).await;
+        let dest = dir.path().join("already-there.sqlite3");
+        db.backup_to(&dest).await.expect("first backup");
+        let first = std::fs::read(&dest).expect("read the first backup");
+
+        let err = db.backup_to(&dest).await.expect_err("an existing destination must fail");
+
+        assert_eq!(
+            std::fs::read(&dest).expect("destination still readable"),
+            first,
+            "a rejected backup must leave the earlier backup byte-for-byte: {err}"
+        );
+    }
+
+    /// With a `Database::in_memory()` source, `VACUUM INTO` reports success and
+    /// writes nothing, so success is decided by the file, not the statement.
+    #[tokio::test]
+    async fn backup_to_fails_when_the_statement_writes_no_file() {
+        let db = super::Database::in_memory().await.expect("in-memory connect");
+        db.migrate().await.expect("migrate");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("plain.sqlite3");
+
+        let err = db.backup_to(&dest).await.expect_err("an unwritten backup must fail");
+
+        assert!(!dest.exists());
+        assert!(
+            err.to_string().contains("wrote no file"),
+            "error must say nothing was written: {err}"
+        );
     }
 }

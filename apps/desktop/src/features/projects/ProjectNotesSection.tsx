@@ -18,6 +18,8 @@ import { useDebouncedCallback } from 'use-debounce';
 import { Btn } from '@/ui';
 import { m } from '@/lib/i18n';
 import { addToast } from '@/shared/toast';
+import { noteByteStatus } from '@/lib/notes';
+import { NoteByteCounter } from '@/components/NoteByteCounter';
 import {
   saveNote,
   getProjectNote,
@@ -77,9 +79,7 @@ export function ProjectNotesSection({
     };
   }, [projectId, initialContent]);
 
-  const byteCount = noteByteLength(draft);
-  const overLimit = byteCount > MAX_NOTE_BYTES;
-  const nearLimit = byteCount > MAX_NOTE_BYTES * 0.9;
+  const { overLimit } = noteByteStatus(draft);
 
   // ── Debounced autosave ────────────────────────────────────────────────────
 
@@ -215,19 +215,7 @@ export function ProjectNotesSection({
         aria-describedby={fieldError ? 'notes-field-error' : undefined}
       />
       <div className="pv-project-notes__toolbar">
-        <span
-          data-testid="notes-byte-counter"
-          className={
-            overLimit
-              ? 'pv-project-notes__byte-counter--over'
-              : nearLimit
-                ? 'pv-project-notes__byte-counter--near'
-                : 'pv-project-notes__byte-counter'
-          }
-        >
-          {byteCount.toLocaleString()} / {MAX_NOTE_BYTES.toLocaleString()}{' '}
-          {m.projects_notes_bytes_unit()}
-        </span>
+        <NoteByteCounter content={draft} testId="notes-byte-counter" />
         <div className="pv-project-notes__actions">
           <Btn
             size="sm"

@@ -14,7 +14,7 @@ Complete PlateVault's per-frame inventory so raw sub-frame cleanup is possible a
 
 **Primary Dependencies**: `sqlx` (SQLite), `notify` v7 (already a dependency; wraps `ReadDirectoryChangesW`/`inotify`/`FSEvents`/`kqueue`), Tauri + tauri-specta for the contract boundary, the spec-018 settings store, the spec-002 audit event bus.
 
-**Storage**: SQLite (canonical local store). Reuses `file_record` (migration `0002_lifecycle.sql`), `acquisition_session` / `calibration_session` (`frame_ids` JSON arrays), and the spec-018 settings KV. Per-root config extends the settings KV (see research R1); no new frame/session tables.
+**Storage**: SQLite (canonical local store). Reuses `file_record` (migration `crates/persistence/core/migrations/0001_initial_schema.sql:728-739`), `acquisition_session` / `calibration_session` (`frame_ids` JSON arrays), and the spec-018 settings KV. Per-root config extends the settings KV (see research R1); no new frame/session tables.
 
 **Testing**: `cargo test` (per-crate to avoid the known workspace-red baseline), integration tests under `tests/`, TS typecheck; real-app verification via `verify-on-windows` + a tauri-driver Layer-2 journey.
 

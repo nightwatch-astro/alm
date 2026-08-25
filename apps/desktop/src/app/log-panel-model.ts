@@ -7,6 +7,7 @@
  */
 
 import { m } from '@/lib/i18n';
+import { entityPath } from '@/lib/entity-path';
 import type { LogLevel, LogEntrySource } from '@/data/logStore';
 import type { LevelFilter } from './LogPanelContext';
 
@@ -95,27 +96,19 @@ export type AuditNavigateFn = (requestId: string) => void;
  * has no deep-linkable destination yet (row still shows subject-context text,
  * just without click affordance).
  *
- * `plan` is intentionally not linked — no `/plans/:id` route exists yet (#626);
- * `catalog` and the fallback point at the real Settings panes (`/settings/$pane`
- * is a plain path segment, so a literal string is fine here — no route for
- * `/audit` or `/settings?tab=catalogs` ever existed).
+ * Unlike the AuditLog's use of `entityPath`, the LogPanel links every remaining
+ * type: `catalog` and the fallback point at the real Settings panes
+ * (`/settings/$pane` is a plain path segment, so a literal string is fine here
+ * — no route for `/audit` or `/settings?tab=catalogs` ever existed).
  */
 export function buildEntityPath(
   entityType: string,
   entityId: string,
 ): string | null {
-  switch (entityType) {
-    case 'plan':
-      return null;
-    case 'project':
-      return `/projects/${entityId}`;
-    case 'session':
-      return `/sessions/${entityId}`;
-    case 'target':
-      return `/targets/${entityId}`;
-    case 'catalog':
-      return `/settings/catalogs`;
-    default:
-      return `/settings/audit?entityType=${entityType}&entityId=${entityId}`;
-  }
+  return entityPath(entityType, entityId, {
+    fallback: (type, id) =>
+      type === 'catalog'
+        ? `/settings/catalogs`
+        : `/settings/audit?entityType=${type}&entityId=${id}`,
+  });
 }

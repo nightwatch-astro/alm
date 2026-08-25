@@ -231,7 +231,33 @@ As a user tracking what happened in my library, I open the Audit log to see an i
 - **FR-012**: Sessions MUST support 4 group-by modes (target, month, filter, optical train) selectable via chip row above the table. Group-by changes only visual grouping, not the data.
 - **FR-013**: Sessions MUST support a Calendar view toggle showing 3 months of day cells with session cards. Clicking a day MUST filter the list to that night.
 - **FR-014**: Sessions MUST show that a session can be linked to multiple projects in the "Projects (re-used)" column.
-- **FR-015**: Sessions toolbar MUST provide bulk actions (Confirm, Split, Merge, Use in project) that operate on multi-selected rows (checkbox + Shift-click range select).
+- **FR-015** [SUPERSEDED by spec 041 FR-051 and spec 062]
+
+  RETIRED: the Sessions page does not offer bulk row actions, and its table does
+  not support multi-row selection. The session model replaces the four bulk
+  actions:
+
+  - Session membership is automatic. Applying a reviewable plan groups light
+    frames into a session keyed by capture identity: target, filter, binning,
+    gain, and observing night (spec 035 FR-016).
+  - A session is homogeneous under one capture identity, so it does not offer a
+    split point, and frames sharing a capture identity already occupy one
+    session. Mixed input is reviewed as multiple immutable session items
+    (spec 062).
+  - Sessions are derived, already-confirmed inventory (spec 041 FR-051), so no
+    Confirm action applies to a session row.
+  - A session reaches a project through the project-creation wizard's session
+    selection.
+
+  Panel and mosaic split, merge, and identity change belong to logical group
+  identity, not session membership. Spec 062 FR-044 requires each such change to
+  create a new group identity linked to a retired predecessor. Spec 062 US2
+  specifies the surface for those changes; its Tauri commands have no backend
+  handlers, tracked by bead astro-plan-ic9h.20.
+
+  Original requirement, preserved for history: Sessions toolbar MUST provide
+  bulk actions (Confirm, Split, Merge, Use in project) that operate on
+  multi-selected rows (checkbox + Shift-click range select).
 
 **Session Detail**
 
