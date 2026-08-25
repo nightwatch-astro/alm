@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-17
 actors: [astrophotographer]
 surfaces: [settings, shell, audit, framing]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration journey.md @ git 66026463
   - deltas/2026-07-14-q15-t122.md (folded — PR #826 / commit 0cdc81cc)

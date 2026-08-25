@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [sessions, projects]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - docs/product/journeys/J04-sessions-review-derived/journey.md @ 66026463 (pre-migration doc)
   - docs/product/journeys/J04-sessions-review-derived/deltas/2026-07-14-jval-docdrift.md

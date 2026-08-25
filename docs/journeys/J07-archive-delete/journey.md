@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [archive, projects, plans, audit]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration docs/product/journeys/J07-archive-delete/journey.md @ 66026463
   - deltas/2026-07-14-jval-docdrift.md (folded — verified in apps/desktop/src/features/projects/ProjectDetail.tsx)

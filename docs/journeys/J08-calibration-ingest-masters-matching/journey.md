@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-15
 actors: [astrophotographer]
 surfaces: [inbox-confirm, calibration]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace: [docs/product/journeys/J08-calibration-ingest-masters-matching/journey.md @ 66026463, deltas/2026-07-14-jval-docdrift.md, deltas/2026-07-14-q15-t122.md, deltas/2026-07-14-q16-t128.md, deltas/2026-07-14-q16-t129.md, deltas/2026-07-14-q16-t131.md, deltas/2026-07-14-q16-t132.md, deltas/2026-07-14-q16-t133.md, docs/journeys/J08-calibration-ingest-masters-matching/journey.md pilot (PR #848), spec-040 MasterDetector, spec-030 FR-135-FR-140, issue-619, issue-620, PR #851, PR #849, PR #910, PR #939 (fixes #551), spec-054-adaptive-detail-dock (FR-001, FR-004), PR #1032 (issue #868 — compatible sessions computed), PR #1730 (inference predicates), PR #1736 (guarded JSON reads), PR #1737 (unreadable FITS header is an error), PR #1742 (camera body identity dimension), PR #1692 (age limit and gain/binning match-required settings honoured)]
 ---
 
