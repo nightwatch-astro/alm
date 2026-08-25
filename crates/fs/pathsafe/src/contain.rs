@@ -177,9 +177,11 @@ pub fn contained_in_any(path: &Path, roots: &[&Path]) -> bool {
 /// path that cannot be stat'd (an unplugged drive, a root not yet created), for
 /// which only an exact-bytes prefix can be recognised.
 ///
-/// Links are deliberately not resolved away by hand: two roots reaching one
-/// directory through a symlink or junction share an inode and are reported as
-/// covering each other.
+/// Links are deliberately not resolved away by hand: two paths reaching one
+/// object through a symlink report the same identity and are recognised as
+/// covering each other. Whether that also holds for a Windows directory
+/// junction is untested, because [`crate::create_symlink`] materializes file
+/// symlinks only.
 #[must_use]
 pub fn same_or_inside(root: &Path, path: &Path) -> bool {
     normalize(path).starts_with(normalize(root))
@@ -388,12 +390,15 @@ mod tests {
         assert!(!same_or_inside(&b, &a));
     }
 
+    /// The link targets a file because [`crate::create_symlink`] materializes
+    /// file symlinks on Windows, where a file symlink to a directory cannot then
+    /// be opened for a file-identity query.
     #[test]
-    fn a_symlinked_root_covers_its_target() {
+    fn a_symlink_covers_its_target() {
         let parent = tempfile::tempdir().unwrap();
-        let target = parent.path().join("target");
-        let link = parent.path().join("link");
-        std::fs::create_dir(&target).unwrap();
+        let target = parent.path().join("frame.fits");
+        let link = parent.path().join("link.fits");
+        std::fs::write(&target, b"").unwrap();
         crate::create_symlink(&target, &link).unwrap();
 
         assert!(same_or_inside(&link, &target));
