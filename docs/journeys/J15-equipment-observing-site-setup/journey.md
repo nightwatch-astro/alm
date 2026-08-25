@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [equipment, observing-sites]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace: [docs/product/journeys/J15-equipment-observing-site-setup/journey.md @42c596d6, deltas/2026-07-14-q15-t124.md, PR#826 (0cdc81cc), spec-030 T017/T018, spec-044 Track B US3/US6, spec-047 T015, docs/development/journey-run-2026-07-14.md (Journey 15 section, run @7e522c16)]
 ---
 

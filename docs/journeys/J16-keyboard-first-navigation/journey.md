@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [shell]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - docs/product/journeys/J16-keyboard-first-navigation/journey.md @ 66026463 (pre-migration doc)
   - PR #530 (a11y/theming/design-system consistency — commit 1f4ba13f: keyboard-operable

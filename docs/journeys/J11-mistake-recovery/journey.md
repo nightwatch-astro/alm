@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [inbox-confirm, calibration, plans, shell]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration journey.md @ git 66026463
   - docs/development/journey-run-2026-07-14.md (Journey 11 section)
