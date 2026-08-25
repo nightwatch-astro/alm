@@ -81,7 +81,7 @@ counterparts (contract-backed, audited) are tracked as fresh tasks.
   recorded `pid` is still alive (best-effort `kill 0`), present a modal
   with exactly two buttons: **"Open another instance"** (dispatches
   `force=true`) and **"Cancel"** (aborts) (A3).
-  _Evidence: `ProjectDetail.tsx` — `relaunch-modal` test-id with "Open another instance" / "Cancel" buttons; `launch.rs::pid_is_alive` uses `/proc/<pid>` on Linux_
+  _Evidence: `ProjectDetail.tsx` — `relaunch-modal` test-id with "Open another instance" / "Cancel" buttons; `launch.rs::prior_launch_is_alive` (PID via `sysinfo`, macOS bundle id via `lsappinfo`), covered in `profiles/tests/liveness.rs`_
 
 - [x] **T012b**. Implement cwd library-root containment check in the launch
   use case (R-CwdContain, FR-010): canonicalize `working_dir`; verify it
@@ -218,9 +218,12 @@ T019 (needs T007) ─► T020 ─► T021 ─► T022                         �
 - **args_hash uses SHA-256** not BLAKE3: BLAKE3 is not in the workspace deps; SHA-256
   via `sha2` (already present) is used instead. The field is opaque for correlation
   only. Decision documented in this tasks.md.
-- **pid_is_alive on macOS/Windows**: uses `/proc/<pid>` on Linux only; returns `false`
-  (safe conservative) on other platforms to avoid `unsafe` code (workspace `forbid`).
-  Re-launch guard still works: `false` means guard does not fire, which is safe.
+- **pid_is_alive on macOS/Windows**: RESOLVED (astro-plan-7wu52). The original
+  `/proc/<pid>`-on-Linux-only implementation returned a hardcoded `false` on the two
+  platforms the product ships to, so the T012 guard could never fire there — the
+  "guard still works, `false` is safe" reasoning recorded here was wrong. Liveness is
+  now one `sysinfo`-backed implementation on all platforms, with a macOS Launch
+  Services bundle-id query for the `open -b` arm that records no PID at all.
 - **source-view folder column**: `project.path` is the project root in v1; spec 026
   owns the source-view folder column. `resolve_working_folder` passes `None` until
   spec 026 wires it.

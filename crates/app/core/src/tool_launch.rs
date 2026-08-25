@@ -51,7 +51,9 @@ use sqlx::SqlitePool;
 use workflow_profiles::{
     args::{render, RenderContext},
     discover::discover_all,
-    launch::{pid_is_alive, verify_cwd_containment, LaunchError, ProcessSpawner, SpawnRequest},
+    launch::{
+        prior_launch_is_alive, verify_cwd_containment, LaunchError, ProcessSpawner, SpawnRequest,
+    },
     seed,
 };
 
@@ -457,13 +459,22 @@ pub async fn launch(
             Err(resp) => return Ok(resp),
         };
 
+    // bundle_id from Settings (override) or seeded default
+    let bundle_id_key = format!("tools.{}.bundle_id", req.tool_id);
+    let bundle_id = read_string_setting(pool, &bundle_id_key)
+        .await
+        .or_else(|| config.profile.bundle_id.map(ToOwned::to_owned));
+
     // ── Step 5: re-launch guard ───────────────────────────────────────────────
     if !req.force {
         if let Ok(Some(prior)) =
             tl_repo::get_latest_launch(pool, &req.project_id, &req.tool_id).await
         {
             if prior.outcome == "spawned" && prior.completed_at.is_none() {
-                let alive = prior.pid.and_then(|p| u32::try_from(p).ok()).is_some_and(pid_is_alive);
+                let alive = prior_launch_is_alive(
+                    prior.pid.and_then(|p| u32::try_from(p).ok()),
+                    bundle_id.as_deref(),
+                );
                 if alive {
                     return Ok(ToolLaunchResponse {
                         status: ToolLaunchStatus::PriorInstanceAlive,
@@ -494,12 +505,6 @@ pub async fn launch(
         Err(e) => return Ok(error_response("args.operand_not_absolute", e)),
     };
     let args_hash = compute_args_hash(&config.executable_path, &argv);
-
-    // bundle_id from Settings (override) or seeded default
-    let bundle_id_key = format!("tools.{}.bundle_id", req.tool_id);
-    let bundle_id = read_string_setting(pool, &bundle_id_key)
-        .await
-        .or_else(|| config.profile.bundle_id.map(ToOwned::to_owned));
 
     // ── Steps 7-9: spawn, persist, emit audit ────────────────────────────────
     spawn_and_record(
@@ -961,19 +966,15 @@ mod tests {
         assert_eq!(row.outcome, "spawned");
     }
 
-    #[tokio::test]
-    async fn launch_prior_instance_alive_without_force() {
+    /// Seed an unfinished prior launch for `pixinsight` and return the response
+    /// to a second, unforced launch of the same tool.
+    async fn relaunch_over_prior(pid: Option<u32>, force: bool) -> ToolLaunchResponse {
         let db = setup_db().await;
         let project_id = make_project(&db).await;
         let bus = make_bus(db.pool().clone());
         insert_root(&db, &abs("/mnt/library")).await;
         set_tool_path(&db, "pixinsight", "/usr/bin/pixinsight").await;
 
-        // Insert a "spawned" row with a pid that the test process can never have as its own child.
-        // pid_is_alive uses kill(pid, 0); on Linux PID 1 is always alive (init/systemd).
-        // However we can't reliably test "alive" in unit tests without spawning. Instead, we
-        // test the guard by inserting a completed row (completed_at non-null) which should NOT
-        // trigger the guard.
         let launch_id = new_id();
         let audit_id = new_id();
         tl_repo::insert_tool_launch(
@@ -982,7 +983,7 @@ mod tests {
                 id: &launch_id,
                 project_id: &project_id,
                 tool_id: "pixinsight",
-                pid: None, // No PID → pid_is_alive returns false
+                pid,
                 working_dir: Some("/mnt/library/test_project"),
                 args_hash: Some("abc"),
                 outcome: "spawned",
@@ -992,15 +993,41 @@ mod tests {
         .await
         .unwrap();
 
-        // Without a real alive PID, guard should NOT trigger; second launch should succeed.
-        let spawner2 = FakeSpawner::ok();
-        let req2 = ToolLaunchRequest {
+        let spawner = FakeSpawner::ok();
+        let req = ToolLaunchRequest {
             project_id: project_id.clone(),
             tool_id: "pixinsight".to_owned(),
-            force: false,
+            force,
         };
-        let resp2 = launch(db.pool(), &bus, &spawner2, req2).await.unwrap();
-        assert_eq!(resp2.status, ToolLaunchStatus::Success);
+        launch(db.pool(), &bus, &spawner, req).await.unwrap()
+    }
+
+    /// astro-plan-7wu52: the guard must fire on every platform, not only Linux.
+    /// The recorded pid is this test process, so the prior instance really is
+    /// alive wherever the test runs.
+    #[tokio::test]
+    async fn launch_is_refused_while_the_prior_instance_is_alive() {
+        let own_pid = std::process::id();
+        let resp = relaunch_over_prior(Some(own_pid), false).await;
+        assert_eq!(resp.status, ToolLaunchStatus::PriorInstanceAlive);
+        assert!(resp.prior_instance_alive);
+        assert!(resp.launch_id.is_none(), "no second launch is recorded");
+    }
+
+    /// `force=true` is the "Open another instance" button and skips the guard.
+    #[tokio::test]
+    async fn forced_launch_proceeds_over_a_live_prior_instance() {
+        let own_pid = std::process::id();
+        let resp = relaunch_over_prior(Some(own_pid), true).await;
+        assert_eq!(resp.status, ToolLaunchStatus::Success);
+    }
+
+    /// A launch row with no pid and a tool that is not installed cannot be shown
+    /// alive, so the guard stays out of the way.
+    #[tokio::test]
+    async fn launch_proceeds_when_the_prior_launch_recorded_no_identity() {
+        let resp = relaunch_over_prior(None, false).await;
+        assert_eq!(resp.status, ToolLaunchStatus::Success);
     }
 
     #[tokio::test]

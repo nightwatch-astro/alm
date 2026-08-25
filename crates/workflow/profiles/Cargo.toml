@@ -20,6 +20,7 @@ fs_pathsafe = { path = "../../fs/pathsafe" }
 # spec 042 (T203): first-wins dedup of discovery results by tool id
 # (replaces the hand-rolled `HashSet`-insert filter).
 itertools = { workspace = true }
+sysinfo = { workspace = true }
 
 [dev-dependencies]
 # Containment fixtures build platform-absolute roots via `test_support`, which the

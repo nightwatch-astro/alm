@@ -15,8 +15,7 @@
 //! - **Linux**: `process_group(0)` for session detach.
 //!
 //! No `unsafe` code: `process_group(0)` is a stable safe API since Rust 1.64.
-//! PID liveness uses `std::fs::metadata("/proc/<pid>")` on Linux and a
-//! best-effort path on other Unix platforms (no libc).
+//! Liveness for the re-launch guard is answered by [`prior_launch_is_alive`].
 
 use std::path::Path;
 
@@ -205,30 +204,71 @@ fn spawn_platform(_req: SpawnRequest) -> Result<SpawnResult, LaunchError> {
     Err(LaunchError::SpawnFailed("unsupported platform".to_owned()))
 }
 
-// ── pid_is_alive ──────────────────────────────────────────────────────────────
+// ── Liveness ──────────────────────────────────────────────────────────────────
 
-/// Best-effort check: return `true` when the OS still has a process with `pid`.
+/// Return `true` when the OS still has a live process with `pid`.
 ///
-/// Uses `/proc/<pid>` presence on Linux; `kill -0` is not available without
-/// `unsafe` code, so we fall back to a conservative `false` on other platforms.
-/// The re-launch guard treats `false` as "no prior instance" (safe to launch).
+/// One implementation on every platform: an earlier `/proc/<pid>` check was
+/// `#[cfg(target_os = "linux")]` with a hardcoded `false` elsewhere, which made
+/// the re-launch guard inert on the two platforms the product ships to
+/// (astro-plan-7wu52). `sysinfo` carries the per-platform code behind a safe
+/// API, which the workspace-wide `forbid(unsafe_code)` requires.
+///
+/// An unreaped child has exited and is reported dead. The explicit `Zombie`
+/// status is only ever observed on Linux: macOS drops a zombie from the process
+/// map outright, and Windows has no such state.
 #[must_use]
 pub fn pid_is_alive(pid: u32) -> bool {
-    pid_is_alive_impl(pid)
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate};
+
+    let pid = Pid::from_u32(pid);
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
+    sys.process(pid).is_some_and(|p| p.status() != ProcessStatus::Zombie)
 }
 
-#[cfg(target_os = "linux")]
-fn pid_is_alive_impl(pid: u32) -> bool {
-    // `/proc/<pid>` exists as long as the process is alive on Linux.
-    std::path::Path::new(&format!("/proc/{pid}")).exists()
+/// Return `true` when macOS Launch Services currently has a running application
+/// with `bundle_id`.
+///
+/// Answers liveness for the `open -b` launch arm, which returns no PID at all
+/// (`spawn_platform` above), so `pid_is_alive` has nothing to check for every
+/// seeded profile on macOS.
+///
+/// This is a point-in-time query, not supervision (constitution III): no child
+/// handle is retained, nothing is polled or awaited, and no signal can be sent.
+/// It is called only when the user attempts a re-launch.
+///
+/// The answer is coarser than the guard's `(project, tool)` scope — it reports
+/// that *an* instance of the tool is running, not that it is the one this
+/// project started. Callers ask only after establishing that their own prior
+/// launch for that pair never completed, and the resulting warning is advisory,
+/// so the coarser answer is preferred over skipping the check.
+///
+/// `/usr/bin/lsappinfo` is absent off macOS, where bundle identifiers do not
+/// exist; the spawn failure is the correct `false`.
+#[must_use]
+pub fn bundle_is_running(bundle_id: &str) -> bool {
+    std::process::Command::new("/usr/bin/lsappinfo")
+        .args(["find", &format!("bundleid={bundle_id}")])
+        .output()
+        .is_ok_and(|out| !out.stdout.trim_ascii().is_empty())
 }
 
-#[cfg(not(target_os = "linux"))]
-fn pid_is_alive_impl(_pid: u32) -> bool {
-    // Conservative: assume not alive on platforms we cannot check safely.
-    // The re-launch guard only fires when this returns `true`, so false negatives
-    // cause the guard to be silently skipped — acceptable for v1.
-    false
+/// Answer the re-launch guard's liveness question from whichever identity the
+/// prior launch managed to record.
+///
+/// A recorded PID is the precise signal and wins outright; `bundle_id` is the
+/// fallback for the macOS `open -b` arm, which records none.
+#[must_use]
+pub fn prior_launch_is_alive(pid: Option<u32>, bundle_id: Option<&str>) -> bool {
+    match pid {
+        Some(pid) => pid_is_alive(pid),
+        None => cfg!(target_os = "macos") && bundle_id.is_some_and(bundle_is_running),
+    }
 }
 
 // ── Verify working-dir containment ────────────────────────────────────────────
