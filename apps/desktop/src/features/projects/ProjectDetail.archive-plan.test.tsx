@@ -20,6 +20,7 @@
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -118,6 +119,20 @@ const mockProject: ProjectDetailDto = {
   updatedAt: '2026-06-10T00:00:00Z',
 };
 
+/** The plan-gated Prepare refusal mounts the source-view generate dialog,
+ *  which reads the settings query. */
+function renderPane() {
+  return render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ProjectDetailContent projectId="proj-001" />
+    </QueryClientProvider>,
+  );
+}
+
 function setupStore(project: Partial<ProjectDetailDto> = {}) {
   vi.mocked(store.useProjectDetail).mockReturnValue({
     data: { ...mockProject, ...project },
@@ -145,7 +160,7 @@ describe('ProjectDetail archive plan generation (spec 017 US2/WP-B)', () => {
       protectedItemCount: 0,
     });
 
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     fireEvent.click(screen.getByTestId('transition-btn-archived'));
 
     // Still plan-gated: the exact info toast fires (no silent lifecycle flip).
@@ -187,7 +202,7 @@ describe('ProjectDetail archive plan generation (spec 017 US2/WP-B)', () => {
         "No files are linked to this project's sources — nothing to archive",
     });
 
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     fireEvent.click(screen.getByTestId('transition-btn-archived'));
 
     await waitFor(() => {
@@ -207,7 +222,7 @@ describe('ProjectDetail archive plan generation (spec 017 US2/WP-B)', () => {
       error: { code: 'plan.required', message: 'Plan required' },
     });
 
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     fireEvent.click(screen.getByTestId('transition-btn-prepared'));
 
     await waitFor(() => {
@@ -231,7 +246,7 @@ describe('ProjectDetail archive plan generation (spec 017 US2/WP-B)', () => {
     });
     mockGenerateArchivePlan.mockRejectedValue(new Error('db failure'));
 
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     fireEvent.click(screen.getByTestId('transition-btn-archived'));
 
     await waitFor(() => {

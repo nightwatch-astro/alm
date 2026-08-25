@@ -57,6 +57,7 @@ import { BlockedBanner, deriveBlockedReason } from './BlockedBanner';
 import type { BlockedReason } from './BlockedBanner';
 import { lifecycleFooterActions } from './lifecycle-actions';
 import { PlanReviewOverlay } from '@/features/plans/PlanReviewOverlay';
+import { GenerateSourceViewDialog } from './GenerateSourceViewDialog';
 // spec 011: tool launch CTA
 import {
   toolIdFromProjectTool,
@@ -100,14 +101,18 @@ export function ProjectDetailContent({ projectId }: ProjectDetailContentProps) {
     lifecycle,
     channelWorking,
     transitionWorking,
-    archiveReviewPlanId,
-    setArchiveReviewPlanId,
+    reviewPlanId,
+    setReviewPlanId,
+    reviewPlanKind,
     archiveEmptyReason,
     setArchiveEmptyReason,
+    prepareGenerateOpen,
+    setPrepareGenerateOpen,
     handleReinfer,
     handleDismissDrift,
     handleTransition,
-    handleArchivePlanApplied,
+    handlePrepareViewPlanCreated,
+    handleReviewPlanApplied,
     handleResolveBlocked,
     handleReveal,
   } = useProjectDetailActions(projectId, project);
@@ -447,21 +452,37 @@ export function ProjectDetailContent({ projectId }: ProjectDetailContentProps) {
         <EditProjectPane project={project} onClose={() => setEditOpen(false)} />
       </Modal>
 
-      {/* ── Archive plan review overlay (spec 017 US2/WP-B) ──────────────────
-          Opens automatically when the plan-gated Archive transition refuses
-          with plan.required; shares the same review → approve → apply kit as
-          the cleanup flow. */}
+      {/* ── Source-view generation dialog for the plan-gated Prepare edge ────
+          Opens when ready → prepared refuses with plan.required; the created
+          plan goes to the same review overlay the Archive edge uses. */}
+      {prepareGenerateOpen && (
+        <GenerateSourceViewDialog
+          projectId={projectId}
+          open
+          onClose={() => setPrepareGenerateOpen(false)}
+          onPlanCreated={handlePrepareViewPlanCreated}
+        />
+      )}
+
+      {/* ── Plan review overlay (spec 017 US2/WP-B) ──────────────────────────
+          Opens automatically when a plan-gated transition refuses with
+          plan.required and its generator produces a plan; shares the same
+          review → approve → apply kit as the cleanup flow. */}
       <PlanReviewOverlay
-        planId={archiveReviewPlanId}
-        open={archiveReviewPlanId !== null}
+        planId={reviewPlanId}
+        open={reviewPlanId !== null}
         onClose={() => {
-          setArchiveReviewPlanId(null);
+          setReviewPlanId(null);
           setArchiveEmptyReason(null);
         }}
-        title={m.archive_generate_review_title()}
+        title={
+          reviewPlanKind === 'archive'
+            ? m.archive_generate_review_title()
+            : m.projects_source_views_review_title()
+        }
         emptyReason={archiveEmptyReason}
-        onApplied={handleArchivePlanApplied}
-        onRetryCreated={setArchiveReviewPlanId}
+        onApplied={handleReviewPlanApplied}
+        onRetryCreated={setReviewPlanId}
       />
     </DetailPanel>
   );

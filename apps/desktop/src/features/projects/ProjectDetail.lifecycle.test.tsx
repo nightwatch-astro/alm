@@ -15,6 +15,7 @@
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock Tauri invoke
@@ -81,6 +82,20 @@ import * as store from './store';
 import { addToast } from '@/shared/toast';
 import type { ProjectDetailDto } from '@/bindings/index';
 
+/** The plan-gated Prepare refusal mounts the source-view generate dialog,
+ *  which reads the settings query. */
+function renderPane() {
+  return render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ProjectDetailContent projectId="proj-001" />
+    </QueryClientProvider>,
+  );
+}
+
 const mockProject: ProjectDetailDto = {
   id: 'proj-001',
   name: 'NGC 7000',
@@ -110,7 +125,7 @@ describe('ProjectDetail lifecycle transitions (spec 009 US3-3)', () => {
 
   it('renders lifecycle actions for ready state', () => {
     setupStore({ lifecycle: 'ready' });
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     // Per-project actions live in the detail action bar (single source of truth).
     expect(screen.getByTestId('lifecycle-actions')).toBeInTheDocument();
     // Should have a "Prepare" button (ready → prepared)
@@ -128,7 +143,7 @@ describe('ProjectDetail lifecycle transitions (spec 009 US3-3)', () => {
       newState: 'completed',
     });
 
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     fireEvent.click(screen.getByTestId('transition-btn-completed'));
 
     await waitFor(() => {
@@ -150,7 +165,7 @@ describe('ProjectDetail lifecycle transitions (spec 009 US3-3)', () => {
       error: { code: 'plan.required', message: 'Plan required' },
     });
 
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     fireEvent.click(screen.getByTestId('transition-btn-prepared'));
 
     await waitFor(() => {
@@ -172,7 +187,7 @@ describe('ProjectDetail lifecycle transitions (spec 009 US3-3)', () => {
       },
     });
 
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     fireEvent.click(screen.getByTestId('transition-btn-processing'));
 
     await waitFor(() => {
@@ -184,7 +199,7 @@ describe('ProjectDetail lifecycle transitions (spec 009 US3-3)', () => {
 
   it('renders the blocked banner when lifecycle=blocked', () => {
     setupStore({ lifecycle: 'blocked' });
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByTestId('blocked-resolve-btn')).toBeInTheDocument();
   });
@@ -198,7 +213,7 @@ describe('ProjectDetail lifecycle transitions (spec 009 US3-3)', () => {
       newState: 'ready',
     });
 
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     fireEvent.click(screen.getByTestId('blocked-resolve-btn'));
 
     await waitFor(() => {
@@ -213,7 +228,7 @@ describe('ProjectDetail lifecycle transitions (spec 009 US3-3)', () => {
 
   it('does not render lifecycle transition buttons when lifecycle=setup_incomplete', () => {
     setupStore({ lifecycle: 'setup_incomplete' });
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     // The action bar still hosts always-present actions (Reveal / Open in tool),
     // but no lifecycle transition buttons exist for setup_incomplete.
     expect(screen.queryByTestId(/^transition-btn-/)).not.toBeInTheDocument();
@@ -226,7 +241,7 @@ describe('ProjectDetail lifecycle transitions (spec 009 US3-3)', () => {
 
   it('renders unarchive actions for archived state', () => {
     setupStore({ lifecycle: 'archived' });
-    render(<ProjectDetailContent projectId="proj-001" />);
+    renderPane();
     expect(screen.getByTestId('transition-btn-ready')).toBeInTheDocument();
     expect(screen.getByTestId('transition-btn-processing')).toBeInTheDocument();
   });

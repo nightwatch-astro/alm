@@ -1521,6 +1521,7 @@
   "projects_wizard_toast_view_project": "View project",
   "projects_wizard_toast_created_folders": "Project \"{name}\" created — project folders created on disk.",
   "projects_wizard_toast_folders_failed": "Project \"{name}\" created, but folder creation failed. The folder plan remains available for review.",
+  "projects_source_views_review_title": "Review source view plan",
   "projects_source_views_removal_toast": "Removal plan created. Review and apply plan to complete removal.",
   "projects_source_views_removal_failed": "Could not create removal plan: {message}",
   "projects_source_views_regen_unresolved": " ({count} unresolved references — review plan before applying)",
