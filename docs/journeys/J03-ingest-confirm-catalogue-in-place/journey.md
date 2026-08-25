@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-14
 actors: [astrophotographer]
 surfaces: [inbox-confirm, plans, sessions, audit]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration journey.md @ git 42c596d68b621a46e54e647fdb7c48716fdb68c1
   - docs/product/journeys/J03-ingest-confirm-catalogue-in-place/deltas/2026-07-14-jval-docdrift.md

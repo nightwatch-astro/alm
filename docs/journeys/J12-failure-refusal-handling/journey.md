@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-20
 actors: [astrophotographer]
 surfaces: [plans, projects, audit, shell]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - pre-migration journey.md @ git 66026463
   - specs/030-ui-audit-revision/spec.md (FR-130-134 §8.3, FR-135-140 §12)

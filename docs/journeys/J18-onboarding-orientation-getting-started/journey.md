@@ -6,7 +6,7 @@ status: draft
 last_reviewed: 2026-07-19
 actors: [astrophotographer]
 surfaces: [onboarding, shell]
-interfaces: [desktop-ui]
+interfaces: [desktop-ui, desktop-ui-macos]
 trace:
   - specs/056-onboarding-redesign (implemented; PR #1048)
   - specs/010-guided-first-project-flow/spec.md (superseded — the 3-step
