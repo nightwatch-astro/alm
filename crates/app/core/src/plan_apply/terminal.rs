@@ -9,14 +9,51 @@
 use super::{
     apply_repo, audit_item_cancelled, deterministic_entity_id, finalize_archive_lifecycle,
     finalize_calibration_master_archive, finalize_calibration_master_restore,
-    finalize_project_create_manifest, finalize_restore_lifecycle, finalize_view_generation,
-    finalize_view_regeneration, finalize_view_removal, json, new_id, AuditLogEntry, EntityType,
-    EventBus, OpEventEmitter, OperationEventType, OperationStatus, Outcome, PlanApplyingCompleted,
-    PlanApplyingPaused, Severity, Source, SqlitePool, TerminalCounts, Timestamp,
-    TOPIC_PLAN_APPLYING_COMPLETED, TOPIC_PLAN_APPLYING_PAUSED,
+    finalize_prepared_lifecycle, finalize_project_create_manifest, finalize_restore_lifecycle,
+    finalize_view_generation, finalize_view_regeneration, finalize_view_removal, json, new_id,
+    AuditLogEntry, EntityType, EventBus, OpEventEmitter, OperationEventType, OperationStatus,
+    Outcome, PlanApplyingCompleted, PlanApplyingPaused, Severity, Source, SqlitePool,
+    TerminalCounts, Timestamp, TOPIC_PLAN_APPLYING_COMPLETED, TOPIC_PLAN_APPLYING_PAUSED,
 };
 
 use super::apply::cumulative_counts;
+
+/// Surface a terminal-state write that did not commit, in place of the state it
+/// would have announced.
+///
+/// The plan row keeps whatever state the failed transaction left, so the run
+/// stays `applying` and `sweep_crashed_applying_plans` with
+/// `list_crash_interrupted_plans` claim it at the next boot. Callers must return
+/// after this instead of publishing the intended state.
+fn report_unwritten_state(
+    plan_id: &str,
+    run_id: &str,
+    intended_state: &str,
+    reason: Option<&str>,
+    error: &str,
+    op_emitter: Option<&OpEventEmitter>,
+    at: &str,
+) {
+    tracing::error!(
+        plan_id, run_id, intended_state, pause_reason = reason, %error,
+        "a terminal plan state was not persisted; the plan row is left for boot recovery"
+    );
+    if let Some(emitter) = op_emitter.as_ref() {
+        let handle = emitter.handle(OperationStatus::Failed);
+        emitter.emit(
+            OperationEventType::Failed,
+            json!({
+                "handle": handle,
+                "planId": plan_id,
+                "runId": run_id,
+                "intendedState": intended_state,
+                "pauseReason": reason,
+                "error": error,
+                "at": at,
+            }),
+        );
+    }
+}
 
 /// Handle `ApplyOutcome::Completed`: finalize origin-specific side-effects,
 /// persist the terminal state, emit audit + bus + long-op events.
@@ -94,6 +131,9 @@ pub(super) async fn handle_completed(
             "prepared_view_generation" => {
                 if let Some(project_id) = plan_project_id {
                     finalize_view_generation(pool, plan_id, project_id).await;
+                    if terminal == "applied" {
+                        finalize_prepared_lifecycle(pool, bus, project_id).await;
+                    }
                 }
             }
             "prepared_view_removal" => {
@@ -106,7 +146,7 @@ pub(super) async fn handle_completed(
         }
     }
 
-    let _ = apply_repo::complete_run(
+    if let Err(e) = apply_repo::complete_run(
         pool,
         plan_id,
         run_id,
@@ -116,7 +156,11 @@ pub(super) async fn handle_completed(
         counts.skipped,
         counts.cancelled,
     )
-    .await;
+    .await
+    {
+        report_unwritten_state(plan_id, run_id, &terminal, None, &e.to_string(), op_emitter, &at);
+        return;
+    }
 
     let _ = apply_repo::append_event(
         pool,
@@ -205,7 +249,7 @@ pub(super) async fn handle_cancelled(
     // Fetch cumulative counters AFTER batch-cancel so cancelled items are counted.
     let counts = cumulative_counts(pool, plan_id, &counts).await;
 
-    let _ = apply_repo::complete_run(
+    if let Err(e) = apply_repo::complete_run(
         pool,
         plan_id,
         run_id,
@@ -215,7 +259,11 @@ pub(super) async fn handle_cancelled(
         counts.skipped,
         counts.cancelled,
     )
-    .await;
+    .await
+    {
+        report_unwritten_state(plan_id, run_id, "cancelled", None, &e.to_string(), op_emitter, &at);
+        return;
+    }
 
     let _ = apply_repo::append_event(
         pool,
@@ -268,6 +316,14 @@ pub(super) async fn handle_cancelled(
 }
 
 /// Handle `ApplyOutcome::Paused`: persist pause state, emit events.
+///
+/// The pause row is a Tier-1 record: `pause_reason` is what
+/// `revalidate_pause_condition` re-checks on resume, and a boot sweep can only
+/// re-derive the generic `crash` reason. So the paused events are emitted only
+/// after `pause_run` commits. When the write fails the plan row stays
+/// `applying`, which `sweep_crashed_applying_plans` and
+/// `list_crash_interrupted_plans` classify at the next boot, and the long-op
+/// event carries the failure instead of a pause.
 pub(super) async fn handle_paused(
     pool: &SqlitePool,
     bus: &EventBus,
@@ -280,7 +336,27 @@ pub(super) async fn handle_paused(
     let at = Timestamp::now_iso();
     let counts = cumulative_counts(pool, plan_id, &counts).await;
 
-    let _ = apply_repo::pause_run(
+    // `pause_run`'s last argument is the count of items still to run. It comes
+    // from the item rows rather than `plans.items_pending`, which lags a skip
+    // the run never reached (`skip_pending_item`) and would inflate this
+    // Tier-1 record by one item per such skip.
+    let items_pending = match apply_repo::list_pending_items(pool, plan_id).await {
+        Ok(ids) => i64::try_from(ids.len()).unwrap_or(i64::MAX),
+        Err(e) => {
+            report_unwritten_state(
+                plan_id,
+                run_id,
+                "paused",
+                Some(reason),
+                &e.to_string(),
+                op_emitter,
+                &at,
+            );
+            return;
+        }
+    };
+
+    if let Err(e) = apply_repo::pause_run(
         pool,
         plan_id,
         run_id,
@@ -289,9 +365,21 @@ pub(super) async fn handle_paused(
         counts.failed,
         counts.skipped,
         counts.cancelled,
-        counts.succeeded + counts.failed + counts.skipped + counts.cancelled,
+        items_pending,
     )
-    .await;
+    .await
+    {
+        report_unwritten_state(
+            plan_id,
+            run_id,
+            "paused",
+            Some(reason),
+            &e.to_string(),
+            op_emitter,
+            &at,
+        );
+        return;
+    }
 
     let _ = apply_repo::append_event(
         pool,

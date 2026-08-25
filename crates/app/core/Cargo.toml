@@ -25,6 +25,7 @@ domain_core = { path = "../../domain/core" }
 fs_executor = { path = "../../fs/executor" }
 fs_inventory = { path = "../../fs/inventory" }
 fs_pathsafe = { path = "../../fs/pathsafe" }
+dunce = { workspace = true }
 patterns = { path = "../../patterns" }
 persistence_calibration = { path = "../../persistence/calibration" }
 persistence_core = { path = "../../persistence/core" }
@@ -58,12 +59,17 @@ tracing = { workspace = true }
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
 
 [dev-dependencies]
+# Containment fixtures build platform-absolute roots via `test_support`, which the
+# `[dependencies]` edge above leaves off so it is absent from release builds.
+fs_pathsafe = { path = "../../fs/pathsafe", features = ["test-fixture"] }
 app_core_cache = { path = "../cache" }
 # plan_resume_integration.rs paces the executor's forward pass so its retry lands
 # while the resumed run is still draining. The feature is off on the
 # `[dependencies]` edge above, so the seam is absent from every binary built from
 # this crate.
-fs_executor = { path = "../../fs/executor", features = ["test-pacing"] }
+# `e2e-trash-fake` additionally lets plan_apply's trash-destination test drive
+# the executor's trash path without an interactive desktop.
+fs_executor = { path = "../../fs/executor", features = ["test-pacing", "e2e-trash-fake"] }
 tempfile = { workspace = true }
 # spec 048 T010: forces two fixture frames to a single mtime so the
 # moved-vs-catalogued `file_record` comparison tests the writer, not the clock.
@@ -95,6 +101,10 @@ persistence_sessions = { path = "../../persistence/sessions", features = ["test-
 # settings-key gate, and compiles the in-crate `dev_contracts` module (gated by
 # `#[cfg(feature = "dev-tools")]` in `lib.rs`).
 dev-tools = ["app_core_settings/dev-tools"]
+# Headless OS-trash double for the e2e harness (spec 037). Release binaries must
+# NOT enable this. Exists only so `desktop_shell/e2e` can reach
+# `fs_executor/e2e-trash-fake`: `desktop_shell` has no direct `fs_executor` edge.
+e2e-trash-fake = ["fs_executor/e2e-trash-fake"]
 
 [lints]
 workspace = true

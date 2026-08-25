@@ -1,4 +1,5 @@
--- Candidate one-file baseline derived from exact base 4cfd2198a81702c1ddb910ceef4e1d5a27d6b357.
+-- The pre-1.0 SQLite schema and seed definition. This is migration version 1,
+-- it stays version 1, and it is edited in place until 1.0; there is no 0002+.
 -- sqlite_* objects and _sqlx_migrations are intentionally excluded.
 -- onboarding_state and onboarding_flags intentionally start empty.
 -- frame_footprint_rtree virtual table is included; shadow tables are
@@ -15,6 +16,7 @@ CREATE TABLE acquisition_fingerprint (
     rotation_deg          REAL,
     binning               TEXT,
     optic_train           TEXT,
+    camera_body_id        TEXT,   -- CAMERAID body identity; NULL when the vendor writes no serial
     observing_night_date  TEXT,   -- YYYY-MM-DD local observing night
     has_observer_location INTEGER NOT NULL DEFAULT 0,
     has_exposure_start_utc INTEGER NOT NULL DEFAULT 0
@@ -204,6 +206,7 @@ CREATE TABLE calibration_fingerprint (
     rotation_deg          REAL,
     binning               TEXT,
     optic_train           TEXT,
+    camera_body_id        TEXT,   -- CAMERAID body identity; NULL when the vendor writes no serial
     source_session_id     TEXT,   -- originating capture session (for same_session reason)
     observing_night_date  TEXT    -- YYYY-MM-DD local observing night
 );
@@ -426,7 +429,6 @@ CREATE TABLE calibration_tolerances (
     temperature_tolerance_c REAL NOT NULL DEFAULT 5.0,
     exposure_tolerance_s    REAL NOT NULL DEFAULT 2.0,
     aging_limit_days        INTEGER NOT NULL DEFAULT 365,
-    require_same_camera     INTEGER NOT NULL DEFAULT 1,
     require_same_gain       INTEGER NOT NULL DEFAULT 1,
     require_same_binning    INTEGER NOT NULL DEFAULT 1,
     updated_at              TEXT NOT NULL
@@ -1788,7 +1790,8 @@ CREATE TABLE "plans" (
     approved_at              TEXT,
     discarded_at             TEXT,
     created_at               TEXT    NOT NULL,
-    chosen_framing_id        TEXT    REFERENCES framing(id)
+    chosen_framing_id        TEXT    REFERENCES framing(id),
+    destination_root         TEXT
 );
 
 CREATE TABLE prepared_source_view (
@@ -3197,7 +3200,12 @@ SELECT
     cs.archived_via_plan_id                             AS archived_via_plan_id
 FROM calibration_session cs
 LEFT JOIN calibration_fingerprint cf ON cf.id = cs.id
-LEFT JOIN file_record fr ON fr.id = json_extract(cs.frame_ids, '$[0]')
+-- calibration_session.frame_ids carries no json_valid CHECK, and an unguarded
+-- json_extract raises on a malformed value, failing every SELECT against this
+-- view rather than the one corrupt row. The CASE substitutes an empty array so
+-- the row survives with a NULL frame_relative_path.
+LEFT JOIN file_record fr ON fr.id = json_extract(
+    CASE WHEN json_valid(cs.frame_ids) THEN cs.frame_ids ELSE '[]' END, '$[0]')
 WHERE cs.kind IN ('dark', 'flat', 'bias');
 
 CREATE VIEW ledger_view AS
@@ -4152,7 +4160,7 @@ CREATE TRIGGER session_immutable_update BEFORE UPDATE ON session BEGIN
     SELECT RAISE(ABORT, 'session is append-only');
 END;
 
-INSERT INTO "calibration_tolerances" VALUES('default', 5.0, 2.0, 365, 1, 1, 1, '2026-05-26T00:00:00Z', 1);
+INSERT INTO "calibration_tolerances" VALUES('default', 5.0, 2.0, 365, 1, 1, '2026-05-26T00:00:00Z', 1);
 INSERT INTO "cleanup_policy" VALUES('calibrated_lights', 'keep', '2026-05-26T00:00:00Z');
 INSERT INTO "cleanup_policy" VALUES('registered_lights', 'keep', '2026-05-26T00:00:00Z');
 INSERT INTO "cleanup_policy" VALUES('drizzle_data', 'keep', '2026-05-26T00:00:00Z');

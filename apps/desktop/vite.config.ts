@@ -54,6 +54,9 @@ export default defineConfig(({ mode, command }) => {
     ],
     clearScreen: false,
     server: {
+      // Loopback only: the dev server is unauthenticated. Declared here so it
+      // holds for every invocation, not just the `--host`-carrying scripts.
+      host: "127.0.0.1",
       port: 5173,
       strictPort: true,
     },

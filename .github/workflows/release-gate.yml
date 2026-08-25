@@ -64,7 +64,7 @@ jobs:
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
             libayatana-appindicator3-dev
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.0
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -109,30 +109,24 @@ jobs:
           fi
 
       # --- Check 3: dev-tools OFF invariant (HARD) ---
-      # The dev-tools feature MUST NOT be a default feature, and the release
-      # build of the app crate MUST NOT resolve it (Constitution Principle V).
-      - name: Assert dev-tools feature is not enabled by default
+      # The gated features MUST NOT be defaults, the default feature graph MUST
+      # NOT resolve them or link their plugin crates, and no shipped capability
+      # may grant a gated plugin's permissions (Constitution Principle V).
+      # `scripts/check-dev-surface-absent.sh` also runs on every Rust PR in
+      # ci.yml, which this workflow's `if:` gate excludes.
+      - name: Assert the dev surface is absent from a default-feature build
         id: devtools_off
         continue-on-error: true
         run: |
           set -euo pipefail
-          STATUS=pass
-          DETAIL="dev-tools absent from default features"
-          # Static: no `default = [...]` line may enable dev-tools.
-          if grep -RInE '^\s*default\s*=\s*\[' \
-               apps/desktop/src-tauri/Cargo.toml crates/app/core/Cargo.toml 2>/dev/null \
-               | grep -q 'dev-tools'; then
-            STATUS=fail
-            DETAIL="a default feature enables dev-tools"
+          if OUT=$(bash scripts/check-dev-surface-absent.sh 2>&1); then
+            echo "status=pass" >> "$GITHUB_OUTPUT"
+            echo "detail=${OUT##*$'\n'}" >> "$GITHUB_OUTPUT"
+          else
+            echo "$OUT"
+            echo "status=fail" >> "$GITHUB_OUTPUT"
+            echo "detail=$(grep -m1 '^FAIL: ' <<<"$OUT")" >> "$GITHUB_OUTPUT"
           fi
-          # Resolved: release feature graph of the app crate must not pull dev-tools.
-          if cargo tree -p desktop_shell --release -e features -f '{p} {f}' 2>/dev/null \
-               | grep -qi 'dev-tools'; then
-            STATUS=fail
-            DETAIL="release feature graph resolves dev-tools"
-          fi
-          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
-          echo "detail=$DETAIL" >> "$GITHUB_OUTPUT"
 
       # --- Check 3b: dev surface absent from the frontend bundle (HARD) ---
       # Check 3 covers the Rust feature graph only. On the frontend the gate is a

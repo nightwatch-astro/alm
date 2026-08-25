@@ -167,10 +167,10 @@ prose"):
   `tauri::ipc::Channel` progress argument this WebDriver harness declines to
   construct (buildable from a test script, but only by reaching into
   Tauri internals — see #1234).
-  `plans.apply.direct` (a.k.a. `plans_apply_direct`,
-  `app_core::plan_apply::apply_plan_channel_free`) now exists: same executor
-  (`apply_plan`) and durable audit trail as `plans.apply_real`, no `Channel`
-  required. `cleanup_plan_review` now drives a real apply past `plans.approve`
+  `plans.apply.direct` (a.k.a. `plans_apply_direct`) now exists: same executor
+  (`app_core::plan_apply::apply_plan` with `event_sink: None`), same
+  caller-supplied approval token, and same durable audit trail as
+  `plans.apply_real`, no `Channel` required. `cleanup_plan_review` now drives a real apply past `plans.approve`
   and asserts the real filesystem mutation + audit record. **Correction to
   the original claim**: the Cleanup/Archive UI already had a real Apply
   affordance before this — `OutputsCleanupSections.tsx`'s `CleanupSection`

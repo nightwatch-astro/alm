@@ -1,8 +1,9 @@
 # Feature Specification: Processing Tool Launch
 
-> **See Spec 030**: UI implementation of this feature must follow
-> [Spec 030 — UI Audit & Revision](../030-ui-audit-revision/spec.md)
-> for layout, navigation, and component patterns.
+> **See Spec 032**: UI implementation of this feature must follow
+> [Spec 032 — Design V4](../032-design-v4-implementation/spec.md), the current UI
+> truth, for layout, navigation, and component patterns. Spec 030 (UI Audit &
+> Revision), cited here previously, is superseded as of 2026-06-11.
 
 **Feature Branch**: `011-processing-tool-launch`
 **Created**: 2026-05-09
@@ -46,9 +47,11 @@ Artifact Observation), which only fires when a launch happened.
 
 **Independent Test**: With PixInsight path configured in Settings and a
 PixInsight-bound project selected, click `Open in PixInsight`. PixInsight
-opens, its working directory or initial dialog is anchored to the project's
-generated source-view folder, and a `tool_launch` audit record appears with a
-non-null PID.
+opens and a `tool_launch` audit record appears. On Linux and Windows the
+process starts in the project's generated source-view folder and the record
+carries a non-null PID. On macOS PixInsight launches through its bundle id,
+which carries neither a working directory nor a PID, so the record's PID is
+null and no working-directory observable applies.
 
 **Acceptance Scenarios**:
 

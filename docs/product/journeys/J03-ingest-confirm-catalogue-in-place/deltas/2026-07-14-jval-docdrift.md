@@ -1,3 +1,9 @@
+> **MIGRATED:** current truth now lives at
+> `docs/journeys/J03-ingest-confirm-catalogue-in-place/journey.md`.
+> This delta is frozen legacy history: it records behavior as understood on
+> its own date and may not match current behavior.
+> See `docs/product/journeys/README.md`.
+
 # jval-docdrift — J03-ingest-confirm-catalogue-in-place: Rescan-all-roots is inbox-only; catalogue plan's destructive-destination control observed absent
 
 Task: jval-docdrift · Status: observed-live-2026-07-14

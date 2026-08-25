@@ -1,3 +1,9 @@
+> **MIGRATED:** current truth now lives at
+> `docs/journeys/J06-cleanup-scan-review-apply/journey.md`.
+> This delta is frozen legacy history: it records behavior as understood on
+> its own date and may not match current behavior.
+> See `docs/product/journeys/README.md`.
+
 # jval-docdrift — J06-cleanup-scan-review-apply: PR #413 UI gap is stale; real blocker is the protection/audit backend
 
 Task: jval-docdrift · Status: observed-live-2026-07-14

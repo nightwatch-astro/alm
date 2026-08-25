@@ -125,52 +125,77 @@ pub fn detect_master(input: &DetectInput<'_>) -> Option<MasterDetection> {
 
 /// Parse a raw `IMAGETYP` string into a [`FrameType`].
 ///
-/// Rules (case-insensitive, trims whitespace):
-/// - Contains "dark flat" or "darkflat" → `DarkFlat`
-/// - Contains "dark"                    → `Dark`
-/// - Contains "bias" or "offset"        → `Bias`
-/// - Contains "flat"                    → `Flat`
-/// - Contains "light" or "science"      → `Light`
+/// Rules (case-insensitive, whole tokens only):
+/// - token `darkflat`, or adjacent `dark` + `flat` → `DarkFlat`
+/// - token `dark`                                 → `Dark`
+/// - token `bias` or `offset`                     → `Bias`
+/// - token `flat`                                 → `Flat`
+/// - token `light`, `science` or `object`          → `Light`
 ///
 /// The "master" word is stripped before matching so that `"Master Dark"`,
 /// `"Dark Frame"`, etc. all normalise correctly.
+///
+/// Matching is on whole tokens, not substrings, so the canonical contract
+/// spelling `dark_flat` cannot be read as `dark` and the result is stable
+/// under a second pass over its own canonical form.
 #[must_use]
 pub fn parse_frame_type(raw: &str) -> Option<FrameType> {
     // Strip "master" (word boundary not needed — just remove the substring)
     let normalised =
         raw.to_ascii_lowercase().replace("master", "").replace("frame", "").replace("frames", "");
-    let s = normalised.trim().to_owned();
+    let tokens: Vec<&str> =
+        normalised.split(|c: char| !c.is_ascii_alphanumeric()).filter(|t| !t.is_empty()).collect();
 
-    // Dark flat must be checked before dark and flat individually.
-    if s.contains("dark flat") || s.contains("darkflat") {
+    // Dark flat must be decided before dark and flat individually.
+    if tokens.contains(&"darkflat")
+        || tokens.windows(2).any(|w| w == ["dark", "flat"])
+        || tokens.windows(2).any(|w| w == ["flat", "dark"])
+    {
         return Some(FrameType::DarkFlat);
     }
-    if s.contains("dark") {
-        return Some(FrameType::Dark);
-    }
-    if s.contains("bias") || s.contains("offset") {
-        return Some(FrameType::Bias);
-    }
-    if s.contains("flat") {
-        return Some(FrameType::Flat);
-    }
-    if s.contains("light") || s.contains("science") || s.contains("object") {
-        return Some(FrameType::Light);
+    for token in &tokens {
+        match *token {
+            "dark" => return Some(FrameType::Dark),
+            "bias" | "offset" => return Some(FrameType::Bias),
+            "flat" => return Some(FrameType::Flat),
+            "light" | "science" | "object" => return Some(FrameType::Light),
+            _ => {}
+        }
     }
     None
 }
 
 /// Return `true` if the lowercased path or file name suggests a master.
 ///
-/// Matches when either component contains `"master"` or `"_stacked"`.
+/// Matches a delimiter-bounded token that is `master` itself, or `master`
+/// immediately followed by a frame word — the WBPP convention is
+/// `masterDark.xisf` / `masterDarks/`, so whole-token equality alone would be
+/// a false negative. A token that merely begins with or contains the word is
+/// not a master store: `masterclass_notes/`, `Grandmaster Nebula/`. The
+/// `_stacked` suffix convention also matches.
+///
+/// Both `/` and `\` are treated as separators on every platform: the path is a
+/// stored library-relative string that may have been recorded on another OS.
 #[must_use]
 pub fn path_looks_like_master(file_name: &str, rel_path: &str) -> bool {
     let name_lc = file_name.to_ascii_lowercase();
     let path_lc = rel_path.to_ascii_lowercase();
-    name_lc.contains("master")
-        || name_lc.contains("_stacked")
-        || path_lc.contains("master")
-        || path_lc.contains("_stacked")
+    if name_lc.contains("_stacked") || path_lc.contains("_stacked") {
+        return true;
+    }
+    std::iter::once(name_lc.as_str())
+        .chain(path_lc.split(['/', '\\']))
+        .flat_map(|segment| segment.split(['_', '-', '.', ' ']))
+        .any(is_master_token)
+}
+
+/// Return `true` when `token` is `master`, its plural, or `master` followed by
+/// a frame word (`masterDark`, `masterFlats`, …).
+fn is_master_token(token: &str) -> bool {
+    let Some(rest) = token.strip_prefix("master") else { return false };
+    let is_frame_word =
+        |w: &str| matches!(w, "" | "dark" | "darkflat" | "bias" | "offset" | "flat" | "light");
+    is_frame_word(rest) || rest.strip_suffix('s').is_some_and(is_frame_word)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -236,18 +261,113 @@ mod tests {
         assert!(!path_looks_like_master("light_001.fits", "lights/"));
     }
 
+    /// A segment that merely contains "master" is not a master store, while
+    /// the WBPP `masterDark` convention still is. Both separator spellings of
+    /// each fixture are asserted on every platform, since `rel_path` is a
+    /// stored string that may have been recorded on another OS.
+    #[test]
+    fn a_path_substring_does_not_make_a_folder_a_master_store() {
+        for sep in ['/', '\\'] {
+            let notes = format!("masterclass_notes{sep}lights{sep}");
+            assert!(
+                !path_looks_like_master("x.fit", &notes),
+                "masterclass_notes must not be a master store (sep {sep:?})"
+            );
+            let grand = format!("Grandmaster Nebula{sep}lights{sep}");
+            assert!(
+                !path_looks_like_master("x.fit", &grand),
+                "Grandmaster Nebula must not be a master store (sep {sep:?})"
+            );
+            let masters = format!("masters{sep}");
+            assert!(
+                path_looks_like_master("masterDark.xisf", &masters),
+                "masters/masterDark.xisf is still a master (sep {sep:?})"
+            );
+            let nested = format!("masters{sep}masterDarks{sep}");
+            assert!(
+                path_looks_like_master("dark.fit", &nested),
+                "a masterDarks folder is still a master store (sep {sep:?})"
+            );
+        }
+    }
+
+    /// A `master`-prefixed token preceded by a delimiter counts, so a
+    /// `wbpp_masterDark.xisf` name is still a master.
+    #[test]
+    fn a_delimiter_bounded_master_token_still_counts() {
+        assert!(path_looks_like_master("wbpp_masterDark.xisf", ""));
+        assert!(path_looks_like_master("cal-masterFlat.xisf", ""));
+        assert!(!path_looks_like_master("grandmasterDark.xisf", ""));
+    }
+
+    /// The canonical contract spelling of `DarkFlat` must not be read as
+    /// `Dark`, and classification must survive a second pass over its own
+    /// canonical form.
+    #[test]
+    fn the_canonical_dark_flat_spelling_round_trips() {
+        assert_eq!(parse_frame_type("dark_flat"), Some(FrameType::DarkFlat));
+        assert_eq!(parse_frame_type(FrameType::DarkFlat.as_str()), Some(FrameType::DarkFlat));
+    }
+
+    #[test]
+    fn classification_is_idempotent_through_the_canonical_form() {
+        for raw in ["Dark Flat", "darkflat", "DarkFlat Frame", "Flat Dark", "DARK", "Master Flat"] {
+            let first = parse_frame_type(raw).expect("fixture classifies");
+            let second = parse_frame_type(first.as_str());
+            assert_eq!(Some(first), second, "{raw:?} changed verdict on a second pass");
+        }
+    }
+
+    /// Whole-token matching: a frame word embedded in a longer word is not a
+    /// frame type.
+    #[test]
+    fn an_embedded_frame_word_does_not_classify() {
+        assert_eq!(parse_frame_type("darkroom"), None);
+        assert_eq!(parse_frame_type("flatfield"), None);
+        assert_eq!(parse_frame_type("biased"), None);
+    }
+
+    /// A present header count is authoritative for every detector, so the
+    /// registry result reports it as evidence (bead .2.35).
+    #[test]
+    fn a_present_stack_count_is_reported_as_evidence() {
+        let stacked = DetectInput {
+            imagetyp: None,
+            stack_count: Some(30),
+            file_name: "masterDark.xisf",
+            rel_path: "masters/",
+        };
+        let result = detect_master(&stacked).unwrap();
+        assert!(result.stack_count_evidence, "STACKCNT=30 is header evidence");
+        assert!(result.is_master);
+
+        let single = DetectInput {
+            imagetyp: None,
+            stack_count: Some(1),
+            file_name: "masterDark.xisf",
+            rel_path: "masters/",
+        };
+        let result = detect_master(&single).unwrap();
+        assert!(result.stack_count_evidence);
+        assert!(!result.is_master, "STACKCNT=1 outranks the 'master' naming convention");
+    }
+
     // ── Registry-level tests (detect_master) ─────────────────────────────────
     //
     // These exercise the full registry, not a single detector, and
     // deliberately avoid "master"/"_stacked" in fixture names so the naming
     // heuristic cannot mask a registry-ordering bug (issue #753).
 
-    /// Issue #753 counter-example (spec 040 SC-001 scenario 2): a Siril
-    /// master renamed away from any "master"/"_stacked" convention must
-    /// still be detected via STACKCNT, even though PixInsightDetector runs
-    /// first in the registry and would otherwise win with a false negative.
+    /// Issue #753 counter-example (spec 040 SC-001 scenario 2): a master
+    /// renamed away from any "master"/"_stacked" convention must still be
+    /// detected via STACKCNT.
+    ///
+    /// Every detector that sees a header count now honours it, so the winner
+    /// is the first registered detector rather than `siril` specifically; the
+    /// invariant under test is that the header count decides `is_master`, not
+    /// which detector reports it.
     #[test]
-    fn detect_master_prefers_stackcnt_evidence_over_earlier_registry_entry() {
+    fn detect_master_prefers_stackcnt_evidence_over_naming() {
         let input = DetectInput {
             imagetyp: Some("DARK"),
             stack_count: Some(30),
@@ -257,17 +377,15 @@ mod tests {
         let result = detect_master(&input).unwrap();
         assert_eq!(result.frame_type, FrameType::Dark);
         assert!(result.is_master, "STACKCNT=30 must win even without 'master' in the name/path");
-        assert_eq!(result.detector, "siril");
+        assert!(result.stack_count_evidence);
     }
 
-    /// A decisive STACKCNT=1 (definitely not stacked) must also win over an
-    /// earlier detector's naming-based positive guess. The `IMAGETYP` text
-    /// itself says "Master Dark" (PixInsight's naming convention) but
-    /// neither the file name nor path carries a "master"/"_stacked" signal,
-    /// isolating the registry-ordering decision from Siril's own path
-    /// heuristic.
+    /// A decisive STACKCNT=1 (definitely not stacked) must also win over a
+    /// naming-based positive guess. The `IMAGETYP` text itself says
+    /// "Master Dark" (PixInsight's naming convention) but the count says one
+    /// frame.
     #[test]
-    fn detect_master_prefers_stackcnt_negative_over_earlier_naming_positive() {
+    fn detect_master_prefers_stackcnt_negative_over_naming_positive() {
         let input = DetectInput {
             imagetyp: Some("Master Dark"),
             stack_count: Some(1),
@@ -276,7 +394,7 @@ mod tests {
         };
         let result = detect_master(&input).unwrap();
         assert!(!result.is_master, "decisive STACKCNT=1 must override a naming-only positive");
-        assert_eq!(result.detector, "siril");
+        assert!(result.stack_count_evidence);
     }
 
     /// With no header evidence from any detector, first-registered

@@ -17,7 +17,7 @@
 //! Constitution III: the watcher NEVER opens observed files. It only inspects
 //! file metadata (size, mtime) for the stable-size check.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 // ── Event types ───────────────────────────────────────────────────────────────
@@ -100,10 +100,16 @@ pub const DEFAULT_STABILITY_DEBOUNCE: Duration = Duration::from_secs(2);
 
 /// Returns `true` when the file name's extension is in the watch-extensions
 /// list (case-insensitive comparison).
+///
+/// The comparison is against the real extension, not the tail of the whole
+/// name, so the extensionless dotfile `.xisf` is rejected. Allowlist entries
+/// may be spelled with or without a leading dot: the defaults are dotted and a
+/// configured list may not be.
 #[must_use]
 pub fn extension_allowed(file_name: &str, extensions: &[&str]) -> bool {
-    let lower = file_name.to_ascii_lowercase();
-    extensions.iter().any(|ext| lower.ends_with(&ext.to_ascii_lowercase()))
+    let Some(actual) = Path::new(file_name).extension() else { return false };
+    let actual = actual.to_string_lossy().to_ascii_lowercase();
+    extensions.iter().any(|ext| ext.trim_start_matches('.').eq_ignore_ascii_case(actual.as_str()))
 }
 
 #[cfg(test)]
@@ -130,6 +136,34 @@ mod tests {
         assert!(extension_allowed("file.fits", DEFAULT_WATCH_EXTENSIONS));
         assert!(extension_allowed("file.fit", DEFAULT_WATCH_EXTENSIONS));
         assert!(extension_allowed("file.FIT", DEFAULT_WATCH_EXTENSIONS));
+    }
+
+    /// An extensionless dotfile whose name equals a watched extension is not
+    /// an artifact.
+    #[test]
+    fn an_extensionless_dotfile_is_rejected() {
+        assert!(!extension_allowed(".xisf", DEFAULT_WATCH_EXTENSIONS));
+        assert!(!extension_allowed(".fits", DEFAULT_WATCH_EXTENSIONS));
+        assert!(extension_allowed("a.XISF", DEFAULT_WATCH_EXTENSIONS));
+    }
+
+    /// A name that merely ends with a watched extension without a separating
+    /// dot is not that extension.
+    #[test]
+    fn a_suffix_without_a_dot_is_not_an_extension() {
+        assert!(!extension_allowed("notxisf", &["xisf", "fits"]));
+        assert!(!extension_allowed("myfits", &["xisf", "fits"]));
+        assert!(!extension_allowed("notxisf", DEFAULT_WATCH_EXTENSIONS));
+    }
+
+    /// A configured allowlist may be spelled without leading dots; the
+    /// dotted defaults must keep working alongside it.
+    #[test]
+    fn a_dotless_configured_allowlist_still_matches() {
+        assert!(extension_allowed("a.xisf", &["xisf"]));
+        assert!(extension_allowed("a.XISF", &["xisf"]));
+        assert!(!extension_allowed(".xisf", &["xisf"]));
+        assert!(extension_allowed("a.xisf", DEFAULT_WATCH_EXTENSIONS));
     }
 
     // ── check_stability ───────────────────────────────────────────────────────

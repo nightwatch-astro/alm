@@ -53,11 +53,22 @@ const BASELINE_PATH = path.join(here, 'i18n-catalog-baseline.txt');
 // the catalog's intentional per-screen convention.
 const DUP_MIN_LENGTH = 12;
 
+/**
+ * Zero entries means the catalog shape changed (nested groups instead of flat
+ * string values), not that the catalog is clean: without this throw the lint
+ * reported OK over a live violation and --generate drained the baseline.
+ */
 function loadCatalog() {
   const data = JSON.parse(readFileSync(CATALOG_PATH, 'utf8'));
-  return Object.entries(data).filter(
+  const entries = Object.entries(data).filter(
     ([key, value]) => key !== '$schema' && typeof value === 'string',
   );
+  if (entries.length === 0) {
+    throw new Error(
+      `${CATALOG_PATH}: no string message values parsed — the catalog layout changed; update scripts/check-i18n-catalog.mjs.`,
+    );
+  }
+  return entries;
 }
 
 function findCodeParamViolations(entries) {

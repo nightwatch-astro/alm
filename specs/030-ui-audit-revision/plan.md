@@ -42,10 +42,10 @@ directories, 11 settings panes, 1 app shell rewrite
 **Audit architecture (iteration 2026-07-14, Q15 / #647)**: Two disjoint
 stores exist today. The `EventBus` (`crates/audit/src/bus.rs:37-40`) is a
 hybrid tokio broadcast (live UI) + durable `events` topic stream
-(`crates/persistence/db/migrations/0003_events.sql:7`) — a topic+payload
+(`crates/persistence/core/migrations/0001_initial_schema.sql:720`) — a topic+payload
 stream without outcome/refused semantics, not an audit record. The durable
 `audit_log_entry` table
-(`crates/persistence/db/migrations/0002_lifecycle.sql:154-167`) is
+(`crates/persistence/core/migrations/0001_initial_schema.sql:130-143`) is
 lifecycle-transition-shaped (`crates/audit-types/src/event.rs:106+`) and is
 written only by lifecycle transitions
 (`crates/persistence/db/src/repositories/lifecycle.rs:423,511`) and the
@@ -68,9 +68,9 @@ collapses missing to 0
 (`crates/app/calibration/src/matching.rs:739,741,794,796` —
 `unwrap_or(0.0)`) and the contract cannot carry absence
 (`crates/contracts/core/src/calibration.rs:96,99` — `exposure_s`/`gain`
-non-optional `f64`). Master size is zeroed one layer deeper: the SQL view
-hardcodes `0 AS size_bytes`
-(`crates/persistence/db/migrations/0041_calibration_fingerprint_indices.sql:51`)
+non-optional `f64`). Master size is absent one layer deeper: the SQL view supplies
+no real size (as of 2026-08-24 `CAST(NULL AS INTEGER) AS size_bytes` at
+`crates/persistence/core/migrations/0001_initial_schema.sql:3186`; it hardcoded `0 AS size_bytes` when this was written)
 through a non-nullable row (`q_calibration.rs:92`) into non-optional
 `CalibrationMaster`/`MasterDetail.size_bytes: u64`; `matching.rs:748,803`
 is only a sign-conversion fallback, so fixing size requires a

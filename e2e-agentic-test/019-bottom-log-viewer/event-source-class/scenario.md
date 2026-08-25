@@ -179,8 +179,11 @@ FAIL if:
   first (a failed save wouldn't be expected to log anything).
 - **DOM inspection without a bridge**: if right-click → Inspect is
   unavailable in the packaged dev window, you likely need the Tauri MCP
-  bridge. Launch with `cargo tauri dev --config src-tauri\tauri.dev.conf.json`
-  (WS bridge on `0.0.0.0:9223`), connect from WSL via
+  bridge. Launch with `cargo tauri dev --config src-tauri\tauri.dev.conf.json
+  --features dev-tools`, `PV_MCP_BRIDGE_ENABLE=1`, and
+  `PV_MCP_BRIDGE_BIND=0.0.0.0` (the feature compiles the bridge in, the first
+  variable starts it, the second widens its `127.0.0.1:9223` bind so the gateway
+  address reaches it), connect from WSL via
   `driver_session host=<gateway> port=9223` (gateway =
   `ip route show default | awk '{print $3}'`), then use
   `webview_dom_snapshot` or `webview_find_element` targeting

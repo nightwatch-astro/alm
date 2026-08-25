@@ -49,7 +49,6 @@ export type {
 
 export {
   useInboxPlan,
-  useInboxPlanApply,
   useInboxPlanApplyAll,
   useInboxPlanCancel,
   useOpenInboxPlans,

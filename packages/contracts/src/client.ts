@@ -84,49 +84,4 @@ export class AlmContractError extends Error {
   }
 }
 
-let requestCounter = 0;
-
-export function createAlmClient(
-  transport: AlmTransport,
-  options: AlmClientOptions = {},
-): AlmClient {
-  const contractVersion = options.contractVersion ?? "1.0.0";
-  const createRequestId = options.createRequestId ?? createDefaultRequestId;
-
-  return {
-    async execute<TRequest = unknown, TResponse = unknown>(
-      operation: OperationName,
-      request: TRequest,
-      executeOptions: ExecuteOperationOptions = {},
-    ): Promise<TResponse> {
-      const requestId = executeOptions.requestId ?? createRequestId();
-      const envelope: TypedRequestEnvelope<TRequest> = {
-        contractVersion,
-        operation,
-        requestId,
-        payload: request,
-      };
-      const response = await transport.send<TRequest, TResponse>(envelope, executeOptions);
-
-      if (response.status === "error") {
-        throw new AlmContractError(response.requestId, response.error);
-      }
-
-      return response.payload;
-    },
-
-    subscribe(
-      operationId: OperationId,
-      subscribeOptions?: SubscribeOperationOptions,
-    ): AsyncIterable<OperationEvent> {
-      return transport.subscribe(operationId, subscribeOptions);
-    },
-  };
-}
-
-function createDefaultRequestId(): string {
-  requestCounter += 1;
-  return `req_${Date.now().toString(36)}_${requestCounter.toString(36)}`;
-}
-
 export type { ContractError, OperationEvent, OperationHandle, OperationId, OperationName };

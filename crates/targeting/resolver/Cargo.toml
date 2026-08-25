@@ -50,7 +50,7 @@ persistence_targets = { path = "../../persistence/targets" }
 simbad-resolver = "0.5.0"
 # IAU constellation-from-coordinates, for `canonical_target.constellation`
 # enrichment at the in-use write (spec 052 P1 D8).
-skymath = "0.7.1"
+skymath = "0.7.2"
 
 [dev-dependencies]
 # `#[tokio::test]` only — no production `tokio` usage in this crate (the
@@ -64,6 +64,9 @@ tokio = { workspace = true }
 # this test constructs the crate's facade directly.
 simbad-resolver = { version = "0.5.0", features = ["test-util"] }
 tempfile = { workspace = true }
+# `tests/bundled_seed_digest.rs` only: pins the out-of-crate `assets/seed/*.json`
+# embeds to committed SHA-256 literals.
+sha2.workspace = true
 
 [features]
 # Enables the seeded in-memory test fixture (FakeResolver) for use in

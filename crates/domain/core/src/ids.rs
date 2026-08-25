@@ -123,6 +123,32 @@ impl ContentHash {
     }
 }
 
+/// RFC 3339 with the subsecond fraction pinned to exactly six digits.
+///
+/// The fixed width is load-bearing for ordering, not cosmetic.
+/// `well_known::Rfc3339` trims trailing zeros from the fraction, so it emits
+/// both `.1Z` and `.15Z`; comparing those as text puts `.1Z` AFTER `.15Z`
+/// (`Z` > `5`) even though 0.1 s precedes 0.15 s. These strings land in the
+/// `*_at` columns that SQLite `ORDER BY` compares as TEXT, so a trimmed
+/// fraction makes those orderings silently non-chronological. Padding to a
+/// constant width restores `text order == chronological order`.
+const ISO_FIXED_MICROS: &[time::format_description::FormatItem<'static>] = time::macros::format_description!(
+    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:6]Z"
+);
+
+/// Format `value` as UTC RFC 3339 with a constant-width subsecond fraction.
+///
+/// # Panics
+///
+/// Panics if the formatter fails, which cannot happen for a well-formed
+/// `OffsetDateTime` and this format description.
+fn iso_fixed_micros(value: OffsetDateTime) -> String {
+    value
+        .to_offset(time::UtcOffset::UTC)
+        .format(&ISO_FIXED_MICROS)
+        .expect("fixed-micros RFC 3339 format is always valid for OffsetDateTime")
+}
+
 /// RFC 3339 UTC timestamp wrapper.
 ///
 /// The explicit `time::serde::rfc3339` is load-bearing: `OffsetDateTime`'s
@@ -145,16 +171,19 @@ impl Timestamp {
     ///
     /// This is the canonical single home for "give me a timestamp string right
     /// now" — later dedup work (US11) will redirect callers here.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the underlying `time` formatter fails, which cannot happen
-    /// for well-formed `OffsetDateTime` values with the `Rfc3339` format.
     #[must_use]
     pub fn now_iso() -> String {
-        OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)
-            .expect("Rfc3339 format is always valid for OffsetDateTime")
+        iso_fixed_micros(OffsetDateTime::now_utc())
+    }
+
+    /// Render this instant in the same form [`Timestamp::now_iso`] produces.
+    ///
+    /// Use this for any value bound to a column an `ORDER BY` touches:
+    /// formatting with `well_known::Rfc3339` instead yields a variable-width
+    /// fraction, which does not sort chronologically as TEXT.
+    #[must_use]
+    pub fn to_iso(self) -> String {
+        iso_fixed_micros(self.0)
     }
 
     #[must_use]
@@ -205,6 +234,21 @@ impl schemars::JsonSchema for Timestamp {
 #[cfg(test)]
 mod tests {
     use super::{new_id, Timestamp};
+
+    /// Every `*_at` column holds these strings and SQLite `ORDER BY` compares
+    /// them as TEXT, so text order MUST equal chronological order even when the
+    /// two instants have different numbers of significant subsecond digits.
+    /// Under a trailing-zero-trimming formatter this pair renders `.1Z` and
+    /// `.15Z`, and `Z` > `5` reverses them (astro-plan-lxnwv).
+    #[test]
+    fn iso_text_order_matches_chronological_order_across_subsecond_widths() {
+        let base = time::OffsetDateTime::from_unix_timestamp(1_752_000_000)
+            .expect("fixed unix timestamp is in range");
+        let earlier = super::iso_fixed_micros(base + time::Duration::milliseconds(100));
+        let later = super::iso_fixed_micros(base + time::Duration::milliseconds(150));
+
+        assert!(earlier < later, "{earlier} must sort before {later}");
+    }
 
     #[test]
     fn now_iso_parses_as_rfc3339() {

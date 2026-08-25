@@ -39,11 +39,13 @@ jobs:
         id: workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          # Fetch the workflow run to extract metadata
-          RUN_ID="${{ github.event.workflow_run.id }}"
-          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}"
-          COMMIT_SHA="${{ github.event.workflow_run.head_commit }}"
+          set -euo pipefail
+          RUN_URL="https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}"
+          COMMIT_SHA="$HEAD_SHA"
           SHORT_SHA="${COMMIT_SHA:0:7}"
 
           {
@@ -57,13 +59,14 @@ jobs:
         id: failed_jobs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ steps.workflow.outputs.run_id }}
         run: |
-          RUN_ID="${{ steps.workflow.outputs.run_id }}"
-
+          set -euo pipefail
           # Query the GitHub API for all jobs in the workflow run
           JOBS=$(gh api \
             --method GET \
-            "repos/${{ github.repository }}/actions/runs/${RUN_ID}/jobs" \
+            "repos/${REPOSITORY}/actions/runs/${RUN_ID}/jobs" \
             --jq '.jobs[] | select(.conclusion == "failure") | .name' \
             2>/dev/null || echo "")
 
@@ -93,6 +96,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           # Search for open issues with ci-regression label and "main L3 E2E" in title
           ISSUE_NUM=$(gh issue list \
             --label ci-regression \

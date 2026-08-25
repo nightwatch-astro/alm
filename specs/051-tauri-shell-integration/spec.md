@@ -4,7 +4,36 @@
 
 **Created**: 2026-07-05
 
-**Status**: Draft
+**Status**: Partial (verified 2026-08-24 against `origin/main` a52c637f2). Nine of
+ten user stories ship; US9 does not. The five shell-integration plugins are
+non-optional dependencies at `apps/desktop/src-tauri/Cargo.toml:59-67`.
+
+Shipped:
+
+- **US1** single instance — `tauri-plugin-single-instance`, initialised at
+  `apps/desktop/src-tauri/src/lib.rs:179`.
+- **US2** favourited targets as real data — `target_favourites_list` / `_add` /
+  `_remove` registered at `bootstrap/specta.rs:133-134` and `:243-244`, backed by
+  `crates/persistence/targets/src/repositories/target_favourites.rs`.
+- **US3** per-type cleanup overrides as canonical data — `cleanupTypeOverrides`
+  settings key with its own validation rule
+  (`crates/app/settings/src/descriptors.rs:548`, `:767`).
+- **US4** window size and position — `tauri-plugin-window-state`, initialised at
+  `lib.rs:235`.
+- **US5** native menu bar — `apps/desktop/src-tauri/src/bootstrap/menu.rs`.
+- **US6** native window chrome follows the theme —
+  `apps/desktop/src/data/theme.ts:313` calls `getCurrentWindow().setTheme(mode)`
+  (`decorations: false` at `tauri.conf.json:30`).
+- **US7** shareable diagnostics log file — `tauri-plugin-log`.
+- **US8** OS notification on long-task completion — `tauri-plugin-notification`,
+  initialised at `src/bootstrap/notify.rs:18`.
+- **US10** signed in-app updates — `tauri-plugin-updater` (builder at
+  `lib.rs:60-64`) plus `tauri-plugin-process` for the relaunch step.
+
+**Not built — US9** ("behaves like a native app, not a browser tab, in release
+builds"): no reload (F5 / Cmd+R), devtools-shortcut or `contextmenu` suppression
+exists anywhere under `apps/desktop/src`. Do not read the status above as covering
+it.
 
 **Input**: User description: "Adopt a decided set of Tauri shell integrations
 (single-instance guard, window-state persistence, native theme sync, a

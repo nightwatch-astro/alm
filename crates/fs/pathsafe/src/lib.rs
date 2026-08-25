@@ -19,6 +19,11 @@
 //! in depth for reparse-point kinds `is_symlink()` might not classify as a
 //! symlink — callers should treat any doubt as "skip".
 
+pub mod contain;
+pub mod export_dest;
+#[cfg(any(test, feature = "test-fixture"))]
+pub mod test_support;
+
 use std::fs::{self, Metadata};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -30,13 +35,20 @@ use camino::Utf8Path;
 ///
 /// Uses `symlink_metadata` (not `metadata`) so the check inspects the entry
 /// itself rather than following it — inspecting a link's target would defeat
-/// the purpose of the gate. A path that cannot be stat'd (missing,
-/// permission denied, race) is reported as "not a link" — callers that need
-/// to distinguish a stat failure from "not a link" should stat the path
-/// themselves and call [`is_link_or_junction_metadata`] instead.
+/// the purpose of the gate.
+///
+/// Fails closed. `NotFound` answers `false`, because a path that does not
+/// exist is determinately not a link. Every other stat failure (permission
+/// denied, stale mount, I/O error) answers `true`: the result feeds a refusal
+/// decision, so "cannot determine" must refuse rather than let the caller
+/// descend or traverse. Callers that must distinguish the cases should stat
+/// the path themselves and call [`is_link_or_junction_metadata`].
 #[must_use]
 pub fn is_link_or_junction(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok_and(|m| is_link_or_junction_metadata(&m))
+    match fs::symlink_metadata(path) {
+        Ok(meta) => is_link_or_junction_metadata(&meta),
+        Err(e) => e.kind() != io::ErrorKind::NotFound,
+    }
 }
 
 /// Classify already-fetched [`Metadata`] (from `symlink_metadata`, never
@@ -183,15 +195,42 @@ pub fn real_dirs_under(root: &Path, follow_symlinks: bool) -> Vec<PathBuf> {
 /// enumerate on-disk frames without ever following a link (spec 048 R6).
 #[must_use]
 pub fn real_files_under(root: &Path, follow_symlinks: bool) -> Vec<PathBuf> {
+    real_files_under_reporting(root, follow_symlinks).0
+}
+
+/// [`real_files_under`], additionally returning the directories whose
+/// `read_dir` failed.
+///
+/// Both walkers skip an unreadable directory rather than aborting, which makes
+/// "no files here" ambiguous between empty and unreadable. Callers that must
+/// not read a permission-denied subtree as deletion need the second list;
+/// treat it as unknown state, never as absence.
+///
+/// When `follow_symlinks` is on, directories are deduplicated by their
+/// canonical path so a link pointing at an ancestor terminates instead of
+/// re-entering the subtree forever.
+#[must_use]
+pub fn real_files_under_reporting(
+    root: &Path,
+    follow_symlinks: bool,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut files = Vec::new();
+    let mut unreadable = Vec::new();
 
     if !follow_symlinks && is_link_or_junction(root) {
-        return files;
+        return (files, unreadable);
     }
 
+    let mut visited = std::collections::HashSet::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
+        if follow_symlinks
+            && !visited.insert(fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone()))
+        {
+            continue;
+        }
         let Ok(entries) = fs::read_dir(&dir) else {
+            unreadable.push(dir);
             continue;
         };
         for entry in entries.flatten() {
@@ -207,7 +246,7 @@ pub fn real_files_under(root: &Path, follow_symlinks: bool) -> Vec<PathBuf> {
         }
     }
 
-    files
+    (files, unreadable)
 }
 
 /// Create a symlink from `source` to `destination`, pointing at a **file**
@@ -268,108 +307,9 @@ pub fn relative_wire_path(root: &Path, path: &Path) -> String {
     wire_path(rel)
 }
 
-// ── Path identity / containment ───────────────────────────────────────────────
-
-/// Returns `true` when `ancestor` and `descendant` name the same filesystem
-/// object, or when `descendant` lies inside `ancestor`.
-///
-/// Case sensitivity is a property of the volume, not of the operating system:
-/// APFS can be formatted case-sensitive, external drives are often formatted
-/// differently from the boot volume, Linux can mount case-insensitive
-/// filesystems, and Windows supports per-directory case sensitivity. A
-/// `cfg!(windows)` case-fold therefore answers for the wrong platform half the
-/// time, so the question is put to the filesystem: `same-file` compares device
-/// + inode on Unix and `FILE_ID_INFO` on Windows.
-///
-/// Comparing canonicalised strings is not sufficient — macOS `realpath` does
-/// not correct the case of path components, so `~/Foo` and `~/foo` canonicalise
-/// to two different strings for one directory.
-///
-/// Identity is checked against every ancestor of `descendant`, so a case-only
-/// difference anywhere in the prefix is still recognised as containment. The
-/// lexical `starts_with` is kept as a first, cheaper answer and as the fallback
-/// for paths that cannot be stat'd (an unplugged drive, a path not yet created);
-/// for such paths only an exact-bytes prefix can be recognised.
-///
-/// A link is deliberately not resolved away by hand: two roots that reach one
-/// directory through a symlink or junction share an inode and are reported as
-/// containing each other.
-#[must_use]
-pub fn contains_or_same(ancestor: &Path, descendant: &Path) -> bool {
-    descendant.starts_with(ancestor)
-        || descendant.ancestors().any(|a| same_file::is_same_file(ancestor, a).unwrap_or(false))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `create_dir` is the oracle for the volume's case sensitivity, chosen
-    /// because it is independent of the device+inode identity under test.
-    fn make_case_variant_dirs(parent: &Path) -> (PathBuf, PathBuf, bool) {
-        let original = parent.join("Foo");
-        let variant = parent.join("FOO");
-        fs::create_dir(&original).expect("create Foo");
-        let case_sensitive = match fs::create_dir(&variant) {
-            Ok(()) => true,
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => false,
-            Err(e) => panic!("probing volume case sensitivity: {e}"),
-        };
-        (original, variant, case_sensitive)
-    }
-
-    #[test]
-    fn case_only_difference_follows_the_volume() {
-        let parent = tempfile::tempdir().unwrap();
-        let (original, variant, case_sensitive) = make_case_variant_dirs(parent.path());
-
-        assert_eq!(contains_or_same(&original, &variant), !case_sensitive);
-        assert_eq!(contains_or_same(&variant, &original), !case_sensitive);
-    }
-
-    #[test]
-    fn case_only_difference_in_a_parent_component_follows_the_volume() {
-        let parent = tempfile::tempdir().unwrap();
-        let (original, variant, case_sensitive) = make_case_variant_dirs(parent.path());
-        let nested = original.join("sub");
-        fs::create_dir(&nested).unwrap();
-
-        assert_eq!(contains_or_same(&variant, &nested), !case_sensitive);
-        assert!(contains_or_same(&original, &nested));
-    }
-
-    #[test]
-    fn distinct_sibling_directories_do_not_overlap() {
-        let parent = tempfile::tempdir().unwrap();
-        let a = parent.path().join("alpha");
-        let b = parent.path().join("beta");
-        fs::create_dir(&a).unwrap();
-        fs::create_dir(&b).unwrap();
-
-        assert!(!contains_or_same(&a, &b));
-        assert!(!contains_or_same(&b, &a));
-    }
-
-    #[test]
-    fn a_symlinked_root_overlaps_its_target() {
-        let parent = tempfile::tempdir().unwrap();
-        let target = parent.path().join("target");
-        let link = parent.path().join("link");
-        fs::create_dir(&target).unwrap();
-        create_symlink(&target, &link).unwrap();
-
-        assert!(contains_or_same(&link, &target));
-        assert!(contains_or_same(&target, &link));
-    }
-
-    /// Paths that cannot be stat'd (an unplugged drive, a not-yet-created root)
-    /// keep the lexical answer, which recognises an exact-bytes prefix only.
-    #[test]
-    fn unstattable_paths_fall_back_to_the_lexical_prefix() {
-        let missing = Path::new("/no-such-volume-4f2a/root");
-        assert!(contains_or_same(missing, &missing.join("child")));
-        assert!(!contains_or_same(missing, Path::new("/no-such-volume-4f2a/ROOT/child")));
-    }
 
     #[test]
     fn plain_directory_is_not_a_link() {
@@ -418,6 +358,36 @@ mod tests {
         // A link whose target is gone is Missing, not GatedLink, when following.
         std::fs::remove_dir_all(&real).unwrap();
         assert_eq!(probe_root(&link, true), Err(RootUnavailable::Missing));
+    }
+
+    #[test]
+    fn a_missing_path_is_not_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_link_or_junction(&dir.path().join("absent")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_files_under_reporting_names_the_unreadable_directory() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::write(locked.join("hidden.fits"), b"data").unwrap();
+        std::fs::write(dir.path().join("top.fits"), b"data").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let readable = std::fs::read_dir(&locked).is_ok();
+        let (files, unreadable) = real_files_under_reporting(dir.path(), false);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        if readable {
+            eprintln!("skipping: this environment can read a mode-000 directory (root?)");
+            return;
+        }
+        assert_eq!(files, vec![dir.path().join("top.fits")]);
+        assert_eq!(unreadable, vec![locked]);
     }
 
     #[test]

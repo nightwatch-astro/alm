@@ -218,13 +218,18 @@ pub async fn master_artifact_state(pool: &SqlitePool, master_id: &str) -> DbResu
 /// PATH B: does `master_id`'s own `calibration_session` currently have any
 /// member frame (`frame_ids`) whose `file_record.state = 'missing'`?
 ///
+/// The `CASE` skips a row whose `frame_ids` is not valid JSON, which
+/// `json_each` would otherwise raise on and fail the whole listing. Row
+/// multiplicity is irrelevant here because the result is `COUNT(*) > 0`.
+///
 /// # Errors
 /// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn master_has_missing_source_frame(pool: &SqlitePool, master_id: &str) -> DbResult<bool> {
     let (count,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*)
          FROM calibration_session cs
-         JOIN json_each(cs.frame_ids) je
+         JOIN json_each(
+             CASE WHEN json_valid(cs.frame_ids) THEN cs.frame_ids ELSE '[]' END) je
          JOIN file_record fr ON fr.id = je.value
          WHERE cs.id = ? AND fr.state = 'missing'",
     )
@@ -241,21 +246,28 @@ pub async fn master_has_missing_source_frame(pool: &SqlitePool, master_id: &str)
 /// `calibration_match.source_missing` / `.source_recovered` audit emission
 /// to exactly the assignments a raw-frame reconcile outcome affects.
 ///
+/// `EXISTS` rather than a `json_each` join: nothing stops `frame_ids` listing
+/// the same id twice, and a join would then return the assignment once per
+/// occurrence. The `CASE` skips a row whose `frame_ids` is not valid JSON,
+/// which `json_each` would otherwise raise on and fail the whole query.
+///
 /// # Errors
 /// Returns `persistence_core::DbError::Database` on query failure.
 pub async fn find_by_source_frame(
     pool: &SqlitePool,
     frame_id: &str,
 ) -> DbResult<Vec<CalibrationAssignmentRow>> {
-    let like = format!("%\"{frame_id}\"%");
     let rows: Vec<(String, String, String, String, f64, i64, String, String)> = sqlx::query_as(
         "SELECT ca.id, ca.session_id, ca.calibration_type, ca.master_id, ca.confidence,
                 ca.was_override, ca.mismatched_dimensions, ca.assigned_at
          FROM calibration_assignment ca
          JOIN calibration_session cs ON cs.id = ca.master_id
-         WHERE cs.frame_ids LIKE ?",
+         WHERE EXISTS (SELECT 1 FROM json_each(
+                           CASE WHEN json_valid(cs.frame_ids)
+                                THEN cs.frame_ids ELSE '[]' END) je
+                       WHERE je.value = ?)",
     )
-    .bind(like)
+    .bind(frame_id)
     .fetch_all(pool)
     .await
     .map_err(DbError::Database)?;
@@ -407,5 +419,103 @@ mod tests {
         let result =
             upsert(&pool, params("a-df", "ses-001", "dark_flat", "m-1", 1.0, false, &[])).await;
         assert!(result.is_err(), "dark_flat should be rejected by DB CHECK constraint");
+    }
+
+    async fn insert_master(pool: &SqlitePool, master_id: &str, frame_ids: &str) {
+        sqlx::query(
+            "INSERT INTO calibration_session (id, session_key, frame_ids, kind, created_at) \
+             VALUES (?, ?, ?, 'dark', '2026-01-01T00:00:00Z')",
+        )
+        .bind(master_id)
+        .bind(master_id)
+        .bind(frame_ids)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// `_` and `%` are `LIKE` wildcards, so a pattern built from a frame id
+    /// containing either matched masters that do not list that frame.
+    #[tokio::test]
+    async fn find_by_source_frame_rejects_wildcard_collisions() {
+        let pool = setup().await;
+        insert_master(&pool, "m-other", r#"["fx1","frame-9"]"#).await;
+        upsert(&pool, params("a-1", "ses-001", "dark", "m-other", 1.0, false, &[])).await.unwrap();
+
+        assert!(find_by_source_frame(&pool, "f_1").await.unwrap().is_empty());
+        assert!(find_by_source_frame(&pool, "f%").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn find_by_source_frame_finds_exact_member_with_metacharacters() {
+        let pool = setup().await;
+        insert_master(&pool, "m-1", r#"["a_b"]"#).await;
+        upsert(&pool, params("a-1", "ses-001", "dark", "m-1", 1.0, false, &[])).await.unwrap();
+
+        let rows = find_by_source_frame(&pool, "a_b").await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].master_id, "m-1");
+    }
+
+    /// Nothing stops `frame_ids` listing an id twice; a `json_each` join would
+    /// return the assignment once per occurrence.
+    #[tokio::test]
+    async fn find_by_source_frame_does_not_duplicate_on_a_repeated_id() {
+        let pool = setup().await;
+        insert_master(&pool, "m-1", r#"["f1","f1"]"#).await;
+        upsert(&pool, params("a-1", "ses-001", "dark", "m-1", 1.0, false, &[])).await.unwrap();
+
+        let rows = find_by_source_frame(&pool, "f1").await.unwrap();
+        assert_eq!(rows.len(), 1, "one assignment, not one row per array element");
+    }
+
+    /// A populated `file_record` is required: with that table empty the planner
+    /// satisfies the join without ever evaluating `json_each`, and an unguarded
+    /// predicate then passes for the wrong reason.
+    #[tokio::test]
+    async fn master_has_missing_source_frame_skips_malformed_frame_ids() {
+        let pool = setup().await;
+        insert_master(&pool, "m-bad", "oops").await;
+        sqlx::query(
+            "INSERT INTO library_root (id, label, current_path, kind, state, created_at) \
+             VALUES ('root-1', 'R', '/tmp/r', 'local', 'active', '2026-01-01T00:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO file_record \
+             (id, root_id, relative_path, size_bytes, mtime, state, first_seen_at, last_seen_at) \
+             VALUES ('f1', 'root-1', 'a.fits', 1, '2026-01-01T00:00:00Z', 'missing', \
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let has = master_has_missing_source_frame(&pool, "m-bad")
+            .await
+            .expect("a corrupt row must not fail the listing");
+        assert!(!has);
+    }
+
+    /// `frame_ids` has no `json_valid` CHECK. An unguarded `json_each` raises
+    /// on a malformed row and fails the whole query.
+    #[tokio::test]
+    async fn find_by_source_frame_skips_malformed_frame_ids() {
+        let pool = setup().await;
+        insert_master(&pool, "m-bad", "oops").await;
+        insert_master(&pool, "m-empty", "").await;
+        insert_master(&pool, "m-good", r#"["f1"]"#).await;
+        upsert(&pool, params("a-bad", "ses-bad", "dark", "m-bad", 1.0, false, &[])).await.unwrap();
+        upsert(&pool, params("a-good", "ses-001", "dark", "m-good", 1.0, false, &[]))
+            .await
+            .unwrap();
+
+        let rows = find_by_source_frame(&pool, "f1")
+            .await
+            .expect("a corrupt row must not fail the lookup");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].master_id, "m-good");
     }
 }

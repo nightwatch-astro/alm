@@ -384,7 +384,7 @@ impl CommandLedger {
                 ClaimOutcome::PayloadMismatch
             } else if let Some(terminal) = row.terminal() {
                 ClaimOutcome::Replayed(terminal)
-            } else if row.lease_expires_at.as_deref().is_some_and(|expiry| expiry > now) {
+            } else if lease_is_active(row.lease_expires_at.as_deref(), now) {
                 ClaimOutcome::InProgress {
                     command_id: request.command_id.clone(),
                     operation: request.operation.clone(),
@@ -800,7 +800,7 @@ fn validate_lease_preconditions(row: &CommandRow, lease: &CommandLease, now: &st
     {
         return Err(CommandLedgerError::StaleFence);
     }
-    if row.lease_expires_at.as_deref().is_none_or(|expiry| expiry <= now) {
+    if !lease_is_active(row.lease_expires_at.as_deref(), now) {
         return Err(CommandLedgerError::LeaseExpired);
     }
     Ok(())
@@ -1092,6 +1092,23 @@ fn bounded_safe_string(value: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
+/// Whether a stored lease expiry is still in the future.
+///
+/// Both sides are parsed rather than compared as strings: [`add_ttl`] preserves
+/// the caller's UTC offset and subsecond digit count, so two equally valid
+/// RFC-3339 renderings of the same instant sort wrongly against each other. An
+/// unparseable stored expiry counts as ACTIVE so a live lease can never be
+/// stolen.
+fn lease_is_active(expiry: Option<&str>, now: &str) -> bool {
+    let Some(expiry) = expiry else { return false };
+    let (Ok(expiry), Ok(now)) =
+        (OffsetDateTime::parse(expiry, &Rfc3339), OffsetDateTime::parse(now, &Rfc3339))
+    else {
+        return true;
+    };
+    expiry > now
+}
+
 fn add_ttl(now: &str, ttl: Duration) -> Result<String> {
     let parsed = OffsetDateTime::parse(now, &Rfc3339)
         .map_err(|_| CommandLedgerError::InvalidInput("timestamp is not RFC3339".to_owned()))?;
@@ -1115,6 +1132,32 @@ mod tests {
     use serde_json::json;
     use tokio::sync::Barrier;
     use uuid::Uuid;
+
+    #[test]
+    fn lease_activity_ignores_rfc3339_rendering_differences() {
+        let now = "2026-01-01T10:00:00Z";
+
+        // Same instant as `now`, three legal renderings: none is still active.
+        assert!(!lease_is_active(Some("2026-01-01T10:00:00Z"), now));
+        assert!(!lease_is_active(Some("2026-01-01T12:00:00+02:00"), now));
+        assert!(!lease_is_active(Some("2026-01-01T10:00:00.000000Z"), now));
+
+        // Both expiries are one second past `now`, so both leases are live,
+        // yet both sort BELOW `now` as strings — a string comparison steals
+        // them.
+        let negative_offset = "2026-01-01T05:00:01-05:00";
+        let subsecond = "2026-01-01T10:00:00.5Z";
+        assert!(negative_offset < now);
+        assert!(subsecond < now);
+        assert!(lease_is_active(Some(negative_offset), now));
+        assert!(lease_is_active(Some(subsecond), now));
+    }
+
+    #[test]
+    fn an_unparseable_stored_expiry_counts_as_active() {
+        assert!(lease_is_active(Some("not-a-timestamp"), "2026-01-01T12:00:00Z"));
+        assert!(!lease_is_active(None, "2026-01-01T12:00:00Z"));
+    }
 
     async fn database() -> Database {
         let db = Database::in_memory().await.unwrap();

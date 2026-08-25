@@ -866,7 +866,8 @@ async fn an_accepted_but_unexecuted_retry_is_restored_to_failed_not_cancelled() 
     insert_approved_plan_with_items(&db, "p-orphan", 1).await;
     // A real run row: the audit event's `run_id` is a foreign key, so a fake id
     // would make the append silently fail and the reason never be recorded.
-    plans_repo::update_plan_state(db.pool(), "p-orphan", "approved").await.unwrap();
+    plans_repo::update_plan_state(db.pool(), "p-orphan", "ready_for_review").await.unwrap();
+    plans_repo::set_approved(db.pool(), "p-orphan", "2026-06-01T00:00:00Z", "tok").await.unwrap();
     apply_repo::cas_approved_to_applying(db.pool(), "p-orphan", "run-orphan", "tok", 1, 1)
         .await
         .unwrap();
@@ -1082,29 +1083,19 @@ async fn confirm_then_apply_executes_previously_refused_delete_item() {
     assert!(audit_count > 0, "apply_plan must write at least one durable audit_log_entry row");
 }
 
-/// Removes `PV_E2E_OS_TRASH_FAKE` on drop (including panic unwind) so a
-/// failed assertion in the test body can never leak the var into other
-/// tests in this binary (this crate has no other test that exercises the
-/// `Trash` executor action, so the var is otherwise untouched here).
-struct EnvVarGuard(&'static str);
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        std::env::remove_var(self.0);
-    }
-}
-
 /// Regression for the "trash destination is dead code" finding: both
 /// `cleanup_generator` and `archive_generator` always store
 /// `action = "archive"` for a destructive-but-reversible item; the
 /// user's plan-level "System trash" choice (`plans.destructive_destination`)
 /// was never consulted at apply time, so it silently archived into
 /// `.astro-plan-archive` regardless of what the user picked in review.
-/// `PV_E2E_OS_TRASH_FAKE` (headless-safe OS-trash double, added for the
-/// e2e harness) makes the OS-trash outcome deterministic here too.
+/// `fs_executor::ops::trash_op::fake` (headless-safe OS-trash double, added for
+/// the e2e harness) makes the OS-trash outcome deterministic here too.
 #[tokio::test]
 async fn archive_action_item_with_trash_destination_really_trashes() {
-    std::env::set_var("PV_E2E_OS_TRASH_FAKE", "1");
-    let _env_guard = EnvVarGuard("PV_E2E_OS_TRASH_FAKE");
+    // Restores real OS trash on drop, including on panic unwind, so a failed
+    // assertion below cannot divert the trash path of the rest of this binary.
+    let _fake_trash = fs_executor::ops::trash_op::fake::FakeTrashGuard::new();
 
     let dir = tempfile::tempdir().unwrap();
     let file_path = dir.path().join("intermediate.fits");
@@ -1150,6 +1141,11 @@ async fn archive_action_item_with_trash_destination_really_trashes() {
     )
     .await
     .unwrap();
+
+    // The trash reroute makes this item destructive, so it now has to clear the
+    // executor's confirm gate like any other trash item.
+    let confirmed = confirm_plan_destructive_items(db.pool(), "p-trash-e2e").await.unwrap();
+    assert_eq!(confirmed, 1, "the archive-on-trash item must be confirmable");
 
     repo::update_plan_state(db.pool(), "p-trash-e2e", "ready_for_review").await.unwrap();
     repo::set_approved(db.pool(), "p-trash-e2e", "2026-06-01T00:00:00Z", "test-token")
@@ -1247,6 +1243,224 @@ async fn archive_action_item_with_archive_destination_stays_archived() {
     assert_eq!(plan.state, "applied");
     let items = repo::list_plan_items(db.pool(), "p-archive-e2e").await.unwrap();
     assert_eq!(items[0].item_state, "succeeded");
+}
+
+/// Builds an `action = "archive"` row, the only shape a generator ever stores
+/// for a destructive-but-reversible item.
+fn archive_row(id: &str) -> plans_repo::PlanItemRow {
+    plans_repo::PlanItemRow {
+        id: id.to_owned(),
+        plan_id: "plan-confirm-derivation".to_owned(),
+        item_index: 1,
+        name: "intermediate.fits".to_owned(),
+        action: "archive".to_owned(),
+        from_root_id: None,
+        from_relative_path: "raw/intermediate.fits".to_owned(),
+        to_root_id: None,
+        to_relative_path: String::new(),
+        reason: "test".to_owned(),
+        protection: "normal".to_owned(),
+        linked_entity: None,
+        item_state: "pending".to_owned(),
+        failure_reason: None,
+        provenance: None,
+        approved_mtime: None,
+        approved_size_bytes: None,
+        archive_path: None,
+        created_at: "2026-08-23T00:00:00Z".to_owned(),
+        source_id: None,
+        category: None,
+        requires_destructive_confirm: None,
+        resolved_pattern: None,
+        destructive_confirmed: 0,
+    }
+}
+
+/// The confirm-gate half of the trash-reroute fix: `requires_destructive_confirm`
+/// must follow the EFFECTIVE executor action, so an `action = "archive"` item on
+/// a `destructive_destination = "trash"` plan is gated, while the same row on an
+/// `"archive"` plan is not (the archive arm is a real move, not a removal).
+#[test]
+fn archive_item_requires_confirm_only_under_a_trash_destination() {
+    let root_map: HashMap<String, Utf8PathBuf> = HashMap::new();
+
+    let trashed = item_row_to_executor_item(&archive_row("item-trash"), &root_map, "trash", None);
+    assert!(
+        matches!(trashed.action, ExecutorItemAction::Trash { .. }),
+        "sanity: a trash-destination plan reroutes the archive item to Trash"
+    );
+    assert!(
+        trashed.requires_destructive_confirm,
+        "an archive item rerouted to OS trash removes the file and must be gated on confirmation"
+    );
+
+    let archived =
+        item_row_to_executor_item(&archive_row("item-archive"), &root_map, "archive", None);
+    assert!(
+        matches!(archived.action, ExecutorItemAction::Archive { .. }),
+        "sanity: an archive-destination plan keeps the archive action"
+    );
+    assert!(
+        !archived.requires_destructive_confirm,
+        "archiving is a reversible move — gating it would demand confirmation for every archive \
+         plan"
+    );
+}
+
+/// The writer half, which must stay at least as wide as the refuser above: a
+/// user who confirms a trash plan has to actually clear the gate for its
+/// archive-action items, and confirming an archive plan must still flip nothing.
+#[tokio::test]
+async fn confirm_covers_archive_items_only_under_a_trash_destination() {
+    let (db, _bus) = setup().await;
+
+    for (plan_id, destination) in [("p-cw-trash", "trash"), ("p-cw-archive", "archive")] {
+        repo::insert_plan(
+            db.pool(),
+            &repo::InsertPlan {
+                id: plan_id,
+                title: "Test",
+                origin: "cleanup",
+                origin_path: None,
+                plan_type: "cleanup",
+                destructive_destination: destination,
+                parent_plan_id: None,
+                total_bytes_required: 0,
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_plan_item(
+            db.pool(),
+            &repo::InsertPlanItem {
+                id: &format!("{plan_id}-item-0"),
+                plan_id,
+                item_index: 1,
+                name: "intermediate.fits",
+                action: "archive",
+                from_root_id: None,
+                from_relative_path: &format!("{plan_id}/raw/intermediate.fits"),
+                to_root_id: None,
+                to_relative_path: &format!("{plan_id}/archive/intermediate.fits"),
+                reason: "test",
+                protection: "normal",
+                linked_entity: None,
+                provenance_json: None,
+                archive_path: None,
+                source_id: None,
+                category: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let trash_confirmed = confirm_plan_destructive_items(db.pool(), "p-cw-trash").await.unwrap();
+    assert_eq!(
+        trash_confirmed, 1,
+        "the confirm writer must cover every item the executor gates, or a confirmed trash plan \
+         refuses all of its items"
+    );
+    let trash_items = repo::list_plan_items(db.pool(), "p-cw-trash").await.unwrap();
+    assert_eq!(trash_items[0].destructive_confirmed, 1);
+
+    let archive_confirmed =
+        confirm_plan_destructive_items(db.pool(), "p-cw-archive").await.unwrap();
+    assert_eq!(
+        archive_confirmed, 0,
+        "an archive-destination plan has nothing destructive to confirm"
+    );
+    let archive_items = repo::list_plan_items(db.pool(), "p-cw-archive").await.unwrap();
+    assert_eq!(archive_items[0].destructive_confirmed, 0);
+
+    // Idempotent: the widened predicate must not re-count a confirmed item.
+    let again = confirm_plan_destructive_items(db.pool(), "p-cw-trash").await.unwrap();
+    assert_eq!(again, 0);
+}
+
+/// End-to-end sibling of `archive_action_item_with_trash_destination_really_trashes`:
+/// the same plan shape WITHOUT a confirm call must be refused before
+/// `trash::delete` is reached, so the file is still on disk afterwards. The fake
+/// trash guard turns a leaked removal into a deleted file rather than a real
+/// OS-Trash move, keeping the assertion observable in a headless run.
+#[tokio::test]
+async fn unconfirmed_archive_item_under_trash_destination_is_refused_before_trashing() {
+    let _fake_trash = fs_executor::ops::trash_op::fake::FakeTrashGuard::new();
+
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("intermediate.fits");
+    std::fs::write(&file_path, b"data").unwrap();
+    let abs = file_path.to_str().unwrap();
+
+    let (db, bus) = setup().await;
+    repo::insert_plan(
+        db.pool(),
+        &repo::InsertPlan {
+            id: "p-trash-unconfirmed",
+            title: "Test",
+            origin: "cleanup",
+            origin_path: None,
+            plan_type: "cleanup",
+            destructive_destination: "trash",
+            parent_plan_id: None,
+            total_bytes_required: 0,
+        },
+    )
+    .await
+    .unwrap();
+    repo::insert_plan_item(
+        db.pool(),
+        &repo::InsertPlanItem {
+            id: "p-trash-unconfirmed-item-0",
+            plan_id: "p-trash-unconfirmed",
+            item_index: 1,
+            name: "intermediate.fits",
+            action: "archive",
+            from_root_id: None,
+            from_relative_path: abs,
+            to_root_id: None,
+            to_relative_path: "",
+            reason: "test",
+            protection: "normal",
+            linked_entity: None,
+            provenance_json: None,
+            archive_path: None,
+            source_id: None,
+            category: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    repo::update_plan_state(db.pool(), "p-trash-unconfirmed", "ready_for_review").await.unwrap();
+    repo::set_approved(db.pool(), "p-trash-unconfirmed", "2026-06-01T00:00:00Z", "test-token")
+        .await
+        .unwrap();
+
+    apply_plan(db.pool(), &bus, "p-trash-unconfirmed", "test-token", None).await.unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+
+    assert!(
+        file_path.exists(),
+        "an unconfirmed archive-on-trash item must never reach trash::delete"
+    );
+
+    let failure_code: Option<String> = sqlx::query_scalar(
+        "SELECT failure_code FROM plan_apply_events \
+         WHERE plan_id = ? AND item_id = ? AND failure_code IS NOT NULL \
+         ORDER BY rowid DESC LIMIT 1",
+    )
+    .bind("p-trash-unconfirmed")
+    .bind("p-trash-unconfirmed-item-0")
+    .fetch_optional(db.pool())
+    .await
+    .unwrap()
+    .flatten();
+    assert_eq!(
+        failure_code.as_deref(),
+        Some(FailureCode::DestructiveUnconfirmed.as_str()),
+        "the refusal must be recorded as destructive_unconfirmed"
+    );
 }
 
 /// #766: one durable `audit_log_entry` row per succeeded plan_item
@@ -1383,7 +1597,7 @@ fn t023a_library_root_resolved_from_map() {
     let mut root_map = HashMap::new();
     root_map.insert("root-001".to_owned(), Utf8PathBuf::from("/mnt/library"));
 
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert_eq!(
         item.library_root,
         Some(Utf8PathBuf::from("/mnt/library")),
@@ -1422,7 +1636,7 @@ fn t023a_no_root_id_gives_none_library_root() {
     };
 
     let root_map: HashMap<String, Utf8PathBuf> = HashMap::new();
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert_eq!(item.library_root, None);
 }
 
@@ -1463,7 +1677,7 @@ fn n765_destination_root_resolves_independently_from_to_root_id() {
     root_map.insert("inbox-root".to_owned(), Utf8PathBuf::from("/mnt/inbox"));
     root_map.insert("lights-root".to_owned(), Utf8PathBuf::from("/mnt/lights/1"));
 
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert_eq!(
         item.library_root,
         Some(Utf8PathBuf::from("/mnt/inbox")),
@@ -1511,9 +1725,97 @@ fn n765_destination_root_falls_back_to_library_root_when_to_root_id_absent() {
     let mut root_map = HashMap::new();
     root_map.insert("root-001".to_owned(), Utf8PathBuf::from("/mnt/library"));
 
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert_eq!(item.destination_root, item.library_root);
     assert_eq!(item.destination_root, Some(Utf8PathBuf::from("/mnt/library")));
+}
+
+/// A path that `Utf8Path::is_absolute` accepts on the platform running the test.
+///
+/// A POSIX literal such as `/mnt/x` is root-relative on Windows, where
+/// absoluteness needs a drive or UNC prefix. Hardcoding one makes an
+/// absolute-destination test silently exercise the relative branch there
+/// (astro-plan-d8cyr round 4: run 32580340909 job 97048640912).
+/// `std::env::temp_dir` is prefixed on every platform and touches no disk,
+/// which keeps these row-mapping tests pure.
+fn absolute_test_path(tail: &str) -> Utf8PathBuf {
+    let base =
+        Utf8PathBuf::from_path_buf(std::env::temp_dir()).expect("temp dir path is UTF-8 in tests");
+    let path = base.join(tail);
+    assert!(path.is_absolute(), "test fixture must be absolute on this platform: {path}");
+    path
+}
+
+fn source_view_item_row(to_relative_path: &str) -> plans_repo::PlanItemRow {
+    plans_repo::PlanItemRow {
+        id: "item-abs-dest".to_owned(),
+        plan_id: "plan-pre-0003".to_owned(),
+        item_index: 1,
+        name: "frame.fits".to_owned(),
+        action: "link".to_owned(),
+        from_root_id: Some("root-001".to_owned()),
+        from_relative_path: "raw/frame.fits".to_owned(),
+        to_root_id: None,
+        to_relative_path: to_relative_path.to_owned(),
+        reason: "view_generation".to_owned(),
+        protection: "normal".to_owned(),
+        linked_entity: None,
+        item_state: "pending".to_owned(),
+        failure_reason: None,
+        provenance: None,
+        approved_mtime: None,
+        approved_size_bytes: None,
+        archive_path: None,
+        created_at: "2026-06-17T00:00:00Z".to_owned(),
+        source_id: None,
+        category: None,
+        requires_destructive_confirm: Some(0),
+        resolved_pattern: None,
+        destructive_confirmed: 0,
+    }
+}
+
+/// astro-plan-d8cyr FIX 1: a `source_view_generation` plan row written before
+/// migration 0003 has `to_root_id=None`, `from_root_id=Some` and an ABSOLUTE
+/// `to_relative_path`. Falling back to `library_root` (the SOURCE root) gates
+/// that destination against a root it never belonged to, so every item of the
+/// user's existing plan is refused `root_escape`, which is non-retryable.
+/// `destination_root` must stay `None` so the destination gate is inactive and
+/// the plan applies as it did before the column existed.
+#[test]
+fn absolute_destination_takes_no_library_root_fallback() {
+    let view_root = absolute_test_path("projects/m101/source-views/plan-pre-0003");
+    let row = source_view_item_row(view_root.join("lights/frame.fits").as_str());
+
+    let mut root_map = HashMap::new();
+    root_map.insert("root-001".to_owned(), absolute_test_path("library"));
+
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
+    assert_eq!(item.library_root, Some(absolute_test_path("library")));
+    assert_eq!(
+        item.destination_root, None,
+        "an absolute destination must not inherit the source root"
+    );
+
+    // The same row in a plan that DOES record its destination root is gated.
+    let gated = item_row_to_executor_item(&row, &root_map, "archive", Some(&view_root));
+    assert_eq!(gated.destination_root, Some(view_root));
+}
+
+/// The sibling of the case above: a RELATIVE destination still takes the #765
+/// `library_root` fallback, so the no-fallback rule is scoped to absolute
+/// destinations rather than having disabled the fallback outright. Both cases
+/// run on every platform.
+#[test]
+fn relative_destination_still_takes_library_root_fallback() {
+    let library = absolute_test_path("library");
+    let row = source_view_item_row("archive/frame.fits");
+
+    let mut root_map = HashMap::new();
+    root_map.insert("root-001".to_owned(), library.clone());
+
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
+    assert_eq!(item.destination_root, Some(library));
 }
 
 /// T023a: root-escaping relative path is refused by the gate when library_root is set.
@@ -1522,7 +1824,7 @@ fn n765_destination_root_falls_back_to_library_root_when_to_root_id_absent() {
 fn t023a_root_escape_gate_fires_when_library_root_is_set() {
     use fs_executor::ops::path_gate;
 
-    let root = Utf8PathBuf::from("/mnt/library");
+    let root = Utf8PathBuf::from(fs_pathsafe::test_support::abs("/mnt/library"));
     // A path that escapes the root via ".." — must be refused.
     let escaping_relative = Utf8PathBuf::from("../../etc/passwd");
 
@@ -1564,7 +1866,7 @@ fn t023a_destructive_confirmed_reads_from_db_column() {
     };
 
     let root_map: HashMap<String, Utf8PathBuf> = HashMap::new();
-    let item = item_row_to_executor_item(&row, &root_map, "archive");
+    let item = item_row_to_executor_item(&row, &root_map, "archive", None);
     assert!(item.destructive_confirmed, "destructive_confirmed=1 in DB must be read as true");
     assert!(item.requires_destructive_confirm, "delete action must require destructive confirm");
 }
@@ -2304,5 +2606,528 @@ async fn reconcile_crashed_plans_classifies_all_three_verdicts() {
         item_state(&db, "prc-ambig").await,
         "failed",
         "ambiguous item is flagged failed for review"
+    );
+}
+
+// ── G-RUNSTATE-TRUTH: a reported lifecycle state is a written one ────────────
+
+/// `pause_run`'s last argument is `items_pending`. It received the settled sum
+/// (succeeded + failed + skipped + cancelled), so a pause recorded the count of
+/// items that had finished as the count still to run.
+#[tokio::test]
+async fn a_pause_records_the_items_still_to_run_not_the_settled_ones() {
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-pause-count", 3).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-pause-count",
+        "run-pause-count",
+        "test-token",
+        3,
+        3,
+    )
+    .await
+    .unwrap();
+    {
+        let mut conn = db.pool().acquire().await.unwrap();
+        apply_repo::batch_flush_item_states(
+            &mut conn,
+            "p-pause-count",
+            &[apply_repo::BatchItemState {
+                item_id: "p-pause-count-item-0",
+                new_state: "succeeded",
+                failure_reason: None,
+                is_stale: false,
+            }],
+            1,
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+    }
+
+    terminal::handle_paused(
+        db.pool(),
+        &bus,
+        "p-pause-count",
+        "run-pause-count",
+        "item.stale",
+        None,
+        TerminalCounts { succeeded: 1, ..TerminalCounts::default() },
+    )
+    .await;
+
+    let pending: i64 = sqlx::query_scalar("SELECT items_pending FROM plan_apply_runs WHERE id = ?")
+        .bind("run-pause-count")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(pending, 2, "1 of 3 items settled, so 2 remain pending");
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-pause-count")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "paused");
+}
+
+/// A pause whose write fails leaves the plan `applying` for boot recovery, so
+/// the long-op stream carries the failure rather than a pause the row denies.
+#[tokio::test]
+async fn a_pause_that_cannot_be_written_is_not_reported_as_paused() {
+    use std::sync::Mutex;
+
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-pause-fail", 1).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-pause-fail",
+        "run-pause-fail",
+        "test-token",
+        1,
+        1,
+    )
+    .await
+    .unwrap();
+    sqlx::query("DROP TABLE plan_apply_runs").execute(db.pool()).await.unwrap();
+
+    let captured: Arc<Mutex<Vec<OperationEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink_store = captured.clone();
+    let sink: OperationEventSink = Arc::new(move |event: OperationEvent| {
+        sink_store.lock().unwrap().push(event);
+    });
+    let emitter = OpEventEmitter::new(OperationId("run-pause-fail".to_owned()), sink);
+
+    terminal::handle_paused(
+        db.pool(),
+        &bus,
+        "p-pause-fail",
+        "run-pause-fail",
+        "disk.full",
+        Some(&emitter),
+        TerminalCounts::default(),
+    )
+    .await;
+
+    let events = captured.lock().unwrap().clone();
+    assert_eq!(events.len(), 1, "exactly one long-op event for a failed pause");
+    assert_eq!(events[0].event_type, OperationEventType::Failed);
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-pause-fail")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "applying", "the plan is left for the boot sweep to classify");
+}
+
+/// Cancelling a paused plan whose item write fails is refused. The plan stays
+/// `paused` with its items `pending` instead of reporting a cancellation the
+/// items contradict.
+#[tokio::test]
+async fn a_paused_cancel_whose_item_write_fails_is_refused() {
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-cancel-refuse", 2).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-cancel-refuse",
+        "run-cancel-refuse",
+        "test-token",
+        2,
+        2,
+    )
+    .await
+    .unwrap();
+    apply_repo::pause_run(
+        db.pool(),
+        "p-cancel-refuse",
+        "run-cancel-refuse",
+        "disk.full",
+        0,
+        0,
+        0,
+        0,
+        2,
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "CREATE TRIGGER block_item_cancel BEFORE UPDATE OF item_state ON plan_items \
+         WHEN NEW.item_state = 'cancelled' BEGIN SELECT RAISE(ABORT, 'write refused'); END",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    let err = cancel_plan(db.pool(), &bus, "p-cancel-refuse").await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::InternalDatabase);
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-cancel-refuse")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "paused", "a refused cancel leaves the plan cancellable again");
+
+    let pending = apply_repo::list_pending_items(db.pool(), "p-cancel-refuse").await.unwrap();
+    assert_eq!(pending.len(), 2, "both items are still pending");
+}
+
+/// The user's skip is committed before the item stops being eligible to run, so
+/// a pause or crash cannot put a deliberately skipped item back on the forward
+/// pass (`resume_plan` re-reads `pending`/`failed` rows only).
+#[tokio::test]
+async fn a_skip_is_persisted_before_the_item_is_bypassed() {
+    let (db, _bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-skip-persist", 2).await;
+    plans_repo::update_plan_state(db.pool(), "p-skip-persist", "applying").await.unwrap();
+    register_fake_active_run("p-skip-persist");
+
+    let resp = skip_plan_item(db.pool(), "p-skip-persist", "p-skip-persist-item-0").await.unwrap();
+    assert_eq!(resp.new_state, "skipped");
+
+    let state: String = sqlx::query_scalar("SELECT item_state FROM plan_items WHERE id = ?")
+        .bind("p-skip-persist-item-0")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "skipped", "the reported state is the stored state");
+
+    let pending = apply_repo::list_pending_items(db.pool(), "p-skip-persist").await.unwrap();
+    assert_eq!(pending, vec!["p-skip-persist-item-1".to_owned()]);
+
+    active_runs().remove("p-skip-persist");
+}
+
+/// A skip whose write fails is refused with the item left `pending`, rather
+/// than answered `skipped` from an in-memory set the next resume discards.
+#[tokio::test]
+async fn a_skip_that_cannot_be_written_is_refused() {
+    let (db, _bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-skip-refuse", 1).await;
+    plans_repo::update_plan_state(db.pool(), "p-skip-refuse", "applying").await.unwrap();
+    register_fake_active_run("p-skip-refuse");
+    sqlx::query(
+        "CREATE TRIGGER block_item_skip BEFORE UPDATE OF item_state ON plan_items \
+         WHEN NEW.item_state = 'skipped' BEGIN SELECT RAISE(ABORT, 'write refused'); END",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    let err = skip_plan_item(db.pool(), "p-skip-refuse", "p-skip-refuse-item-0").await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::InternalDatabase);
+
+    let state: String = sqlx::query_scalar("SELECT item_state FROM plan_items WHERE id = ?")
+        .bind("p-skip-refuse-item-0")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "pending", "a refused skip leaves the item eligible to run");
+
+    active_runs().remove("p-skip-refuse");
+}
+
+/// A cancelled run whose terminal write fails is not announced as cancelled:
+/// finding .5.17 on the live-executor branch, where `handle_cancelled` performs
+/// the write (review FIX 1).
+#[tokio::test]
+async fn a_cancelled_run_whose_terminal_write_fails_is_not_reported_as_cancelled() {
+    use std::sync::Mutex;
+
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-cancel-write", 1).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-cancel-write",
+        "run-cancel-write",
+        "test-token",
+        1,
+        1,
+    )
+    .await
+    .unwrap();
+    sqlx::query("DROP TABLE plan_apply_runs").execute(db.pool()).await.unwrap();
+
+    let captured: Arc<Mutex<Vec<OperationEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink_store = captured.clone();
+    let sink: OperationEventSink = Arc::new(move |event: OperationEvent| {
+        sink_store.lock().unwrap().push(event);
+    });
+    let emitter = OpEventEmitter::new(OperationId("run-cancel-write".to_owned()), sink);
+
+    terminal::handle_cancelled(
+        db.pool(),
+        &bus,
+        "p-cancel-write",
+        "run-cancel-write",
+        Some(&emitter),
+        TerminalCounts::default(),
+    )
+    .await;
+
+    let events = captured.lock().unwrap().clone();
+    assert_eq!(events.len(), 1, "exactly one long-op event for a failed terminal write");
+    assert_eq!(events[0].event_type, OperationEventType::Failed);
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-cancel-write")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "applying", "the plan is left for the boot sweep to classify");
+}
+
+/// The same gate on the completed path: a terminal state the plan row denies is
+/// reported as a failure, not as the terminal the run computed.
+#[tokio::test]
+async fn a_completed_run_whose_terminal_write_fails_is_not_reported_as_terminal() {
+    use std::sync::Mutex;
+
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-complete-write", 1).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-complete-write",
+        "run-complete-write",
+        "test-token",
+        1,
+        1,
+    )
+    .await
+    .unwrap();
+    // The item is flushed succeeded so the computed terminal is `applied`. An
+    // all-zero counter set computes `failed`, which the emitter reports as a
+    // Failed event of its own accord.
+    {
+        let mut conn = db.pool().acquire().await.unwrap();
+        apply_repo::batch_flush_item_states(
+            &mut conn,
+            "p-complete-write",
+            &[apply_repo::BatchItemState {
+                item_id: "p-complete-write-item-0",
+                new_state: "succeeded",
+                failure_reason: None,
+                is_stale: false,
+            }],
+            1,
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+    }
+    sqlx::query("DROP TABLE plan_apply_runs").execute(db.pool()).await.unwrap();
+
+    let captured: Arc<Mutex<Vec<OperationEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink_store = captured.clone();
+    let sink: OperationEventSink = Arc::new(move |event: OperationEvent| {
+        sink_store.lock().unwrap().push(event);
+    });
+    let emitter = OpEventEmitter::new(OperationId("run-complete-write".to_owned()), sink);
+
+    terminal::handle_completed(
+        db.pool(),
+        &bus,
+        "p-complete-write",
+        "run-complete-write",
+        "cleanup",
+        None,
+        Some(&emitter),
+        TerminalCounts { succeeded: 1, ..TerminalCounts::default() },
+    )
+    .await;
+
+    let events = captured.lock().unwrap().clone();
+    assert_eq!(events.len(), 1, "exactly one long-op event for a failed terminal write");
+    assert_eq!(events[0].event_type, OperationEventType::Failed);
+
+    let state: String = sqlx::query_scalar("SELECT state FROM plans WHERE id = ?")
+        .bind("p-complete-write")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(state, "applying");
+}
+
+/// The pause record counts the item rows still `pending`, so a skip the run
+/// never reached cannot inflate it through the lagging plan counter
+/// (astro-plan-ajy4v).
+#[tokio::test]
+async fn a_pause_after_a_skip_counts_the_rows_not_the_lagging_plan_counter() {
+    let (db, bus) = setup().await;
+    insert_approved_plan_with_items(&db, "p-pause-skip", 3).await;
+    apply_repo::cas_approved_to_applying(
+        db.pool(),
+        "p-pause-skip",
+        "run-pause-skip",
+        "test-token",
+        3,
+        3,
+    )
+    .await
+    .unwrap();
+    register_fake_active_run("p-pause-skip");
+    skip_plan_item(db.pool(), "p-pause-skip", "p-pause-skip-item-0").await.unwrap();
+
+    let counter: i64 = sqlx::query_scalar("SELECT items_pending FROM plans WHERE id = ?")
+        .bind("p-pause-skip")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(counter, 3, "the plan counter still carries the skipped item");
+
+    terminal::handle_paused(
+        db.pool(),
+        &bus,
+        "p-pause-skip",
+        "run-pause-skip",
+        "disk.full",
+        None,
+        TerminalCounts::default(),
+    )
+    .await;
+
+    let pending: i64 = sqlx::query_scalar("SELECT items_pending FROM plan_apply_runs WHERE id = ?")
+        .bind("run-pause-skip")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(pending, 2, "the skipped item is not part of the work still to run");
+
+    active_runs().remove("p-pause-skip");
+}
+
+// ── astro-plan-krqge: prepared lifecycle closure ─────────────────────────────
+
+async fn insert_ready_project(db: &Database, project_id: &str) {
+    use persistence_plans::repositories::projects as projects_repo;
+
+    projects_repo::insert_project(
+        db.pool(),
+        &projects_repo::InsertProject {
+            id: project_id,
+            name: "JV Archive Prepared",
+            tool: "PixInsight",
+            lifecycle: "ready",
+            path: "projects/JV_Archive_Prepared",
+            notes: None,
+            canonical_target_id: None,
+            is_mosaic: false,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+/// A clean `prepared_view_generation` apply closes the requires-plan gate on
+/// `ready → prepared`: `apply_transition` refuses that edge unconditionally, so
+/// without this closure the project can never leave `ready` and stays unlinked.
+#[tokio::test]
+async fn completed_view_generation_apply_prepares_the_project() {
+    use persistence_plans::repositories::projects as projects_repo;
+
+    let (db, bus) = setup().await;
+    let plan_id = "p-krqge-prepared";
+    let run_id = "run-krqge-prepared";
+    let project_id = Uuid::new_v4().to_string();
+    insert_ready_project(&db, &project_id).await;
+    insert_approved_plan_with_items(&db, plan_id, 1).await;
+    apply_repo::cas_approved_to_applying(db.pool(), plan_id, run_id, "test-token", 1, 1)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE plan_items SET item_state = 'succeeded' WHERE plan_id = ?")
+        .bind(plan_id)
+        .execute(db.pool())
+        .await
+        .unwrap();
+    // The terminal state is derived from the plan row's cumulative counters
+    // (`cumulative_counts`), not from item states.
+    sqlx::query("UPDATE plans SET items_applied = 1, items_failed = 0 WHERE id = ?")
+        .bind(plan_id)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+    terminal::handle_completed(
+        db.pool(),
+        &bus,
+        plan_id,
+        run_id,
+        "prepared_view_generation",
+        Some(&project_id),
+        None,
+        TerminalCounts { succeeded: 1, failed: 0, skipped: 0, cancelled: 0 },
+    )
+    .await;
+
+    let project = projects_repo::get_project(db.pool(), &project_id).await.unwrap();
+    assert_eq!(
+        project.lifecycle, "prepared",
+        "applying the source-view plan must drive the project to prepared"
+    );
+
+    let entries = list_audit_entries(
+        db.pool(),
+        &AuditLogFilter { entity_id: Some(project_id.clone()), ..AuditLogFilter::default() },
+    )
+    .await
+    .unwrap();
+    assert!(
+        entries.iter().any(|e| e.trigger == "sourceview.plan.applied"),
+        "the lifecycle closure must leave a durable audit record: {entries:?}"
+    );
+}
+
+/// A `partially_applied` terminal leaves the lifecycle alone — only a clean
+/// apply materialises every planned link (mirrors the archive closure, which
+/// runs on `applied` only).
+#[tokio::test]
+async fn partially_applied_view_generation_leaves_lifecycle_ready() {
+    use persistence_plans::repositories::projects as projects_repo;
+
+    let (db, bus) = setup().await;
+    let plan_id = "p-krqge-partial";
+    let run_id = "run-krqge-partial";
+    let project_id = Uuid::new_v4().to_string();
+    insert_ready_project(&db, &project_id).await;
+    insert_approved_plan_with_items(&db, plan_id, 2).await;
+    apply_repo::cas_approved_to_applying(db.pool(), plan_id, run_id, "test-token", 2, 2)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE plan_items SET item_state = 'succeeded' WHERE id = ?")
+        .bind(format!("{plan_id}-item-0"))
+        .execute(db.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE plan_items SET item_state = 'failed' WHERE id = ?")
+        .bind(format!("{plan_id}-item-1"))
+        .execute(db.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE plans SET items_applied = 1, items_failed = 1 WHERE id = ?")
+        .bind(plan_id)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+    terminal::handle_completed(
+        db.pool(),
+        &bus,
+        plan_id,
+        run_id,
+        "prepared_view_generation",
+        Some(&project_id),
+        None,
+        TerminalCounts { succeeded: 1, failed: 1, skipped: 0, cancelled: 0 },
+    )
+    .await;
+
+    let project = projects_repo::get_project(db.pool(), &project_id).await.unwrap();
+    assert_eq!(
+        project.lifecycle, "ready",
+        "a partial apply must not claim the project is prepared"
     );
 }

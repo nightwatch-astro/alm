@@ -154,7 +154,6 @@ New settings (currently hardcoded or absent):
 | temperature_tolerance_c | Float | 5.0 |
 | exposure_tolerance_s | Float | 2.0 |
 | aging_threshold_days | Integer | 365 |
-| require_same_camera | Boolean | true |
 | require_same_gain | Boolean | true |
 | require_same_binning | Boolean | true |
 
@@ -238,7 +237,7 @@ Target shape (constitution §II fields):
 | before → after (optional) | Value pair for settings/protection changes |
 
 Mapping onto the existing `audit_log_entry` table
-(`crates/persistence/db/migrations/0002_lifecycle.sql`):
+(`crates/persistence/core/migrations/0001_initial_schema.sql:130-143`):
 
 - `at` → timestamp; `actor` unchanged; `trigger` → action.
 - `from_state` / `to_state` are subsumed by the optional before→after pair
@@ -251,7 +250,7 @@ Mapping onto the existing `audit_log_entry` table
 ### Migration shape (T120)
 
 Consistent with existing schema conventions (TEXT columns, named
-`idx_audit_*` indexes; `0002_lifecycle.sql`):
+`idx_audit_*` indexes; `crates/persistence/core/migrations/0001_initial_schema.sql:2990-3007`):
 
 - Add nullable column `reason_code TEXT` — the machine-readable
   reason/code for `refused`/`failed` outcomes; NULL for `applied`.
@@ -308,19 +307,20 @@ Known offenders to fix first:
    `gain` are non-optional `f64` in the contract
    (`crates/contracts/core/src/calibration.rs:96,99`), forcing the app
    layer to collapse the nullable persistence row
-   (`crates/persistence/db/src/repositories/q_calibration.rs:93-94`) with
+   (`crates/persistence/calibration/src/repositories/q_calibration.rs:97-98`) with
    `unwrap_or(0.0)`
    (`crates/app/calibration/src/matching.rs:739,741,794,796`) even though
    the extraction model is already `Option`-typed
    (`crates/metadata/core/src/lib.rs:221,223`). These fields become
    nullable.
 2. **Master size** — the zero lives in SQL, not the mapping layer:
-   `calibration_master_view` hardcodes `0 AS size_bytes`
-   (`crates/persistence/db/migrations/0041_calibration_fingerprint_indices.sql:51`,
-   with a comment admitting no size column exists), flowing through the
+   `calibration_master_view` supplies no real size (as of 2026-08-24 it selects
+   `CAST(NULL AS INTEGER) AS size_bytes` at `crates/persistence/core/migrations/0001_initial_schema.sql:3186`;
+   it hardcoded `0 AS size_bytes` when this was written), flowing through the
    non-nullable row field
-   (`crates/persistence/db/src/repositories/q_calibration.rs:92`
-   `size_bytes: i64`) into the non-optional contract fields
+   (`crates/persistence/calibration/src/repositories/q_calibration.rs:96`,
+   `size_bytes: i64` when this was written, `Option<i64>` as of 2026-08-24)
+   into the non-optional contract fields
    (`crates/contracts/core/src/calibration.rs` `CalibrationMaster.size_bytes`
    / `MasterDetail.size_bytes: u64`). The `unwrap_or(0)` at
    `matching.rs:748,803` is only a sign-conversion fallback — removing it

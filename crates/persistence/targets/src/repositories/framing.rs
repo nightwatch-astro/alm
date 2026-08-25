@@ -253,7 +253,11 @@ pub async fn list_session_ids_for_framing(
     framing_id: &str,
 ) -> DbResult<Vec<String>> {
     let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT session_id FROM framing_session WHERE framing_id = ? ORDER BY added_at ASC",
+        // `session_id` breaks ties: two members added inside the same
+        // microsecond share an `added_at`, leaving SQLite free to return them
+        // in either order.
+        "SELECT session_id FROM framing_session WHERE framing_id = ? \
+         ORDER BY added_at ASC, session_id ASC",
     )
     .bind(framing_id)
     .fetch_all(pool)

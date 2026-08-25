@@ -3,9 +3,9 @@
 
 //! Embedded database migrations.
 //!
-//! The pre-1.0 schema is a single frozen baseline. Keep `0001_initial_schema.sql`
-//! append-only after it lands; future schema changes must use a new `0002+`
-//! migration rather than rewriting the baseline.
+//! Before 1.0 the schema is a single editable baseline. Make schema changes
+//! directly in `0001_initial_schema.sql` rather than adding a `0002+` migration;
+//! every such edit requires existing development databases to be recreated.
 
-/// The append-only migration set consumed by [`crate::Database`].
+/// The migration set consumed by [`crate::Database`].
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");

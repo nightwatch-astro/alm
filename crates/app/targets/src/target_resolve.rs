@@ -64,13 +64,11 @@ async fn write_audit(
     query: &str,
 ) {
     let audit_id = domain_core::ids::new_id();
-    let at = time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+    let at = domain_core::ids::Timestamp::now_utc();
     let payload = serde_json::json!({ "query": query }).to_string();
 
     let result = persistence_targets::repositories::q_targets_mgmt::insert_resolution_audit(
-        pool, &audit_id, target_id, trigger, actor, request_id, &at, &payload,
+        pool, &audit_id, target_id, trigger, actor, request_id, at, &payload,
     )
     .await;
 

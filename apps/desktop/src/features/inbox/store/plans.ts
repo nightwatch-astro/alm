@@ -86,31 +86,6 @@ interface PlanApplyState {
   error: string | null;
 }
 
-/** Apply the open plan for a single inbox item. */
-export function useInboxPlanApply() {
-  const [state, setState] = useState<PlanApplyState>({
-    loading: false,
-    error: null,
-  });
-
-  const apply = useCallback(
-    async (inboxItemId: string): Promise<PlanApplyResponse | null> => {
-      setState({ loading: true, error: null });
-      try {
-        const result = unwrap(await commands.inboxPlanApply(inboxItemId));
-        setState({ loading: false, error: null });
-        return result;
-      } catch (e: unknown) {
-        setState({ loading: false, error: String(e) });
-        return null;
-      }
-    },
-    [],
-  );
-
-  return { ...state, apply };
-}
-
 /** Apply all plans currently in `plan_open` state. */
 export function useInboxPlanApplyAll() {
   const [state, setState] = useState<PlanApplyState>({

@@ -199,7 +199,7 @@ spec-009 operation that runs after the create plan is applied.
 
 ## Storage Notes
 
-- Persisted in the SQLite store managed by `crates/persistence/db/`.
+- Persisted in the SQLite store managed by the `crates/persistence/` crates.
 - `name`, `path`, and `tool` are indexed for filter and uniqueness.
 - `sources` is a child table keyed by `(project_id, inventory_id)`.
 - `channels` is a child table keyed by `(project_id, label)`.
@@ -213,7 +213,7 @@ spec-009 operation that runs after the create plan is applied.
   clustering key above).
 - **Migration numbering**: no version is pinned in spec text — claim the next
   free version at implementation merge against origin/main, and the reviewer
-  MUST dup-check `crates/persistence/db/migrations/` for version collisions
+  MUST dup-check `crates/persistence/core/migrations/` for version collisions
   (duplicate-0046 precedent, PR #317). Touch the persistence crate's `lib.rs`
   to force the sqlx macro to re-embed new migration files.
 

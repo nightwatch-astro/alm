@@ -12,7 +12,7 @@ use crate::failure::{FailureCode, PlanItemFailure, RollbackOutcome};
 use crate::ops::cas_check::check_cas;
 use crate::ops::path_gate;
 
-use super::dispatch::execute_item;
+use super::dispatch::{execute_item, ResolvedItemPaths};
 use super::{
     ApplyOutcome, CancellationToken, ExecutorCallbacks, ExecutorItem, ExecutorItemAction,
     ItemProgressEvent, RetryQueue, SkipSet, TerminalCounts,
@@ -71,9 +71,6 @@ async fn drive_plan<C: ExecutorCallbacks>(
     let item_by_id: HashMap<&str, &ExecutorItem> =
         items.iter().map(|i| (i.id.as_str(), i)).collect();
 
-    #[cfg(feature = "test-pacing")]
-    let item_delay = pacing::item_delay();
-
     'items: for item in &items {
         // Skip items that are already in a terminal state (re-apply idempotency).
         if matches!(item.current_state.as_str(), "succeeded" | "skipped" | "cancelled" | "failed") {
@@ -82,9 +79,7 @@ async fn drive_plan<C: ExecutorCallbacks>(
         }
 
         #[cfg(feature = "test-pacing")]
-        if let Some(delay) = item_delay {
-            tokio::time::sleep(delay).await;
-        }
+        pacing::gate_item(&item.plan_id).await;
 
         // Check cancellation between items (never mid-item).
         if cancel.is_cancelled() {
@@ -152,6 +147,59 @@ async fn drive_plan<C: ExecutorCallbacks>(
     ApplyOutcome::Completed(counts)
 }
 
+/// Path-resolution gate (FR-001/002, D8, T018): resolve and validate both sides
+/// of an item once, before any filesystem CAS or mutation.
+///
+/// The resolved paths are what `dispatch::execute_item` operates on. This is the
+/// only place in the executor that chooses a root or performs a join: a second
+/// resolution downstream is how a destination gated against `destination_root`
+/// reached `mkdir`/`link`/`move` joined onto `library_root` instead
+/// (astro-plan-3v3r.1.12). `destination_root` still takes precedence over
+/// `library_root` (#765), and the fallback now exists exactly once.
+///
+/// A side with no root is refused unless it carries an absolute, already-normal
+/// path, which is the legacy mode for items storing a pre-resolved destination
+/// (`fs_pathsafe::contain::resolve_unrooted`).
+///
+/// The archive destination carried inside the `Archive`/`Trash` action is a
+/// third side and is resolved here too: gating only the two named sides let it
+/// reach `move_file` unresolved (astro-plan-zboex). It is governed by the
+/// SOURCE root, because both generators derive it as a sibling of the source
+/// (`app_projects::prepared_views::compute_archive_destination`) and the
+/// archive-management side resolves the same stored column against
+/// `from_root_id` (`app_core::plans::archive::resolve_archive_abs_path`).
+fn resolve_item_paths(item: &ExecutorItem) -> Result<ResolvedItemPaths, PlanItemFailure> {
+    let archive_destination = match &item.action {
+        ExecutorItemAction::Archive { archive_destination } => Some(archive_destination.as_path()),
+        ExecutorItemAction::Trash { fallback_archive_destination } => {
+            fallback_archive_destination.as_deref()
+        }
+        _ => None,
+    };
+
+    Ok(ResolvedItemPaths {
+        source: resolve_side(item.source_path.as_deref(), item.library_root.as_deref())?,
+        destination: resolve_side(
+            item.destination_path.as_deref(),
+            item.destination_root.as_deref().or(item.library_root.as_deref()),
+        )?,
+        archive_destination: resolve_side(archive_destination, item.library_root.as_deref())?,
+    })
+}
+
+fn resolve_side(
+    path: Option<&camino::Utf8Path>,
+    root: Option<&camino::Utf8Path>,
+) -> Result<Option<Utf8PathBuf>, PlanItemFailure> {
+    match (path, root) {
+        (None, _) => Ok(None),
+        (Some(path), Some(root)) => path_gate::resolve_and_validate(root, path).map(|r| Some(r.0)),
+        (Some(path), None) => fs_pathsafe::contain::resolve_unrooted_utf8(path)
+            .map(Some)
+            .map_err(|e| path_gate::containment_failure(&e)),
+    }
+}
+
 /// Outcome of one retry-queue drain pass.
 enum DrainOutcome {
     Continue,
@@ -204,8 +252,8 @@ async fn drain_retries<C: ExecutorCallbacks>(
     DrainOutcome::Continue
 }
 
-/// Per-item pacing for tests that need the forward pass to still be running
-/// when they act on it.
+/// Per-item gate for tests that need the forward pass to still be running when
+/// they act on it.
 ///
 /// A test that files a mid-run retry, pause, or cancel has to reach the
 /// executor before the forward pass drains its queue. Without a seam the only
@@ -213,51 +261,125 @@ async fn drain_retries<C: ExecutorCallbacks>(
 /// same-directory moves against a warm pool finish inside three awaits often
 /// enough to fail in CI (`astro-plan-ytx7`).
 ///
+/// The gate parks the loop at each non-terminal item boundary and publishes the
+/// arrival, so a test waits for an ordering it observes rather than for a
+/// duration it guessed.
+///
+/// Keyed by plan id, because integration tests share one process: an un-scoped
+/// registry lets a concurrent test's executor consume the arrival and release
+/// permits the gating test issued for its own run.
+///
 /// The whole module is behind the `test-pacing` feature, which is off by
 /// default and reachable only through a `[dev-dependencies]` edge, so no
-/// release binary contains a way to throttle a real plan apply.
+/// release binary contains a way to stall a real plan apply.
 ///
-/// An atomic rather than an environment variable: `set_var` in a threaded test
-/// binary races every concurrent `var_os` reader — `tempfile`'s `TMPDIR` lookup
-/// among them — which is undefined behaviour on glibc and already banned in
-/// this repo (`apps/desktop/src-tauri/src/data_dir.rs`).
+/// A static rather than a parameter of [`execute_plan`]: the production call
+/// signature carries no test-only handle.
 #[cfg(feature = "test-pacing")]
 pub mod pacing {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
     use std::time::Duration;
 
-    static ITEM_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+    use tokio::sync::Semaphore;
 
-    /// Sleep `ms` before each non-terminal item of every subsequent run in this
-    /// process. Zero disables pacing. Process-global, so a test that sets it
-    /// must reset it — see `ItemDelayGuard`.
-    pub fn set_item_delay_ms(ms: u64) {
-        ITEM_DELAY_MS.store(ms, Ordering::Relaxed);
+    /// Bounds a wait whose ordering is already supposed to hold. Exceeding it
+    /// means the loop never reached the boundary, which a panic reports as a
+    /// test failure instead of a hang. Never used to establish ordering, so it
+    /// only has to exceed the slowest legitimate arrival.
+    const ARRIVAL_TIMEOUT: Duration = Duration::from_secs(30);
+
+    struct GateState {
+        /// Gains a permit each time the loop parks at an item boundary.
+        arrived: Semaphore,
+        /// Loses a permit each time the loop leaves an item boundary. Closed by
+        /// [`ItemGate`]'s drop, which releases every later boundary at once.
+        release: Semaphore,
     }
 
-    /// Resets the pacing delay to zero when dropped, including on panic, so one
-    /// test cannot slow every test that follows it in the same binary.
-    pub struct ItemDelayGuard;
+    static GATES: Mutex<Option<HashMap<String, Arc<GateState>>>> = Mutex::new(None);
 
-    impl ItemDelayGuard {
-        /// Enable pacing for as long as the returned guard lives.
+    /// Recovers from poisoning: a test panicking while the loop is parked must
+    /// still leave the registry usable, and a panicking `Drop` would abort.
+    fn registry() -> MutexGuard<'static, Option<HashMap<String, Arc<GateState>>>> {
+        GATES.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Park the forward pass until the gate installed for `plan_id` releases
+    /// this item.
+    ///
+    /// A no-op when no [`ItemGate`] is installed for this plan, which is every
+    /// run other than the one a gating test drives.
+    pub(crate) async fn gate_item(plan_id: &str) {
+        let Some(gate) = registry().as_ref().and_then(|g| g.get(plan_id).cloned()) else {
+            return;
+        };
+        gate.arrived.add_permits(1);
+        // Bound to a local declared after `gate` so the permit's borrow of it
+        // ends before `gate` itself drops.
+        let released = gate.release.acquire().await;
+        // `Err` only after `ItemGate`'s drop closed the semaphore, which is the
+        // signal to run the rest of the plan ungated.
+        if let Ok(permit) = released {
+            permit.forget();
+        }
+    }
+
+    /// An installed gate. Dropping it releases every remaining boundary,
+    /// including on a panic unwind, so a failed assertion cannot strand a
+    /// spawned executor.
+    pub struct ItemGate {
+        plan_id: String,
+        state: Arc<GateState>,
+    }
+
+    impl ItemGate {
+        /// Gate every item boundary `plan_id`'s run reaches from now on. Runs of
+        /// other plans are unaffected.
+        ///
+        /// # Panics
+        /// If a gate is already installed for `plan_id`.
         #[must_use]
-        pub fn new(ms: u64) -> Self {
-            set_item_delay_ms(ms);
-            Self
+        pub fn install(plan_id: &str) -> Self {
+            let state =
+                Arc::new(GateState { arrived: Semaphore::new(0), release: Semaphore::new(0) });
+            let prior = registry()
+                .get_or_insert_with(HashMap::new)
+                .insert(plan_id.to_owned(), Arc::clone(&state));
+            assert!(prior.is_none(), "a gate is already installed for plan {plan_id}");
+            Self { plan_id: plan_id.to_owned(), state }
+        }
+
+        /// Wait until the forward pass parks at an item boundary.
+        ///
+        /// Returning proves a run is inside its forward loop, so its retry
+        /// queue is still open and a mid-run retry, pause, or cancel lands
+        /// there rather than after the run closed it.
+        ///
+        /// # Panics
+        /// If no boundary is reached within 30 seconds, meaning the run never
+        /// started or already ended.
+        pub async fn wait_for_arrival(&self) {
+            tokio::time::timeout(ARRIVAL_TIMEOUT, self.state.arrived.acquire())
+                .await
+                .expect("executor reached no item boundary: the run never started or already ended")
+                .expect("the arrival semaphore is never closed")
+                .forget();
+        }
+
+        /// Let the forward pass leave `n` further item boundaries.
+        pub fn release(&self, n: usize) {
+            self.state.release.add_permits(n);
         }
     }
 
-    impl Drop for ItemDelayGuard {
+    impl Drop for ItemGate {
         fn drop(&mut self) {
-            set_item_delay_ms(0);
+            self.state.release.close();
+            if let Some(gates) = registry().as_mut() {
+                gates.remove(&self.plan_id);
+            }
         }
-    }
-
-    /// Read once per run, not per item, so a run cannot change pace midway.
-    pub(crate) fn item_delay() -> Option<Duration> {
-        let ms = ITEM_DELAY_MS.load(Ordering::Relaxed);
-        (ms > 0).then(|| Duration::from_millis(ms))
     }
 }
 
@@ -317,45 +439,31 @@ async fn process_single_item<C: ExecutorCallbacks>(
         callbacks.on_item_start(&item.id).await;
     }
 
-    // Path-resolution gate (FR-001/002, D8, T018): resolve + validate source path
-    // against the library root before any filesystem CAS or mutation.
-    if let (Some(ref src_rel), Some(ref root)) = (&item.source_path, &item.library_root) {
-        match path_gate::resolve_and_validate(root, src_rel) {
-            Err(gate_failure) => {
-                let audit_reason = gate_failure.code.as_str().to_owned();
-                let triggers_pause = gate_failure.code.triggers_pause();
-                callbacks
-                    .on_item_progress(ItemProgressEvent::terminal(
-                        item.id.clone(),
-                        "applying",
-                        "refused",
-                        Some(gate_failure),
-                        Some(audit_reason),
-                    ))
-                    .await;
-                counts.failed += 1;
-                if triggers_pause {
-                    return ItemOutcome::Pause("path.invalid".to_owned());
-                }
-                return ItemOutcome::Continue;
+    let resolved_paths = match resolve_item_paths(item) {
+        Ok(paths) => paths,
+        Err(gate_failure) => {
+            let audit_reason = gate_failure.code.as_str().to_owned();
+            let triggers_pause = gate_failure.code.triggers_pause();
+            callbacks
+                .on_item_progress(ItemProgressEvent::terminal(
+                    item.id.clone(),
+                    "applying",
+                    "refused",
+                    Some(gate_failure),
+                    Some(audit_reason),
+                ))
+                .await;
+            counts.failed += 1;
+            if triggers_pause {
+                return ItemOutcome::Pause("path.invalid".to_owned());
             }
-            Ok(_resolved) => {
-                // Path is safe; the resolved absolute path will be used by execute_item.
-            }
+            return ItemOutcome::Continue;
         }
-    }
+    };
 
-    // Per-item FS CAS revalidation (R-FS-1).
-    // Use the library-root-resolved path if available; otherwise use the raw path (legacy).
-    let resolved_source_for_cas: Option<Utf8PathBuf> =
-        if let (Some(ref src_rel), Some(ref root)) = (&item.source_path, &item.library_root) {
-            // Already validated above; re-resolve (cheap lexical op).
-            path_gate::resolve_and_validate(root, src_rel).ok().map(|r| r.0)
-        } else {
-            item.source_path.clone()
-        };
-
-    if let Some(ref src) = resolved_source_for_cas {
+    // Per-item FS CAS revalidation (R-FS-1) against the same resolved path the
+    // mutation will use, so the snapshot cannot be checked on a different file.
+    if let Some(ref src) = resolved_paths.source {
         if let Err(stale_failure) = check_cas(src, &item.cas_snapshot) {
             let triggers_pause = stale_failure.code.triggers_pause();
             let failure_clone = stale_failure.clone();
@@ -409,21 +517,22 @@ async fn process_single_item<C: ExecutorCallbacks>(
     // dedicated blocking thread pool and yields the worker thread back to the
     // runtime until the fs op completes.
     let item_for_blocking = item.clone();
-    let op_result = tokio::task::spawn_blocking(move || execute_item(&item_for_blocking))
-        .await
-        .unwrap_or_else(|join_err| {
-            // The blocking task panicked. Surface it as an internal failure
-            // rather than propagating the panic through the executor loop.
-            Err((
-                PlanItemFailure::with_code(
-                    FailureCode::Unknown,
-                    format!("filesystem worker task failed: {join_err}"),
-                ),
-                false,
-                RollbackOutcome::NotApplicable,
-                None,
-            ))
-        });
+    let op_result =
+        tokio::task::spawn_blocking(move || execute_item(&item_for_blocking, &resolved_paths))
+            .await
+            .unwrap_or_else(|join_err| {
+                // The blocking task panicked. Surface it as an internal failure
+                // rather than propagating the panic through the executor loop.
+                Err((
+                    PlanItemFailure::with_code(
+                        FailureCode::Unknown,
+                        format!("filesystem worker task failed: {join_err}"),
+                    ),
+                    false,
+                    RollbackOutcome::NotApplicable,
+                    None,
+                ))
+            });
 
     match op_result {
         Ok(()) => {

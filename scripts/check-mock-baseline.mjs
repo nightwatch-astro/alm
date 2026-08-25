@@ -42,11 +42,23 @@ const BINDINGS_PATH = path.join(DESKTOP_ROOT, 'src/bindings/index.ts');
 const MOCKS_PATH = path.join(DESKTOP_ROOT, 'src/api/mocks.ts');
 const BASELINE_PATH = path.join(here, 'mock-unmocked-baseline.txt');
 
-/** Wire command names registered in the generated bindings. */
+/**
+ * Wire command names registered in the generated bindings.
+ *
+ * An empty set means the invoke wrapper was renamed, not that the app has no
+ * commands: without this throw every command reads as mocked and --generate
+ * drains the baseline.
+ */
 function bindingCommands(src) {
-  return new Set(
+  const names = new Set(
     [...src.matchAll(/__TAURI_INVOKE\("([a-z0-9_]+)"/g)].map((m) => m[1]),
   );
+  if (names.size === 0) {
+    throw new Error(
+      'bindings/index.ts: no __TAURI_INVOKE("command") call found — the generated invoke wrapper was renamed; update scripts/check-mock-baseline.mjs.',
+    );
+  }
+  return names;
 }
 
 /**

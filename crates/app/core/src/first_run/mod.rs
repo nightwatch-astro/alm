@@ -143,7 +143,7 @@ async fn check_duplicate(
 /// Path-overlap relationship between `candidate` and `other`, or `None` if
 /// they don't overlap.
 ///
-/// Containment is decided by [`fs_pathsafe::contains_or_same`], which asks the
+/// Containment is decided by [`fs_pathsafe::contain::same_or_inside`], which asks the
 /// filesystem whether two paths are the same object rather than comparing
 /// strings. A case-only difference (`~/Foo` vs `~/foo`) is one directory on a
 /// case-insensitive volume and two on a case-sensitive one, and the volume — not
@@ -152,9 +152,9 @@ fn path_overlap_relationship(
     candidate: &std::path::Path,
     other: &std::path::Path,
 ) -> Option<&'static str> {
-    if fs_pathsafe::contains_or_same(candidate, other) {
+    if fs_pathsafe::contain::same_or_inside(candidate, other) {
         Some("parent")
-    } else if fs_pathsafe::contains_or_same(other, candidate) {
+    } else if fs_pathsafe::contain::same_or_inside(other, candidate) {
         Some("child")
     } else {
         None

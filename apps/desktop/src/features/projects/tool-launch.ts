@@ -88,7 +88,10 @@ export function toolLaunchDisabledTooltip(
 /**
  * localStorage key prefix for the per-tool "cwd anchored" hint seen-state
  * (US3 acceptance scenario 3): tools whose profile declares
- * `supports_open_folder = false` don't get a folder argument, only a `cwd`.
+ * `supports_open_folder = false` receive no folder argument. The project folder
+ * reaches such a tool only as a working directory, and only on the platform arms
+ * that apply one: a macOS bundle launch goes through Launch Services, which
+ * starts the app with a working directory the app itself chooses.
  * The first time such a tool is launched, a one-time note explains this so
  * the user isn't left wondering why no folder chooser opened.
  */
@@ -175,8 +178,9 @@ export interface UseToolLaunchResult {
  * On success: shows "Launched {tool}" toast. When `supportsOpenFolder` is
  * `false` and this is the first successful launch of `toolId` in this
  * browser profile, also shows a one-time "cwd anchored" hint toast (T021,
- * US3 acceptance scenario 3) explaining that the tool doesn't accept a
- * folder argument — only the working directory is set.
+ * US3 acceptance scenario 3) explaining that the tool receives no folder
+ * argument, and that the project folder reaches it as a working directory only
+ * on the platform arms that apply one.
  * On error: shows failure toast with "Configure path" affordance on not_configured errors.
  * On prior_instance_alive: sets `priorInstanceAlive=true` (caller renders the modal).
  */

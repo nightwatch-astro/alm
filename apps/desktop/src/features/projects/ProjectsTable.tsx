@@ -28,6 +28,7 @@ import { SortHeader, ariaSortFor, StatusTag } from '@/components';
 import type { TableColumn, TableRow } from '@/ui';
 import { projectStateLabel, projectStateVariant } from '@/lib/lifecycle';
 import { blockedReasonMessage, deriveBlockedReason } from './BlockedBanner';
+import * as pt from './projects-table.css';
 import { compareDateDesc, formatDateTime } from '@/lib/datetime';
 import type { ProjectSummaryDto } from '@/bindings/index';
 import {
@@ -111,25 +112,25 @@ const COLUMNS: Array<{
     key: 'tool',
     label: () => m.projects_col_tool(),
     sort: 'tool',
-    className: 'pv-projects-table__cell--muted',
+    className: pt.cellMuted,
   },
   {
     key: 'target',
     label: () => m.projects_create_target_label(),
-    className: 'pv-projects-table__cell--muted',
+    className: pt.cellMuted,
   },
   { key: 'state', label: () => m.sessions_col_state(), sort: 'state' },
   {
     key: 'sources',
     label: () => m.common_sources(),
     sort: 'sources',
-    className: 'pv-projects-table__cell--num',
+    className: pt.cellNum,
   },
   {
     key: 'updated',
     label: () => m.projects_stepper_updated(),
     sort: 'updated',
-    className: 'pv-projects-table__cell--mono',
+    className: pt.cellMono,
   },
 ];
 
@@ -216,15 +217,14 @@ export function ProjectsTable({
   function projectItemRow(project: ProjectSummaryDto, indentPx = 0): TableRow {
     return {
       _rowClassName:
-        'pv-projects-table__row' +
-        (project.id === selectedId ? ' pv-projects-table__row--selected' : ''),
+        pt.row + (project.id === selectedId ? ` ${pt.rowSelected}` : ''),
       _onClick: () => onSelect(project.id),
       _selected: project.id === selectedId,
       _indent: indentPx || undefined,
       _rowKind: 'projects-table-row',
       _testid: `project-row-${project.id}`,
       name: (
-        <span className="pv-projects-table__name">
+        <span className={pt.name}>
           {project.lifecycle === 'blocked' &&
             (() => {
               const reason = deriveBlockedReason(
@@ -240,7 +240,7 @@ export function ProjectsTable({
                     aria-label={m.projects_table_blocked_aria({
                       reason: reasonText,
                     })}
-                    className="pv-projects-table__blocked-icon"
+                    className={pt.blockedIcon}
                   />
                 </span>
               );
@@ -248,7 +248,7 @@ export function ProjectsTable({
           {project.name}
           {project.channelDrift && (
             <span
-              className="pv-projects-table__drift-badge"
+              className={pt.driftBadge}
               title={m.projects_table_channel_drift_title()}
             >
               <AlertTriangle size={11} aria-hidden="true" />{' '}
@@ -257,32 +257,28 @@ export function ProjectsTable({
           )}
         </span>
       ),
-      tool: (
-        <span className="pv-projects-table__cell--muted">{project.tool}</span>
-      ),
+      tool: <span className={pt.cellMuted}>{project.tool}</span>,
       // STUB: target — omitted until FITS OBJECT → target_id linkage lands (#54).
-      target: <span className="pv-projects-table__dash">—</span>,
+      target: <span className={pt.dash}>—</span>,
       state: (
         <StatusTag variant={projectStateVariant(project.lifecycle)}>
           {projectStateLabel(project.lifecycle)}
         </StatusTag>
       ),
       sources: (
-        <span className="pv-projects-table__cell--num">
+        <span className={pt.cellNum}>
           {project.sourceCount > 0 ? project.sourceCount : '—'}
         </span>
       ),
       updated: (
-        <span className="pv-projects-table__cell--mono">
-          {formatDateTime(project.updatedAt)}
-        </span>
+        <span className={pt.cellMono}>{formatDateTime(project.updatedAt)}</span>
       ),
     };
   }
 
   if (loading && projects.length === 0) {
     return (
-      <div className="pv-projects-table__empty">
+      <div className={pt.empty}>
         <Skeleton
           variant="block"
           count={6}
@@ -294,7 +290,7 @@ export function ProjectsTable({
 
   if (projects.length === 0) {
     return (
-      <div className="pv-projects-table__empty">
+      <div className={pt.empty}>
         {isFiltered
           ? m.projects_table_empty_filtered()
           : m.projects_table_empty()}
@@ -344,7 +340,7 @@ export function ProjectsTable({
   return (
     <div className="pv-listtable" data-testid="projects-list">
       <Table
-        className="pv-projects-table"
+        className={pt.table}
         columns={columns}
         rows={rows}
         virtualized

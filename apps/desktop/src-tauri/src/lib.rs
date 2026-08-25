@@ -83,6 +83,59 @@ fn build_updater_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry, tauri_plugin
     b.build()
 }
 
+/// Build the Tauri MCP bridge plugin (@hypothesi tauri-plugin-mcp-bridge), or
+/// `None` when the runtime has not opted in.
+///
+/// The plugin runs a WebSocket server from port 9223 that the
+/// @hypothesi/tauri-mcp-server MCP server connects to, letting an agent drive the
+/// running app for automated UI testing. It also requires `withGlobalTauri`,
+/// enabled only via the dev-only `tauri.dev.conf.json` overlay (never in the
+/// shipped config). The server is unauthenticated and `execute_js` reaches every
+/// command handler, so whatever reaches its address controls the app. Three
+/// layers gate it:
+///
+/// 1. Compiled out of release builds. `dev-tools` gates the optional dependency,
+///    so a release binary does not link the plugin at all (`Cargo.toml`
+///    `dev-tools`, `capabilities/dev/mcp-bridge.json`).
+/// 2. Not started unless `PV_MCP_BRIDGE_ENABLE=1`. `1` is the only value that
+///    starts it; unset, empty, or anything else leaves the port closed even in a
+///    `dev-tools` build.
+/// 3. Bound wherever `PV_MCP_BRIDGE_BIND` says, defaulting to 127.0.0.1 rather
+///    than the plugin's own 0.0.0.0. An off-loopback address opts one run into
+///    cross-host validation (an agent in WSL or on another machine driving a
+///    Windows host).
+///
+/// Layers 2 and 3 are decided by [`crate::bootstrap::mcp_bridge_bind_address`],
+/// which is where they are tested; this function only reads the environment and
+/// logs.
+#[cfg(feature = "dev-tools")]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "three `tracing` macro expansions, not branching logic"
+)]
+fn build_mcp_bridge_plugin() -> Option<tauri::plugin::TauriPlugin<tauri::Wry>> {
+    let enable = std::env::var("PV_MCP_BRIDGE_ENABLE").ok();
+    let bind_var = std::env::var("PV_MCP_BRIDGE_BIND").ok();
+    let Some(bind) =
+        crate::bootstrap::mcp_bridge_bind_address(enable.as_deref(), bind_var.as_deref())
+    else {
+        tracing::info!(
+            "MCP bridge not started: set PV_MCP_BRIDGE_ENABLE=1 to open the agent-driving port"
+        );
+        return None;
+    };
+    if bind == "127.0.0.1" {
+        tracing::info!(bind = %bind, "MCP bridge starting (PV_MCP_BRIDGE_ENABLE=1)");
+    } else {
+        tracing::warn!(
+            bind = %bind,
+            "MCP bridge starting bound off-loopback: unauthenticated control of this app is \
+             reachable from that address"
+        );
+    }
+    Some(tauri_plugin_mcp_bridge::init_with_config(tauri_plugin_mcp_bridge::Config::new(bind)))
+}
+
 /// Build the Tauri `App` **without** starting the event loop.
 ///
 /// The returned handle exposes the platform path resolver (needed to locate
@@ -201,6 +254,15 @@ pub fn build_app() -> tauri::App {
         // triggered from this Rust process.
         .plugin(build_updater_plugin())
         .plugin(tauri_plugin_process::init())
+        // Spec 051 US8 (T045): OS notifications on long-running task
+        // completion. `notification:default` is granted in
+        // `capabilities/default.json`. The plugin's desktop backend needs no
+        // runtime permission request — `permission_state()` is
+        // unconditionally `Granted` there and delivery failures (denied at the
+        // OS level, no Linux notification daemon) surface as an `Err` from
+        // `show()`, which every call site in `bootstrap::notify` logs at
+        // `debug` and ignores (FR-025).
+        .plugin(tauri_plugin_notification::init())
         // Spec 051 US7 (T041): diagnostics log file. `skip_logger()` is
         // required here — this app already installs a global `tracing`
         // subscriber (in `main.rs`, right after `build_app()` returns, once
@@ -216,16 +278,9 @@ pub fn build_app() -> tauri::App {
         // plugin's own (skipped) fern dispatch.
         .plugin(tauri_plugin_log::Builder::new().skip_logger().build());
 
-    // Tauri MCP bridge plugin (@hypothesi tauri-plugin-mcp-bridge) — dev/debug
-    // builds only. Runs a WebSocket server on 0.0.0.0:9223 that the
-    // @hypothesi/tauri-mcp-server MCP server connects to, letting an agent drive
-    // the running app for automated UI testing. Requires `withGlobalTauri`, which
-    // is enabled only via the dev-only `tauri.dev.conf.json` overlay (never in the
-    // shipped config). `debug_assertions` is off in release builds, so this
-    // surface is absent from shipped binaries.
-    #[cfg(debug_assertions)]
-    {
-        tb = tb.plugin(tauri_plugin_mcp_bridge::init());
+    #[cfg(feature = "dev-tools")]
+    if let Some(bridge) = build_mcp_bridge_plugin() {
+        tb = tb.plugin(bridge);
     }
 
     // E2E gate: embed the WebDriver server only when built with --features e2e.
@@ -672,6 +727,9 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
         pool.clone(),
     ));
     drop(spawn_stale_dependent_propagator(pool.clone(), &bus));
+    // spec 051 US8: OS notifications for the `plan.applying.completed` and
+    // `workflow.run_completed` topics, both already published on this bus.
+    drop(crate::bootstrap::notify::spawn_completion_notifier(app.clone(), &bus));
     // spec 056 (R5): backend-authoritative onboarding tick subscriber →
     // persists auto-ticks from domain-completion topics and emits
     // `onboarding:state-changed`. Started here, before the webview can invoke,
@@ -871,7 +929,7 @@ async fn boot(app: tauri::AppHandle, db_url: String, data_dir: std::path::PathBu
     // spec 035 US4/T043: background ingest-resolution drain + session target
     // back-fill on an interval. Non-blocking; transient/offline outcomes leave
     // rows pending for the next pass.
-    spawn_ingest_resolution_drain(pool.clone(), bus.clone(), resolve_cache.clone());
+    spawn_ingest_resolution_drain(app.clone(), pool.clone(), bus.clone(), resolve_cache.clone());
 
     // spec 051 US10: the startup update check moved to the frontend
     // (`updateSubscription.ts`'s `startUpdateSubscription()`, #888 staged

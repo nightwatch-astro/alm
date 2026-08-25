@@ -85,8 +85,8 @@ pub async fn log_recent(
 /// `log.export` — export filtered log entries to a JSON file.
 ///
 /// # Errors
-/// Returns `Err(String)` with code `"path.parent.missing"`, `"path.write.denied"`,
-/// `"range.invalid"`, or `"format.unsupported"`.
+/// Returns `Err(ContractError)` with code `path.parent.missing`,
+/// `path.write.denied`, `range.invalid`, or `format.unsupported`.
 #[tauri::command]
 #[specta::specta]
 pub async fn log_export(

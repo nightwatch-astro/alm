@@ -21,10 +21,11 @@
  * and keeps the sidebar's vertical space for navigation.
  */
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { m } from '@/lib/i18n';
+import { useDismiss } from '@/hooks/useDismiss';
 import { ChecklistSection } from './ChecklistSection';
 import { useVisibleOnboardingState } from './store';
 import { useCompletionChoreography } from './choreography';
@@ -72,33 +73,23 @@ export function ChecklistPopover({
     return () => window.removeEventListener('resize', measure);
   }, [open]);
 
-  // Dismiss on Escape and on a click outside the flyout (WCAG 1.4.13
-  // dismissable; also the plain expectation for any popover). Registered only
-  // while open so a closed flyout costs nothing. Escape restores focus to the
-  // trigger — otherwise focus would be stranded on a removed subtree.
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
+  // WCAG 1.4.13 dismissable; also the plain expectation for any popover. Escape
+  // restores focus to the trigger — otherwise focus would be stranded on a
+  // removed subtree. The panel is portalled, so it is NOT inside wrapRef; both
+  // refs are listed or every click inside the flyout would dismiss it.
+  useDismiss(
+    [wrapRef, panelRef],
+    (e) => {
+      if (e instanceof KeyboardEvent) {
+        e.stopPropagation();
+        setOpen(false);
+        wrapRef.current?.querySelector('button')?.focus();
+        return;
+      }
       setOpen(false);
-      wrapRef.current?.querySelector('button')?.focus();
-    };
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      // The panel is portalled, so it is NOT inside wrapRef — check both, or
-      // every click inside the flyout would dismiss it.
-      if (wrapRef.current?.contains(target)) return;
-      if (panelRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('pointerdown', onPointerDown);
-    };
-  }, [open]);
+    },
+    open,
+  );
 
   if (!state) return null;
 

@@ -34,6 +34,7 @@
 #   scripts/check-hot-read-ratchet.sh              # enforce baseline (CI mode)
 #   scripts/check-hot-read-ratchet.sh --generate   # regenerate baseline from current counts
 #   scripts/check-hot-read-ratchet.sh --list       # print current per-file counts
+#   scripts/check-hot-read-ratchet.sh --self-test  # prove an empty scope is refused
 
 set -euo pipefail
 
@@ -130,21 +131,101 @@ count_file() {
   ' "$file"
 }
 
+# The scoped paths, resolved against $SCOPE_ROOT so require_scoped_files' own
+# self-test can point the same enumeration at an empty tree.
+SCOPE_ROOT="$ROOT"
+SCOPE_DIRS=(crates/app/inbox crates/app/core/src/plan_apply)
+SCOPE_FILE=apps/desktop/src-tauri/src/watcher.rs
+
+# Files the last require_scoped_files call enumerated. The OK line prints this
+# so the reported total is tied to a scope that was proven non-empty.
+SCANNED_FILES=0
+
 # Enumerate candidate production files in the scoped paths (sorted, repo-relative).
+# Callers MUST run require_scoped_files first: this function neither suppresses
+# find's errors nor tolerates a missing scope, so an unguarded call on a
+# collapsed tree fails loudly instead of yielding an empty list.
 list_files() {
-  cd "$ROOT"
+  cd "$SCOPE_ROOT"
   {
-    # Directory scopes
-    find crates/app/inbox \
-         crates/app/core/src/plan_apply \
+    find "${SCOPE_DIRS[@]}" \
          -type f -name '*.rs' \
-         -not -path '*/tests/*' \
-         2>/dev/null || true
-    # Single-file scope
-    if [[ -f apps/desktop/src-tauri/src/watcher.rs ]]; then
-      echo apps/desktop/src-tauri/src/watcher.rs
-    fi
+         -not -path '*/tests/*'
+    echo "$SCOPE_FILE"
   } | sort
+}
+
+# Refuse a scope that enumerates nothing.
+#
+# Every count is derived from list_files, so a moved crate or renamed module
+# makes the current total 0, which can never exceed a shrink-only baseline: the
+# ratchet then passes while measuring nothing. list_files runs in a subshell at
+# every call site (`$(...)`, `< <(...)`), so an exit inside it cannot fail the
+# script and this floor has to be asserted by the caller.
+# The floor is per scope, not on the total: a scope whose contents moved
+# elsewhere leaves the directory in place and the other scopes still counting, so
+# a total-only floor would stay satisfied while half the ratchet went blind.
+require_scoped_files() {
+  local failed=0 d n files
+  SCANNED_FILES=0
+
+  for d in "${SCOPE_DIRS[@]}"; do
+    if [[ ! -d "$SCOPE_ROOT/$d" ]]; then
+      echo "FATAL: scoped directory missing: $d" >&2
+      failed=1
+    fi
+  done
+  if [[ ! -f "$SCOPE_ROOT/$SCOPE_FILE" ]]; then
+    echo "FATAL: scoped file missing: $SCOPE_FILE" >&2
+    failed=1
+  fi
+
+  if [[ "$failed" -eq 0 ]]; then
+    files="$(list_files)"
+    for d in "${SCOPE_DIRS[@]}"; do
+      n="$(printf '%s\n' "$files" | grep -c "^$d/" || true)"
+      if [[ "$n" -eq 0 ]]; then
+        echo "FATAL: scoped directory enumerated 0 production .rs files: $d" >&2
+        failed=1
+      fi
+    done
+    SCANNED_FILES="$(printf '%s\n' "$files" | grep -c . || true)"
+  fi
+
+  if [[ "$failed" -ne 0 ]]; then
+    echo "The hot-read scope moved or emptied; update SCOPE_DIRS/SCOPE_FILE in $0 — this ratchet measures nothing until then." >&2
+    return 1
+  fi
+}
+
+# Prove the floor refuses an empty scope before any run reports a passing total.
+#
+# The failure this covers is a silent one — a green ratchet over zero files — so
+# it runs inside every --check invocation rather than in a separate test runner.
+self_test() {
+  local tmp status=0
+  tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064  # expand the path now, not at trap time
+  trap "rm -rf '$tmp'" RETURN
+
+  mkdir -p "$tmp/${SCOPE_DIRS[0]}" "$tmp/${SCOPE_DIRS[1]}" "$(dirname "$tmp/$SCOPE_FILE")"
+  touch "$tmp/$SCOPE_FILE"
+  if (SCOPE_ROOT="$tmp" require_scoped_files) >/dev/null 2>&1; then
+    echo "FAIL: self-test: require_scoped_files accepted a scope holding 0 .rs files." >&2
+    status=1
+  fi
+
+  rm -rf "$tmp/${SCOPE_DIRS[0]}"
+  if (SCOPE_ROOT="$tmp" require_scoped_files) >/dev/null 2>&1; then
+    echo "FAIL: self-test: require_scoped_files accepted a missing scoped directory." >&2
+    status=1
+  fi
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "hot-read self-test: FAIL" >&2
+    return 1
+  fi
+  echo "hot-read self-test: PASS (an empty or collapsed scope is refused, not reported as zero sites)."
 }
 
 # Emit "count<TAB>path" for every file that has >=1 production hot-read site.
@@ -160,6 +241,7 @@ collect() {
 
 case "${1:-}" in
   --generate)
+    require_scoped_files || exit 2
     # Regenerate the baseline from current counts. The baseline is shrink-only:
     # committing a higher total than the previous baseline is the author's
     # responsibility to avoid (CI enforces it).
@@ -176,14 +258,25 @@ case "${1:-}" in
     } > "$BASELINE"
     total="$(collect | awk -F'\t' '{s+=$1} END{print s+0}')"
     echo "Generated baseline: $BASELINE"
-    echo "  total hot-read sites: $total"
+    echo "  files scanned: $SCANNED_FILES   total hot-read sites: $total"
     ;;
 
   --list)
+    require_scoped_files || exit 2
     collect
     ;;
 
+  --self-test)
+    self_test
+    ;;
+
   ""|--check)
+    self_test >/dev/null || {
+      echo "FAIL: hot-read empty-scope self-test failed; a zero total is not trustworthy." >&2
+      exit 1
+    }
+    require_scoped_files || exit 2
+
     if [[ ! -f "$BASELINE" ]]; then
       echo "ERROR: baseline missing: $BASELINE" >&2
       echo "Run: scripts/check-hot-read-ratchet.sh --generate" >&2
@@ -242,11 +335,11 @@ case "${1:-}" in
 
     current_total="${verdict#OK }"; current_total="${current_total%% *}"
     baseline_total="${verdict##* }"
-    echo "Hot-read ratchet OK — $current_total site(s) (baseline: $baseline_total)."
+    echo "Hot-read ratchet OK — $current_total site(s) across $SCANNED_FILES scanned file(s) (baseline: $baseline_total)."
     ;;
 
   *)
-    echo "usage: $0 [--check|--generate|--list]" >&2
+    echo "usage: $0 [--check|--generate|--list|--self-test]" >&2
     exit 2
     ;;
 esac
