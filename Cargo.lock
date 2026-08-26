@@ -2038,6 +2038,7 @@ dependencies = [
  "path-clean",
  "proptest",
  "safe-filename",
+ "same-file",
  "tempfile",
 ]
 

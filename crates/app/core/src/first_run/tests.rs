@@ -179,28 +179,32 @@ async fn register_source_batch_rejects_intra_batch_overlap() {
     assert_eq!(resp.items[1].error.as_deref(), Some("path.overlaps_existing"));
 }
 
-/// nJ01a review carry-over: Windows filesystems (NTFS/ReFS/FAT) are
-/// case-insensitive/case-preserving, so a case-only variant of an
-/// already-registered root names the SAME real directory and must still
-/// be caught as an overlap.
+/// A case-only variant of an already-registered root names the SAME directory
+/// on a case-insensitive volume (and must be refused as an overlap), and a
+/// DIFFERENT directory on a case-sensitive one (and must be accepted). Both
+/// branches run against whichever volume `tempfile` lands on; `create_dir`
+/// answers which volume that is, independently of the identity check under
+/// test. Set `TMPDIR` to a case-sensitive volume to exercise the other branch.
 #[tokio::test]
-async fn register_source_rejects_windows_case_variant_of_existing_root() {
-    if !cfg!(windows) {
-        return;
-    }
+async fn register_source_case_variant_of_existing_root_follows_the_volume() {
     let db = persistence_core::Database::in_memory().await.unwrap();
     db.migrate().await.unwrap();
     let pool = db.pool().clone();
     let bus = EventBus::with_pool(pool.clone());
 
-    let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().to_str().expect("utf8 path").to_owned();
-    // Windows resolves this to the same real directory as `path`.
-    let path_upper = path.to_uppercase();
+    let parent = tempfile::tempdir().expect("tempdir");
+    let lower = parent.path().join("Foo");
+    let variant = parent.path().join("FOO");
+    std::fs::create_dir(&lower).expect("create Foo");
+    let volume_is_case_sensitive = match std::fs::create_dir(&variant) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+        Err(e) => panic!("probing volume case sensitivity: {e}"),
+    };
 
     let req = RegisterSourceRequest {
         kind: SourceKind::LightFrames,
-        path,
+        path: lower.to_str().expect("utf8 path").to_owned(),
         kind_subtype: None,
         scan_depth: contracts_core::first_run::ScanDepth::Recursive,
         organization_state: OrganizationState::Organized,
@@ -209,13 +213,21 @@ async fn register_source_rejects_windows_case_variant_of_existing_root() {
 
     let variant_req = RegisterSourceRequest {
         kind: SourceKind::Inbox,
-        path: path_upper,
+        path: variant.to_str().expect("utf8 path").to_owned(),
         kind_subtype: None,
         scan_depth: contracts_core::first_run::ScanDepth::Recursive,
         organization_state: OrganizationState::Unorganized,
     };
-    let err = register_source(&pool, &bus, &variant_req).await.unwrap_err();
-    assert_eq!(err.code, ErrorCode::PathOverlapsExisting);
+    let result = register_source(&pool, &bus, &variant_req).await;
+
+    if volume_is_case_sensitive {
+        result.expect("distinct directories on a case-sensitive volume register");
+    } else {
+        assert_eq!(
+            result.expect_err("case variant of one directory is refused").code,
+            ErrorCode::PathOverlapsExisting
+        );
+    }
 }
 
 /// T1-c: `db_to_contract`'s fallback arm now delegates to the canonical

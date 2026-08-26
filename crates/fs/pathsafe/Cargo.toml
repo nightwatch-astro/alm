@@ -11,6 +11,7 @@ path = "src/lib.rs"
 camino = { workspace = true }
 path-clean = { workspace = true }
 safe-filename = { path = "../../safe-filename" }
+same-file = { workspace = true }
 
 [features]
 # Enables `test_support` for crates that build containment fixtures in their own

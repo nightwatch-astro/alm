@@ -141,28 +141,20 @@ async fn check_duplicate(
 }
 
 /// Path-overlap relationship between `candidate` and `other`, or `None` if
-/// they don't overlap. Case-folds both sides on Windows (nJ01a review carry-
-/// over): NTFS/ReFS/FAT are case-insensitive/case-preserving, so `C:\Foo` and
-/// `c:\foo` name the same root and a lexical `starts_with` alone would miss
-/// the overlap. Unix filesystems default to case-sensitive, so the exact
-/// bytes are compared there — folding unconditionally would falsely reject
-/// distinct same-name-different-case Linux/macOS(HFS+ case-sensitive) roots,
-/// which is not the failure mode we're guarding against.
+/// they don't overlap.
+///
+/// Containment is decided by [`fs_pathsafe::contain::same_or_inside`], which asks the
+/// filesystem whether two paths are the same object rather than comparing
+/// strings. A case-only difference (`~/Foo` vs `~/foo`) is one directory on a
+/// case-insensitive volume and two on a case-sensitive one, and the volume — not
+/// the operating system — owns that answer.
 fn path_overlap_relationship(
     candidate: &std::path::Path,
     other: &std::path::Path,
 ) -> Option<&'static str> {
-    #[cfg(windows)]
-    let (candidate, other): (std::path::PathBuf, std::path::PathBuf) = (
-        candidate.to_string_lossy().to_lowercase().into(),
-        other.to_string_lossy().to_lowercase().into(),
-    );
-    #[cfg(windows)]
-    let (candidate, other) = (candidate.as_path(), other.as_path());
-
-    if other.starts_with(candidate) {
+    if fs_pathsafe::contain::same_or_inside(candidate, other) {
         Some("parent")
-    } else if candidate.starts_with(other) {
+    } else if fs_pathsafe::contain::same_or_inside(other, candidate) {
         Some("child")
     } else {
         None

@@ -154,6 +154,40 @@ pub fn contained_in_any(path: &Path, roots: &[&Path]) -> bool {
     roots.iter().any(|root| resolve_in_root(root, path).is_ok())
 }
 
+/// Report whether `root` and `path` name the same existing filesystem object,
+/// or `path` lies inside `root`.
+///
+/// This is the registration question — "do these two roots cover one
+/// directory?" — and NOT the path-escape gate: use [`resolve_in_root`] for a
+/// caller-supplied path, whose verdict must stay lexical.
+///
+/// Case sensitivity is a property of the volume, not of the operating system.
+/// APFS can be formatted case-sensitive, external drives are often formatted
+/// differently from the boot volume, Linux can mount case-insensitive
+/// filesystems, and Windows supports per-directory case sensitivity, so a
+/// `cfg!(windows)` case-fold answers for the wrong platform half the time. The
+/// question therefore goes to the filesystem: `same-file` compares device +
+/// inode on Unix and `FILE_ID_INFO` on Windows. Comparing canonicalized strings
+/// would not answer it either — macOS `realpath` does not correct the case of
+/// path components, so one directory still yields two spellings.
+///
+/// Identity is tested against every ancestor of `path`, so a case-only
+/// difference anywhere in the prefix is still recognised as containment. The
+/// lexical prefix is kept as the cheaper first answer and as the fallback for a
+/// path that cannot be stat'd (an unplugged drive, a root not yet created), for
+/// which only an exact-bytes prefix can be recognised.
+///
+/// Links are deliberately not resolved away by hand: two paths reaching one
+/// object through a symlink report the same identity and are recognised as
+/// covering each other. Whether that also holds for a Windows directory
+/// junction is untested, because [`crate::create_symlink`] materializes file
+/// symlinks only.
+#[must_use]
+pub fn same_or_inside(root: &Path, path: &Path) -> bool {
+    normalize(path).starts_with(normalize(root))
+        || path.ancestors().any(|a| same_file::is_same_file(root, a).unwrap_or(false))
+}
+
 /// Camino-typed [`resolve_in_root`] for callers that hold `Utf8Path`.
 ///
 /// # Errors
@@ -307,5 +341,76 @@ mod tests {
     #[test]
     fn contained_in_any_normalizes_before_comparing() {
         assert!(!contained_in_any(&p("/mnt/library/../../a"), &[root().as_path()]));
+    }
+
+    /// `create_dir` is the oracle for the volume's case sensitivity, chosen
+    /// because it is independent of the device+inode identity under test.
+    /// Set `TMPDIR` to a case-sensitive volume to take the other branch.
+    fn case_variant_dirs(parent: &Path) -> (PathBuf, PathBuf, bool) {
+        let original = parent.join("Foo");
+        let variant = parent.join("FOO");
+        std::fs::create_dir(&original).expect("create Foo");
+        let case_sensitive = match std::fs::create_dir(&variant) {
+            Ok(()) => true,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+            Err(e) => panic!("probing volume case sensitivity: {e}"),
+        };
+        (original, variant, case_sensitive)
+    }
+
+    #[test]
+    fn a_case_only_difference_follows_the_volume() {
+        let parent = tempfile::tempdir().unwrap();
+        let (original, variant, case_sensitive) = case_variant_dirs(parent.path());
+
+        assert_eq!(same_or_inside(&original, &variant), !case_sensitive);
+        assert_eq!(same_or_inside(&variant, &original), !case_sensitive);
+    }
+
+    #[test]
+    fn a_case_only_difference_in_a_parent_component_follows_the_volume() {
+        let parent = tempfile::tempdir().unwrap();
+        let (original, variant, case_sensitive) = case_variant_dirs(parent.path());
+        let nested = original.join("sub");
+        std::fs::create_dir(&nested).unwrap();
+
+        assert_eq!(same_or_inside(&variant, &nested), !case_sensitive);
+        assert!(same_or_inside(&original, &nested));
+    }
+
+    #[test]
+    fn distinct_sibling_directories_are_not_inside_each_other() {
+        let parent = tempfile::tempdir().unwrap();
+        let a = parent.path().join("alpha");
+        let b = parent.path().join("beta");
+        std::fs::create_dir(&a).unwrap();
+        std::fs::create_dir(&b).unwrap();
+
+        assert!(!same_or_inside(&a, &b));
+        assert!(!same_or_inside(&b, &a));
+    }
+
+    /// The link targets a file because [`crate::create_symlink`] materializes
+    /// file symlinks on Windows, where a file symlink to a directory cannot then
+    /// be opened for a file-identity query.
+    #[test]
+    fn a_symlink_covers_its_target() {
+        let parent = tempfile::tempdir().unwrap();
+        let target = parent.path().join("frame.fits");
+        let link = parent.path().join("link.fits");
+        std::fs::write(&target, b"").unwrap();
+        crate::create_symlink(&target, &link).unwrap();
+
+        assert!(same_or_inside(&link, &target));
+        assert!(same_or_inside(&target, &link));
+    }
+
+    /// A path that cannot be stat'd (an unplugged drive, a root not yet created)
+    /// keeps the lexical answer, which recognises an exact-bytes prefix only.
+    #[test]
+    fn an_unstattable_path_falls_back_to_the_lexical_prefix() {
+        let missing = p("/no-such-volume-4f2a/root");
+        assert!(same_or_inside(&missing, &missing.join("child")));
+        assert!(!same_or_inside(&missing, &p("/no-such-volume-4f2a/ROOT/child")));
     }
 }
