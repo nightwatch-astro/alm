@@ -7,7 +7,7 @@
 # If not set, bd init will auto-detect from directory name
 # Example: issue-prefix: "myproject" creates issues like "myproject-1", "myproject-2", etc.
 # issue-prefix: ""
-
+issue-prefix: "platevault-sol"
 # Use no-db mode: JSONL-only, no Dolt database
 # When true, .beads/issues.jsonl is the only local store
 # no-db: false
@@ -65,6 +65,8 @@
 # - linear.api_key  → use LINEAR_API_KEY env var instead
 # - github.token    → use GITHUB_TOKEN env var instead
 
-sync.remote: "https://github.com/platevault/platevault.git"
+# sync.remote: "https://github.com/platevault/platevault.git"
 dolt:
     auto-commit: batch
+sync:
+    remote: "git+https://github.com/platevault/platevault.git"
