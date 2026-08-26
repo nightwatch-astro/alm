@@ -135,6 +135,11 @@ percent-encoding = "2"
 semver = "1"
 strum = { version = "0.27", features = ["derive"] }
 strum_macros = "0.27"
+# Process liveness for the re-launch guard. Only the `system` feature is enabled:
+# the disk/network/component collectors are unused and pull extra platform code.
+# A safe cross-platform API is a hard requirement here — the workspace forbids
+# `unsafe_code`, so `kill(pid, 0)` and `OpenProcess` are not reachable directly.
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # dev-dependencies (referenced via [dev-dependencies] in consuming crates):
 proptest = "1"

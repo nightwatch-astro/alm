@@ -86,9 +86,15 @@ in `crates/app/core/src/tool_launch.rs` record `pid`, `launched_at`,
 `project_id`, and `tool_id`; `pid` is nullable because macOS `open -a` does not
 return one. `completed_at` is written by artifact observation
 (`crates/app/lifecycle/src/artifact/launches.rs`), not by the launch path. A
-prior `spawned` launch with a null `completed_at` and a live PID triggers the
-re-launch warning. Tests inject
-`workflow_profiles::launch::FakeSpawner` instead of spawning binaries. See
+prior `spawned` launch with a null `completed_at` triggers the re-launch warning
+when `workflow_profiles::launch::prior_launch_is_alive` confirms the tool is
+still running: by PID when one was recorded, otherwise by asking macOS Launch
+Services whether an application with the profile's `bundle_id` is running. Both
+are point-in-time queries made only when the user attempts a re-launch; nothing
+is polled or awaited. Tests inject
+`workflow_profiles::launch::FakeSpawner` instead of spawning binaries; liveness
+itself is covered against real processes in
+`crates/workflow/profiles/tests/liveness.rs`. See
 [`specs/011-processing-tool-launch/research.md`](../../specs/011-processing-tool-launch/research.md).
 
 The workspace Cargo manifest defines a `dev-tools` feature (default off) that
