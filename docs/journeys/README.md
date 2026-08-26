@@ -34,18 +34,56 @@ instead of being repeated per journey:
 
 ### desktop-ui
 - kind: desktop-mcp
-- exclusive: true
+- exclusive: false
 
 PlateVault ships as a Tauri v2 desktop app; the only real-app validation path
 today is the Windows build driven through the Tauri MCP bridge from WSL
-(`driver_session host=localhost port=9223`, mirrored WSL networking reaches
-Windows services via `localhost`). The bridge exists only in a build launched
-with `--features dev-tools`, starts only when the launch sets
+(`driver_session host=localhost port=9223` for instance 1, mirrored WSL
+networking reaches Windows services via `localhost`). The bridge exists only in a
+build launched with `--features dev-tools`, starts only when the launch sets
 `PV_MCP_BRIDGE_ENABLE=1`, and binds `127.0.0.1` unless the launch also sets
-`PV_MCP_BRIDGE_BIND`. `exclusive: true` because only one
-validator can hold the Windows checkout/app process at a time. The
-Vite/mockIPC runtime fakes backend responses and MUST NOT be used to
+`PV_MCP_BRIDGE_BIND`. A second concurrent instance additionally needs the `e2e`
+feature, which is what allows `PV_E2E_INSTANCE_ID` to skip the single-instance
+guard. The Vite/mockIPC runtime fakes backend responses and MUST NOT be used to
 validate journeys (see `docs/development/testing.md`).
+
+The profile is not exclusive. N instances run side by side on one host, each with
+its own database, app-data root, app-config root and bridge port — allocated by
+`crates/e2e-tests/src/instance.rs`, the same module the nextest e2e harness uses.
+`docs/development/parallel-journey-instances.md` is canonical for the launch
+recipe, for what remains shared across instances, and for the Windows-host
+rebuild.
+
+A previous revision of this section claimed exclusivity because "only one
+validator can hold the Windows checkout/app process at a time". That was false in
+both halves. The bridge port is not fixed: 9223 is only the default base and the
+plugin scans upward from it, so the per-instance base port
+`9223 + (N - 1) * 100` gives every instance a stable address. And no instance
+shares a database with another: `PV_DATA_DIR` alone separates them, before
+`PV_DB_URL` is considered. What did make the historical lane unsafe to
+parallelise was its own launch procedure — one hardcoded dev database at
+`C:\dev\astro-plan\wizard-test.db`, reset by deleting that path — not any property
+of the app. That procedure is gone from
+`docs/development/windows-native-rust-dev.md`: launches take an instance number
+and never name a database.
+
+Two limits on that claim. `PV_DB_URL` still overrides the per-instance
+derivation, so any launch procedure that exports one of its own re-shares the
+database — `journey-instance` refuses to run when it finds a foreign one set, and
+that is the only guard. And webview `localStorage` is isolated on Windows but not
+yet on macOS (`astro-plan-qvmqq`).
+
+Journeys that still need exclusivity, because they assert or mutate OS-global
+state no per-instance root covers:
+
+- **J17** installs a software update, replacing the binary every instance runs.
+- **J06, J07, J11, J12** delete to the OS trash, and all instances share one
+  Recycle Bin.
+
+`FORMAT.md` has no per-journey exclusivity field, so those four cannot yet be
+marked. Until one exists, a run that schedules them concurrently with anything
+else is scheduling a known-shared resource; see
+`docs/development/parallel-journey-instances.md` for the full table.
 
 Launch, reset, recompile-trap, bridge-connect, native-picker, and blank-screen
 mechanics are **canonical in `docs/development/windows-native-rust-dev.md`
@@ -56,11 +94,11 @@ that layer on top of it:
   visually/interactively observable must be validated in the real webview, not
   IPC-only. Validators announce when a check is backend-only IPC and classify
   findings backend-vs-UI.
-- **State-leakage prevention:** validation runs only against the Windows
-  checkout's disposable dev database (`wizard-test.db` via `PV_DB_URL`) and
-  `tempfile`-style scratch folders — never against real user libraries; this
-  repo checkout is never the app's working directory, so no fixture can land in
-  it.
+- **State-leakage prevention:** validation runs only against the disposable
+  per-instance database and scratch folders that `journey-instance` allocates —
+  never against real user libraries, and never against a `PV_DB_URL` the
+  validator chose, which would put every instance on one database; this repo
+  checkout is never the app's working directory, so no fixture can land in it.
 
 Pointers: `docs/development/windows-native-rust-dev.md` §"Validation driving"
 (canonical launch/reset/recompile/bridge mechanics),

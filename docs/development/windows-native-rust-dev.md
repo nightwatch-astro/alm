@@ -177,34 +177,65 @@ block below is self-contained: copy the relevant one verbatim into a scenario or
 run doc, since a zero-context agent must be able to execute it without following
 a link.
 
-**Launch with a throwaway database (bridge on).** For validation, point the app
-at a disposable DB inside the checkout so a reset never touches a real library,
-and launch with the dev overlay that enables the MCP bridge:
+**Launch with a throwaway database (bridge on).** Do not export a `PV_DB_URL` of
+your own. `journey-instance` writes the whole environment — a disposable database,
+app-data root, app-config root, bridge port and WebDriver port, all under one
+per-instance root — and every launch takes an instance number, including a
+single-instance session:
+
+```bash
+# from WSL, in the checkout
+cargo run -q -p e2e_tests --bin journey-instance -- 1 --reset
+```
+
+It prints POSIX `export` lines on stdout and the resolved paths and ports on
+stderr. Translate to `$env:` assignments, or `eval` it and launch from WSL-invoked
+`cmd.exe`. It refuses to run when a foreign `PV_DB_URL` is already set, because
+the app prefers `PV_DB_URL` over the path it derives per instance
+(`apps/desktop/src-tauri/src/main.rs`) — one exported URL puts every instance on
+one database. See `docs/development/parallel-journey-instances.md`.
 
 ```powershell
 cd C:\dev\astro-plan\apps\desktop
 $env:VITE_USE_MOCKS = 'false'                                        # real backend
-$env:PV_DB_URL     = 'sqlite://C:\dev\astro-plan\wizard-test.db?mode=rwc'
+# plus the PV_* assignments journey-instance printed
 pnpm tauri dev --config src-tauri\tauri.dev.conf.json --features dev-tools
 ```
 
 The overlay enables `withGlobalTauri`; `--features dev-tools` compiles the MCP
 bridge in. A build without the feature links no bridge, so nothing listens on
-9223.
+9223. A second concurrent instance additionally needs `--features dev-tools,e2e`.
 
-`scripts\win-native-dev.ps1` launches the same overlay with the real backend;
-add the `PV_DB_URL` line above when you need a disposable DB. Any `run-dev*.bat`
-referenced elsewhere is an optional local convenience wrapper — **not** tracked
-in the repo, so the tracked launcher above is the source of truth. App process is
+`scripts\win-native-dev.ps1` launches the same overlay with the real backend, and
+inherits whatever `journey-instance` put in the environment. Any `run-dev*.bat`
+referenced elsewhere is an optional local convenience wrapper — **not** tracked in
+the repo, so the tracked launcher above is the source of truth. App process is
 `desktop_shell.exe`; Vite on `http://127.0.0.1:5173`.
 
-**Reset to a clean first-run.** The DB is the first-run source of truth —
-clearing `localStorage` alone triggers a `/`↔`/setup` redirect loop, not a
-reset. Delete the throwaway DB and relaunch:
+**Read the bridge port from the app's own log, never from a formula.** The plugin
+scans upward from its base port and prints the port it took:
 
-```powershell
-Remove-Item 'C:\dev\astro-plan\wizard-test.db*' -Force
 ```
+[MCP][PLUGIN][INFO] MCP Bridge plugin initialized for 'PlateVault' ... on 127.0.0.1:9224
+```
+
+Capture each instance's stdout to a per-instance log file and read that line. A
+host running three instances of a build that predates `PV_MCP_BRIDGE_PORT` was
+observed on 9223, 9224 and 9225 — one apart, not the 100 the per-instance base
+port would give — and computed ports sent two validators to addresses with no
+listener.
+
+**Reset to a clean first-run.** The DB is the first-run source of truth —
+clearing `localStorage` alone triggers a `/`↔`/setup` redirect loop, not a reset.
+Reset the instance, which removes its root and nothing else:
+
+```bash
+cargo run -q -p e2e_tests --bin journey-instance -- 1 --reset
+```
+
+Never delete a database by a fixed path. The historical
+`Remove-Item 'C:\dev\astro-plan\wizard-test.db*'` deleted the one database every
+session shared, so with more than one instance running it resets the others too.
 
 **Recompile (mtime) trap.** Deploy a branch as its own command, then force a
 rebuild when any Rust changed — `git reset --hard` restores file content but

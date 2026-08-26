@@ -105,8 +105,11 @@ like a broken journey.
   `desktop_shell` processes no longer collide on Tauri's default
   identifier-derived identity. The plugin's per-instance override exists only
   on Linux (`dbus_id`) — not Windows (named mutex) or macOS — so skipping is
-  the only cross-platform fix; no journey exercises single-instance behaviour.
+  the only cross-platform fix; no journey exercises single-instance behaviour
+  (re-checked against `docs/journeys/` on 2026-08-25).
   It is a no-op outside e2e (real users never set this env var, so the guard
   stays active). Together this lets `test-threads` in the `e2e` nextest profile
   exceed 1 without journeys racing each other; see `.config/nextest.toml`
-  for the current value and its rationale.
+  for the current value and its rationale. The allocation itself lives in
+  `src/instance.rs` and is shared with the `journey-instance` binary
+  (`docs/development/parallel-journey-instances.md`).

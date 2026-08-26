@@ -208,6 +208,15 @@ tauri-dev:
 tauri-dev-mcp bind="127.0.0.1":
     cd apps/desktop && PV_MCP_BRIDGE_ENABLE=1 PV_MCP_BRIDGE_BIND={{quote(bind)}} pnpm tauri dev --config src-tauri/tauri.dev.conf.json --features dev-tools
 
+# Print the isolated environment for journey-driving app instance N (1-based).
+#
+# Stdout is a shell `export` block and nothing else, so `eval "$(just
+# journey-instance 2)"` is the whole setup; the resolved bridge host:port goes to
+# stderr. `--reset` wipes that instance's root first — one instance only, never
+# the shared base. See docs/development/parallel-journey-instances.md.
+journey-instance N *ARGS:
+    cargo run -q -p e2e_tests --bin journey-instance -- {{quote(N)}} {{ARGS}}
+
 # Clean build artifacts
 clean:
     cargo clean
