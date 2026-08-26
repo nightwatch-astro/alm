@@ -1,7 +1,8 @@
 {
   "database": "dolt",
   "backend": "dolt",
-  "dolt_mode": "embedded",
+  "dolt_mode": "server",
+  "dolt_server_port": 3307,
   "dolt_database": "astro_plan",
   "project_id": "fe0d53fc-d1bb-4f39-b270-f0911d33a502"
 }
